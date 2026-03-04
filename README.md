@@ -36,10 +36,10 @@ Pre-built binaries are available on the [Releases](https://github.com/erikdarlin
 
 | Platform | Download |
 |----------|----------|
-| Windows (x64) | [SQLPerformanceStudio-win-x64.zip](https://github.com/erikdarlingdata/PerformanceStudio/releases/latest/download/SQLPerformanceStudio-win-x64.zip) |
-| macOS (Apple Silicon) | [SQLPerformanceStudio-osx-arm64.zip](https://github.com/erikdarlingdata/PerformanceStudio/releases/latest/download/SQLPerformanceStudio-osx-arm64.zip) |
-| macOS (Intel) | [SQLPerformanceStudio-osx-x64.zip](https://github.com/erikdarlingdata/PerformanceStudio/releases/latest/download/SQLPerformanceStudio-osx-x64.zip) |
-| Linux (x64) | [SQLPerformanceStudio-linux-x64.zip](https://github.com/erikdarlingdata/PerformanceStudio/releases/latest/download/SQLPerformanceStudio-linux-x64.zip) |
+| Windows (x64) | [PerformanceStudio-win-x64.zip](https://github.com/erikdarlingdata/PerformanceStudio/releases/latest/download/PerformanceStudio-win-x64.zip) |
+| macOS (Apple Silicon) | [PerformanceStudio-osx-arm64.zip](https://github.com/erikdarlingdata/PerformanceStudio/releases/latest/download/PerformanceStudio-osx-arm64.zip) |
+| macOS (Intel) | [PerformanceStudio-osx-x64.zip](https://github.com/erikdarlingdata/PerformanceStudio/releases/latest/download/PerformanceStudio-osx-x64.zip) |
+| Linux (x64) | [PerformanceStudio-linux-x64.zip](https://github.com/erikdarlingdata/PerformanceStudio/releases/latest/download/PerformanceStudio-linux-x64.zip) |
 
 These are self-contained — no .NET SDK required. Extract the zip and run.
 
