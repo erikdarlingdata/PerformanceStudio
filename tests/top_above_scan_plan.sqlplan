@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ShowPlanXML xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" Version="1.564" Build="16.0.4222.2" xmlns="http://schemas.microsoft.com/sqlserver/2004/07/showplan">
+  <BatchSequence>
+    <Batch>
+      <Statements>
+        <StmtSimple StatementCompId="1" StatementEstRows="1" StatementId="1" StatementOptmLevel="FULL" CardinalityEstimationModelVersion="160" StatementSubTreeCost="4.84075" StatementText="SELECT TOP (1)&#xD;&#xA;    p.Id&#xD;&#xA;FROM dbo.Posts AS p&#xD;&#xA;WHERE NOT EXISTS&#xD;&#xA;(&#xD;&#xA;    SELECT&#xD;&#xA;        1/0&#xD;&#xA;    FROM dbo.Votes AS v&#xD;&#xA;    WHERE v.PostId = p.Id&#xD;&#xA;)&#xD;&#xA;ORDER BY&#xD;&#xA;    p.Id DESC" StatementType="SELECT" QueryHash="0xDA086F1D16B2A9DB" QueryPlanHash="0xE444B7B102F04BB9" RetrievedFromCache="true" StatementSqlHandle="0x090035B1F01F8AB93C447B76A1B99AF85F110000000000000000000000000000000000000000000000000000" DatabaseContextSettingsId="1" ParentObjectId="0" StatementParameterizationType="0" SecurityPolicyApplied="false">
+          <StatementSetOptions ANSI_NULLS="true" ANSI_PADDING="true" ANSI_WARNINGS="true" ARITHABORT="true" CONCAT_NULL_YIELDS_NULL="true" NUMERIC_ROUNDABORT="false" QUOTED_IDENTIFIER="true" />
+          <QueryPlan DegreeOfParallelism="1" CachedPlanSize="24" CompileTime="208" CompileCPU="4" CompileMemory="472">
+            <MissingIndexes>
+              <MissingIndexGroup Impact="100">
+                <MissingIndex Database="[StackOverflow2013]" Schema="[dbo]" Table="[Votes]">
+                  <ColumnGroup Usage="EQUALITY">
+                    <Column Name="[PostId]" ColumnId="2" />
+                  </ColumnGroup>
+                </MissingIndex>
+              </MissingIndexGroup>
+            </MissingIndexes>
+            <MemoryGrantInfo SerialRequiredMemory="0" SerialDesiredMemory="0" GrantedMemory="0" MaxUsedMemory="0" />
+            <OptimizerHardwareDependentProperties EstimatedAvailableMemoryGrant="734003" EstimatedPagesCached="367001" EstimatedAvailableDegreeOfParallelism="4" MaxCompileMemory="47067952" />
+            <OptimizerStatsUsage>
+              <StatisticsInfo Database="[StackOverflow2013]" Schema="[dbo]" Table="[Votes]" Statistics="[_WA_Sys_00000002_0AD2A005]" ModificationCount="0" SamplingPercent="1.66611" LastUpdate="2026-02-26T11:06:35.12" />
+              <StatisticsInfo Database="[StackOverflow2013]" Schema="[dbo]" Table="[Posts]" Statistics="[PK_Posts_Id]" ModificationCount="0" SamplingPercent="5.0002" LastUpdate="2026-01-17T10:55:50.19" />
+            </OptimizerStatsUsage>
+            <WaitStats>
+              <Wait WaitType="SOS_SCHEDULER_YIELD" WaitTimeMs="3" WaitCount="1269" />
+            </WaitStats>
+            <QueryTimeStats CpuTime="5119" ElapsedTime="5120" />
+            <RelOp AvgRowSize="11" EstimateCPU="1E-07" EstimateIO="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row" EstimateRows="1" LogicalOp="Top" NodeId="0" Parallel="false" PhysicalOp="Top" EstimatedTotalSubtreeCost="4.84075">
+              <OutputList>
+                <ColumnReference Database="[StackOverflow2013]" Schema="[dbo]" Table="[Posts]" Alias="[p]" Column="Id" />
+              </OutputList>
+              <RunTimeInformation>
+                <RunTimeCountersPerThread Thread="0" ActualRows="1" Batches="0" ActualEndOfScans="1" ActualExecutions="1" ActualExecutionMode="Row" ActualElapsedms="5120" ActualCPUms="5119" />
+              </RunTimeInformation>
+              <Top RowCount="false" IsPercent="false" WithTies="false">
+                <TopExpression>
+                  <ScalarOperator ScalarString="(1)">
+                    <Const ConstValue="(1)" />
+                  </ScalarOperator>
+                </TopExpression>
+                <RelOp AvgRowSize="11" EstimateCPU="71.6543" EstimateIO="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row" EstimateRows="1" EstimateRowsWithoutRowGoal="16067900" LogicalOp="Left Anti Semi Join" NodeId="1" Parallel="false" PhysicalOp="Nested Loops" EstimatedTotalSubtreeCost="4.84075">
+                  <OutputList>
+                    <ColumnReference Database="[StackOverflow2013]" Schema="[dbo]" Table="[Posts]" Alias="[p]" Column="Id" />
+                  </OutputList>
+                  <RunTimeInformation>
+                    <RunTimeCountersPerThread Thread="0" ActualRows="1" Batches="0" ActualEndOfScans="0" ActualExecutions="1" ActualExecutionMode="Row" ActualElapsedms="5120" ActualCPUms="5119" />
+                  </RunTimeInformation>
+                  <NestedLoops Optimized="false">
+                    <OuterReferences>
+                      <ColumnReference Database="[StackOverflow2013]" Schema="[dbo]" Table="[Posts]" Alias="[p]" Column="Id" />
+                    </OuterReferences>
+                    <RelOp AvgRowSize="11" EstimateCPU="18.8565" EstimateIO="3090.62" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row" EstimateRows="1.06686" EstimateRowsWithoutRowGoal="17142200" EstimatedRowsRead="17142200" LogicalOp="Clustered Index Scan" NodeId="2" Parallel="false" PhysicalOp="Clustered Index Scan" EstimatedTotalSubtreeCost="0.00329523" TableCardinality="17142200">
+                      <OutputList>
+                        <ColumnReference Database="[StackOverflow2013]" Schema="[dbo]" Table="[Posts]" Alias="[p]" Column="Id" />
+                      </OutputList>
+                      <RunTimeInformation>
+                        <RunTimeCountersPerThread Thread="0" ActualRows="1" ActualRowsRead="1" Batches="0" ActualEndOfScans="0" ActualExecutions="1" ActualExecutionMode="Row" ActualElapsedms="0" ActualCPUms="0" ActualScans="1" ActualLogicalReads="4" ActualPhysicalReads="0" ActualReadAheads="0" ActualLobLogicalReads="0" ActualLobPhysicalReads="0" ActualLobReadAheads="0" />
+                      </RunTimeInformation>
+                      <IndexScan Ordered="true" ScanDirection="BACKWARD" ForcedIndex="false" ForceSeek="false" ForceScan="false" NoExpandHint="false" Storage="RowStore">
+                        <DefinedValues>
+                          <DefinedValue>
+                            <ColumnReference Database="[StackOverflow2013]" Schema="[dbo]" Table="[Posts]" Alias="[p]" Column="Id" />
+                          </DefinedValue>
+                        </DefinedValues>
+                        <Object Database="[StackOverflow2013]" Schema="[dbo]" Table="[Posts]" Index="[PK_Posts_Id]" Alias="[p]" IndexKind="Clustered" Storage="RowStore" />
+                      </IndexScan>
+                    </RelOp>
+                    <RelOp AvgRowSize="9" EstimateCPU="1E-07" EstimateIO="0" EstimateRebinds="2" EstimateRewinds="0" EstimatedExecutionMode="Row" EstimateRows="1" LogicalOp="Top" NodeId="4" Parallel="false" PhysicalOp="Top" EstimatedTotalSubtreeCost="4.84075">
+                      <OutputList />
+                      <RunTimeInformation>
+                        <RunTimeCountersPerThread Thread="0" ActualRows="0" Batches="0" ActualEndOfScans="1" ActualExecutions="1" ActualExecutionMode="Row" ActualElapsedms="5120" ActualCPUms="5119" />
+                      </RunTimeInformation>
+                      <Top RowCount="false" IsPercent="false" WithTies="false">
+                        <TopExpression>
+                          <ScalarOperator ScalarString="(1)">
+                            <Const ConstValue="(1)" />
+                          </ScalarOperator>
+                        </TopExpression>
+                        <RelOp AvgRowSize="11" EstimateCPU="58.2217" EstimateIO="65.3128" EstimateRebinds="0" EstimateRewinds="2" EstimatedExecutionMode="Row" EstimateRows="1" EstimateRowsWithoutRowGoal="49.2659" EstimatedRowsRead="52928700" LogicalOp="Clustered Index Scan" NodeId="5" Parallel="false" PhysicalOp="Clustered Index Scan" EstimatedTotalSubtreeCost="4.84075" TableCardinality="52928700">
+                          <OutputList />
+                          <RunTimeInformation>
+                            <RunTimeCountersPerThread Thread="0" ActualRows="0" ActualRowsRead="52928720" Batches="0" ActualEndOfScans="1" ActualExecutions="1" ActualExecutionMode="Row" ActualElapsedms="5120" ActualCPUms="5119" ActualScans="1" ActualLogicalReads="88337" ActualPhysicalReads="0" ActualReadAheads="0" ActualLobLogicalReads="0" ActualLobPhysicalReads="0" ActualLobReadAheads="0" />
+                          </RunTimeInformation>
+                          <IndexScan Ordered="false" ForcedIndex="false" ForceScan="false" NoExpandHint="false" Storage="RowStore">
+                            <DefinedValues />
+                            <Object Database="[StackOverflow2013]" Schema="[dbo]" Table="[Votes]" Index="[PK_Votes_Id]" Alias="[v]" IndexKind="Clustered" Storage="RowStore" />
+                            <Predicate>
+                              <ScalarOperator ScalarString="[StackOverflow2013].[dbo].[Votes].[PostId] as [v].[PostId]=[StackOverflow2013].[dbo].[Posts].[Id] as [p].[Id]">
+                                <Compare CompareOp="EQ">
+                                  <ScalarOperator>
+                                    <Identifier>
+                                      <ColumnReference Database="[StackOverflow2013]" Schema="[dbo]" Table="[Votes]" Alias="[v]" Column="PostId" />
+                                    </Identifier>
+                                  </ScalarOperator>
+                                  <ScalarOperator>
+                                    <Identifier>
+                                      <ColumnReference Database="[StackOverflow2013]" Schema="[dbo]" Table="[Posts]" Alias="[p]" Column="Id" />
+                                    </Identifier>
+                                  </ScalarOperator>
+                                </Compare>
+                              </ScalarOperator>
+                            </Predicate>
+                          </IndexScan>
+                        </RelOp>
+                      </Top>
+                    </RelOp>
+                  </NestedLoops>
+                </RelOp>
+              </Top>
+            </RelOp>
+          </QueryPlan>
+        </StmtSimple>
+      </Statements>
+    </Batch>
+  </BatchSequence>
+</ShowPlanXML>

@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ShowPlanXML xmlns="http://schemas.microsoft.com/sqlserver/2004/07/showplan" Version="1.564" Build="16.0.4210.1">
+  <BatchSequence>
+    <Batch>
+      <Statements>
+        <StmtSimple StatementCompId="1" StatementEstRows="100" StatementId="1" StatementOptmLevel="FULL" StatementSubTreeCost="5.0" StatementText="SELECT * FROM dbo.HeapTable WHERE col1 = 42" StatementType="SELECT">
+          <StatementSetOptions ANSI_NULLS="true" ANSI_PADDING="true" ANSI_WARNINGS="true" ARITHABORT="true" CONCAT_NULL_YIELDS_NULL="true" NUMERIC_ROUNDABORT="false" QUOTED_IDENTIFIER="true" />
+          <QueryPlan CachedPlanSize="32" CompileTime="1" CompileCPU="1" CompileMemory="256">
+            <MemoryGrantInfo SerialRequiredMemory="0" SerialDesiredMemory="0" RequiredMemory="0" DesiredMemory="0" RequestedMemory="0" GrantWaitTime="0" GrantedMemory="0" MaxUsedMemory="0" MaxQueryMemory="0" />
+            <RelOp AvgRowSize="200" EstimateCPU="0.01" EstimateIO="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row" EstimateRows="100" LogicalOp="Inner Join" NodeId="0" Parallel="false" PhysicalOp="Nested Loops" EstimatedTotalSubtreeCost="5.0">
+              <OutputList />
+              <NestedLoops Optimized="false">
+                <!-- Outer: Index Seek -->
+                <RelOp AvgRowSize="15" EstimateCPU="0.01" EstimateIO="0.003" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row" EstimateRows="100" LogicalOp="Index Seek" NodeId="1" Parallel="false" PhysicalOp="Index Seek" EstimatedTotalSubtreeCost="0.013">
+                  <OutputList />
+                  <IndexScan Ordered="true" ScanDirection="FORWARD" ForcedIndex="false" ForceSeek="false" ForceScan="false" NoExpandHint="false" Storage="RowStore">
+                    <DefinedValues />
+                    <Object Database="[TestDB]" Schema="[dbo]" Table="[HeapTable]" Index="[IX_col1]" IndexKind="NonClustered" Storage="RowStore" />
+                    <SeekPredicates>
+                      <SeekPredicateNew>
+                        <SeekKeys>
+                          <Prefix ScanType="EQ">
+                            <RangeColumns>
+                              <ColumnReference Database="[TestDB]" Schema="[dbo]" Table="[HeapTable]" Column="col1" />
+                            </RangeColumns>
+                          </Prefix>
+                        </SeekKeys>
+                      </SeekPredicateNew>
+                    </SeekPredicates>
+                  </IndexScan>
+                </RelOp>
+                <!-- Inner: RID Lookup -->
+                <RelOp AvgRowSize="200" EstimateCPU="0.0001" EstimateIO="0.003" EstimateRebinds="99" EstimateRewinds="0" EstimatedExecutionMode="Row" EstimateRows="1" LogicalOp="RID Lookup" NodeId="2" Parallel="false" PhysicalOp="RID Lookup" EstimatedTotalSubtreeCost="0.3" TableCardinality="100000">
+                  <OutputList />
+                  <IndexScan Ordered="true" ScanDirection="FORWARD" ForcedIndex="false" ForceSeek="false" ForceScan="false" NoExpandHint="false" Storage="RowStore" Lookup="true">
+                    <DefinedValues />
+                    <Object Database="[TestDB]" Schema="[dbo]" Table="[HeapTable]" Storage="RowStore" />
+                    <SeekPredicates>
+                      <SeekPredicateNew>
+                        <SeekKeys>
+                          <Prefix ScanType="EQ">
+                            <RangeColumns>
+                              <ColumnReference Database="[TestDB]" Schema="[dbo]" Table="[HeapTable]" Column="rid" />
+                            </RangeColumns>
+                          </Prefix>
+                        </SeekKeys>
+                      </SeekPredicateNew>
+                    </SeekPredicates>
+                    <Predicate>
+                      <ScalarOperator ScalarString="[TestDB].[dbo].[HeapTable].[col2] &gt; (10)">
+                        <Compare CompareOp="GT">
+                          <ScalarOperator>
+                            <Identifier>
+                              <ColumnReference Database="[TestDB]" Schema="[dbo]" Table="[HeapTable]" Column="col2" />
+                            </Identifier>
+                          </ScalarOperator>
+                          <ScalarOperator>
+                            <Const ConstValue="(10)" />
+                          </ScalarOperator>
+                        </Compare>
+                      </ScalarOperator>
+                    </Predicate>
+                  </IndexScan>
+                </RelOp>
+              </NestedLoops>
+            </RelOp>
+          </QueryPlan>
+        </StmtSimple>
+      </Statements>
+    </Batch>
+  </BatchSequence>
+</ShowPlanXML>

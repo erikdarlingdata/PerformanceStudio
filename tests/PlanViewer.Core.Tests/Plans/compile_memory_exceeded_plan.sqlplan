@@ -1,0 +1,389 @@
+<ShowPlanXML xmlns="http://schemas.microsoft.com/sqlserver/2004/07/showplan" Version="1.564" Build="16.0.4222.2">
+  <BatchSequence>
+    <Batch>
+      <Statements>
+        <StmtSimple StatementText="SELECT @job_name = name,&#xD;&#xA;           @owner_sid = owner_sid&#xD;&#xA;    FROM msdb.dbo.sysjobs_view&#xD;&#xA;    WHERE (job_id = @job_id)" StatementId="1" StatementCompId="59" StatementType="SELECT" RetrievedFromCache="true" StatementSubTreeCost="0.00657853" StatementEstRows="2" SecurityPolicyApplied="false" StatementOptmLevel="FULL" QueryHash="0x4D7193A18FDB8E33" QueryPlanHash="0x68F36A4067A39F7B" StatementOptmEarlyAbortReason="MemoryLimitExceeded" CardinalityEstimationModelVersion="160">
+          <StatementSetOptions QUOTED_IDENTIFIER="false" ARITHABORT="false" CONCAT_NULL_YIELDS_NULL="true" ANSI_NULLS="true" ANSI_PADDING="true" ANSI_WARNINGS="true" NUMERIC_ROUNDABORT="false" />
+          <QueryPlan NonParallelPlanReason="NonParallelizableIntrinsicFunction" CachedPlanSize="48" CompileTime="5" CompileCPU="5" CompileMemory="1336">
+            <MemoryGrantInfo SerialRequiredMemory="0" SerialDesiredMemory="0" GrantedMemory="0" MaxUsedMemory="0" />
+            <OptimizerHardwareDependentProperties EstimatedAvailableMemoryGrant="734003" EstimatedPagesCached="367001" EstimatedAvailableDegreeOfParallelism="4" MaxCompileMemory="47067952" />
+            <OptimizerStatsUsage>
+              <StatisticsInfo LastUpdate="2026-01-03T12:18:34.58" ModificationCount="459" SamplingPercent="100" Statistics="[nc1]" Table="[sysjobservers]" Schema="[dbo]" Database="[msdb]" />
+              <StatisticsInfo LastUpdate="2026-01-03T12:18:34.56" ModificationCount="459" SamplingPercent="100" Statistics="[clust]" Table="[sysjobs]" Schema="[dbo]" Database="[msdb]" />
+              <StatisticsInfo LastUpdate="2026-01-03T12:18:34.58" ModificationCount="459" SamplingPercent="100" Statistics="[clust]" Table="[sysjobservers]" Schema="[dbo]" Database="[msdb]" />
+              <StatisticsInfo LastUpdate="2026-01-03T12:18:34.56" ModificationCount="459" SamplingPercent="100" Statistics="[_WA_Sys_00000002_5EBF139D]" Table="[sysjobs]" Schema="[dbo]" Database="[msdb]" />
+            </OptimizerStatsUsage>
+            <RelOp NodeId="0" PhysicalOp="Nested Loops" LogicalOp="Inner Join" EstimateRows="2" EstimateIO="0" EstimateCPU="4.18e-06" AvgRowSize="183" EstimatedTotalSubtreeCost="0.00657853" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+              <OutputList>
+                <ColumnReference Database="[msdb]" Schema="[dbo]" Table="[sysjobs]" Alias="[jobs]" Column="name" />
+                <ColumnReference Database="[msdb]" Schema="[dbo]" Table="[sysjobs]" Alias="[jobs]" Column="owner_sid" />
+              </OutputList>
+              <NestedLoops Optimized="0">
+                <OuterReferences>
+                  <ColumnReference Database="[msdb]" Schema="[dbo]" Table="[sysjobs]" Alias="[jobs]" Column="originating_server_id" />
+                </OuterReferences>
+                <RelOp NodeId="1" PhysicalOp="Nested Loops" LogicalOp="Left Semi Join" EstimateRows="1" EstimateIO="0" EstimateCPU="4.18e-06" AvgRowSize="187" EstimatedTotalSubtreeCost="0.00328922" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                  <OutputList>
+                    <ColumnReference Database="[msdb]" Schema="[dbo]" Table="[sysjobs]" Alias="[jobs]" Column="originating_server_id" />
+                    <ColumnReference Database="[msdb]" Schema="[dbo]" Table="[sysjobs]" Alias="[jobs]" Column="name" />
+                    <ColumnReference Database="[msdb]" Schema="[dbo]" Table="[sysjobs]" Alias="[jobs]" Column="owner_sid" />
+                  </OutputList>
+                  <NestedLoops Optimized="0">
+                    <OuterReferences>
+                      <ColumnReference Database="[msdb]" Schema="[dbo]" Table="[sysjobs]" Alias="[jobs]" Column="job_id" />
+                      <ColumnReference Database="[msdb]" Schema="[dbo]" Table="[sysjobs]" Alias="[jobs]" Column="owner_sid" />
+                    </OuterReferences>
+                    <RelOp NodeId="2" PhysicalOp="Clustered Index Seek" LogicalOp="Clustered Index Seek" EstimateRows="1" EstimatedRowsRead="1" EstimateIO="0.003125" EstimateCPU="0.0001581" AvgRowSize="203" EstimatedTotalSubtreeCost="0.0032831" TableCardinality="7" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                      <OutputList>
+                        <ColumnReference Database="[msdb]" Schema="[dbo]" Table="[sysjobs]" Alias="[jobs]" Column="job_id" />
+                        <ColumnReference Database="[msdb]" Schema="[dbo]" Table="[sysjobs]" Alias="[jobs]" Column="originating_server_id" />
+                        <ColumnReference Database="[msdb]" Schema="[dbo]" Table="[sysjobs]" Alias="[jobs]" Column="name" />
+                        <ColumnReference Database="[msdb]" Schema="[dbo]" Table="[sysjobs]" Alias="[jobs]" Column="owner_sid" />
+                      </OutputList>
+                      <IndexScan Ordered="1" ScanDirection="FORWARD" ForcedIndex="0" ForceSeek="0" ForceScan="0" NoExpandHint="0" Storage="RowStore">
+                        <DefinedValues>
+                          <DefinedValue>
+                            <ColumnReference Database="[msdb]" Schema="[dbo]" Table="[sysjobs]" Alias="[jobs]" Column="job_id" />
+                          </DefinedValue>
+                          <DefinedValue>
+                            <ColumnReference Database="[msdb]" Schema="[dbo]" Table="[sysjobs]" Alias="[jobs]" Column="originating_server_id" />
+                          </DefinedValue>
+                          <DefinedValue>
+                            <ColumnReference Database="[msdb]" Schema="[dbo]" Table="[sysjobs]" Alias="[jobs]" Column="name" />
+                          </DefinedValue>
+                          <DefinedValue>
+                            <ColumnReference Database="[msdb]" Schema="[dbo]" Table="[sysjobs]" Alias="[jobs]" Column="owner_sid" />
+                          </DefinedValue>
+                        </DefinedValues>
+                        <Object Database="[msdb]" Schema="[dbo]" Table="[sysjobs]" Index="[clust]" Alias="[jobs]" IndexKind="Clustered" Storage="RowStore" />
+                        <SeekPredicates>
+                          <SeekPredicateNew>
+                            <SeekKeys>
+                              <Prefix ScanType="EQ">
+                                <RangeColumns>
+                                  <ColumnReference Database="[msdb]" Schema="[dbo]" Table="[sysjobs]" Alias="[jobs]" Column="job_id" />
+                                </RangeColumns>
+                                <RangeExpressions>
+                                  <ScalarOperator ScalarString="[@job_id]">
+                                    <Identifier>
+                                      <ColumnReference Column="@job_id" />
+                                    </Identifier>
+                                  </ScalarOperator>
+                                </RangeExpressions>
+                              </Prefix>
+                            </SeekKeys>
+                          </SeekPredicateNew>
+                        </SeekPredicates>
+                      </IndexScan>
+                    </RelOp>
+                    <RelOp NodeId="3" PhysicalOp="Concatenation" LogicalOp="Concatenation" EstimateRows="1" EstimateRowsWithoutRowGoal="2" EstimateIO="0" EstimateCPU="2e-07" AvgRowSize="9" EstimatedTotalSubtreeCost="1.937e-06" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                      <OutputList />
+                      <Concat>
+                        <DefinedValues />
+                        <RelOp NodeId="4" PhysicalOp="Filter" LogicalOp="Filter" EstimateRows="1" EstimateIO="0" EstimateCPU="7.8e-07" AvgRowSize="9" EstimatedTotalSubtreeCost="1.937e-06" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                          <OutputList />
+                          <Filter StartupExpression="1">
+                            <RelOp NodeId="5" PhysicalOp="Constant Scan" LogicalOp="Constant Scan" EstimateRows="1" EstimateIO="0" EstimateCPU="1.157e-06" AvgRowSize="9" EstimatedTotalSubtreeCost="1.157e-06" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                              <OutputList />
+                              <ConstantScan />
+                            </RelOp>
+                            <Predicate>
+                              <ScalarOperator ScalarString="[msdb].[dbo].[sysjobs].[owner_sid] as [jobs].[owner_sid]=suser_sid() OR isnull(is_srvrolemember(N'sysadmin'),(0))=(1) OR isnull(is_member(N'SQLAgentReaderRole'),(0))=(1)">
+                                <Logical Operation="OR">
+                                  <ScalarOperator>
+                                    <Compare CompareOp="EQ">
+                                      <ScalarOperator>
+                                        <Identifier>
+                                          <ColumnReference Database="[msdb]" Schema="[dbo]" Table="[sysjobs]" Alias="[jobs]" Column="owner_sid" />
+                                        </Identifier>
+                                      </ScalarOperator>
+                                      <ScalarOperator>
+                                        <Identifier>
+                                          <ColumnReference Column="ConstExpr1013">
+                                            <ScalarOperator>
+                                              <Intrinsic FunctionName="suser_sid">
+                                                <ScalarOperator>
+                                                  <Const ConstValue="" />
+                                                </ScalarOperator>
+                                                <ScalarOperator>
+                                                  <Const ConstValue="" />
+                                                </ScalarOperator>
+                                              </Intrinsic>
+                                            </ScalarOperator>
+                                          </ColumnReference>
+                                        </Identifier>
+                                      </ScalarOperator>
+                                    </Compare>
+                                  </ScalarOperator>
+                                  <ScalarOperator>
+                                    <Identifier>
+                                      <ColumnReference Column="ConstExpr1014">
+                                        <ScalarOperator>
+                                          <Compare CompareOp="EQ">
+                                            <ScalarOperator>
+                                              <Intrinsic FunctionName="isnull">
+                                                <ScalarOperator>
+                                                  <Intrinsic FunctionName="is_srvrolemember">
+                                                    <ScalarOperator>
+                                                      <Const ConstValue="N'sysadmin'" />
+                                                    </ScalarOperator>
+                                                    <ScalarOperator>
+                                                      <Const ConstValue="" />
+                                                    </ScalarOperator>
+                                                  </Intrinsic>
+                                                </ScalarOperator>
+                                                <ScalarOperator>
+                                                  <Const ConstValue="(0)" />
+                                                </ScalarOperator>
+                                              </Intrinsic>
+                                            </ScalarOperator>
+                                            <ScalarOperator>
+                                              <Const ConstValue="(1)" />
+                                            </ScalarOperator>
+                                          </Compare>
+                                        </ScalarOperator>
+                                      </ColumnReference>
+                                    </Identifier>
+                                  </ScalarOperator>
+                                  <ScalarOperator>
+                                    <Identifier>
+                                      <ColumnReference Column="ConstExpr1015">
+                                        <ScalarOperator>
+                                          <Compare CompareOp="EQ">
+                                            <ScalarOperator>
+                                              <Intrinsic FunctionName="isnull">
+                                                <ScalarOperator>
+                                                  <Intrinsic FunctionName="is_member">
+                                                    <ScalarOperator>
+                                                      <Const ConstValue="N'SQLAgentReaderRole'" />
+                                                    </ScalarOperator>
+                                                  </Intrinsic>
+                                                </ScalarOperator>
+                                                <ScalarOperator>
+                                                  <Const ConstValue="(0)" />
+                                                </ScalarOperator>
+                                              </Intrinsic>
+                                            </ScalarOperator>
+                                            <ScalarOperator>
+                                              <Const ConstValue="(1)" />
+                                            </ScalarOperator>
+                                          </Compare>
+                                        </ScalarOperator>
+                                      </ColumnReference>
+                                    </Identifier>
+                                  </ScalarOperator>
+                                </Logical>
+                              </ScalarOperator>
+                            </Predicate>
+                          </Filter>
+                        </RelOp>
+                        <RelOp NodeId="6" PhysicalOp="Filter" LogicalOp="Filter" EstimateRows="1" EstimateIO="0" EstimateCPU="1.26e-06" AvgRowSize="9" EstimatedTotalSubtreeCost="0.00328454" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                          <OutputList />
+                          <Filter StartupExpression="1">
+                            <RelOp NodeId="7" PhysicalOp="Clustered Index Seek" LogicalOp="Clustered Index Seek" EstimateRows="1" EstimatedRowsRead="1.16667" EstimateIO="0.003125" EstimateCPU="0.000158283" AvgRowSize="11" EstimatedTotalSubtreeCost="0.00328328" TableCardinality="7" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                              <OutputList />
+                              <IndexScan Ordered="1" ScanDirection="FORWARD" ForcedIndex="0" ForceSeek="0" ForceScan="0" NoExpandHint="0" Storage="RowStore">
+                                <DefinedValues />
+                                <Object Database="[msdb]" Schema="[dbo]" Table="[sysjobservers]" Index="[clust]" Alias="[js]" IndexKind="Clustered" Storage="RowStore" />
+                                <SeekPredicates>
+                                  <SeekPredicateNew>
+                                    <SeekKeys>
+                                      <Prefix ScanType="EQ">
+                                        <RangeColumns>
+                                          <ColumnReference Database="[msdb]" Schema="[dbo]" Table="[sysjobservers]" Alias="[js]" Column="job_id" />
+                                        </RangeColumns>
+                                        <RangeExpressions>
+                                          <ScalarOperator ScalarString="[msdb].[dbo].[sysjobs].[job_id] as [jobs].[job_id]">
+                                            <Identifier>
+                                              <ColumnReference Database="[msdb]" Schema="[dbo]" Table="[sysjobs]" Alias="[jobs]" Column="job_id" />
+                                            </Identifier>
+                                          </ScalarOperator>
+                                        </RangeExpressions>
+                                      </Prefix>
+                                    </SeekKeys>
+                                  </SeekPredicateNew>
+                                </SeekPredicates>
+                                <Predicate>
+                                  <ScalarOperator ScalarString="[msdb].[dbo].[sysjobservers].[server_id] as [js].[server_id]&lt;(0) OR [msdb].[dbo].[sysjobservers].[server_id] as [js].[server_id]&gt;(0)">
+                                    <Logical Operation="OR">
+                                      <ScalarOperator>
+                                        <Compare CompareOp="LT">
+                                          <ScalarOperator>
+                                            <Identifier>
+                                              <ColumnReference Database="[msdb]" Schema="[dbo]" Table="[sysjobservers]" Alias="[js]" Column="server_id" />
+                                            </Identifier>
+                                          </ScalarOperator>
+                                          <ScalarOperator>
+                                            <Const ConstValue="(0)" />
+                                          </ScalarOperator>
+                                        </Compare>
+                                      </ScalarOperator>
+                                      <ScalarOperator>
+                                        <Compare CompareOp="GT">
+                                          <ScalarOperator>
+                                            <Identifier>
+                                              <ColumnReference Database="[msdb]" Schema="[dbo]" Table="[sysjobservers]" Alias="[js]" Column="server_id" />
+                                            </Identifier>
+                                          </ScalarOperator>
+                                          <ScalarOperator>
+                                            <Const ConstValue="(0)" />
+                                          </ScalarOperator>
+                                        </Compare>
+                                      </ScalarOperator>
+                                    </Logical>
+                                  </ScalarOperator>
+                                </Predicate>
+                              </IndexScan>
+                            </RelOp>
+                            <Predicate>
+                              <ScalarOperator ScalarString="isnull(is_member(N'TargetServersRole'),(0))=(1)">
+                                <Identifier>
+                                  <ColumnReference Column="ConstExpr1016">
+                                    <ScalarOperator>
+                                      <Compare CompareOp="EQ">
+                                        <ScalarOperator>
+                                          <Intrinsic FunctionName="isnull">
+                                            <ScalarOperator>
+                                              <Intrinsic FunctionName="is_member">
+                                                <ScalarOperator>
+                                                  <Const ConstValue="N'TargetServersRole'" />
+                                                </ScalarOperator>
+                                              </Intrinsic>
+                                            </ScalarOperator>
+                                            <ScalarOperator>
+                                              <Const ConstValue="(0)" />
+                                            </ScalarOperator>
+                                          </Intrinsic>
+                                        </ScalarOperator>
+                                        <ScalarOperator>
+                                          <Const ConstValue="(1)" />
+                                        </ScalarOperator>
+                                      </Compare>
+                                    </ScalarOperator>
+                                  </ColumnReference>
+                                </Identifier>
+                              </ScalarOperator>
+                            </Predicate>
+                          </Filter>
+                        </RelOp>
+                      </Concat>
+                    </RelOp>
+                  </NestedLoops>
+                </RelOp>
+                <RelOp NodeId="9" PhysicalOp="Concatenation" LogicalOp="Concatenation" EstimateRows="1" EstimateIO="0" EstimateCPU="2e-07" AvgRowSize="9" EstimatedTotalSubtreeCost="0.00328504" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                  <OutputList />
+                  <Concat>
+                    <DefinedValues />
+                    <RelOp NodeId="10" PhysicalOp="Filter" LogicalOp="Filter" EstimateRows="1" EstimateIO="0" EstimateCPU="4.8e-07" AvgRowSize="9" EstimatedTotalSubtreeCost="1.637e-06" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                      <OutputList />
+                      <Filter StartupExpression="1">
+                        <RelOp NodeId="11" PhysicalOp="Filter" LogicalOp="Filter" EstimateRows="1" EstimateIO="0" EstimateCPU="4.8e-07" AvgRowSize="9" EstimatedTotalSubtreeCost="1.637e-06" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                          <OutputList />
+                          <Filter StartupExpression="0">
+                            <RelOp NodeId="12" PhysicalOp="Constant Scan" LogicalOp="Constant Scan" EstimateRows="1" EstimateIO="0" EstimateCPU="1.157e-06" AvgRowSize="11" EstimatedTotalSubtreeCost="1.157e-06" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                              <OutputList>
+                                <ColumnReference Column="Expr1001" />
+                              </OutputList>
+                              <ConstantScan>
+                                <Values>
+                                  <Row>
+                                    <ScalarOperator ScalarString="(0)">
+                                      <Const ConstValue="(0)" />
+                                    </ScalarOperator>
+                                  </Row>
+                                </Values>
+                              </ConstantScan>
+                            </RelOp>
+                            <Predicate>
+                              <ScalarOperator ScalarString="[Expr1001]=[msdb].[dbo].[sysjobs].[originating_server_id] as [jobs].[originating_server_id]">
+                                <Compare CompareOp="EQ">
+                                  <ScalarOperator>
+                                    <Identifier>
+                                      <ColumnReference Column="Expr1001" />
+                                    </Identifier>
+                                  </ScalarOperator>
+                                  <ScalarOperator>
+                                    <Identifier>
+                                      <ColumnReference Database="[msdb]" Schema="[dbo]" Table="[sysjobs]" Alias="[jobs]" Column="originating_server_id" />
+                                    </Identifier>
+                                  </ScalarOperator>
+                                </Compare>
+                              </ScalarOperator>
+                            </Predicate>
+                          </Filter>
+                        </RelOp>
+                        <Predicate>
+                          <ScalarOperator ScalarString="[msdb].[dbo].[sysjobs].[originating_server_id] as [jobs].[originating_server_id]=(0)">
+                            <Compare CompareOp="EQ">
+                              <ScalarOperator>
+                                <Identifier>
+                                  <ColumnReference Database="[msdb]" Schema="[dbo]" Table="[sysjobs]" Alias="[jobs]" Column="originating_server_id" />
+                                </Identifier>
+                              </ScalarOperator>
+                              <ScalarOperator>
+                                <Const ConstValue="(0)" />
+                              </ScalarOperator>
+                            </Compare>
+                          </ScalarOperator>
+                        </Predicate>
+                      </Filter>
+                    </RelOp>
+                    <RelOp NodeId="13" PhysicalOp="Filter" LogicalOp="Filter" EstimateRows="1" EstimateIO="0" EstimateCPU="1e-07" AvgRowSize="9" EstimatedTotalSubtreeCost="0.0032832" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                      <OutputList />
+                      <Filter StartupExpression="1">
+                        <RelOp NodeId="15" PhysicalOp="Clustered Index Seek" LogicalOp="Clustered Index Seek" EstimateRows="1" EstimatedRowsRead="1" EstimateIO="0.003125" EstimateCPU="0.0001581" AvgRowSize="9" EstimatedTotalSubtreeCost="0.0032831" TableCardinality="0" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                          <OutputList />
+                          <IndexScan Ordered="1" ScanDirection="FORWARD" ForcedIndex="0" ForceSeek="0" ForceScan="0" NoExpandHint="0" Storage="RowStore">
+                            <DefinedValues />
+                            <Object Database="[msdb]" Schema="[dbo]" Table="[sysoriginatingservers]" Index="[UQ__sysorigi__D65E569CE9484536]" IndexKind="Clustered" Storage="RowStore" />
+                            <SeekPredicates>
+                              <SeekPredicateNew>
+                                <SeekKeys>
+                                  <Prefix ScanType="EQ">
+                                    <RangeColumns>
+                                      <ColumnReference Database="[msdb]" Schema="[dbo]" Table="[sysoriginatingservers]" Column="originating_server_id" />
+                                    </RangeColumns>
+                                    <RangeExpressions>
+                                      <ScalarOperator ScalarString="[msdb].[dbo].[sysjobs].[originating_server_id] as [jobs].[originating_server_id]">
+                                        <Identifier>
+                                          <ColumnReference Database="[msdb]" Schema="[dbo]" Table="[sysjobs]" Alias="[jobs]" Column="originating_server_id" />
+                                        </Identifier>
+                                      </ScalarOperator>
+                                    </RangeExpressions>
+                                  </Prefix>
+                                </SeekKeys>
+                              </SeekPredicateNew>
+                            </SeekPredicates>
+                          </IndexScan>
+                        </RelOp>
+                        <Predicate>
+                          <ScalarOperator ScalarString="[msdb].[dbo].[sysjobs].[originating_server_id] as [jobs].[originating_server_id]=(1)">
+                            <Compare CompareOp="EQ">
+                              <ScalarOperator>
+                                <Identifier>
+                                  <ColumnReference Database="[msdb]" Schema="[dbo]" Table="[sysjobs]" Alias="[jobs]" Column="originating_server_id" />
+                                </Identifier>
+                              </ScalarOperator>
+                              <ScalarOperator>
+                                <Const ConstValue="(1)" />
+                              </ScalarOperator>
+                            </Compare>
+                          </ScalarOperator>
+                        </Predicate>
+                      </Filter>
+                    </RelOp>
+                  </Concat>
+                </RelOp>
+              </NestedLoops>
+            </RelOp>
+            <ParameterList>
+              <ColumnReference Column="@owner_sid" ParameterDataType="varbinary(85)" ParameterCompiledValue="NULL" />
+              <ColumnReference Column="@job_name" ParameterDataType="nvarchar(128)" ParameterCompiledValue="NULL" />
+              <ColumnReference Column="@job_id" ParameterDataType="uniqueidentifier" ParameterCompiledValue="{guid'846EFE14-2AEE-4A65-9EE0-213187F82250'}" />
+            </ParameterList>
+          </QueryPlan>
+        </StmtSimple>
+      </Statements>
+    </Batch>
+  </BatchSequence>
+</ShowPlanXML>

@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions & Discussion
+    url: https://github.com/erikdarlingdata/PerformanceStudio/discussions
+    about: Ask questions and discuss SQL Performance Studio with the community

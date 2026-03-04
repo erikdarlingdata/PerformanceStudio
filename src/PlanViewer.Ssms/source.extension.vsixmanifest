@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011"
+                 xmlns:d="http://schemas.microsoft.com/developer/vsx-schema-design/2011">
+  <Metadata>
+    <Identity Id="PlanViewer.Ssms.64F79022-9D9A-4463-A1AE-4B19426A0CB1"
+              Version="1.0.0"
+              Language="en-US"
+              Publisher="Darling Data" />
+    <DisplayName>SQL Performance Studio for SSMS</DisplayName>
+    <Description xml:space="preserve">Adds "Open in SQL Performance Studio" to the execution plan right-click menu in SSMS. Extracts the plan XML and opens it in SQL Performance Studio for advanced analysis.</Description>
+    <MoreInfo>https://github.com/erikdarlingdata/PerformanceStudio</MoreInfo>
+    <License>LICENSE</License>
+    <Tags>SQL Server, Execution Plan, Performance, SSMS</Tags>
+  </Metadata>
+  <Installation>
+    <!-- SSMS 21 = product line 21, SSMS 22.3+ = product line 22 (VS 18.0 shell) -->
+    <InstallationTarget Id="Microsoft.VisualStudio.Ssms" Version="[17.0,)">
+      <ProductArchitecture>amd64</ProductArchitecture>
+    </InstallationTarget>
+  </Installation>
+  <Prerequisites>
+    <Prerequisite Id="Microsoft.VisualStudio.Component.CoreEditor"
+                  Version="[14.0,)"
+                  DisplayName="Visual Studio core editor" />
+  </Prerequisites>
+  <Assets>
+    <Asset Type="Microsoft.VisualStudio.VsPackage" d:Source="Project" d:ProjectName="%CurrentProject%" Path="|%CurrentProject%;PkgdefProjectOutputGroup|" />
+    <Asset Type="Microsoft.VisualStudio.MefComponent" d:Source="Project" d:ProjectName="%CurrentProject%" Path="|%CurrentProject%|" />
+  </Assets>
+</PackageManifest>

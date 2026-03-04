@@ -1,0 +1,64 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="using:PlanViewer.App.Controls"
+        x:Class="PlanViewer.App.MainWindow"
+        Title="SQL Performance Studio — SQL Server Execution Plan Analyzer"
+        Width="1280" Height="800"
+        MinWidth="640" MinHeight="480"
+        WindowState="Maximized"
+        Icon="avares://PlanViewer.App/EDD.ico"
+        Background="{DynamicResource BackgroundBrush}"
+        DragDrop.AllowDrop="True">
+
+    <DockPanel>
+        <!-- Menu Bar -->
+        <Menu DockPanel.Dock="Top" Background="{DynamicResource BackgroundDarkBrush}">
+            <MenuItem Header="_File">
+                <MenuItem Header="New _Query" Click="NewQuery_Click"
+                          InputGesture="Ctrl+N"/>
+                <MenuItem Header="_Open .sqlplan..." Click="OpenFile_Click"
+                          InputGesture="Ctrl+O"/>
+                <MenuItem Header="_Paste Plan XML" Click="PasteXml_Click"
+                          InputGesture="Ctrl+V"/>
+                <Separator/>
+                <MenuItem Header="E_xit" Click="Exit_Click"
+                          InputGesture="Alt+F4"/>
+            </MenuItem>
+            <MenuItem Header="_Help">
+                <MenuItem Header="_About SQL Performance Studio" Click="About_Click"/>
+            </MenuItem>
+        </Menu>
+
+        <!-- Top-level TabControl for query sessions and plan files -->
+        <Grid>
+            <TabControl x:Name="MainTabControl"
+                        Background="{DynamicResource BackgroundBrush}" Padding="0"/>
+
+            <!-- Empty state overlay -->
+            <Border x:Name="EmptyOverlay" Background="{DynamicResource BackgroundBrush}"
+                    IsVisible="True" IsHitTestVisible="False">
+                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="8">
+                    <TextBlock Text="SQL Performance Studio" FontSize="28" FontWeight="Bold"
+                               Foreground="{DynamicResource ForegroundBrush}"
+                               HorizontalAlignment="Center"/>
+                    <TextBlock Text="Ctrl+N to open a new query session"
+                               FontSize="14"
+                               Foreground="{DynamicResource ForegroundBrush}"
+                               HorizontalAlignment="Center"/>
+                    <TextBlock Text="Ctrl+O to open a .sqlplan or .sql file"
+                               FontSize="14"
+                               Foreground="{DynamicResource ForegroundBrush}"
+                               HorizontalAlignment="Center"/>
+                    <TextBlock Text="Ctrl+V to paste execution plan XML"
+                               FontSize="14"
+                               Foreground="{DynamicResource ForegroundBrush}"
+                               HorizontalAlignment="Center"/>
+                    <TextBlock Text="or drag and drop files"
+                               FontSize="14"
+                               Foreground="{DynamicResource ForegroundBrush}"
+                               HorizontalAlignment="Center"/>
+                </StackPanel>
+            </Border>
+        </Grid>
+    </DockPanel>
+</Window>

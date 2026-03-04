@@ -1,0 +1,57 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="PlanViewer.App.AboutWindow"
+        Title="About SQL Performance Studio"
+        Width="450" Height="340"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner"
+        Icon="avares://PlanViewer.App/EDD.ico"
+        Background="{DynamicResource BackgroundBrush}">
+
+    <Grid Margin="24" RowDefinitions="Auto,Auto,Auto,Auto,*,Auto">
+
+        <!-- Title -->
+        <TextBlock Grid.Row="0" Text="SQL Performance Studio" FontWeight="Bold" FontSize="20"
+                   Foreground="{DynamicResource ForegroundBrush}" Margin="0,0,0,4"/>
+        <TextBlock Grid.Row="1" x:Name="VersionText" Text="Version 0.3.0" FontSize="12"
+                   Foreground="{DynamicResource ForegroundMutedBrush}" Margin="0,0,0,4"/>
+        <TextBlock Grid.Row="1" x:Name="SubtitleText"
+                   Text="SQL Server Execution Plan Analyzer" FontSize="12"
+                   Foreground="{DynamicResource ForegroundBrush}" Margin="0,16,0,20"/>
+
+        <!-- Copyright -->
+        <StackPanel Grid.Row="2" Margin="0,0,0,20">
+            <TextBlock Text="Copyright (c) 2026 Erik Darling, Darling Data LLC" FontSize="12"
+                       Foreground="{DynamicResource ForegroundBrush}"/>
+            <TextBlock Text="Licensed under the MIT License" FontSize="12"
+                       Foreground="{DynamicResource ForegroundMutedBrush}"/>
+        </StackPanel>
+
+        <!-- Links -->
+        <StackPanel Grid.Row="3" Spacing="6" Margin="0,0,0,20">
+            <TextBlock FontSize="12" Foreground="{DynamicResource AccentBrush}"
+                       Cursor="Hand" x:Name="GitHubLink"
+                       Text="GitHub Repository"
+                       PointerPressed="GitHubLink_Click"
+                       TextDecorations="Underline"/>
+            <TextBlock FontSize="12" Foreground="{DynamicResource AccentBrush}"
+                       Cursor="Hand" x:Name="ReportIssueLink"
+                       Text="Report an Issue"
+                       PointerPressed="ReportIssueLink_Click"
+                       TextDecorations="Underline"/>
+            <TextBlock FontSize="12" Foreground="{DynamicResource AccentBrush}"
+                       Cursor="Hand" x:Name="DarlingDataLink"
+                       Text="www.erikdarling.com"
+                       PointerPressed="DarlingDataLink_Click"
+                       TextDecorations="Underline"/>
+        </StackPanel>
+
+        <!-- Spacer -->
+        <Panel Grid.Row="4"/>
+
+        <!-- Close -->
+        <Button Grid.Row="5" Content="Close" Click="CloseButton_Click"
+                HorizontalAlignment="Right" Padding="16,6"
+                IsDefault="True" IsCancel="True"/>
+    </Grid>
+</Window>

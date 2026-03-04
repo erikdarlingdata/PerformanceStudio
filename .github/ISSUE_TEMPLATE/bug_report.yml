@@ -1,0 +1,89 @@
+name: Bug Report
+description: Report a problem with SQL Performance Studio
+title: "[BUG] "
+labels: ["bug"]
+
+body:
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: Which part of SQL Performance Studio is affected?
+      options:
+        - Desktop App (Windows)
+        - Desktop App (macOS)
+        - Desktop App (Linux)
+        - CLI Tool
+        - SSMS Extension
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: SQL Performance Studio Version
+      description: Check the About dialog or the release you downloaded.
+      placeholder: "e.g., 0.7.0"
+    validations:
+      required: true
+
+  - type: input
+    id: os-version
+    attributes:
+      label: Operating System
+      description: The OS where you're running the app.
+      placeholder: "e.g., Windows 11 23H2, macOS 15.3, Ubuntu 24.04"
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Describe the Bug
+      description: A clear description of what the bug is.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: How can we reproduce this?
+      placeholder: |
+        1. Open a .sqlplan file
+        2. Click on...
+        3. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What you expected to happen.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: What actually happened.
+    validations:
+      required: true
+
+  - type: textarea
+    id: plan-file
+    attributes:
+      label: Plan File
+      description: If applicable, attach or paste the .sqlplan file that triggers the issue. You can redact sensitive table/column names.
+    validations:
+      required: false
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots
+      description: If applicable, add screenshots to help explain the problem.
+    validations:
+      required: false

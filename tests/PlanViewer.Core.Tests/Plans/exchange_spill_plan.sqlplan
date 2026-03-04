@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ShowPlanXML xmlns="http://schemas.microsoft.com/sqlserver/2004/07/showplan" Version="1.564" Build="16.0.4210.1">
+  <BatchSequence>
+    <Batch>
+      <Statements>
+        <StmtSimple StatementCompId="1" StatementEstRows="1000000" StatementId="1" StatementOptmLevel="FULL" StatementSubTreeCost="100.0" StatementText="SELECT * FROM dbo.Test ORDER BY Col1" StatementType="SELECT">
+          <StatementSetOptions ANSI_NULLS="true" ANSI_PADDING="true" ANSI_WARNINGS="true" ARITHABORT="true" CONCAT_NULL_YIELDS_NULL="true" NUMERIC_ROUNDABORT="false" QUOTED_IDENTIFIER="true" />
+          <QueryPlan DegreeOfParallelism="8" CachedPlanSize="32" CompileTime="1" CompileCPU="1" CompileMemory="256">
+            <ThreadStat Branches="2" UsedThreads="16">
+              <ThreadReservation NodeId="0" ReservedThreads="16" />
+            </ThreadStat>
+            <MemoryGrantInfo SerialRequiredMemory="1024" SerialDesiredMemory="8192" RequiredMemory="1024" DesiredMemory="8192" RequestedMemory="8192" GrantWaitTime="0" GrantedMemory="4096" MaxUsedMemory="4096" MaxQueryMemory="8192" />
+            <QueryTimeStats CpuTime="50000" ElapsedTime="80000" />
+            <!-- Root: Parallelism (Gather Streams) with exchange spill -->
+            <RelOp AvgRowSize="100" EstimateCPU="10.0" EstimateIO="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row" EstimateRows="1000000" LogicalOp="Gather Streams" NodeId="0" Parallel="true" PhysicalOp="Parallelism" EstimatedTotalSubtreeCost="100.0">
+              <OutputList>
+                <ColumnReference Database="[TestDB]" Schema="[dbo]" Table="[Test]" Column="Col1" />
+              </OutputList>
+              <Warnings>
+                <ExchangeSpillDetails WritesToTempDb="5000000" />
+              </Warnings>
+              <RunTimeInformation>
+                <RunTimeCountersPerThread Thread="0" ActualRows="1000000" Batches="0" ActualEndOfScans="1" ActualExecutions="1" ActualExecutionMode="Row" ActualElapsedms="80000" ActualCPUms="200" />
+              </RunTimeInformation>
+              <Parallelism>
+                <!-- Child: Sort operator -->
+                <RelOp AvgRowSize="100" EstimateCPU="5.0" EstimateIO="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row" EstimateRows="1000000" LogicalOp="Sort" NodeId="1" Parallel="true" PhysicalOp="Sort" EstimatedTotalSubtreeCost="50.0">
+                  <OutputList>
+                    <ColumnReference Database="[TestDB]" Schema="[dbo]" Table="[Test]" Column="Col1" />
+                  </OutputList>
+                  <RunTimeInformation>
+                    <RunTimeCountersPerThread Thread="1" ActualRows="500000" Batches="0" ActualEndOfScans="1" ActualExecutions="1" ActualExecutionMode="Row" ActualElapsedms="70000" ActualCPUms="25000" />
+                    <RunTimeCountersPerThread Thread="2" ActualRows="500000" Batches="0" ActualEndOfScans="1" ActualExecutions="1" ActualExecutionMode="Row" ActualElapsedms="68000" ActualCPUms="24000" />
+                  </RunTimeInformation>
+                  <Sort Distinct="false">
+                    <OrderBy>
+                      <OrderByColumn Ascending="true">
+                        <ColumnReference Database="[TestDB]" Schema="[dbo]" Table="[Test]" Column="Col1" />
+                      </OrderByColumn>
+                    </OrderBy>
+                    <!-- Child: Clustered Index Scan -->
+                    <RelOp AvgRowSize="100" EstimateCPU="2.0" EstimateIO="10.0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row" EstimateRows="1000000" LogicalOp="Clustered Index Scan" NodeId="2" Parallel="true" PhysicalOp="Clustered Index Scan" EstimatedTotalSubtreeCost="12.0">
+                      <OutputList>
+                        <ColumnReference Database="[TestDB]" Schema="[dbo]" Table="[Test]" Column="Col1" />
+                      </OutputList>
+                      <RunTimeInformation>
+                        <RunTimeCountersPerThread Thread="1" ActualRows="500000" Batches="0" ActualEndOfScans="1" ActualExecutions="1" ActualExecutionMode="Row" ActualElapsedms="5000" ActualCPUms="3000" />
+                        <RunTimeCountersPerThread Thread="2" ActualRows="500000" Batches="0" ActualEndOfScans="1" ActualExecutions="1" ActualExecutionMode="Row" ActualElapsedms="4800" ActualCPUms="2800" />
+                      </RunTimeInformation>
+                      <IndexScan Ordered="true" ScanDirection="FORWARD" ForcedIndex="false" ForceSeek="false" ForceScan="false" NoExpandHint="false" Storage="RowStore">
+                        <DefinedValues>
+                          <DefinedValue>
+                            <ColumnReference Database="[TestDB]" Schema="[dbo]" Table="[Test]" Column="Col1" />
+                          </DefinedValue>
+                        </DefinedValues>
+                        <Object Database="[TestDB]" Schema="[dbo]" Table="[Test]" Index="[PK_Test]" IndexKind="Clustered" Storage="RowStore" />
+                      </IndexScan>
+                    </RelOp>
+                  </Sort>
+                </RelOp>
+              </Parallelism>
+            </RelOp>
+          </QueryPlan>
+        </StmtSimple>
+      </Statements>
+    </Batch>
+  </BatchSequence>
+</ShowPlanXML>

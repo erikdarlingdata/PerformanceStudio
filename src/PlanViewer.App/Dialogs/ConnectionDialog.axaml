@@ -1,0 +1,88 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="PlanViewer.App.Dialogs.ConnectionDialog"
+        Title="Connect to Server"
+        Width="480" Height="520"
+        MinWidth="400" MinHeight="480"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        Icon="avares://PlanViewer.App/EDD.ico"
+        Background="{DynamicResource BackgroundBrush}">
+
+    <Grid Margin="20" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,*,Auto">
+        <!-- Server Name -->
+        <TextBlock Grid.Row="0" Text="Server name" Foreground="{DynamicResource ForegroundBrush}"
+                   FontSize="12" Margin="0,0,0,4"/>
+        <AutoCompleteBox Grid.Row="1" x:Name="ServerNameBox"
+                         Watermark="e.g. sql2022 or server.database.windows.net"
+                         FontSize="13" Height="32" Margin="0,0,0,12"
+                         FilterMode="ContainsOrdinal"
+                         SelectionChanged="ServerName_SelectionChanged"/>
+
+        <!-- Authentication -->
+        <TextBlock Grid.Row="2" Text="Authentication" Foreground="{DynamicResource ForegroundBrush}"
+                   FontSize="12" Margin="0,0,0,4"/>
+        <ComboBox Grid.Row="3" x:Name="AuthTypeBox" Height="32" FontSize="13"
+                  Margin="0,0,0,12" HorizontalAlignment="Stretch"
+                  SelectionChanged="AuthType_SelectionChanged">
+            <ComboBoxItem Content="Windows Authentication" Tag="Windows"/>
+            <ComboBoxItem Content="SQL Server Authentication" Tag="SqlServer"/>
+            <ComboBoxItem Content="Microsoft Entra MFA" Tag="EntraMFA"/>
+        </ComboBox>
+
+        <!-- Login -->
+        <StackPanel Grid.Row="4" x:Name="LoginPanel" IsVisible="False" Margin="0,0,0,12">
+            <TextBlock Text="Login" Foreground="{DynamicResource ForegroundBrush}"
+                       FontSize="12" Margin="0,0,0,4"/>
+            <TextBox x:Name="LoginBox" FontSize="13" Height="32" Watermark="sa"/>
+        </StackPanel>
+
+        <!-- Password -->
+        <StackPanel Grid.Row="5" x:Name="PasswordPanel" IsVisible="False" Margin="0,0,0,12">
+            <TextBlock Text="Password" Foreground="{DynamicResource ForegroundBrush}"
+                       FontSize="12" Margin="0,0,0,4"/>
+            <TextBox x:Name="PasswordBox" FontSize="13" Height="32"
+                     PasswordChar="&#x25CF;" Watermark="Password"/>
+        </StackPanel>
+
+        <!-- Connection Options -->
+        <StackPanel Grid.Row="6" Orientation="Horizontal" Margin="0,0,0,12" Spacing="16">
+            <CheckBox x:Name="TrustCertBox" Content="Trust server certificate"
+                      Foreground="{DynamicResource ForegroundBrush}" FontSize="12"/>
+            <ComboBox x:Name="EncryptBox" Height="28" FontSize="11" Width="140">
+                <ComboBoxItem Content="Encrypt: Mandatory" Tag="Mandatory" IsSelected="True"/>
+                <ComboBoxItem Content="Encrypt: Optional" Tag="Optional"/>
+                <ComboBoxItem Content="Encrypt: Strict" Tag="Strict"/>
+            </ComboBox>
+        </StackPanel>
+
+        <!-- Test Connection + Status -->
+        <StackPanel Grid.Row="7" Orientation="Horizontal" Margin="0,0,0,12" Spacing="8">
+            <Button x:Name="TestButton" Content="Test Connection" Click="TestConnection_Click"
+                    Height="32" Padding="12,0" FontSize="12"
+                    Theme="{StaticResource AppButton}"/>
+            <TextBlock x:Name="StatusText" VerticalAlignment="Center" FontSize="12"
+                       Foreground="{DynamicResource ForegroundBrush}"/>
+        </StackPanel>
+
+        <!-- Database -->
+        <TextBlock Grid.Row="8" Text="Database" Foreground="{DynamicResource ForegroundBrush}"
+                   FontSize="12" Margin="0,0,0,4"/>
+        <ComboBox Grid.Row="9" x:Name="DatabaseBox" Height="32" FontSize="13"
+                  HorizontalAlignment="Stretch" Margin="0,0,0,12"
+                  IsEnabled="False" PlaceholderText="Connect first to load databases"/>
+
+        <!-- Spacer -->
+        <Panel Grid.Row="10"/>
+
+        <!-- Buttons -->
+        <StackPanel Grid.Row="11" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+            <Button Content="Connect" Click="Connect_Click" x:Name="ConnectButton"
+                    Height="32" Padding="20,0" FontSize="13" IsEnabled="False"
+                    Theme="{StaticResource AppButton}"/>
+            <Button Content="Cancel" Click="Cancel_Click"
+                    Height="32" Padding="20,0" FontSize="13"
+                    Theme="{StaticResource AppButton}"/>
+        </StackPanel>
+    </Grid>
+</Window>

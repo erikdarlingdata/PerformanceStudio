@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<CommandTable xmlns="http://schemas.microsoft.com/VisualStudio/2005-10-18/CommandTable"
+              xmlns:xs="http://www.w3.org/2001/XMLSchema">
+
+  <Extern href="stdidcmd.h"/>
+  <Extern href="vsshlids.h"/>
+
+  <Commands package="guidPackage">
+    <Groups>
+      <Group guid="guidCmdSet" id="AnalyzePlanGroupId" priority="0x0600">
+        <!-- Parent = SSMS execution plan right-click context menu -->
+        <Parent guid="guidShowPlanContextMenu" id="ShowPlanContextMenuId"/>
+      </Group>
+    </Groups>
+
+    <Buttons>
+      <Button guid="guidCmdSet" id="AnalyzePlanCommandId" priority="0x0100" type="Button">
+        <Parent guid="guidCmdSet" id="AnalyzePlanGroupId"/>
+        <Icon guid="guidImages" id="bmpAnalyze"/>
+        <Strings>
+          <ButtonText>Open in SQL Performance Studio</ButtonText>
+        </Strings>
+      </Button>
+    </Buttons>
+
+    <Bitmaps>
+      <Bitmap guid="guidImages" href="Resources\AnalyzePlanCommand.png"
+              usedList="bmpAnalyze"/>
+    </Bitmaps>
+  </Commands>
+
+  <Symbols>
+    <!-- Package GUID -->
+    <GuidSymbol name="guidPackage" value="{64F79022-9D9A-4463-A1AE-4B19426A0CB1}" />
+
+    <!-- Command set GUID -->
+    <GuidSymbol name="guidCmdSet" value="{BC78C8B3-E030-4759-AE25-EE3B093AB4C8}">
+      <IDSymbol name="AnalyzePlanGroupId" value="0x1020"/>
+      <IDSymbol name="AnalyzePlanCommandId" value="0x0100"/>
+    </GuidSymbol>
+
+    <!-- SSMS execution plan context menu (confirmed same across SSMS 18-22) -->
+    <GuidSymbol name="guidShowPlanContextMenu" value="{33F13AC3-80BB-4ECB-85BC-225435603A5E}">
+      <IDSymbol name="ShowPlanContextMenuId" value="0x0080"/>
+    </GuidSymbol>
+
+    <!-- Icon -->
+    <GuidSymbol name="guidImages" value="{E7A1F3D2-5B4C-4D6E-9A8F-0C1B2D3E4F5A}">
+      <IDSymbol name="bmpAnalyze" value="1"/>
+    </GuidSymbol>
+  </Symbols>
+</CommandTable>

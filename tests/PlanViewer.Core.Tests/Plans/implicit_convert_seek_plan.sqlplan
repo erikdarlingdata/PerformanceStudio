@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ShowPlanXML xmlns="http://schemas.microsoft.com/sqlserver/2004/07/showplan" Version="1.564" Build="16.0.4210.1">
+  <BatchSequence>
+    <Batch>
+      <Statements>
+        <StmtSimple StatementCompId="1" StatementEstRows="1000" StatementId="1" StatementOptmLevel="FULL" StatementSubTreeCost="5.0" StatementText="SELECT * FROM dbo.Users WHERE DisplayName = @d" StatementType="SELECT">
+          <StatementSetOptions ANSI_NULLS="true" ANSI_PADDING="true" ANSI_WARNINGS="true" ARITHABORT="true" CONCAT_NULL_YIELDS_NULL="true" NUMERIC_ROUNDABORT="false" QUOTED_IDENTIFIER="true" />
+          <QueryPlan CachedPlanSize="32" CompileTime="1" CompileCPU="1" CompileMemory="256">
+            <MemoryGrantInfo SerialRequiredMemory="0" SerialDesiredMemory="0" RequiredMemory="0" DesiredMemory="0" RequestedMemory="0" GrantWaitTime="0" GrantedMemory="0" MaxUsedMemory="0" MaxQueryMemory="0" />
+            <RelOp AvgRowSize="100" EstimateCPU="5.0" EstimateIO="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row" EstimateRows="1000" LogicalOp="Clustered Index Scan" NodeId="0" Parallel="false" PhysicalOp="Clustered Index Scan" EstimatedTotalSubtreeCost="5.0">
+              <OutputList>
+                <ColumnReference Database="[TestDB]" Schema="[dbo]" Table="[Users]" Column="Id" />
+              </OutputList>
+              <Warnings>
+                <PlanAffectingConvert ConvertIssue="Seek Plan" Expression="CONVERT_IMPLICIT(nvarchar(40),[TestDB].[dbo].[Users].[DisplayName],0)=[@d]" />
+              </Warnings>
+              <IndexScan Ordered="false" ForcedIndex="false" ForceSeek="false" ForceScan="false" NoExpandHint="false" Storage="RowStore">
+                <DefinedValues>
+                  <DefinedValue>
+                    <ColumnReference Database="[TestDB]" Schema="[dbo]" Table="[Users]" Column="Id" />
+                  </DefinedValue>
+                </DefinedValues>
+                <Object Database="[TestDB]" Schema="[dbo]" Table="[Users]" Index="[PK_Users]" IndexKind="Clustered" Storage="RowStore" />
+              </IndexScan>
+            </RelOp>
+          </QueryPlan>
+        </StmtSimple>
+      </Statements>
+    </Batch>
+  </BatchSequence>
+</ShowPlanXML>

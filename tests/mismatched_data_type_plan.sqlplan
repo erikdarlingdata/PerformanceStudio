@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="utf-16"?>
+<ShowPlanXML xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" Version="1.564" Build="16.0.4222.2" xmlns="http://schemas.microsoft.com/sqlserver/2004/07/showplan">
+  <BatchSequence>
+    <Batch>
+      <Statements>
+        <StmtSimple StatementCompId="2" StatementEstRows="1" StatementId="1" StatementOptmLevel="FULL" CardinalityEstimationModelVersion="160" StatementSubTreeCost="98.8142" StatementText="SELECT&#xD;&#xA;    c = COUNT_BIG(*)&#xD;&#xA;FROM dbo.Votes AS v&#xD;&#xA;WHERE v.CreationDate &gt;= @date&#xD;&#xA;OPTION(RECOMPILE)" StatementType="SELECT" QueryHash="0x34B40AEBEBC1CF7F" QueryPlanHash="0x7056FE738D5A9A01" RetrievedFromCache="false" StatementSqlHandle="0x09008938915A07051AB2A01421F52476994F0000000000000000000000000000000000000000000000000000" DatabaseContextSettingsId="1" ParentObjectId="0" StatementParameterizationType="0" SecurityPolicyApplied="false">
+          <StatementSetOptions ANSI_NULLS="true" ANSI_PADDING="true" ANSI_WARNINGS="true" ARITHABORT="true" CONCAT_NULL_YIELDS_NULL="true" NUMERIC_ROUNDABORT="false" QUOTED_IDENTIFIER="true" />
+          <QueryPlan DegreeOfParallelism="1" MemoryGrant="3104" CachedPlanSize="32" CompileTime="0" CompileCPU="0" CompileMemory="248">
+            <MemoryGrantInfo SerialRequiredMemory="3072" SerialDesiredMemory="3104" RequiredMemory="3072" DesiredMemory="3104" RequestedMemory="3104" GrantWaitTime="0" GrantedMemory="3104" MaxUsedMemory="824" MaxQueryMemory="10884080" LastRequestedMemory="0" IsMemoryGrantFeedbackAdjusted="No: First Execution" />
+            <OptimizerHardwareDependentProperties EstimatedAvailableMemoryGrant="734003" EstimatedPagesCached="367001" EstimatedAvailableDegreeOfParallelism="4" MaxCompileMemory="47067952" />
+            <OptimizerStatsUsage>
+              <StatisticsInfo Database="[StackOverflow2013]" Schema="[dbo]" Table="[Votes]" Statistics="[CreationDate]" ModificationCount="0" SamplingPercent="100" LastUpdate="2026-02-26T10:39:26.67" />
+            </OptimizerStatsUsage>
+            <WaitStats>
+              <Wait WaitType="SOS_SCHEDULER_YIELD" WaitTimeMs="2" WaitCount="1168" />
+            </WaitStats>
+            <QueryTimeStats CpuTime="4678" ElapsedTime="4678" />
+            <RelOp AvgRowSize="15" EstimateCPU="2.65531" EstimateIO="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Batch" EstimateRows="1" LogicalOp="Aggregate" NodeId="0" Parallel="false" PhysicalOp="Hash Match" EstimatedTotalSubtreeCost="98.8142">
+              <OutputList>
+                <ColumnReference Column="Expr1001" />
+              </OutputList>
+              <MemoryFractions Input="1" Output="1" />
+              <RunTimeInformation>
+                <RunTimeCountersPerThread Thread="0" ActualRows="1" Batches="1" ActualEndOfScans="0" ActualExecutions="1" ActualExecutionMode="Batch" ActualElapsedms="24" ActualCPUms="15" ActualScans="0" ActualLogicalReads="0" ActualPhysicalReads="0" ActualReadAheads="0" ActualLobLogicalReads="0" ActualLobPhysicalReads="0" ActualLobReadAheads="0" />
+              </RunTimeInformation>
+              <Hash>
+                <DefinedValues>
+                  <DefinedValue>
+                    <ColumnReference Column="Expr1001" />
+                    <ScalarOperator ScalarString="COUNT(*)">
+                      <Aggregate AggType="COUNT*" Distinct="false" />
+                    </ScalarOperator>
+                  </DefinedValue>
+                </DefinedValues>
+                <HashKeysBuild />
+                <RelOp AvgRowSize="9" EstimateCPU="58.2217" EstimateIO="37.8313" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row" EstimateRows="52928700" EstimatedRowsRead="52928700" LogicalOp="Inner Join" NodeId="1" Parallel="false" PhysicalOp="Nested Loops" EstimatedTotalSubtreeCost="96.053" TableCardinality="52928700">
+                  <OutputList />
+                  <RunTimeInformation>
+                    <RunTimeCountersPerThread Thread="0" ActualRows="52928720" Batches="58810" ActualEndOfScans="0" ActualExecutions="1" ActualExecutionMode="Row" ActualElapsedms="4646" ActualCPUms="4644" />
+                  </RunTimeInformation>
+                  <NestedLoops Optimized="false">
+                    <OuterReferences>
+                      <ColumnReference Column="Expr1004" />
+                      <ColumnReference Column="Expr1005" />
+                      <ColumnReference Column="Expr1003" />
+                    </OuterReferences>
+                    <RelOp AvgRowSize="27" EstimateCPU="0" EstimateIO="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row" EstimateRows="1" LogicalOp="Compute Scalar" NodeId="2" Parallel="false" PhysicalOp="Compute Scalar" EstimatedTotalSubtreeCost="0">
+                      <OutputList>
+                        <ColumnReference Column="Expr1004" />
+                        <ColumnReference Column="Expr1005" />
+                        <ColumnReference Column="Expr1003" />
+                      </OutputList>
+                      <RunTimeInformation>
+                        <RunTimeCountersPerThread Thread="0" ActualRows="1" Batches="0" ActualEndOfScans="1" ActualExecutions="1" ActualExecutionMode="Row" ActualElapsedms="0" ActualCPUms="0" />
+                      </RunTimeInformation>
+                      <ComputeScalar>
+                        <DefinedValues>
+                          <DefinedValue>
+                            <ValueVector>
+                              <ColumnReference Column="Expr1004" />
+                              <ColumnReference Column="Expr1005" />
+                              <ColumnReference Column="Expr1003" />
+                            </ValueVector>
+                            <ScalarOperator ScalarString="GetRangeWithMismatchedTypes('2008-01-01',NULL,(22))">
+                              <Intrinsic FunctionName="GetRangeWithMismatchedTypes">
+                                <ScalarOperator>
+                                  <Const ConstValue="'2008-01-01'" />
+                                </ScalarOperator>
+                                <ScalarOperator>
+                                  <Const ConstValue="NULL" />
+                                </ScalarOperator>
+                                <ScalarOperator>
+                                  <Const ConstValue="(22)" />
+                                </ScalarOperator>
+                              </Intrinsic>
+                            </ScalarOperator>
+                          </DefinedValue>
+                        </DefinedValues>
+                        <RelOp AvgRowSize="0" EstimateCPU="0" EstimateIO="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row" EstimateRows="1" LogicalOp="Constant Scan" NodeId="3" Parallel="false" PhysicalOp="Constant Scan" EstimatedTotalSubtreeCost="0">
+                          <OutputList />
+                          <RunTimeInformation>
+                            <RunTimeCountersPerThread Thread="0" ActualRows="1" Batches="0" ActualEndOfScans="1" ActualExecutions="1" ActualExecutionMode="Row" ActualElapsedms="0" ActualCPUms="0" />
+                          </RunTimeInformation>
+                          <ConstantScan />
+                        </RelOp>
+                      </ComputeScalar>
+                    </RelOp>
+                    <RelOp AvgRowSize="9" EstimateCPU="58.2217" EstimateIO="37.8313" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row" EstimateRows="52928700" EstimatedRowsRead="52928700" LogicalOp="Index Seek" NodeId="4" Parallel="false" PhysicalOp="Index Seek" EstimatedTotalSubtreeCost="96.053" TableCardinality="52928700">
+                      <OutputList />
+                      <RunTimeInformation>
+                        <RunTimeCountersPerThread Thread="0" ActualRows="52928720" ActualRowsRead="52928720" Batches="0" ActualEndOfScans="1" ActualExecutions="1" ActualExecutionMode="Row" ActualElapsedms="3760" ActualCPUms="3760" ActualScans="1" ActualLogicalReads="51219" ActualPhysicalReads="0" ActualReadAheads="0" ActualLobLogicalReads="0" ActualLobPhysicalReads="0" ActualLobReadAheads="0" />
+                      </RunTimeInformation>
+                      <IndexScan Ordered="true" ScanDirection="FORWARD" ForcedIndex="false" ForceSeek="false" ForceScan="false" NoExpandHint="false" Storage="RowStore">
+                        <DefinedValues />
+                        <Object Database="[StackOverflow2013]" Schema="[dbo]" Table="[Votes]" Index="[CreationDate]" Alias="[v]" IndexKind="NonClustered" Storage="RowStore" />
+                        <SeekPredicates>
+                          <SeekPredicateNew>
+                            <SeekKeys>
+                              <StartRange ScanType="GT">
+                                <RangeColumns>
+                                  <ColumnReference Database="[StackOverflow2013]" Schema="[dbo]" Table="[Votes]" Alias="[v]" Column="CreationDate" />
+                                </RangeColumns>
+                                <RangeExpressions>
+                                  <ScalarOperator ScalarString="[Expr1004]">
+                                    <Identifier>
+                                      <ColumnReference Column="Expr1004" />
+                                    </Identifier>
+                                  </ScalarOperator>
+                                </RangeExpressions>
+                              </StartRange>
+                              <EndRange ScanType="LT">
+                                <RangeColumns>
+                                  <ColumnReference Database="[StackOverflow2013]" Schema="[dbo]" Table="[Votes]" Alias="[v]" Column="CreationDate" />
+                                </RangeColumns>
+                                <RangeExpressions>
+                                  <ScalarOperator ScalarString="[Expr1005]">
+                                    <Identifier>
+                                      <ColumnReference Column="Expr1005" />
+                                    </Identifier>
+                                  </ScalarOperator>
+                                </RangeExpressions>
+                              </EndRange>
+                            </SeekKeys>
+                          </SeekPredicateNew>
+                        </SeekPredicates>
+                      </IndexScan>
+                    </RelOp>
+                  </NestedLoops>
+                </RelOp>
+              </Hash>
+            </RelOp>
+          </QueryPlan>
+        </StmtSimple>
+      </Statements>
+    </Batch>
+  </BatchSequence>
+</ShowPlanXML>
