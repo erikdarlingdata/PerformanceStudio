@@ -1,14 +1,19 @@
-name: CI
+name: Build
 
 on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    branches: [main, dev]
+  release:
+    types: [created, published]
+
+permissions:
+  contents: write
 
 jobs:
   build-and-test:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
 
     steps:
       - uses: actions/checkout@v4
@@ -34,3 +39,51 @@ jobs:
 
       - name: Run tests
         run: dotnet test tests/PlanViewer.Core.Tests/PlanViewer.Core.Tests.csproj -c Release --no-build --verbosity normal
+
+      - name: Get version
+        id: version
+        shell: pwsh
+        run: |
+          $version = ([xml](Get-Content src/PlanViewer.App/PlanViewer.App.csproj)).Project.PropertyGroup.Version | Where-Object { $_ }
+          echo "VERSION=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Publish App
+        run: dotnet publish src/PlanViewer.App/PlanViewer.App.csproj -c Release -o publish/App
+
+      - name: Publish CLI
+        run: dotnet publish src/PlanViewer.Cli/PlanViewer.Cli.csproj -c Release -o publish/Cli
+
+      - name: Package release artifacts
+        if: github.event_name == 'release'
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.VERSION }}"
+          New-Item -ItemType Directory -Force -Path releases
+
+          # App ZIP
+          if (Test-Path 'README.md') { Copy-Item 'README.md' 'publish/App/' }
+          if (Test-Path 'LICENSE') { Copy-Item 'LICENSE' 'publish/App/' }
+          Compress-Archive -Path 'publish/App/*' -DestinationPath "releases/PerformanceStudio-$version.zip" -Force
+
+          # CLI ZIP
+          if (Test-Path 'LICENSE') { Copy-Item 'LICENSE' 'publish/Cli/' }
+          Compress-Archive -Path 'publish/Cli/*' -DestinationPath "releases/PerformanceStudioCli-$version.zip" -Force
+
+      - name: Generate checksums
+        if: github.event_name == 'release'
+        shell: pwsh
+        run: |
+          $checksums = Get-ChildItem releases/*.zip | ForEach-Object {
+            $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
+            "$hash  $($_.Name)"
+          }
+          $checksums | Out-File -FilePath releases/SHA256SUMS.txt -Encoding utf8
+          Write-Host "Checksums:"
+          $checksums | ForEach-Object { Write-Host $_ }
+
+      - name: Upload release assets
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload ${{ github.event.release.tag_name }} releases/*.zip releases/SHA256SUMS.txt --clobber
