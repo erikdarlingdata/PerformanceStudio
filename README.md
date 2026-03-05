@@ -4,6 +4,10 @@ A cross-platform SQL Server execution plan analyzer with built-in MCP server for
 
 Built for developers and DBAs who want fast, automated plan analysis without clicking through SSMS.
 
+## Screenshots
+
+*Screenshots coming soon — see the [screenshots/](screenshots/) folder.*
+
 ## What It Does
 
 Feed it a query plan and it tells you what's wrong:
@@ -260,7 +264,7 @@ A VSIX extension that adds **"Open in Performance Studio"** to the execution pla
 
 ### Installation
 
-1. Download both `PlanViewer.Ssms.vsix` and `InstallSsmsExtension.exe` from the [latest release](https://github.com/erikdarlingdata/PerformanceStudio/releases)
+1. Download `PlanViewer.Ssms.vsix` and `InstallSsmsExtension.exe` from the [v0.7.0 release](https://github.com/erikdarlingdata/PerformanceStudio/releases/tag/v0.7.0) (SSMS extension is not yet included in automated builds)
 2. Place them in the same folder
 3. Double-click `InstallSsmsExtension.exe` and approve the UAC prompt
 4. The installer auto-detects SSMS 21 and/or SSMS 22 and installs into both
@@ -433,4 +437,6 @@ Rules can be disabled or have their severity overridden via a `.planview.json` c
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).
+
+Execution plan operator icons are from Microsoft's [vscode-mssql](https://github.com/microsoft/vscode-mssql) extension (MIT). See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for details.
