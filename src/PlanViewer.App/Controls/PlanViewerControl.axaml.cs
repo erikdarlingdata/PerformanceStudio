@@ -1465,7 +1465,7 @@ public partial class PlanViewerControl : UserControl
             // === Plan-Level Warnings ===
             if (s.PlanWarnings.Count > 0)
             {
-                AddPropertySection("Plan Warnings");
+                var planWarningsPanel = new StackPanel();
                 foreach (var w in s.PlanWarnings)
                 {
                     var warnColor = w.Severity == PlanWarningSeverity.Critical ? "#E57373"
@@ -1486,8 +1486,30 @@ public partial class PlanViewerControl : UserControl
                         TextWrapping = TextWrapping.Wrap,
                         Margin = new Thickness(16, 0, 0, 0)
                     });
-                    (_currentPropertySection ?? PropertiesContent).Children.Add(warnPanel);
+                    planWarningsPanel.Children.Add(warnPanel);
                 }
+
+                var planWarningsExpander = new Expander
+                {
+                    IsExpanded = true,
+                    Header = new TextBlock
+                    {
+                        Text = "Plan Warnings",
+                        FontWeight = FontWeight.SemiBold,
+                        FontSize = 11,
+                        Foreground = SectionHeaderBrush
+                    },
+                    Content = planWarningsPanel,
+                    Margin = new Thickness(0, 2, 0, 0),
+                    Padding = new Thickness(0),
+                    Foreground = SectionHeaderBrush,
+                    Background = new SolidColorBrush(Color.FromArgb(0x18, 0x4F, 0xA3, 0xFF)),
+                    BorderBrush = PropSeparatorBrush,
+                    BorderThickness = new Thickness(0, 0, 0, 1),
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
+                    HorizontalContentAlignment = HorizontalAlignment.Stretch
+                };
+                PropertiesContent.Children.Add(planWarningsExpander);
             }
 
             // === Missing Indexes ===
@@ -1506,7 +1528,7 @@ public partial class PlanViewerControl : UserControl
         // === Warnings ===
         if (node.HasWarnings)
         {
-            AddPropertySection("Warnings");
+            var warningsPanel = new StackPanel();
             foreach (var w in node.Warnings)
             {
                 var warnColor = w.Severity == PlanWarningSeverity.Critical ? "#E57373"
@@ -1527,8 +1549,30 @@ public partial class PlanViewerControl : UserControl
                     TextWrapping = TextWrapping.Wrap,
                     Margin = new Thickness(16, 0, 0, 0)
                 });
-                PropertiesContent.Children.Add(warnPanel);
+                warningsPanel.Children.Add(warnPanel);
             }
+
+            var warningsExpander = new Expander
+            {
+                IsExpanded = true,
+                Header = new TextBlock
+                {
+                    Text = "Warnings",
+                    FontWeight = FontWeight.SemiBold,
+                    FontSize = 11,
+                    Foreground = SectionHeaderBrush
+                },
+                Content = warningsPanel,
+                Margin = new Thickness(0, 2, 0, 0),
+                Padding = new Thickness(0),
+                Foreground = SectionHeaderBrush,
+                Background = new SolidColorBrush(Color.FromArgb(0x18, 0x4F, 0xA3, 0xFF)),
+                BorderBrush = PropSeparatorBrush,
+                BorderThickness = new Thickness(0, 0, 0, 1),
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                HorizontalContentAlignment = HorizontalAlignment.Stretch
+            };
+            PropertiesContent.Children.Add(warningsExpander);
         }
 
         // Show the panel
