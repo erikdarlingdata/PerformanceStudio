@@ -1,15 +1,10 @@
-name: Build
+name: CI
 
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main, dev]
-  release:
-    types: [published]
-
-permissions:
-  contents: write
 
 jobs:
   build-and-test:
@@ -39,43 +34,3 @@ jobs:
 
       - name: Run tests
         run: dotnet test tests/PlanViewer.Core.Tests/PlanViewer.Core.Tests.csproj -c Release --no-build --verbosity normal
-
-      - name: Publish App (all platforms)
-        if: github.event_name == 'release'
-        run: |
-          dotnet publish src/PlanViewer.App/PlanViewer.App.csproj -c Release -r win-x64 --self-contained -o publish/win-x64
-          dotnet publish src/PlanViewer.App/PlanViewer.App.csproj -c Release -r linux-x64 --self-contained -o publish/linux-x64
-          dotnet publish src/PlanViewer.App/PlanViewer.App.csproj -c Release -r osx-x64 --self-contained -o publish/osx-x64
-          dotnet publish src/PlanViewer.App/PlanViewer.App.csproj -c Release -r osx-arm64 --self-contained -o publish/osx-arm64
-
-      - name: Package release artifacts
-        if: github.event_name == 'release'
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path releases
-
-          $rids = @('win-x64', 'linux-x64', 'osx-x64', 'osx-arm64')
-          foreach ($rid in $rids) {
-            if (Test-Path 'README.md') { Copy-Item 'README.md' "publish/$rid/" }
-            if (Test-Path 'LICENSE') { Copy-Item 'LICENSE' "publish/$rid/" }
-            Compress-Archive -Path "publish/$rid/*" -DestinationPath "releases/PerformanceStudio-$rid.zip" -Force
-          }
-
-      - name: Generate checksums
-        if: github.event_name == 'release'
-        shell: pwsh
-        run: |
-          $checksums = Get-ChildItem releases/*.zip | ForEach-Object {
-            $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
-            "$hash  $($_.Name)"
-          }
-          $checksums | Out-File -FilePath releases/SHA256SUMS.txt -Encoding utf8
-          Write-Host "Checksums:"
-          $checksums | ForEach-Object { Write-Host $_ }
-
-      - name: Upload release assets
-        if: github.event_name == 'release'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release upload ${{ github.event.release.tag_name }} releases/*.zip releases/SHA256SUMS.txt --clobber
