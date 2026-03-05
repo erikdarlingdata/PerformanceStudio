@@ -16,6 +16,13 @@ Graphical plan tree with SSMS-style operator icons, cost percentages, row counts
 
 ![Actual Execution Plan](screenshots/Actual%20Execution%20Plan.png)
 
+### Operator Tooltip and Properties
+Hover over any operator for a detailed tooltip with costs, rows, I/O, timing, parallelism, and warnings. Click to open the full properties panel with per-thread timing, predicates, and more.
+
+![Operator Tooltip](screenshots/Actual%20Execution%20Plan%20With%20Warning%20Tool%20Tip.png)
+
+![Operator Properties](screenshots/Operator%20Properties.png)
+
 ### Advice for Humans
 One-click text report with server context, warnings, wait stats, and expensive operators — ready to read or share.
 
