@@ -1,0 +1,32 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="PlanViewer.App.Controls.ColumnFilterPopup"
+             Width="220">
+    <Border Background="{DynamicResource BackgroundDarkBrush}"
+            BorderBrush="{DynamicResource BorderBrush}"
+            BorderThickness="1" CornerRadius="6">
+        <StackPanel Margin="12" Spacing="4">
+            <TextBlock x:Name="HeaderText" Text="Filter Column"
+                       FontWeight="SemiBold" FontSize="13" Margin="0,0,0,8"
+                       Foreground="{DynamicResource ForegroundBrush}"/>
+            <TextBlock Text="Operator:" FontSize="11" Margin="0,0,0,2"
+                       Foreground="{DynamicResource ForegroundBrush}"/>
+            <ComboBox x:Name="OperatorComboBox" HorizontalAlignment="Stretch"
+                      Height="28" FontSize="12" Margin="0,0,0,8"
+                      SelectionChanged="OperatorComboBox_SelectionChanged"/>
+            <TextBlock x:Name="ValueLabel" Text="Value:" FontSize="11" Margin="0,0,0,2"
+                       Foreground="{DynamicResource ForegroundBrush}"/>
+            <TextBox x:Name="ValueTextBox" HorizontalAlignment="Stretch"
+                     Height="28" FontSize="12" Margin="0,0,0,12"
+                     KeyDown="ValueTextBox_KeyDown"/>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+                <Button Content="Clear" Width="65" Height="28"
+                        Click="ClearButton_Click"
+                        Theme="{StaticResource AppButton}"/>
+                <Button Content="Apply" Width="65" Height="28"
+                        Click="ApplyButton_Click"
+                        Theme="{StaticResource AppButton}"/>
+            </StackPanel>
+        </StackPanel>
+    </Border>
+</UserControl>

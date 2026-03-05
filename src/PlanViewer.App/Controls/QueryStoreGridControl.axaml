@@ -70,7 +70,7 @@
         <DataGrid Grid.Row="1" x:Name="ResultsGrid"
                   AutoGenerateColumns="False"
                   CanUserSortColumns="True"
-                  CanUserReorderColumns="False"
+                  CanUserReorderColumns="True"
                   CanUserResizeColumns="True"
                   IsReadOnly="False"
                   SelectionMode="Single"
@@ -78,7 +78,8 @@
                   HeadersVisibility="Column"
                   FontSize="11"
                   Background="{DynamicResource BackgroundDarkBrush}"
-                  BorderThickness="0">
+                  BorderThickness="0"
+                  ScrollViewer.HorizontalScrollBarVisibility="Auto">
             <DataGrid.ContextMenu>
                 <ContextMenu>
                     <MenuItem Header="Load Plan" Click="LoadHighlightedPlan_Click"/>
@@ -95,20 +96,20 @@
                 <DataGridTextColumn Header="QueryId" Binding="{ReflectionBinding QueryId}" Width="90"/>
                 <DataGridTextColumn Header="PlanId" Binding="{ReflectionBinding PlanId}" Width="80"/>
                 <DataGridTextColumn Header="Last Executed (Local)" Binding="{ReflectionBinding LastExecutedLocal}" Width="160"/>
-                <DataGridTextColumn Header="Executions" Binding="{ReflectionBinding ExecsDisplay}" Width="100"/>
-                <DataGridTextColumn Header="Total CPU (ms)" Binding="{ReflectionBinding TotalCpuDisplay}" Width="120"/>
-                <DataGridTextColumn Header="Avg CPU (ms)" Binding="{ReflectionBinding AvgCpuDisplay}" Width="110"/>
-                <DataGridTextColumn Header="Total Duration (ms)" Binding="{ReflectionBinding TotalDurDisplay}" Width="150"/>
-                <DataGridTextColumn Header="Avg Duration (ms)" Binding="{ReflectionBinding AvgDurDisplay}" Width="140"/>
-                <DataGridTextColumn Header="Total Reads" Binding="{ReflectionBinding TotalReadsDisplay}" Width="100"/>
-                <DataGridTextColumn Header="Avg Reads" Binding="{ReflectionBinding AvgReadsDisplay}" Width="100"/>
-                <DataGridTextColumn Header="Total Writes" Binding="{ReflectionBinding TotalWritesDisplay}" Width="100"/>
-                <DataGridTextColumn Header="Avg Writes" Binding="{ReflectionBinding AvgWritesDisplay}" Width="100"/>
-                <DataGridTextColumn Header="Total Physical Reads" Binding="{ReflectionBinding TotalPhysReadsDisplay}" Width="155"/>
-                <DataGridTextColumn Header="Avg Physical Reads" Binding="{ReflectionBinding AvgPhysReadsDisplay}" Width="140"/>
-                <DataGridTextColumn Header="Total Memory (MB)" Binding="{ReflectionBinding TotalMemDisplay}" Width="140"/>
-                <DataGridTextColumn Header="Avg Memory (MB)" Binding="{ReflectionBinding AvgMemDisplay}" Width="130"/>
-                <DataGridTemplateColumn Header="Query Text" Width="*">
+                <DataGridTextColumn Header="Executions" Binding="{ReflectionBinding ExecsDisplay}" SortMemberPath="ExecsSort" Width="100"/>
+                <DataGridTextColumn Header="Total CPU (ms)" Binding="{ReflectionBinding TotalCpuDisplay}" SortMemberPath="TotalCpuSort" Width="120"/>
+                <DataGridTextColumn Header="Avg CPU (ms)" Binding="{ReflectionBinding AvgCpuDisplay}" SortMemberPath="AvgCpuSort" Width="110"/>
+                <DataGridTextColumn Header="Total Duration (ms)" Binding="{ReflectionBinding TotalDurDisplay}" SortMemberPath="TotalDurSort" Width="150"/>
+                <DataGridTextColumn Header="Avg Duration (ms)" Binding="{ReflectionBinding AvgDurDisplay}" SortMemberPath="AvgDurSort" Width="140"/>
+                <DataGridTextColumn Header="Total Reads" Binding="{ReflectionBinding TotalReadsDisplay}" SortMemberPath="TotalReadsSort" Width="100"/>
+                <DataGridTextColumn Header="Avg Reads" Binding="{ReflectionBinding AvgReadsDisplay}" SortMemberPath="AvgReadsSort" Width="100"/>
+                <DataGridTextColumn Header="Total Writes" Binding="{ReflectionBinding TotalWritesDisplay}" SortMemberPath="TotalWritesSort" Width="100"/>
+                <DataGridTextColumn Header="Avg Writes" Binding="{ReflectionBinding AvgWritesDisplay}" SortMemberPath="AvgWritesSort" Width="100"/>
+                <DataGridTextColumn Header="Total Physical Reads" Binding="{ReflectionBinding TotalPhysReadsDisplay}" SortMemberPath="TotalPhysReadsSort" Width="155"/>
+                <DataGridTextColumn Header="Avg Physical Reads" Binding="{ReflectionBinding AvgPhysReadsDisplay}" SortMemberPath="AvgPhysReadsSort" Width="140"/>
+                <DataGridTextColumn Header="Total Memory (MB)" Binding="{ReflectionBinding TotalMemDisplay}" SortMemberPath="TotalMemSort" Width="140"/>
+                <DataGridTextColumn Header="Avg Memory (MB)" Binding="{ReflectionBinding AvgMemDisplay}" SortMemberPath="AvgMemSort" Width="130"/>
+                <DataGridTemplateColumn Header="Query Text" Width="300" MinWidth="300">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate x:DataType="local:QueryStoreRow">
                             <TextBlock Text="{Binding QueryPreview}"

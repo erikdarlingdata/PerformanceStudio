@@ -57,6 +57,7 @@ public partial class PlanViewerControl : UserControl
     private ParsedPlan? _currentPlan;
     private PlanStatement? _currentStatement;
     private string? _queryText;
+    private ServerMetadata? _serverMetadata;
     private double _zoomLevel = 1.0;
     private const double ZoomStep = 0.15;
     private const double MinZoom = 0.1;
@@ -145,6 +146,20 @@ public partial class PlanViewerControl : UserControl
     /// Exposes the query text associated with this plan (if any).
     /// </summary>
     public string? QueryText => _queryText;
+
+    /// <summary>
+    /// Server metadata for advice generation and Plan Insights display.
+    /// </summary>
+    public ServerMetadata? Metadata
+    {
+        get => _serverMetadata;
+        set
+        {
+            _serverMetadata = value;
+            if (_currentStatement != null)
+                ShowServerContext();
+        }
+    }
 
     public void LoadPlan(string planXml, string label, string? queryText = null)
     {
@@ -307,8 +322,17 @@ public partial class PlanViewerControl : UserControl
         // Map border to node (replaces WPF Tag)
         _nodeBorderMap[border] = node;
 
-        // Tooltip
-        ToolTip.SetTip(border, BuildNodeTooltipContent(node));
+        // Tooltip — root node gets all collected warnings so the tooltip shows them
+        if (totalWarningCount > 0)
+        {
+            var allWarnings = new List<PlanWarning>();
+            CollectWarnings(node, allWarnings);
+            ToolTip.SetTip(border, BuildNodeTooltipContent(node, allWarnings));
+        }
+        else
+        {
+            ToolTip.SetTip(border, BuildNodeTooltipContent(node));
+        }
 
         // Click to select + show properties
         border.PointerPressed += Node_Click;
@@ -1441,7 +1465,7 @@ public partial class PlanViewerControl : UserControl
             // === Plan-Level Warnings ===
             if (s.PlanWarnings.Count > 0)
             {
-                AddPropertySection("Plan Warnings");
+                var planWarningsPanel = new StackPanel();
                 foreach (var w in s.PlanWarnings)
                 {
                     var warnColor = w.Severity == PlanWarningSeverity.Critical ? "#E57373"
@@ -1462,8 +1486,30 @@ public partial class PlanViewerControl : UserControl
                         TextWrapping = TextWrapping.Wrap,
                         Margin = new Thickness(16, 0, 0, 0)
                     });
-                    (_currentPropertySection ?? PropertiesContent).Children.Add(warnPanel);
+                    planWarningsPanel.Children.Add(warnPanel);
                 }
+
+                var planWarningsExpander = new Expander
+                {
+                    IsExpanded = true,
+                    Header = new TextBlock
+                    {
+                        Text = "Plan Warnings",
+                        FontWeight = FontWeight.SemiBold,
+                        FontSize = 11,
+                        Foreground = SectionHeaderBrush
+                    },
+                    Content = planWarningsPanel,
+                    Margin = new Thickness(0, 2, 0, 0),
+                    Padding = new Thickness(0),
+                    Foreground = SectionHeaderBrush,
+                    Background = new SolidColorBrush(Color.FromArgb(0x18, 0x4F, 0xA3, 0xFF)),
+                    BorderBrush = PropSeparatorBrush,
+                    BorderThickness = new Thickness(0, 0, 0, 1),
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
+                    HorizontalContentAlignment = HorizontalAlignment.Stretch
+                };
+                PropertiesContent.Children.Add(planWarningsExpander);
             }
 
             // === Missing Indexes ===
@@ -1482,7 +1528,7 @@ public partial class PlanViewerControl : UserControl
         // === Warnings ===
         if (node.HasWarnings)
         {
-            AddPropertySection("Warnings");
+            var warningsPanel = new StackPanel();
             foreach (var w in node.Warnings)
             {
                 var warnColor = w.Severity == PlanWarningSeverity.Critical ? "#E57373"
@@ -1503,8 +1549,30 @@ public partial class PlanViewerControl : UserControl
                     TextWrapping = TextWrapping.Wrap,
                     Margin = new Thickness(16, 0, 0, 0)
                 });
-                PropertiesContent.Children.Add(warnPanel);
+                warningsPanel.Children.Add(warnPanel);
             }
+
+            var warningsExpander = new Expander
+            {
+                IsExpanded = true,
+                Header = new TextBlock
+                {
+                    Text = "Warnings",
+                    FontWeight = FontWeight.SemiBold,
+                    FontSize = 11,
+                    Foreground = SectionHeaderBrush
+                },
+                Content = warningsPanel,
+                Margin = new Thickness(0, 2, 0, 0),
+                Padding = new Thickness(0),
+                Foreground = SectionHeaderBrush,
+                Background = new SolidColorBrush(Color.FromArgb(0x18, 0x4F, 0xA3, 0xFF)),
+                BorderBrush = PropSeparatorBrush,
+                BorderThickness = new Thickness(0, 0, 0, 1),
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                HorizontalContentAlignment = HorizontalAlignment.Stretch
+            };
+            PropertiesContent.Children.Add(warningsExpander);
         }
 
         // Show the panel
@@ -1649,7 +1717,7 @@ public partial class PlanViewerControl : UserControl
 
     #region Tooltips
 
-    private object BuildNodeTooltipContent(PlanNode node)
+    private object BuildNodeTooltipContent(PlanNode node, List<PlanWarning>? allWarnings = null)
     {
         var tipBorder = new Border
         {
@@ -1790,11 +1858,12 @@ public partial class PlanViewerControl : UserControl
             AddTooltipRow(stack, "Columns", node.OutputColumns, isCode: true);
         }
 
-        // Warnings
-        if (node.HasWarnings)
+        // Warnings — use allWarnings (all nodes) for root, node.Warnings for others
+        var warnings = allWarnings ?? (node.HasWarnings ? node.Warnings : null);
+        if (warnings != null && warnings.Count > 0)
         {
             stack.Children.Add(new Separator { Margin = new Thickness(0, 6, 0, 6) });
-            foreach (var w in node.Warnings)
+            foreach (var w in warnings)
             {
                 var warnColor = w.Severity == PlanWarningSeverity.Critical ? "#E57373"
                     : w.Severity == PlanWarningSeverity.Warning ? "#FFB347" : "#6BB5FF";
@@ -2317,6 +2386,77 @@ public partial class PlanViewerControl : UserControl
             AddRow("Early abort", statement.StatementOptmEarlyAbortReason);
 
         RuntimeSummaryContent.Children.Add(grid);
+        ShowServerContext();
+    }
+
+    private void ShowServerContext()
+    {
+        ServerContextContent.Children.Clear();
+        if (_serverMetadata == null)
+        {
+            ServerContextBorder.IsVisible = false;
+            return;
+        }
+
+        var m = _serverMetadata;
+        var fgColor = "#E4E6EB";
+
+        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*") };
+        int rowIndex = 0;
+
+        void AddRow(string label, string value)
+        {
+            grid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
+            var lb = new TextBlock
+            {
+                Text = label, FontSize = 11,
+                Foreground = new SolidColorBrush(Color.Parse(fgColor)),
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Margin = new Thickness(0, 1, 8, 1)
+            };
+            Grid.SetRow(lb, rowIndex);
+            Grid.SetColumn(lb, 0);
+            grid.Children.Add(lb);
+
+            var vb = new TextBlock
+            {
+                Text = value, FontSize = 11,
+                Foreground = new SolidColorBrush(Color.Parse(fgColor)),
+                Margin = new Thickness(0, 1, 0, 1)
+            };
+            Grid.SetRow(vb, rowIndex);
+            Grid.SetColumn(vb, 1);
+            grid.Children.Add(vb);
+            rowIndex++;
+        }
+
+        // Server name + edition
+        var edition = m.Edition;
+        if (edition != null)
+        {
+            var idx = edition.IndexOf(" (64-bit)");
+            if (idx > 0) edition = edition[..idx];
+        }
+        var serverLine = m.ServerName ?? "Unknown";
+        if (edition != null) serverLine += $" ({edition})";
+        if (m.ProductVersion != null) serverLine += $", {m.ProductVersion}";
+        AddRow("Server", serverLine);
+
+        // Hardware
+        if (m.CpuCount > 0)
+            AddRow("Hardware", $"{m.CpuCount} CPUs, {m.PhysicalMemoryMB:N0} MB RAM");
+
+        // Instance settings
+        AddRow("MAXDOP", m.MaxDop.ToString());
+        AddRow("Cost threshold", m.CostThresholdForParallelism.ToString());
+        AddRow("Max memory", $"{m.MaxServerMemoryMB:N0} MB");
+
+        // Database
+        if (m.Database != null)
+            AddRow("Database", $"{m.Database.Name} (compat {m.Database.CompatibilityLevel})");
+
+        ServerContextContent.Children.Add(grid);
+        ServerContextBorder.IsVisible = true;
     }
 
     private void UpdateInsightsHeader()

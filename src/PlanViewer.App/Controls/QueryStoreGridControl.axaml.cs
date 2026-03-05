@@ -5,8 +5,11 @@ using System.ComponentModel;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
+using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Interactivity;
+using Avalonia.Media;
 using PlanViewer.Core.Models;
 using PlanViewer.Core.Services;
 
@@ -18,6 +21,10 @@ public partial class QueryStoreGridControl : UserControl
     private readonly string _database;
     private CancellationTokenSource? _fetchCts;
     private ObservableCollection<QueryStoreRow> _rows = new();
+    private ObservableCollection<QueryStoreRow> _filteredRows = new();
+    private readonly Dictionary<string, ColumnFilterState> _activeFilters = new();
+    private Popup? _filterPopup;
+    private ColumnFilterPopup? _filterPopupContent;
 
     public event EventHandler<List<QueryStorePlan>>? PlansSelected;
 
@@ -26,7 +33,9 @@ public partial class QueryStoreGridControl : UserControl
         _connectionString = connectionString;
         _database = database;
         InitializeComponent();
-        ResultsGrid.ItemsSource = _rows;
+        ResultsGrid.ItemsSource = _filteredRows;
+        EnsureFilterPopup();
+        SetupColumnHeaders();
     }
 
     private async void Fetch_Click(object? sender, RoutedEventArgs e)
@@ -43,6 +52,7 @@ public partial class QueryStoreGridControl : UserControl
         LoadButton.IsEnabled = false;
         StatusText.Text = "Fetching...";
         _rows.Clear();
+        _filteredRows.Clear();
 
         try
         {
@@ -58,7 +68,7 @@ public partial class QueryStoreGridControl : UserControl
             foreach (var plan in plans)
                 _rows.Add(new QueryStoreRow(plan));
 
-            StatusText.Text = $"{plans.Count} plans";
+            ApplyFilters();
             LoadButton.IsEnabled = true;
         }
         catch (OperationCanceledException)
@@ -77,19 +87,19 @@ public partial class QueryStoreGridControl : UserControl
 
     private void SelectAll_Click(object? sender, RoutedEventArgs e)
     {
-        foreach (var row in _rows)
+        foreach (var row in _filteredRows)
             row.IsSelected = true;
     }
 
     private void SelectNone_Click(object? sender, RoutedEventArgs e)
     {
-        foreach (var row in _rows)
+        foreach (var row in _filteredRows)
             row.IsSelected = false;
     }
 
     private void LoadSelected_Click(object? sender, RoutedEventArgs e)
     {
-        var selected = _rows.Where(r => r.IsSelected).Select(r => r.Plan).ToList();
+        var selected = _filteredRows.Where(r => r.IsSelected).Select(r => r.Plan).ToList();
         if (selected.Count > 0)
             PlansSelected?.Invoke(this, selected);
     }
@@ -98,6 +108,229 @@ public partial class QueryStoreGridControl : UserControl
     {
         if (ResultsGrid.SelectedItem is QueryStoreRow row)
             PlansSelected?.Invoke(this, new List<QueryStorePlan> { row.Plan });
+    }
+
+    // ── Column filter infrastructure ───────────────────────────────────────
+
+    private static readonly Dictionary<string, Func<QueryStoreRow, string>> TextAccessors = new()
+    {
+        ["LastExecuted"] = r => r.LastExecutedLocal,
+        ["QueryText"]    = r => r.FullQueryText,
+    };
+
+    private static readonly Dictionary<string, Func<QueryStoreRow, double>> NumericAccessors = new()
+    {
+        ["QueryId"]        = r => r.QueryId,
+        ["PlanId"]         = r => r.PlanId,
+        ["Executions"]     = r => r.ExecsSort,
+        ["TotalCpu"]       = r => r.TotalCpuSort / 1000.0,       // µs → ms (matches display)
+        ["AvgCpu"]         = r => r.AvgCpuSort / 1000.0,         // µs → ms
+        ["TotalDuration"]  = r => r.TotalDurSort / 1000.0,       // µs → ms
+        ["AvgDuration"]    = r => r.AvgDurSort / 1000.0,         // µs → ms
+        ["TotalReads"]     = r => r.TotalReadsSort,
+        ["AvgReads"]       = r => r.AvgReadsSort,
+        ["TotalWrites"]    = r => r.TotalWritesSort,
+        ["AvgWrites"]      = r => r.AvgWritesSort,
+        ["TotalPhysReads"] = r => r.TotalPhysReadsSort,
+        ["AvgPhysReads"]   = r => r.AvgPhysReadsSort,
+        ["TotalMemory"]    = r => r.TotalMemSort * 8.0 / 1024.0, // pages → MB (matches display)
+        ["AvgMemory"]      = r => r.AvgMemSort * 8.0 / 1024.0,   // pages → MB
+    };
+
+    private void SetupColumnHeaders()
+    {
+        var cols = ResultsGrid.Columns;
+        SetColumnFilterButton(cols[1],  "QueryId",        "Query ID");
+        SetColumnFilterButton(cols[2],  "PlanId",         "Plan ID");
+        SetColumnFilterButton(cols[3],  "LastExecuted",   "Last Executed (Local)");
+        SetColumnFilterButton(cols[4],  "Executions",     "Executions");
+        SetColumnFilterButton(cols[5],  "TotalCpu",       "Total CPU (ms)");
+        SetColumnFilterButton(cols[6],  "AvgCpu",         "Avg CPU (ms)");
+        SetColumnFilterButton(cols[7],  "TotalDuration",  "Total Duration (ms)");
+        SetColumnFilterButton(cols[8],  "AvgDuration",    "Avg Duration (ms)");
+        SetColumnFilterButton(cols[9],  "TotalReads",     "Total Reads");
+        SetColumnFilterButton(cols[10], "AvgReads",       "Avg Reads");
+        SetColumnFilterButton(cols[11], "TotalWrites",    "Total Writes");
+        SetColumnFilterButton(cols[12], "AvgWrites",      "Avg Writes");
+        SetColumnFilterButton(cols[13], "TotalPhysReads", "Total Physical Reads");
+        SetColumnFilterButton(cols[14], "AvgPhysReads",   "Avg Physical Reads");
+        SetColumnFilterButton(cols[15], "TotalMemory",    "Total Memory (MB)");
+        SetColumnFilterButton(cols[16], "AvgMemory",      "Avg Memory (MB)");
+        SetColumnFilterButton(cols[17], "QueryText",      "Query Text");
+    }
+
+    private void SetColumnFilterButton(DataGridColumn col, string columnId, string label)
+    {
+        var icon = new TextBlock
+        {
+            Text = "▽",
+            FontSize = 12,
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+        };
+        var btn = new Button
+        {
+            Content = icon,
+            Tag = columnId,
+            Width = 16,
+            Height = 16,
+            Padding = new Avalonia.Thickness(0),
+            Background = Brushes.Transparent,
+            BorderThickness = new Avalonia.Thickness(0),
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+        };
+        btn.Click += ColumnFilter_Click;
+        ToolTip.SetTip(btn, "Click to filter");
+
+        var text = new TextBlock
+        {
+            Text = label,
+            FontWeight = FontWeight.Bold,
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            Margin = new Avalonia.Thickness(4, 0, 0, 0),
+        };
+
+        var header = new StackPanel
+        {
+            Orientation = Avalonia.Layout.Orientation.Horizontal,
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left,
+        };
+        header.Children.Add(btn);
+        header.Children.Add(text);
+        col.Header = header;
+    }
+
+    private void EnsureFilterPopup()
+    {
+        if (_filterPopup != null) return;
+        _filterPopupContent = new ColumnFilterPopup();
+        _filterPopup = new Popup
+        {
+            Child = _filterPopupContent,
+            IsLightDismissEnabled = true,
+            Placement = PlacementMode.Bottom,
+        };
+        // Add to visual tree so DynamicResources resolve inside the popup
+        ((Grid)Content!).Children.Add(_filterPopup);
+        _filterPopupContent.FilterApplied += OnFilterApplied;
+        _filterPopupContent.FilterCleared += OnFilterCleared;
+    }
+
+    private void ColumnFilter_Click(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Button button || button.Tag is not string columnId) return;
+        EnsureFilterPopup();
+        _activeFilters.TryGetValue(columnId, out var existing);
+        _filterPopupContent!.Initialize(columnId, existing);
+        _filterPopup!.PlacementTarget = button;
+        _filterPopup.IsOpen = true;
+    }
+
+    private void OnFilterApplied(object? sender, FilterAppliedEventArgs e)
+    {
+        _filterPopup!.IsOpen = false;
+        if (e.FilterState.IsActive)
+            _activeFilters[e.FilterState.ColumnName] = e.FilterState;
+        else
+            _activeFilters.Remove(e.FilterState.ColumnName);
+        ApplyFilters();
+        UpdateFilterButtonStyles();
+    }
+
+    private void OnFilterCleared(object? sender, EventArgs e)
+    {
+        _filterPopup!.IsOpen = false;
+    }
+
+    private void UpdateFilterButtonStyles()
+    {
+        foreach (var col in ResultsGrid.Columns)
+        {
+            if (col.Header is not StackPanel sp) continue;
+            var btn = sp.Children.OfType<Button>().FirstOrDefault();
+            if (btn?.Tag is not string colId) continue;
+            if (btn.Content is not TextBlock tb) continue;
+
+            bool hasFilter = _activeFilters.TryGetValue(colId, out var f) && f.IsActive;
+            tb.Text = hasFilter ? "▼" : "▽";
+            if (hasFilter)
+                tb.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0xD7, 0x00));
+            else
+                tb.ClearValue(TextBlock.ForegroundProperty);
+
+            ToolTip.SetTip(btn, hasFilter
+                ? $"Filter: {f!.DisplayText} (click to modify)"
+                : "Click to filter");
+        }
+    }
+
+    private void ApplyFilters()
+    {
+        _filteredRows.Clear();
+        foreach (var row in _rows)
+        {
+            if (RowMatchesAllFilters(row))
+                _filteredRows.Add(row);
+        }
+        UpdateStatusText();
+    }
+
+    private bool RowMatchesAllFilters(QueryStoreRow row)
+    {
+        foreach (var (colId, state) in _activeFilters)
+        {
+            if (!state.IsActive) continue;
+            if (TextAccessors.TryGetValue(colId, out var textAcc))
+            {
+                if (!MatchText(textAcc(row), state.Operator, state.Value)) return false;
+            }
+            else if (NumericAccessors.TryGetValue(colId, out var numAcc))
+            {
+                var isTextOp = state.Operator is FilterOperator.Contains or FilterOperator.StartsWith
+                               or FilterOperator.EndsWith or FilterOperator.IsEmpty or FilterOperator.IsNotEmpty;
+                if (isTextOp)
+                {
+                    if (!MatchText(numAcc(row).ToString("G"), state.Operator, state.Value)) return false;
+                }
+                else
+                {
+                    if (!double.TryParse(state.Value, out var numVal)) continue;
+                    if (!MatchNumeric(numAcc(row), state.Operator, numVal)) return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    private static bool MatchText(string data, FilterOperator op, string val) => op switch
+    {
+        FilterOperator.Contains   => data.Contains(val, StringComparison.OrdinalIgnoreCase),
+        FilterOperator.Equals     => data.Equals(val, StringComparison.OrdinalIgnoreCase),
+        FilterOperator.NotEquals  => !data.Equals(val, StringComparison.OrdinalIgnoreCase),
+        FilterOperator.StartsWith => data.StartsWith(val, StringComparison.OrdinalIgnoreCase),
+        FilterOperator.EndsWith   => data.EndsWith(val, StringComparison.OrdinalIgnoreCase),
+        FilterOperator.IsEmpty    => string.IsNullOrEmpty(data),
+        FilterOperator.IsNotEmpty => !string.IsNullOrEmpty(data),
+        _                         => true,
+    };
+
+    private static bool MatchNumeric(double data, FilterOperator op, double val) => op switch
+    {
+        FilterOperator.Equals            => Math.Abs(data - val) < 1e-9,
+        FilterOperator.NotEquals         => Math.Abs(data - val) >= 1e-9,
+        FilterOperator.GreaterThan       => data > val,
+        FilterOperator.GreaterThanOrEqual => data >= val,
+        FilterOperator.LessThan          => data < val,
+        FilterOperator.LessThanOrEqual   => data <= val,
+        _                                => true,
+    };
+
+    private void UpdateStatusText()
+    {
+        if (_rows.Count == 0) return;
+        StatusText.Text = _filteredRows.Count == _rows.Count
+            ? $"{_rows.Count} plans"
+            : $"{_filteredRows.Count} / {_rows.Count} plans (filtered)";
     }
 }
 
@@ -134,6 +367,22 @@ public class QueryStoreRow : INotifyPropertyChanged
     public string AvgPhysReadsDisplay => Plan.AvgPhysicalIoReads.ToString("N0");
     public string TotalMemDisplay => (Plan.TotalMemoryGrantPages * 8.0 / 1024.0).ToString("N1");
     public string AvgMemDisplay => (Plan.AvgMemoryGrantPages * 8.0 / 1024.0).ToString("N1");
+
+    // Numeric sort properties (DataGrid SortMemberPath targets)
+    public long ExecsSort => Plan.CountExecutions;
+    public long TotalCpuSort => Plan.TotalCpuTimeUs;
+    public double AvgCpuSort => Plan.AvgCpuTimeUs;
+    public long TotalDurSort => Plan.TotalDurationUs;
+    public double AvgDurSort => Plan.AvgDurationUs;
+    public long TotalReadsSort => Plan.TotalLogicalIoReads;
+    public double AvgReadsSort => Plan.AvgLogicalIoReads;
+    public long TotalWritesSort => Plan.TotalLogicalIoWrites;
+    public double AvgWritesSort => Plan.AvgLogicalIoWrites;
+    public long TotalPhysReadsSort => Plan.TotalPhysicalIoReads;
+    public double AvgPhysReadsSort => Plan.AvgPhysicalIoReads;
+    public long TotalMemSort => Plan.TotalMemoryGrantPages;
+    public double AvgMemSort => Plan.AvgMemoryGrantPages;
+
     public string LastExecutedLocal => Plan.LastExecutedUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm");
     public string QueryPreview => Plan.QueryText.Length > 80
         ? Plan.QueryText[..80].Replace("\n", " ").Replace("\r", "") + "..."

@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using System.Xml.Linq;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -370,7 +371,7 @@ public partial class MainWindow : Window
         var clipboard = this.Clipboard;
         if (clipboard == null) return;
 
-        var xml = await clipboard.GetTextAsync();
+        var xml = await clipboard.TryGetTextAsync();
         if (string.IsNullOrWhiteSpace(xml))
         {
             ShowError("The clipboard does not contain any text.");
@@ -441,14 +442,14 @@ public partial class MainWindow : Window
         humanBtn.Click += (_, _) =>
         {
             if (viewer.CurrentPlan == null) return;
-            var analysis = ResultMapper.Map(viewer.CurrentPlan, "file");
+            var analysis = ResultMapper.Map(viewer.CurrentPlan, "file", viewer.Metadata);
             ShowAdviceWindow("Advice for Humans", TextFormatter.Format(analysis));
         };
 
         robotBtn.Click += (_, _) =>
         {
             if (viewer.CurrentPlan == null) return;
-            var analysis = ResultMapper.Map(viewer.CurrentPlan, "file");
+            var analysis = ResultMapper.Map(viewer.CurrentPlan, "file", viewer.Metadata);
             var json = JsonSerializer.Serialize(analysis, new JsonSerializerOptions { WriteIndented = true });
             ShowAdviceWindow("Advice for Robots", json);
         };
@@ -1021,8 +1022,58 @@ public partial class MainWindow : Window
                       dialog.ResultConnection.ServerName.Contains(".database.azure.com",
                           StringComparison.OrdinalIgnoreCase);
 
+        // Create a loading placeholder tab immediately
+        var loadingPanel = new StackPanel
+        {
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Width = 300
+        };
+
+        var progressBar = new ProgressBar
+        {
+            IsIndeterminate = true,
+            Height = 4,
+            Margin = new Avalonia.Thickness(0, 0, 0, 12)
+        };
+
+        var statusText = new TextBlock
+        {
+            Text = "Executing query...",
+            FontSize = 14,
+            Foreground = new SolidColorBrush(Color.Parse("#B0B6C0")),
+            HorizontalAlignment = HorizontalAlignment.Center
+        };
+
+        loadingPanel.Children.Add(progressBar);
+        loadingPanel.Children.Add(statusText);
+
+        var loadingContainer = new Grid
+        {
+            Background = new SolidColorBrush(Color.Parse("#1A1D23")),
+            Children = { loadingPanel }
+        };
+
+        var tab = CreateTab("Actual Plan", loadingContainer);
+        MainTabControl.Items.Add(tab);
+        MainTabControl.SelectedItem = tab;
+        UpdateEmptyOverlay();
+
         try
         {
+            // Fetch server metadata for advice and Plan Insights
+            ServerMetadata? metadata = null;
+            try
+            {
+                metadata = await ServerMetadataService.FetchServerMetadataAsync(
+                    connectionString, isAzure);
+                metadata.Database = await ServerMetadataService.FetchDatabaseMetadataAsync(
+                    connectionString, metadata.SupportsScopedConfigs);
+            }
+            catch { /* Non-fatal — advice will just lack server context */ }
+
+            statusText.Text = "Capturing actual plan...";
+
             var cts = new System.Threading.CancellationTokenSource();
             var sw = System.Diagnostics.Stopwatch.StartNew();
 
@@ -1035,23 +1086,22 @@ public partial class MainWindow : Window
 
             if (string.IsNullOrEmpty(actualPlanXml))
             {
-                ShowError($"No actual plan returned ({sw.Elapsed.TotalSeconds:F1}s).");
+                statusText.Text = $"No actual plan returned ({sw.Elapsed.TotalSeconds:F1}s).";
+                progressBar.IsVisible = false;
                 return;
             }
 
-            // Add a new tab with the actual plan
+            // Replace loading content with the actual plan
             var actualViewer = new PlanViewerControl();
+            actualViewer.Metadata = metadata;
             actualViewer.LoadPlan(actualPlanXml, "Actual Plan", queryText);
 
-            var content = CreatePlanTabContent(actualViewer);
-            var tab = CreateTab("Actual Plan", content);
-            MainTabControl.Items.Add(tab);
-            MainTabControl.SelectedItem = tab;
-            UpdateEmptyOverlay();
+            tab.Content = CreatePlanTabContent(actualViewer);
         }
         catch (Exception ex)
         {
-            ShowError($"Error capturing actual plan:\n\n{ex.Message}");
+            statusText.Text = $"Error: {ex.Message}";
+            progressBar.IsVisible = false;
         }
     }
 

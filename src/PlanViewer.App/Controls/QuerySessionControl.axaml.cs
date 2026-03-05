@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using System.Xml.Linq;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -120,7 +121,7 @@ public partial class QuerySessionControl : UserControl
         {
             var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
             if (clipboard == null) return;
-            var text = await clipboard.GetTextAsync();
+            var text = await clipboard.TryGetTextAsync();
             if (string.IsNullOrEmpty(text)) return;
             QueryEditor.TextArea.PerformTextInput(text);
         };
@@ -641,6 +642,7 @@ public partial class QuerySessionControl : UserControl
         var label = labelOverride ?? (estimated ? $"Est Plan {_planCounter}" : $"Plan {_planCounter}");
 
         var viewer = new PlanViewerControl();
+        viewer.Metadata = _serverMetadata;
         viewer.LoadPlan(planXml, label, queryText);
 
         // Build tab header with close button and right-click rename

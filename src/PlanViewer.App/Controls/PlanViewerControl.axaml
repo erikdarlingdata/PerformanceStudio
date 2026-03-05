@@ -60,14 +60,33 @@
                 </Expander.Header>
                 <Grid MaxHeight="220">
                     <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" MinWidth="0"/>
                         <ColumnDefinition Width="Auto" MinWidth="180"/>
                         <ColumnDefinition Width="*" MinWidth="200"/>
                         <ColumnDefinition Width="*" MinWidth="200"/>
                         <ColumnDefinition Width="*" MinWidth="200"/>
                     </Grid.ColumnDefinitions>
 
-                    <!-- Runtime Summary (left) -->
-                    <Border Grid.Column="0" Padding="10,4,10,8"
+                    <!-- Server Context (first, only visible when connected) -->
+                    <Border x:Name="ServerContextBorder" Grid.Column="0" Padding="10,4,10,8"
+                            Background="#1A1A2D"
+                            BorderBrush="#3A3A5A" BorderThickness="0,0,1,0"
+                            IsVisible="False">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                      HorizontalScrollBarVisibility="Disabled">
+                            <StackPanel>
+                                <TextBlock Text="Server Context"
+                                           FontSize="13"
+                                           FontWeight="SemiBold"
+                                           Foreground="#9B9BFF"
+                                           Margin="0,0,0,6"/>
+                                <StackPanel x:Name="ServerContextContent"/>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Border>
+
+                    <!-- Runtime Summary -->
+                    <Border Grid.Column="1" Padding="10,4,10,8"
                             Background="{DynamicResource BackgroundDarkBrush}"
                             BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,1,0">
                         <StackPanel>
@@ -81,7 +100,7 @@
                     </Border>
 
                     <!-- Missing Indexes (center) -->
-                    <Border Grid.Column="1" Padding="10,4,10,8"
+                    <Border Grid.Column="2" Padding="10,4,10,8"
                             Background="#3D2A0E"
                             BorderBrush="#7A5A1E" BorderThickness="0,0,1,0">
                         <ScrollViewer VerticalScrollBarVisibility="Auto"
@@ -102,7 +121,7 @@
                     </Border>
 
                     <!-- Parameters -->
-                    <Border Grid.Column="2" Padding="10,4,10,8"
+                    <Border Grid.Column="3" Padding="10,4,10,8"
                             Background="#1A2D1A"
                             BorderBrush="#3A5A3A" BorderThickness="0,0,1,0">
                         <ScrollViewer VerticalScrollBarVisibility="Auto"
@@ -123,7 +142,7 @@
                     </Border>
 
                     <!-- Wait Stats (right, fills remaining space) -->
-                    <Border Grid.Column="3" Padding="10,4,10,8"
+                    <Border Grid.Column="4" Padding="10,4,10,8"
                             Background="#1A2A3D">
                         <ScrollViewer VerticalScrollBarVisibility="Auto"
                                       HorizontalScrollBarVisibility="Disabled">
