@@ -51,22 +51,6 @@ public class ColumnFilterState
             };
         }
     }
-
-    public static string GetOperatorDisplayName(FilterOperator op) => op switch
-    {
-        FilterOperator.Contains          => "Contains",
-        FilterOperator.Equals            => "Equals (=)",
-        FilterOperator.NotEquals         => "Not Equals (!=)",
-        FilterOperator.GreaterThan       => "Greater Than (>)",
-        FilterOperator.GreaterThanOrEqual => "Greater or Equal (>=)",
-        FilterOperator.LessThan          => "Less Than (<)",
-        FilterOperator.LessThanOrEqual   => "Less or Equal (<=)",
-        FilterOperator.StartsWith        => "Starts With",
-        FilterOperator.EndsWith          => "Ends With",
-        FilterOperator.IsEmpty           => "Is Empty",
-        FilterOperator.IsNotEmpty        => "Is Not Empty",
-        _                                => op.ToString(),
-    };
 }
 
 public class FilterAppliedEventArgs : EventArgs
