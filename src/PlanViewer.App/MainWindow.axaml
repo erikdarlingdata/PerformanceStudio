@@ -2,7 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:controls="using:PlanViewer.App.Controls"
         x:Class="PlanViewer.App.MainWindow"
-        Title="SQL Performance Studio — SQL Server Execution Plan Analyzer"
+        Title="Performance Studio — SQL Server Execution Plan Analyzer"
         Width="1280" Height="800"
         MinWidth="640" MinHeight="480"
         WindowState="Maximized"
@@ -25,7 +25,7 @@
                           InputGesture="Alt+F4"/>
             </MenuItem>
             <MenuItem Header="_Help">
-                <MenuItem Header="_About SQL Performance Studio" Click="About_Click"/>
+                <MenuItem Header="_About Performance Studio" Click="About_Click"/>
                 <Separator/>
                 <MenuItem x:Name="McpStatusMenuItem" Header="MCP Server: Off" IsEnabled="False"/>
             </MenuItem>
@@ -40,7 +40,7 @@
             <Border x:Name="EmptyOverlay" Background="{DynamicResource BackgroundBrush}"
                     IsVisible="True" IsHitTestVisible="False">
                 <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="8">
-                    <TextBlock Text="SQL Performance Studio" FontSize="28" FontWeight="Bold"
+                    <TextBlock Text="Performance Studio" FontSize="28" FontWeight="Bold"
                                Foreground="{DynamicResource ForegroundBrush}"
                                HorizontalAlignment="Center"/>
                     <TextBlock Text="Ctrl+N to open a new query session"

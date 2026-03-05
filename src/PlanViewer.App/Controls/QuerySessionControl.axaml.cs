@@ -607,7 +607,7 @@ public partial class QuerySessionControl : UserControl
 
         var window = new Window
         {
-            Title = $"SQL Performance Studio — {title}",
+            Title = $"Performance Studio — {title}",
             Width = 700,
             Height = 600,
             MinWidth = 400,
@@ -1119,7 +1119,7 @@ public partial class QuerySessionControl : UserControl
             database,
             planXml,
             isolationLevel: null,
-            source: "SQL Performance Studio",
+            source: "Performance Studio",
             isAzureSqlDb: IsAzureConnection);
 
         try

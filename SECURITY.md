@@ -2,7 +2,7 @@
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability in SQL Performance Studio, please report it responsibly.
+If you discover a security vulnerability in Performance Studio, please report it responsibly.
 
 **Do not open a public GitHub issue for security vulnerabilities.**
 
@@ -26,7 +26,7 @@ This policy applies to:
 
 ## Security Best Practices
 
-When using SQL Performance Studio:
+When using Performance Studio:
 
 - Use Windows Authentication where possible when connecting to SQL Server
 - Use dedicated accounts with minimal required permissions

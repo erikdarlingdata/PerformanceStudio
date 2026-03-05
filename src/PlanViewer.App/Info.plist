@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
-    <string>SQL Performance Studio</string>
+    <string>Performance Studio</string>
     <key>CFBundleDisplayName</key>
-    <string>SQL Performance Studio</string>
+    <string>Performance Studio</string>
     <key>CFBundleIdentifier</key>
     <string>com.darlingdata.sqlperformancestudio</string>
     <key>CFBundleVersion</key>

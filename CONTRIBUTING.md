@@ -1,6 +1,6 @@
-# Contributing to SQL Performance Studio
+# Contributing to Performance Studio
 
-Thank you for your interest in contributing to SQL Performance Studio! This guide will help you get started.
+Thank you for your interest in contributing to Performance Studio! This guide will help you get started.
 
 ## Reporting Issues
 

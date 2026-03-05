@@ -3,7 +3,7 @@ namespace PlanViewer.App.Mcp;
 internal static class McpInstructions
 {
     public const string Text = """
-        You are connected to SQL Performance Studio, a SQL Server execution plan analyzer.
+        You are connected to Performance Studio, a SQL Server execution plan analyzer.
 
         ## CRITICAL: Read-Only Access
 
@@ -104,9 +104,9 @@ internal static class McpInstructions
         ```json
         {
           "mcpServers": {
-            "sql-performance-studio": {
+            "performance-studio": {
               "type": "streamable-http",
-              "url": "http://localhost:5152/mcp"
+              "url": "http://localhost:5152/"
             }
           }
         }

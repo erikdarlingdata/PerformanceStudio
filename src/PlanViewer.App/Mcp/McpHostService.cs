@@ -62,7 +62,7 @@ public sealed class McpHostService : BackgroundService
                 {
                     options.ServerInfo = new()
                     {
-                        Name = "SQLPerformanceStudio",
+                        Name = "PerformanceStudio",
                         Version = "0.7.0"
                     };
                     options.ServerInstructions = McpInstructions.Text;

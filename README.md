@@ -1,6 +1,6 @@
-# SQL Performance Studio
+# Performance Studio
 
-A cross-platform SQL Server execution plan analyzer. Parses `.sqlplan` XML, identifies performance problems, suggests missing indexes, and provides actionable warnings — from the command line or a desktop GUI.
+A cross-platform SQL Server execution plan analyzer with built-in MCP server for AI-assisted analysis. Parses `.sqlplan` XML, identifies performance problems, suggests missing indexes, and provides actionable warnings — from the command line or a desktop GUI.
 
 Built for developers and DBAs who want fast, automated plan analysis without clicking through SSMS.
 
@@ -139,7 +139,7 @@ planview analyze ./queries/ --server sql2022 --database StackOverflow2013 \
 ```
 
 Batch mode produces three files per query:
-- `query_name.sqlplan` — the raw execution plan XML (openable in SSMS or the SQL Performance Studio GUI)
+- `query_name.sqlplan` — the raw execution plan XML (openable in SSMS or the Performance Studio GUI)
 - `query_name.analysis.json` — structured analysis with warnings, missing indexes, and operator tree
 - `query_name.analysis.txt` — human-readable text report
 
@@ -240,6 +240,7 @@ Features:
 - **Copy Repro Script** — extracts parameters, SET options, and query text into a runnable `sp_executesql` script
 - **Get Actual Plan** — connect to a server and re-execute the query to capture runtime stats
 - **Query Store Analysis** — connect to a server and analyze top queries by CPU, duration, or reads
+- **MCP Server** — built-in Model Context Protocol server for AI-assisted plan analysis (opt-in)
 - Dark theme
 
 ```bash
@@ -248,14 +249,14 @@ dotnet run --project src/PlanViewer.App
 
 ## SSMS Extension
 
-A VSIX extension that adds **"Open in SQL Performance Studio"** to the execution plan right-click context menu in SSMS 18-22.
+A VSIX extension that adds **"Open in Performance Studio"** to the execution plan right-click context menu in SSMS 18-22.
 
 ### How it works
 
 1. Right-click on any execution plan in SSMS
-2. Click "Open in SQL Performance Studio"
+2. Click "Open in Performance Studio"
 3. The extension extracts the plan XML via reflection and saves it to a temp file
-4. SQL Performance Studio opens with the plan loaded
+4. Performance Studio opens with the plan loaded
 
 ### Installation
 
@@ -267,12 +268,54 @@ A VSIX extension that adds **"Open in SQL Performance Studio"** to the execution
 
 ### First run
 
-On first use, if SQL Performance Studio isn't found automatically, the extension will prompt you to locate `PlanViewer.App.exe`. The path is saved to the registry (`HKCU\SOFTWARE\DarlingData\SQLPerformanceStudio\InstallPath`) so you only need to do this once.
+On first use, if Performance Studio isn't found automatically, the extension will prompt you to locate `PlanViewer.App.exe`. The path is saved to the registry (`HKCU\SOFTWARE\DarlingData\SQLPerformanceStudio\InstallPath`) so you only need to do this once.
 
 The extension searches for the app in this order:
 1. Registry key (set automatically after first browse)
 2. System PATH
 3. Common install locations (`%LOCALAPPDATA%\Programs\SQLPerformanceStudio\`, `Program Files`, etc.)
+
+## MCP Server (LLM Integration)
+
+The desktop GUI includes an embedded [Model Context Protocol](https://modelcontextprotocol.io) server that exposes loaded execution plans and Query Store data to LLM clients like Claude Code and Cursor.
+
+### Setup
+
+1. Enable the MCP server in `~/.planview/settings.json`:
+
+```json
+{
+  "mcp_enabled": true,
+  "mcp_port": 5152
+}
+```
+
+2. Register with Claude Code:
+
+```
+claude mcp add --transport streamable-http --scope user performance-studio http://localhost:5152/
+```
+
+3. Open a new Claude Code session and ask questions like:
+   - "What plans are loaded in the application?"
+   - "Analyze the execution plan and tell me what's wrong"
+   - "Are there any missing index suggestions?"
+   - "Compare these two plans — which is better?"
+   - "Fetch the top 10 queries by CPU from Query Store"
+
+### Available Tools
+
+13 tools for plan analysis and Query Store data:
+
+| Category | Tools |
+|---|---|
+| Discovery | `list_plans`, `get_connections` |
+| Plan Analysis | `analyze_plan`, `get_plan_summary`, `get_plan_warnings`, `get_missing_indexes`, `get_plan_parameters`, `get_expensive_operators`, `get_plan_xml`, `compare_plans`, `get_repro_script` |
+| Query Store | `check_query_store`, `get_query_store_top` |
+
+Plan analysis tools work on plans loaded in the app (via file open, paste, query execution, or Query Store fetch). Query Store tools use a built-in read-only DMV query — no arbitrary SQL can be executed.
+
+The MCP server binds to `localhost` only and does not accept remote connections. Disabled by default.
 
 ## Project Structure
 

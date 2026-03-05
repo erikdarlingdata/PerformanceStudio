@@ -496,7 +496,7 @@ public partial class MainWindow : Window
 
             var reproScript = ReproScriptBuilder.BuildReproScript(
                 queryText, database, planXml,
-                isolationLevel: null, source: "SQL Performance Studio");
+                isolationLevel: null, source: "Performance Studio");
 
             var clipboard = this.Clipboard;
             if (clipboard != null)
@@ -597,7 +597,7 @@ public partial class MainWindow : Window
 
         var window = new Window
         {
-            Title = $"SQL Performance Studio — {title}",
+            Title = $"Performance Studio — {title}",
             Width = 700,
             Height = 600,
             MinWidth = 400,
@@ -1059,7 +1059,7 @@ public partial class MainWindow : Window
     {
         var dialog = new Window
         {
-            Title = "SQL Performance Studio",
+            Title = "Performance Studio",
             Width = 450,
             Height = 200,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,

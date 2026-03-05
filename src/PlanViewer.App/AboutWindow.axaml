@@ -1,8 +1,8 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="PlanViewer.App.AboutWindow"
-        Title="About SQL Performance Studio"
-        Width="450" Height="340"
+        Title="About Performance Studio"
+        Width="450" Height="420"
         CanResize="False"
         WindowStartupLocation="CenterOwner"
         Icon="avares://PlanViewer.App/EDD.ico"
@@ -11,7 +11,7 @@
     <Grid Margin="24" RowDefinitions="Auto,Auto,Auto,Auto,*,Auto">
 
         <!-- Title -->
-        <TextBlock Grid.Row="0" Text="SQL Performance Studio" FontWeight="Bold" FontSize="20"
+        <TextBlock Grid.Row="0" Text="Performance Studio" FontWeight="Bold" FontSize="20"
                    Foreground="{DynamicResource ForegroundBrush}" Margin="0,0,0,4"/>
         <TextBlock Grid.Row="1" x:Name="VersionText" Text="Version 0.3.0" FontSize="12"
                    Foreground="{DynamicResource ForegroundMutedBrush}" Margin="0,0,0,4"/>
@@ -46,8 +46,24 @@
                        TextDecorations="Underline"/>
         </StackPanel>
 
-        <!-- Spacer -->
-        <Panel Grid.Row="4"/>
+        <!-- MCP Settings -->
+        <StackPanel Grid.Row="4" Margin="0,0,0,12">
+            <TextBlock Text="Settings" FontWeight="SemiBold" FontSize="13"
+                       Foreground="{DynamicResource ForegroundBrush}" Margin="0,0,0,8"/>
+            <StackPanel Orientation="Horizontal" Spacing="12">
+                <CheckBox x:Name="McpEnabledCheckBox" Content="Enable MCP Server"
+                          FontSize="12" VerticalContentAlignment="Center"
+                          Foreground="{DynamicResource ForegroundBrush}"/>
+                <TextBlock Text="Port:" FontSize="12" VerticalAlignment="Center"
+                           Foreground="{DynamicResource ForegroundBrush}"/>
+                <TextBox x:Name="McpPortInput" Width="70" Height="28"
+                         Text="5152" FontSize="12" Padding="6,2"
+                         VerticalContentAlignment="Center"/>
+            </StackPanel>
+            <TextBlock Text="Restart the application after changing MCP settings."
+                       FontSize="11" Foreground="{DynamicResource ForegroundMutedBrush}"
+                       Margin="0,4,0,0"/>
+        </StackPanel>
 
         <!-- Close -->
         <Button Grid.Row="5" Content="Close" Click="CloseButton_Click"
