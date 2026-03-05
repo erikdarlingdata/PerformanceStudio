@@ -31,6 +31,11 @@ Fetch top queries by CPU, duration, logical reads, physical reads, writes, memor
 
 ![Query Store Integration](screenshots/Query%20Store%20Integration.png)
 
+### MCP Integration
+Ask Claude Code to analyze loaded plans, identify warnings, suggest indexes, and compare plans — all through the built-in MCP server.
+
+![MCP Integration](screenshots/MCP%20Integration.png)
+
 ## What It Does
 
 Feed it a query plan and it tells you what's wrong:
