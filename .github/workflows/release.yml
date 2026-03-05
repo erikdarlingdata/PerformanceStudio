@@ -1,0 +1,45 @@
+name: Release
+
+on:
+  pull_request:
+    branches: [main]
+    types: [closed]
+
+permissions:
+  contents: write
+
+jobs:
+  create-release:
+    if: github.event.pull_request.merged == true && github.event.pull_request.head.ref == 'dev'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get version
+        id: version
+        shell: pwsh
+        run: |
+          $version = ([xml](Get-Content src/PlanViewer.App/PlanViewer.App.csproj)).Project.PropertyGroup.Version | Where-Object { $_ }
+          echo "VERSION=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Check if release already exists
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "v${{ steps.version.outputs.VERSION }}" > /dev/null 2>&1; then
+            echo "EXISTS=true" >> $GITHUB_OUTPUT
+          else
+            echo "EXISTS=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create release
+        if: steps.check.outputs.EXISTS == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "v${{ steps.version.outputs.VERSION }}" \
+            --title "v${{ steps.version.outputs.VERSION }}" \
+            --generate-notes \
+            --target main
