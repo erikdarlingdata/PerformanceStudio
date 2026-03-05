@@ -7,7 +7,7 @@ Built for developers and DBAs who want fast, automated plan analysis without cli
 ## Screenshots
 
 ### Query Editor
-Write queries with syntax highlighting, connect to any SQL Server, and capture plans with one click.
+Write queries with syntax highlighting and SQL keyword completion, connect to any SQL Server, and capture plans with one click.
 
 ![Query Editor](screenshots/Query%20Editor.png)
 
@@ -27,7 +27,7 @@ Side-by-side comparison of two plans showing cost, runtime, I/O, memory, and wai
 ![Plan Comparison](screenshots/Plan%20Comparison.png)
 
 ### Query Store Integration
-Fetch top queries by CPU, duration, or reads from Query Store and load their plans directly into the analyzer.
+Fetch top queries by CPU, duration, logical reads, physical reads, writes, memory, or executions from Query Store and load their plans directly into the analyzer.
 
 ![Query Store Integration](screenshots/Query%20Store%20Integration.png)
 
