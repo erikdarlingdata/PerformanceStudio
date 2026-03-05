@@ -6,7 +6,30 @@ Built for developers and DBAs who want fast, automated plan analysis without cli
 
 ## Screenshots
 
-*Screenshots coming soon — see the [screenshots/](screenshots/) folder.*
+### Query Editor
+Write queries with syntax highlighting, connect to any SQL Server, and capture plans with one click.
+
+![Query Editor](screenshots/Query%20Editor.png)
+
+### Actual Execution Plan with Plan Insights
+Graphical plan tree with SSMS-style operator icons, cost percentages, row counts, and warning badges. The Plan Insights panel shows runtime summary, missing indexes, parameters, and wait stats at a glance.
+
+![Actual Execution Plan](screenshots/Actual%20Execution%20Plan.png)
+
+### Advice for Humans
+One-click text report with server context, warnings, wait stats, and expensive operators — ready to read or share.
+
+![Advice for Humans](screenshots/Advice%20For%20Humans.png)
+
+### Plan Comparison
+Side-by-side comparison of two plans showing cost, runtime, I/O, memory, and wait stat differences.
+
+![Plan Comparison](screenshots/Plan%20Comparison.png)
+
+### Query Store Integration
+Fetch top queries by CPU, duration, or reads from Query Store and load their plans directly into the analyzer.
+
+![Query Store Integration](screenshots/Query%20Store%20Integration.png)
 
 ## What It Does
 
