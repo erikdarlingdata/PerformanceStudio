@@ -4,6 +4,50 @@ A cross-platform SQL Server execution plan analyzer with built-in MCP server for
 
 Built for developers and DBAs who want fast, automated plan analysis without clicking through SSMS.
 
+## Screenshots
+
+### Query Editor
+Write queries with syntax highlighting and SQL keyword completion, connect to any SQL Server, and capture plans with one click.
+
+![Query Editor](screenshots/Query%20Editor.png)
+
+### Actual Execution Plan with Plan Insights
+Graphical plan tree with SSMS-style operator icons, cost percentages, row counts, and warning badges. The Plan Insights panel shows runtime summary, missing indexes, parameters, and wait stats at a glance.
+
+![Actual Execution Plan](screenshots/Actual%20Execution%20Plan.png)
+
+### Multi-Statement Navigation
+Navigate stored procedures and batches with multiple statements. Click any statement in the grid to jump to its plan. Plan Insights shows parameters with compiled vs runtime values.
+
+![Navigate Stored Procedure Statements and Plans](screenshots/Navigate%20Stored%20Procedure%20Statements%20and%20Plans.png)
+
+### Operator Tooltip and Properties
+Hover over any operator for a detailed tooltip with costs, rows, I/O, timing, parallelism, and warnings. Click to open the full properties panel with per-thread timing, predicates, and more.
+
+![Operator Tooltip](screenshots/Actual%20Execution%20Plan%20With%20Warning%20Tool%20Tip.png)
+
+![Operator Properties](screenshots/Operator%20Properties.png)
+
+### Advice for Humans
+One-click text report with server context, warnings, wait stats, and expensive operators — ready to read or share.
+
+![Advice for Humans](screenshots/Advice%20For%20Humans.png)
+
+### Plan Comparison
+Side-by-side comparison of two plans showing cost, runtime, I/O, memory, and wait stat differences.
+
+![Plan Comparison](screenshots/Plan%20Comparison.png)
+
+### Query Store Integration
+Fetch top queries by CPU, duration, logical reads, physical reads, writes, memory, or executions from Query Store and load their plans directly into the analyzer.
+
+![Query Store Integration](screenshots/Query%20Store%20Integration.png)
+
+### MCP Integration
+Ask Claude Code to analyze loaded plans, identify warnings, suggest indexes, and compare plans — all through the built-in MCP server.
+
+![MCP Integration](screenshots/MCP%20Integration.png)
+
 ## What It Does
 
 Feed it a query plan and it tells you what's wrong:
@@ -260,7 +304,7 @@ A VSIX extension that adds **"Open in Performance Studio"** to the execution pla
 
 ### Installation
 
-1. Download both `PlanViewer.Ssms.vsix` and `InstallSsmsExtension.exe` from the [latest release](https://github.com/erikdarlingdata/PerformanceStudio/releases)
+1. Download `PlanViewer.Ssms.vsix` and `InstallSsmsExtension.exe` from the [v0.7.0 release](https://github.com/erikdarlingdata/PerformanceStudio/releases/tag/v0.7.0) (SSMS extension is not yet included in automated builds)
 2. Place them in the same folder
 3. Double-click `InstallSsmsExtension.exe` and approve the UAC prompt
 4. The installer auto-detects SSMS 21 and/or SSMS 22 and installs into both
@@ -293,7 +337,7 @@ The desktop GUI includes an embedded [Model Context Protocol](https://modelconte
 2. Register with Claude Code:
 
 ```
-claude mcp add --transport streamable-http --scope user performance-studio http://localhost:5152/
+claude mcp add --transport http --scope user performance-studio http://localhost:5152/
 ```
 
 3. Open a new Claude Code session and ask questions like:
@@ -433,4 +477,6 @@ Rules can be disabled or have their severity overridden via a `.planview.json` c
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).
+
+Execution plan operator icons are from Microsoft's [vscode-mssql](https://github.com/microsoft/vscode-mssql) extension (MIT). See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for details.
