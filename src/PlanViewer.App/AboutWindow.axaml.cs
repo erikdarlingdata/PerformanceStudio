@@ -12,6 +12,7 @@ using System.Runtime.InteropServices;
 using System.Text.Json;
 using Avalonia.Controls;
 using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using PlanViewer.App.Mcp;
 
@@ -59,6 +60,18 @@ public partial class AboutWindow : Window
     private void GitHubLink_Click(object? sender, PointerPressedEventArgs e) => OpenUrl(GitHubUrl);
     private void ReportIssueLink_Click(object? sender, PointerPressedEventArgs e) => OpenUrl(IssuesUrl);
     private void DarlingDataLink_Click(object? sender, PointerPressedEventArgs e) => OpenUrl(DarlingDataUrl);
+    private async void CopyMcpCommand_Click(object? sender, RoutedEventArgs e)
+    {
+        var port = int.TryParse(McpPortInput.Text, out var p) && p >= 1024 && p <= 65535 ? p : 5152;
+        var command = $"claude mcp add --transport streamable-http --scope user performance-studio http://localhost:{port}/";
+        var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+        if (clipboard != null)
+        {
+            await clipboard.SetTextAsync(command);
+            McpCopyStatus.Text = "Copied to clipboard!";
+        }
+    }
+
     private void CloseButton_Click(object? sender, RoutedEventArgs e) => Close();
 
     private static void OpenUrl(string url)
