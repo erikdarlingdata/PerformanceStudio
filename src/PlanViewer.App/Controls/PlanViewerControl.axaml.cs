@@ -57,6 +57,7 @@ public partial class PlanViewerControl : UserControl
     private ParsedPlan? _currentPlan;
     private PlanStatement? _currentStatement;
     private string? _queryText;
+    private ServerMetadata? _serverMetadata;
     private double _zoomLevel = 1.0;
     private const double ZoomStep = 0.15;
     private const double MinZoom = 0.1;
@@ -145,6 +146,20 @@ public partial class PlanViewerControl : UserControl
     /// Exposes the query text associated with this plan (if any).
     /// </summary>
     public string? QueryText => _queryText;
+
+    /// <summary>
+    /// Server metadata for advice generation and Plan Insights display.
+    /// </summary>
+    public ServerMetadata? Metadata
+    {
+        get => _serverMetadata;
+        set
+        {
+            _serverMetadata = value;
+            if (_currentStatement != null)
+                ShowServerContext();
+        }
+    }
 
     public void LoadPlan(string planXml, string label, string? queryText = null)
     {
@@ -2327,6 +2342,77 @@ public partial class PlanViewerControl : UserControl
             AddRow("Early abort", statement.StatementOptmEarlyAbortReason);
 
         RuntimeSummaryContent.Children.Add(grid);
+        ShowServerContext();
+    }
+
+    private void ShowServerContext()
+    {
+        ServerContextContent.Children.Clear();
+        if (_serverMetadata == null)
+        {
+            ServerContextBorder.IsVisible = false;
+            return;
+        }
+
+        var m = _serverMetadata;
+        var fgColor = "#E4E6EB";
+
+        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*") };
+        int rowIndex = 0;
+
+        void AddRow(string label, string value)
+        {
+            grid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
+            var lb = new TextBlock
+            {
+                Text = label, FontSize = 11,
+                Foreground = new SolidColorBrush(Color.Parse(fgColor)),
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Margin = new Thickness(0, 1, 8, 1)
+            };
+            Grid.SetRow(lb, rowIndex);
+            Grid.SetColumn(lb, 0);
+            grid.Children.Add(lb);
+
+            var vb = new TextBlock
+            {
+                Text = value, FontSize = 11,
+                Foreground = new SolidColorBrush(Color.Parse(fgColor)),
+                Margin = new Thickness(0, 1, 0, 1)
+            };
+            Grid.SetRow(vb, rowIndex);
+            Grid.SetColumn(vb, 1);
+            grid.Children.Add(vb);
+            rowIndex++;
+        }
+
+        // Server name + edition
+        var edition = m.Edition;
+        if (edition != null)
+        {
+            var idx = edition.IndexOf(" (64-bit)");
+            if (idx > 0) edition = edition[..idx];
+        }
+        var serverLine = m.ServerName ?? "Unknown";
+        if (edition != null) serverLine += $" ({edition})";
+        if (m.ProductVersion != null) serverLine += $", {m.ProductVersion}";
+        AddRow("Server", serverLine);
+
+        // Hardware
+        if (m.CpuCount > 0)
+            AddRow("Hardware", $"{m.CpuCount} CPUs, {m.PhysicalMemoryMB:N0} MB RAM");
+
+        // Instance settings
+        AddRow("MAXDOP", m.MaxDop.ToString());
+        AddRow("Cost threshold", m.CostThresholdForParallelism.ToString());
+        AddRow("Max memory", $"{m.MaxServerMemoryMB:N0} MB");
+
+        // Database
+        if (m.Database != null)
+            AddRow("Database", $"{m.Database.Name} (compat {m.Database.CompatibilityLevel})");
+
+        ServerContextContent.Children.Add(grid);
+        ServerContextBorder.IsVisible = true;
     }
 
     private void UpdateInsightsHeader()

@@ -442,14 +442,14 @@ public partial class MainWindow : Window
         humanBtn.Click += (_, _) =>
         {
             if (viewer.CurrentPlan == null) return;
-            var analysis = ResultMapper.Map(viewer.CurrentPlan, "file");
+            var analysis = ResultMapper.Map(viewer.CurrentPlan, "file", viewer.Metadata);
             ShowAdviceWindow("Advice for Humans", TextFormatter.Format(analysis));
         };
 
         robotBtn.Click += (_, _) =>
         {
             if (viewer.CurrentPlan == null) return;
-            var analysis = ResultMapper.Map(viewer.CurrentPlan, "file");
+            var analysis = ResultMapper.Map(viewer.CurrentPlan, "file", viewer.Metadata);
             var json = JsonSerializer.Serialize(analysis, new JsonSerializerOptions { WriteIndented = true });
             ShowAdviceWindow("Advice for Robots", json);
         };
@@ -1024,6 +1024,17 @@ public partial class MainWindow : Window
 
         try
         {
+            // Fetch server metadata for advice and Plan Insights
+            ServerMetadata? metadata = null;
+            try
+            {
+                metadata = await ServerMetadataService.FetchServerMetadataAsync(
+                    connectionString, isAzure);
+                metadata.Database = await ServerMetadataService.FetchDatabaseMetadataAsync(
+                    connectionString, metadata.SupportsScopedConfigs);
+            }
+            catch { /* Non-fatal — advice will just lack server context */ }
+
             var cts = new System.Threading.CancellationTokenSource();
             var sw = System.Diagnostics.Stopwatch.StartNew();
 
@@ -1042,6 +1053,7 @@ public partial class MainWindow : Window
 
             // Add a new tab with the actual plan
             var actualViewer = new PlanViewerControl();
+            actualViewer.Metadata = metadata;
             actualViewer.LoadPlan(actualPlanXml, "Actual Plan", queryText);
 
             var content = CreatePlanTabContent(actualViewer);

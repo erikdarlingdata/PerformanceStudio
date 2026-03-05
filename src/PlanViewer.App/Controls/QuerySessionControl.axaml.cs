@@ -642,6 +642,7 @@ public partial class QuerySessionControl : UserControl
         var label = labelOverride ?? (estimated ? $"Est Plan {_planCounter}" : $"Plan {_planCounter}");
 
         var viewer = new PlanViewerControl();
+        viewer.Metadata = _serverMetadata;
         viewer.LoadPlan(planXml, label, queryText);
 
         // Build tab header with close button and right-click rename
