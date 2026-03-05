@@ -25,6 +25,7 @@ jobs:
 
       - name: Check if release already exists
         id: check
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -36,6 +37,7 @@ jobs:
 
       - name: Create release
         if: steps.check.outputs.EXISTS == 'false'
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
