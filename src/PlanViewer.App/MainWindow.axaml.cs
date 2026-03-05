@@ -18,6 +18,7 @@ using PlanViewer.App.Controls;
 using PlanViewer.App.Services;
 using PlanViewer.Core.Interfaces;
 using PlanViewer.Core.Models;
+using PlanViewer.App.Mcp;
 using PlanViewer.Core.Output;
 using PlanViewer.Core.Services;
 
@@ -30,6 +31,8 @@ public partial class MainWindow : Window
     private readonly ICredentialService _credentialService;
     private readonly ConnectionStore _connectionStore;
     private readonly CancellationTokenSource _pipeCts = new();
+    private McpHostService? _mcpHost;
+    private CancellationTokenSource? _mcpCts;
     private int _queryCounter;
 
     public MainWindow()
@@ -95,6 +98,9 @@ public partial class MainWindow : Window
             // Open with a query editor so toolbar buttons are visible on startup
             NewQuery_Click(this, new RoutedEventArgs());
         }
+
+        // Start MCP server if enabled in settings
+        StartMcpServer();
     }
 
     private void StartPipeServer()
@@ -136,9 +142,34 @@ public partial class MainWindow : Window
         }, token);
     }
 
-    protected override void OnClosed(EventArgs e)
+    private void StartMcpServer()
+    {
+        var settings = McpSettings.Load();
+        if (!settings.Enabled)
+        {
+            McpStatusMenuItem.Header = "MCP Server: Off";
+            return;
+        }
+
+        _mcpCts = new CancellationTokenSource();
+        _mcpHost = new McpHostService(
+            PlanSessionManager.Instance, _connectionStore, _credentialService, settings.Port);
+
+        _ = _mcpHost.StartAsync(_mcpCts.Token);
+        McpStatusMenuItem.Header = $"MCP Server: Running (port {settings.Port})";
+    }
+
+    protected override async void OnClosed(EventArgs e)
     {
         _pipeCts.Cancel();
+
+        if (_mcpHost != null && _mcpCts != null)
+        {
+            _mcpCts.Cancel();
+            await _mcpHost.StopAsync(CancellationToken.None);
+            _mcpHost = null;
+        }
+
         base.OnClosed(e);
     }
 

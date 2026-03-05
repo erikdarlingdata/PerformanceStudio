@@ -16,6 +16,7 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
 using Avalonia.Platform.Storage;
 using PlanViewer.App.Helpers;
+using PlanViewer.App.Mcp;
 using PlanViewer.Core.Models;
 using PlanViewer.Core.Services;
 
@@ -52,6 +53,7 @@ public class StatementRow
 
 public partial class PlanViewerControl : UserControl
 {
+    private readonly string _mcpSessionId = Guid.NewGuid().ToString();
     private ParsedPlan? _currentPlan;
     private PlanStatement? _currentStatement;
     private string? _queryText;
@@ -175,10 +177,36 @@ public partial class PlanViewerControl : UserControl
         PopulateStatementsGrid(allStatements);
         ShowStatementsPanel();
         StatementsGrid.SelectedIndex = 0;
+
+        // Register with MCP session manager for AI tool access
+        // Count warnings from both statement-level PlanWarnings and all node Warnings
+        int warningCount = 0, criticalCount = 0;
+        foreach (var s in allStatements)
+        {
+            warningCount += s.PlanWarnings.Count;
+            criticalCount += s.PlanWarnings.Count(w => w.Severity == PlanWarningSeverity.Critical);
+            if (s.RootNode != null)
+                CountNodeWarnings(s.RootNode, ref warningCount, ref criticalCount);
+        }
+
+        PlanSessionManager.Instance.Register(_mcpSessionId, new PlanSession
+        {
+            SessionId = _mcpSessionId,
+            Label = label,
+            Source = "file",
+            Plan = _currentPlan,
+            QueryText = queryText,
+            StatementCount = allStatements.Count,
+            HasActualStats = allStatements.Any(s => s.QueryTimeStats != null),
+            WarningCount = warningCount,
+            CriticalWarningCount = criticalCount,
+            MissingIndexCount = _currentPlan.AllMissingIndexes.Count
+        });
     }
 
     public void Clear()
     {
+        PlanSessionManager.Instance.Unregister(_mcpSessionId);
         PlanCanvas.Children.Clear();
         _nodeBorderMap.Clear();
         _currentPlan = null;
@@ -193,6 +221,14 @@ public partial class PlanViewerControl : UserControl
         StatementsButton.IsVisible = false;
         StatementsButtonSeparator.IsVisible = false;
         ClosePropertiesPanel();
+    }
+
+    private static void CountNodeWarnings(PlanNode node, ref int total, ref int critical)
+    {
+        total += node.Warnings.Count;
+        critical += node.Warnings.Count(w => w.Severity == PlanWarningSeverity.Critical);
+        foreach (var child in node.Children)
+            CountNodeWarnings(child, ref total, ref critical);
     }
 
     private void RenderStatement(PlanStatement statement)

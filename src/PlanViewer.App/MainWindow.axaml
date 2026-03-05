@@ -26,6 +26,8 @@
             </MenuItem>
             <MenuItem Header="_Help">
                 <MenuItem Header="_About SQL Performance Studio" Click="About_Click"/>
+                <Separator/>
+                <MenuItem x:Name="McpStatusMenuItem" Header="MCP Server: Off" IsEnabled="False"/>
             </MenuItem>
         </Menu>
 
