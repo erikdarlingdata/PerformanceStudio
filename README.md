@@ -320,7 +320,7 @@ The desktop GUI includes an embedded [Model Context Protocol](https://modelconte
 2. Register with Claude Code:
 
 ```
-claude mcp add --transport streamable-http --scope user performance-studio http://localhost:5152/
+claude mcp add --transport http --scope user performance-studio http://localhost:5152/
 ```
 
 3. Open a new Claude Code session and ask questions like:

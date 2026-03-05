@@ -105,7 +105,7 @@ internal static class McpInstructions
         {
           "mcpServers": {
             "performance-studio": {
-              "type": "streamable-http",
+              "type": "http",
               "url": "http://localhost:5152/"
             }
           }
