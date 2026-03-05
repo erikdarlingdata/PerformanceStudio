@@ -16,6 +16,11 @@ Graphical plan tree with SSMS-style operator icons, cost percentages, row counts
 
 ![Actual Execution Plan](screenshots/Actual%20Execution%20Plan.png)
 
+### Multi-Statement Navigation
+Navigate stored procedures and batches with multiple statements. Click any statement in the grid to jump to its plan. Plan Insights shows parameters with compiled vs runtime values.
+
+![Navigate Stored Procedure Statements and Plans](screenshots/Navigate%20Stored%20Procedure%20Statements%20and%20Plans.png)
+
 ### Operator Tooltip and Properties
 Hover over any operator for a detailed tooltip with costs, rows, I/O, timing, parallelism, and warnings. Click to open the full properties panel with per-thread timing, predicates, and more.
 
