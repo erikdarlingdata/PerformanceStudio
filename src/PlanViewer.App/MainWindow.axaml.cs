@@ -1070,7 +1070,7 @@ public partial class MainWindow : Window
             var actualPlanXml = await ActualPlanExecutor.ExecuteForActualPlanAsync(
                 connectionString, database, queryText,
                 viewer.RawXml, isolationLevel: null,
-                isAzureSqlDb: isAzure, timeoutSeconds: 3600, cts.Token);
+                isAzureSqlDb: isAzure, timeoutSeconds: 0, cts.Token);
 
             sw.Stop();
 

@@ -466,14 +466,14 @@ public partial class QuerySessionControl : UserControl
             if (estimated)
             {
                 planXml = await EstimatedPlanExecutor.GetEstimatedPlanAsync(
-                    _connectionString, _selectedDatabase, queryText, timeoutSeconds: 3600, ct);
+                    _connectionString, _selectedDatabase, queryText, timeoutSeconds: 0, ct);
             }
             else
             {
                 planXml = await ActualPlanExecutor.ExecuteForActualPlanAsync(
                     _connectionString, _selectedDatabase, queryText,
                     planXml: null, isolationLevel: null,
-                    isAzureSqlDb: isAzure, timeoutSeconds: 3600, ct);
+                    isAzureSqlDb: isAzure, timeoutSeconds: 0, ct);
             }
 
             sw.Stop();
@@ -1185,7 +1185,7 @@ public partial class QuerySessionControl : UserControl
             var actualPlanXml = await ActualPlanExecutor.ExecuteForActualPlanAsync(
                 _connectionString, _selectedDatabase, queryText,
                 planXml, isolationLevel: null,
-                isAzureSqlDb: isAzure, timeoutSeconds: 3600, ct);
+                isAzureSqlDb: isAzure, timeoutSeconds: 0, ct);
 
             sw.Stop();
 
