@@ -7,6 +7,7 @@
  */
 
 using System;
+using System.Collections.Generic;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -55,7 +56,7 @@ public static class ActualPlanExecutor
         sb.AppendLine("SET STATISTICS XML OFF;");
 
         var fullScript = sb.ToString();
-        string? capturedPlanXml = null;
+        var capturedPlanXmls = new List<string>();
 
         /* Override database in connection string */
         var builder = new SqlConnectionStringBuilder(connectionString);
@@ -89,7 +90,7 @@ public static class ActualPlanExecutor
                 if (value != null && value.TrimStart().StartsWith("<ShowPlanXML", StringComparison.Ordinal))
                 {
                     /* This is a plan XML result set — capture it */
-                    capturedPlanXml = value;
+                    capturedPlanXmls.Add(value);
                 }
                 else
                 {
@@ -105,6 +106,8 @@ public static class ActualPlanExecutor
         }
         while (await reader.NextResultAsync(cancellationToken));
 
-        return capturedPlanXml;
+        if (capturedPlanXmls.Count == 0) return null;
+        if (capturedPlanXmls.Count == 1) return capturedPlanXmls[0];
+        return EstimatedPlanExecutor.MergeShowPlanXmls(capturedPlanXmls);
     }
 }

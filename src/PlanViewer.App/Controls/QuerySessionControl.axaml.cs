@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Xml.Linq;
@@ -132,9 +133,25 @@ public partial class QuerySessionControl : UserControl
             QueryEditor.SelectAll();
         };
 
+        var executeFromCursorItem = new MenuItem { Header = "Execute from Cursor" };
+        executeFromCursorItem.Click += async (_, _) =>
+        {
+            var text = GetTextFromCursor();
+            if (!string.IsNullOrWhiteSpace(text))
+                await CaptureAndShowPlan(estimated: false, queryTextOverride: text);
+        };
+
+        var executeCurrentBatchItem = new MenuItem { Header = "Execute Current Batch" };
+        executeCurrentBatchItem.Click += async (_, _) =>
+        {
+            var text = GetCurrentBatch();
+            if (!string.IsNullOrWhiteSpace(text))
+                await CaptureAndShowPlan(estimated: false, queryTextOverride: text);
+        };
+
         QueryEditor.TextArea.ContextMenu = new ContextMenu
         {
-            Items = { cutItem, copyItem, pasteItem, new Separator(), selectAllItem }
+            Items = { cutItem, copyItem, pasteItem, new Separator(), selectAllItem, new Separator(), executeFromCursorItem, executeCurrentBatchItem }
         };
     }
 
@@ -257,6 +274,47 @@ public partial class QuerySessionControl : UserControl
         }
 
         return (doc.GetText(start, offset - start), start);
+    }
+
+    private string? GetSelectedTextOrNull()
+    {
+        var selection = QueryEditor.TextArea.Selection;
+        if (selection.IsEmpty) return null;
+        return selection.GetText();
+    }
+
+    private string GetTextFromCursor()
+    {
+        var doc = QueryEditor.Document;
+        var offset = QueryEditor.CaretOffset;
+        return doc.GetText(offset, doc.TextLength - offset);
+    }
+
+    private string? GetCurrentBatch()
+    {
+        var doc = QueryEditor.Document;
+        var caretOffset = QueryEditor.CaretOffset;
+        var text = doc.Text;
+        var goPattern = new Regex(@"^\s*GO\s*$", RegexOptions.IgnoreCase | RegexOptions.Multiline);
+        var matches = goPattern.Matches(text);
+
+        int batchStart = 0;
+        int batchEnd = text.Length;
+
+        foreach (Match m in matches)
+        {
+            if (m.Index + m.Length <= caretOffset)
+            {
+                batchStart = m.Index + m.Length;
+            }
+            else if (m.Index >= caretOffset)
+            {
+                batchEnd = m.Index;
+                break;
+            }
+        }
+
+        return text[batchStart..batchEnd].Trim();
     }
 
     private void SetStatus(string text, bool autoClear = true)
@@ -435,7 +493,7 @@ public partial class QuerySessionControl : UserControl
         await CaptureAndShowPlan(estimated: true);
     }
 
-    private async Task CaptureAndShowPlan(bool estimated)
+    private async Task CaptureAndShowPlan(bool estimated, string? queryTextOverride = null)
     {
         if (_connectionString == null || _selectedDatabase == null)
         {
@@ -443,7 +501,9 @@ public partial class QuerySessionControl : UserControl
             return;
         }
 
-        var queryText = QueryEditor.Text?.Trim();
+        var queryText = queryTextOverride?.Trim()
+                        ?? GetSelectedTextOrNull()?.Trim()
+                        ?? QueryEditor.Text?.Trim();
         if (string.IsNullOrEmpty(queryText))
         {
             SetStatus("Enter a query", autoClear: false);
