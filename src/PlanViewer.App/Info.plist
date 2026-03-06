@@ -8,10 +8,12 @@
     <string>Performance Studio</string>
     <key>CFBundleIdentifier</key>
     <string>com.darlingdata.sqlperformancestudio</string>
+    <key>CFBundleExecutable</key>
+    <string>PlanViewer.App</string>
     <key>CFBundleVersion</key>
-    <string>0.7.0</string>
+    <string>0.9.0</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.7.0</string>
+    <string>0.9.0</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>NSHumanReadableCopyright</key>

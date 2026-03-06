@@ -73,11 +73,47 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path releases
 
-          $rids = @('win-x64', 'linux-x64', 'osx-x64', 'osx-arm64')
-          foreach ($rid in $rids) {
+          # Package Windows and Linux as flat zips
+          foreach ($rid in @('win-x64', 'linux-x64')) {
             if (Test-Path 'README.md') { Copy-Item 'README.md' "publish/$rid/" }
             if (Test-Path 'LICENSE') { Copy-Item 'LICENSE' "publish/$rid/" }
             Compress-Archive -Path "publish/$rid/*" -DestinationPath "releases/PerformanceStudio-$rid.zip" -Force
+          }
+
+          # Package macOS as proper .app bundles
+          foreach ($rid in @('osx-x64', 'osx-arm64')) {
+            $appName = "PerformanceStudio.app"
+            $bundleDir = "publish/$rid-bundle/$appName"
+
+            # Create .app bundle structure
+            New-Item -ItemType Directory -Force -Path "$bundleDir/Contents/MacOS"
+            New-Item -ItemType Directory -Force -Path "$bundleDir/Contents/Resources"
+
+            # Copy all published files into Contents/MacOS
+            Copy-Item -Path "publish/$rid/*" -Destination "$bundleDir/Contents/MacOS/" -Recurse
+
+            # Move Info.plist to Contents/ (it was copied to MacOS/ with the publish output)
+            if (Test-Path "$bundleDir/Contents/MacOS/Info.plist") {
+              Move-Item -Path "$bundleDir/Contents/MacOS/Info.plist" -Destination "$bundleDir/Contents/Info.plist" -Force
+            }
+
+            # Update version in Info.plist to match csproj
+            $plist = Get-Content "$bundleDir/Contents/Info.plist" -Raw
+            $plist = $plist -replace '(<key>CFBundleVersion</key>\s*<string>)[^<]*(</string>)', "`${1}$env:VERSION`${2}"
+            $plist = $plist -replace '(<key>CFBundleShortVersionString</key>\s*<string>)[^<]*(</string>)', "`${1}$env:VERSION`${2}"
+            Set-Content -Path "$bundleDir/Contents/Info.plist" -Value $plist -NoNewline
+
+            # Move icon to Contents/Resources
+            if (Test-Path "$bundleDir/Contents/MacOS/EDD.icns") {
+              Move-Item -Path "$bundleDir/Contents/MacOS/EDD.icns" -Destination "$bundleDir/Contents/Resources/EDD.icns" -Force
+            }
+
+            # Add README and LICENSE alongside the .app bundle
+            $wrapperDir = "publish/$rid-bundle"
+            if (Test-Path 'README.md') { Copy-Item 'README.md' "$wrapperDir/" }
+            if (Test-Path 'LICENSE') { Copy-Item 'LICENSE' "$wrapperDir/" }
+
+            Compress-Archive -Path "$wrapperDir/*" -DestinationPath "releases/PerformanceStudio-$rid.zip" -Force
           }
 
           # Checksums
