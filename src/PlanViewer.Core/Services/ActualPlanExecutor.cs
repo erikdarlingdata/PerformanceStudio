@@ -36,7 +36,7 @@ public static class ActualPlanExecutor
     /// <returns>The actual execution plan XML, or null if no plan was captured.</returns>
     public static async Task<string?> ExecuteForActualPlanAsync(
         string connectionString,
-        string databaseName,
+        string? databaseName,
         string queryText,
         string? planXml,
         string? isolationLevel,
