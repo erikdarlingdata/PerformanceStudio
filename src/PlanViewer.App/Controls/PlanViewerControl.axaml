@@ -52,13 +52,15 @@
                       Foreground="{DynamicResource ForegroundBrush}"
                       Background="Transparent"
                       BorderThickness="0"
-                      Padding="0">
+                      Padding="0"
+                      HorizontalAlignment="Stretch"
+                      HorizontalContentAlignment="Stretch">
                 <Expander.Header>
                     <TextBlock x:Name="InsightsHeader" Text="  Plan Insights"
                                FontWeight="SemiBold"
                                Foreground="{DynamicResource ForegroundBrush}"/>
                 </Expander.Header>
-                <Grid MaxHeight="220">
+                <Grid MaxHeight="220" HorizontalAlignment="Stretch">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" MinWidth="0"/>
                         <ColumnDefinition Width="Auto" MinWidth="180"/>
@@ -153,7 +155,7 @@
                     <Border Grid.Column="4" Padding="10,4,10,8"
                             Background="#1A2A3D">
                         <ScrollViewer VerticalScrollBarVisibility="Auto"
-                                      HorizontalScrollBarVisibility="Disabled">
+                                      HorizontalScrollBarVisibility="Auto">
                             <StackPanel>
                                 <TextBlock x:Name="WaitStatsHeader"
                                            Text="Wait Stats"
