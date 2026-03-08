@@ -708,21 +708,11 @@ public partial class QuerySessionControl : UserControl
 
     private void ShowAdviceWindow(string title, string content)
     {
-        var textBox = new TextBox
-        {
-            Text = content,
-            IsReadOnly = true,
-            AcceptsReturn = true,
-            FontFamily = new FontFamily("Consolas, Menlo, monospace"),
-            FontSize = 12,
-            Background = Brushes.Transparent,
-            BorderThickness = new Avalonia.Thickness(0),
-            TextWrapping = TextWrapping.Wrap
-        };
+        var styledContent = AdviceContentBuilder.Build(content);
 
         var scrollViewer = new ScrollViewer
         {
-            Content = textBox,
+            Content = styledContent,
             HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
             VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto
         };

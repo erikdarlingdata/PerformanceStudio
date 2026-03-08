@@ -2385,7 +2385,15 @@ public partial class PlanViewerControl : UserControl
         if (!string.IsNullOrEmpty(statement.StatementOptmEarlyAbortReason))
             AddRow("Early abort", statement.StatementOptmEarlyAbortReason);
 
-        RuntimeSummaryContent.Children.Add(grid);
+        if (grid.Children.Count > 0)
+        {
+            RuntimeSummaryContent.Children.Add(grid);
+            RuntimeSummaryEmpty.IsVisible = false;
+        }
+        else
+        {
+            RuntimeSummaryEmpty.IsVisible = true;
+        }
         ShowServerContext();
     }
 
@@ -2394,9 +2402,12 @@ public partial class PlanViewerControl : UserControl
         ServerContextContent.Children.Clear();
         if (_serverMetadata == null)
         {
-            ServerContextBorder.IsVisible = false;
+            ServerContextEmpty.IsVisible = true;
+            ServerContextBorder.IsVisible = true;
             return;
         }
+
+        ServerContextEmpty.IsVisible = false;
 
         var m = _serverMetadata;
         var fgColor = "#E4E6EB";

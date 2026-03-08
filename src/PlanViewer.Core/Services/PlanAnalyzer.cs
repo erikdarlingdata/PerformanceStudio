@@ -61,7 +61,8 @@ public static class PlanAnalyzer
         [21] = "CTE Multiple References", [22] = "Table Variable", [23] = "Table-Valued Function",
         [24] = "Top Above Scan", [25] = "Ineffective Parallelism", [26] = "Row Goal",
         [27] = "Optimize For Unknown", [28] = "NOT IN with Nullable Column",
-        [29] = "Implicit Conversion", [30] = "Wide Index Suggestion"
+        [29] = "Implicit Conversion", [30] = "Wide Index Suggestion",
+        [31] = "Parallel Wait Bottleneck"
     };
 
     // Reverse lookup: WarningType → rule number
@@ -276,20 +277,16 @@ public static class PlanAnalyzer
         // Rule 25: Ineffective parallelism — parallel plan where CPU ≈ elapsed
         // In an effective parallel plan, CPU time should be significantly higher than
         // elapsed time because multiple threads are working simultaneously.
-        // When they're nearly equal, the work ran essentially serially despite the
-        // overhead of thread scheduling and exchanges.
+        // When they're nearly equal (ratio 0.8–1.3), the work ran essentially serially.
         if (!cfg.IsRuleDisabled(25) && stmt.DegreeOfParallelism > 1 && stmt.QueryTimeStats != null)
         {
             var cpu = stmt.QueryTimeStats.CpuTimeMs;
             var elapsed = stmt.QueryTimeStats.ElapsedTimeMs;
 
-            // Only flag if elapsed is meaningful (>= 1 second) to avoid noise
             if (elapsed >= 1000 && cpu > 0)
             {
                 var ratio = (double)cpu / elapsed;
-                // A well-parallelized query at DOP N should have CPU/Elapsed near N.
-                // If CPU/Elapsed is close to 1.0, work was essentially serial.
-                if (ratio <= 1.3)
+                if (ratio >= 0.8 && ratio <= 1.3)
                 {
                     stmt.PlanWarnings.Add(new PlanWarning
                     {
@@ -297,6 +294,33 @@ public static class PlanAnalyzer
                         Message = $"Parallel plan (DOP {stmt.DegreeOfParallelism}) but CPU time ({cpu:N0}ms) is nearly equal to elapsed time ({elapsed:N0}ms). " +
                                   $"The work ran essentially serially despite the overhead of parallelism. " +
                                   $"Look for parallel thread skew, blocking exchanges, or serial zones in the plan that prevent effective parallel execution.",
+                        Severity = PlanWarningSeverity.Warning
+                    });
+                }
+            }
+        }
+
+        // Rule 31: Parallel wait bottleneck — elapsed time significantly exceeds CPU time
+        // When elapsed >> CPU in a parallel plan, threads are spending time waiting rather
+        // than doing CPU work. Common causes: spills to tempdb, physical I/O, blocking,
+        // memory grant waits, or other resource contention.
+        if (!cfg.IsRuleDisabled(31) && stmt.DegreeOfParallelism > 1 && stmt.QueryTimeStats != null)
+        {
+            var cpu = stmt.QueryTimeStats.CpuTimeMs;
+            var elapsed = stmt.QueryTimeStats.ElapsedTimeMs;
+
+            if (elapsed >= 1000 && cpu > 0)
+            {
+                var ratio = (double)cpu / elapsed;
+                if (ratio < 0.8)
+                {
+                    var waitPct = (1.0 - ratio) * 100;
+                    stmt.PlanWarnings.Add(new PlanWarning
+                    {
+                        WarningType = "Parallel Wait Bottleneck",
+                        Message = $"Parallel plan (DOP {stmt.DegreeOfParallelism}) with elapsed time ({elapsed:N0}ms) significantly exceeding CPU time ({cpu:N0}ms). " +
+                                  $"Approximately {waitPct:N0}% of elapsed time was spent waiting rather than on CPU. " +
+                                  $"Common causes include spills to tempdb, physical I/O reads, lock or latch contention, and memory grant waits.",
                         Severity = PlanWarningSeverity.Warning
                     });
                 }
@@ -381,10 +405,16 @@ public static class PlanAnalyzer
         if (!cfg.IsRuleDisabled(1) && node.PhysicalOp == "Filter" && !string.IsNullOrEmpty(node.Predicate))
         {
             var impact = QuantifyFilterImpact(node);
+            var predicate = Truncate(node.Predicate, 200);
+            var message = "Filter operator discarding rows late in the plan.";
+            if (!string.IsNullOrEmpty(impact))
+                message += $"\n{impact}";
+            message += $"\nPredicate: {predicate}";
+
             node.Warnings.Add(new PlanWarning
             {
                 WarningType = "Filter Operator",
-                Message = $"Filter operator discarding rows late in the plan.{impact} Predicate: {Truncate(node.Predicate, 200)}",
+                Message = message,
                 Severity = PlanWarningSeverity.Warning
             });
         }
@@ -451,12 +481,12 @@ public static class PlanAnalyzer
                         var direction = ratio >= 10.0 ? "underestimated" : "overestimated";
                         var factor = ratio >= 10.0 ? ratio : 1.0 / ratio;
                         var actualDisplay = executions > 1
-                            ? $"actual {actualPerExec:N0}/exec ({node.ActualRows:N0} total across {executions:N0} executions)"
-                            : $"actual {node.ActualRows:N0}";
+                            ? $"Actual {node.ActualRows:N0} ({actualPerExec:N0} rows x {executions:N0} executions)"
+                            : $"Actual {node.ActualRows:N0}";
                         node.Warnings.Add(new PlanWarning
                         {
                             WarningType = "Row Estimate Mismatch",
-                            Message = $"Estimated {node.EstimateRows:N0} rows, {actualDisplay} ({factor:F0}x {direction}). {harm}",
+                            Message = $"Estimated {node.EstimateRows:N0} vs {actualDisplay} — {factor:F0}x {direction}. {harm}",
                             Severity = factor >= 100 ? PlanWarningSeverity.Critical : PlanWarningSeverity.Warning
                         });
                     }
@@ -572,7 +602,7 @@ public static class PlanAnalyzer
             node.Warnings.Add(new PlanWarning
             {
                 WarningType = "Key Lookup",
-                Message = $"Key Lookup — SQL Server found rows via a nonclustered index but had to go back to the clustered index for additional columns. Alter the nonclustered index to add the predicate column as a key column or as an INCLUDE column. Predicate: {Truncate(node.Predicate, 200)}",
+                Message = $"Key Lookup — SQL Server found rows via a nonclustered index but had to go back to the clustered index for additional columns. Alter the nonclustered index to add the predicate column as a key column or as an INCLUDE column.\nPredicate: {Truncate(node.Predicate, 200)}",
                 Severity = PlanWarningSeverity.Warning
             });
         }
@@ -600,7 +630,7 @@ public static class PlanAnalyzer
             node.Warnings.Add(new PlanWarning
             {
                 WarningType = "Non-SARGable Predicate",
-                Message = $"{nonSargableAdvice} Predicate: {Truncate(node.Predicate!, 200)}",
+                Message = $"{nonSargableAdvice}\nPredicate: {Truncate(node.Predicate!, 200)}",
                 Severity = PlanWarningSeverity.Warning
             });
         }
@@ -610,10 +640,11 @@ public static class PlanAnalyzer
         if (!cfg.IsRuleDisabled(11) && nonSargableReason == null && IsRowstoreScan(node) && !string.IsNullOrEmpty(node.Predicate) &&
             !IsProbeOnly(node.Predicate))
         {
+            var displayPredicate = StripProbeExpressions(node.Predicate);
             node.Warnings.Add(new PlanWarning
             {
                 WarningType = "Scan With Predicate",
-                Message = $"Scan with residual predicate — SQL Server is reading every row and filtering after the fact. Create an index on the predicate columns. Predicate: {Truncate(node.Predicate, 200)}",
+                Message = $"Scan with residual predicate — SQL Server is reading every row and filtering after the fact. Check that you have appropriate indexes.\nPredicate: {Truncate(displayPredicate, 200)}",
                 Severity = PlanWarningSeverity.Warning
             });
         }
@@ -822,7 +853,7 @@ public static class PlanAnalyzer
                     inner.Warnings.Add(new PlanWarning
                     {
                         WarningType = "Top Above Scan",
-                        Message = $"Top operator reads from {scanCandidate.PhysicalOp} (Node {scanCandidate.NodeId}) on the inner side of Nested Loops (Node {node.NodeId}).{predInfo} Create an index on the predicate columns to convert the scan into a seek.",
+                        Message = $"Top operator reads from {scanCandidate.PhysicalOp} (Node {scanCandidate.NodeId}) on the inner side of Nested Loops (Node {node.NodeId}).{predInfo} Check that you have appropriate indexes to convert the scan into a seek.",
                         Severity = PlanWarningSeverity.Warning
                     });
                 }
@@ -940,6 +971,21 @@ public static class PlanAnalyzer
 
         // If nothing meaningful remains, it was PROBE-only
         return stripped.Length == 0;
+    }
+
+    /// <summary>
+    /// Strips PROBE(...) bitmap filter expressions from a predicate for display,
+    /// leaving only the real residual predicate columns.
+    /// </summary>
+    private static string StripProbeExpressions(string predicate)
+    {
+        var stripped = Regex.Replace(predicate, @"\s*AND\s+PROBE\s*\([^()]*(?:\([^()]*\)[^()]*)*\)", "",
+            RegexOptions.IgnoreCase);
+        stripped = Regex.Replace(stripped, @"PROBE\s*\([^()]*(?:\([^()]*\)[^()]*)*\)\s*AND\s+", "",
+            RegexOptions.IgnoreCase);
+        stripped = Regex.Replace(stripped, @"PROBE\s*\([^()]*(?:\([^()]*\)[^()]*)*\)", "",
+            RegexOptions.IgnoreCase);
+        return stripped.Trim();
     }
 
     /// <summary>
@@ -1223,7 +1269,7 @@ public static class PlanAnalyzer
         if (parts.Count == 0)
             return "";
 
-        return $" Subtree cost to produce filtered rows: {string.Join(", ", parts)}.";
+        return string.Join("\n", parts.Select(p => "• " + p));
     }
 
     private static long SumSubtreeReads(PlanNode node)

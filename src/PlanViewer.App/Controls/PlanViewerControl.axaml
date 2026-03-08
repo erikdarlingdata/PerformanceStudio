@@ -64,10 +64,10 @@
                         <ColumnDefinition Width="Auto" MinWidth="180"/>
                         <ColumnDefinition Width="*" MinWidth="200"/>
                         <ColumnDefinition Width="*" MinWidth="200"/>
-                        <ColumnDefinition Width="*" MinWidth="200"/>
+                        <ColumnDefinition Width="2*" MinWidth="280"/>
                     </Grid.ColumnDefinitions>
 
-                    <!-- Server Context (first, only visible when connected) -->
+                    <!-- Server Context (first, placeholder when no metadata) -->
                     <Border x:Name="ServerContextBorder" Grid.Column="0" Padding="10,4,10,8"
                             Background="#1A1A2D"
                             BorderBrush="#3A3A5A" BorderThickness="0,0,1,0"
@@ -81,6 +81,10 @@
                                            Foreground="#9B9BFF"
                                            Margin="0,0,0,6"/>
                                 <StackPanel x:Name="ServerContextContent"/>
+                                <TextBlock x:Name="ServerContextEmpty"
+                                           Text="Run Repro Script to capture server context"
+                                           FontSize="12" IsVisible="False"
+                                           Foreground="{DynamicResource ForegroundBrush}"/>
                             </StackPanel>
                         </ScrollViewer>
                     </Border>
@@ -96,6 +100,10 @@
                                        Foreground="{DynamicResource ForegroundBrush}"
                                        Margin="0,0,0,4"/>
                             <StackPanel x:Name="RuntimeSummaryContent"/>
+                            <TextBlock x:Name="RuntimeSummaryEmpty"
+                                       Text="Estimated plan — no runtime stats"
+                                       FontSize="12" IsVisible="False"
+                                       Foreground="{DynamicResource ForegroundBrush}"/>
                         </StackPanel>
                     </Border>
 
