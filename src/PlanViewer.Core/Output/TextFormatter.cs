@@ -42,15 +42,16 @@ public static class TextFormatter
             writer.WriteLine($"=== Statement {i + 1}: ===");
             writer.WriteLine(stmt.StatementText);
             writer.WriteLine();
-            writer.WriteLine($"Estimated cost: {stmt.EstimatedCost:F4}");
+            writer.WriteLine($"Estimated cost: {stmt.EstimatedCost:N2}");
 
             if (stmt.DegreeOfParallelism > 0)
             {
                 var dopLine = $"DOP: {stmt.DegreeOfParallelism}";
-                if (stmt.QueryTime != null && stmt.QueryTime.ElapsedTimeMs > 0 && stmt.QueryTime.CpuTimeMs > 0)
+                if (stmt.QueryTime != null && stmt.QueryTime.ElapsedTimeMs > 0
+                    && stmt.QueryTime.CpuTimeMs > 0 && stmt.DegreeOfParallelism > 1)
                 {
-                    var idealCpu = stmt.QueryTime.ElapsedTimeMs * stmt.DegreeOfParallelism;
-                    var efficiency = Math.Min(100.0, stmt.QueryTime.CpuTimeMs * 100.0 / idealCpu);
+                    var speedup = (double)stmt.QueryTime.CpuTimeMs / stmt.QueryTime.ElapsedTimeMs;
+                    var efficiency = Math.Clamp((speedup - 1.0) / (stmt.DegreeOfParallelism - 1.0) * 100.0, 0, 100);
                     dopLine += $" ({efficiency:N0}% efficient)";
                 }
                 writer.WriteLine(dopLine);
@@ -294,8 +295,10 @@ public static class TextFormatter
         }
 
         // Group entries that share the same severity, type, and explanation
+        // Sort criticals before warnings before info
         var grouped = entries
             .GroupBy(e => (e.Severity, e.Explanation ?? ""))
+            .OrderBy(g => g.Key.Item1 switch { "Critical" => 0, "Warning" => 1, _ => 2 })
             .ToList();
 
         foreach (var group in grouped)

@@ -672,7 +672,10 @@ public static class PlanAnalyzer
 
         // Rule 14: Lazy Table Spool unfavorable rebind/rewind ratio
         // Rebinds = cache misses (child re-executes), rewinds = cache hits (reuse cached result)
-        if (!cfg.IsRuleDisabled(14) && node.LogicalOp == "Lazy Spool")
+        // Exclude Lazy Index Spools: they cache by correlated parameter value (like a hash table)
+        // so rebind/rewind counts are unreliable. See https://www.sql.kiwi/2025/02/lazy-index-spool/
+        if (!cfg.IsRuleDisabled(14) && node.LogicalOp == "Lazy Spool"
+            && !node.PhysicalOp.Contains("Index", StringComparison.OrdinalIgnoreCase))
         {
             var rebinds = node.HasActualStats ? (double)node.ActualRebinds : node.EstimateRebinds;
             var rewinds = node.HasActualStats ? (double)node.ActualRewinds : node.EstimateRewinds;
@@ -1327,8 +1330,8 @@ public static class PlanAnalyzer
         if (node.LogicalOp.Contains("Join", StringComparison.OrdinalIgnoreCase) && !node.IsAdaptive)
         {
             return ratio >= 10.0
-                ? "The underestimate may have caused the optimizer to choose a suboptimal join strategy."
-                : "The overestimate may have caused the optimizer to choose a suboptimal join strategy.";
+                ? "The underestimate may have caused the optimizer to make poor choices."
+                : "The overestimate may have caused the optimizer to make poor choices.";
         }
 
         // Walk up to check if a parent was harmed by this bad estimate
@@ -1355,8 +1358,8 @@ public static class PlanAnalyzer
                     return null; // Adaptive join self-corrects — no harm
 
                 return ratio >= 10.0
-                    ? $"The underestimate may have caused the optimizer to choose {ancestor.PhysicalOp} when a different join type would be more efficient."
-                    : $"The overestimate may have caused the optimizer to choose {ancestor.PhysicalOp} when a different join type would be more efficient.";
+                    ? $"The underestimate may have caused the optimizer to make poor choices."
+                    : $"The overestimate may have caused the optimizer to make poor choices.";
             }
 
             // Parent Sort/Hash that spilled — downstream bad estimate caused the spill

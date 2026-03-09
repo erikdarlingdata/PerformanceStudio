@@ -74,6 +74,7 @@ internal static class AdviceContentBuilder
                 panel.Children.Add(new Border { Height = 6 });
                 inCodeBlock = false;
                 isStatementText = false;
+                inSubSection = false;
                 continue;
             }
 
@@ -421,6 +422,15 @@ internal static class AdviceContentBuilder
                                 { Foreground = MutedBrush });
                             tb.Inlines.Add(new Run(part[2..])
                                 { Foreground = ValueBrush });
+                        }
+                        else if (part.StartsWith("CREATE ", StringComparison.OrdinalIgnoreCase)
+                            || part.StartsWith("ON ", StringComparison.OrdinalIgnoreCase)
+                            || part.StartsWith("INCLUDE ", StringComparison.OrdinalIgnoreCase)
+                            || part.StartsWith("WHERE ", StringComparison.OrdinalIgnoreCase))
+                        {
+                            // SQL DDL lines (CREATE INDEX, ON, INCLUDE, WHERE)
+                            tb.Inlines.Add(new Run("\n" + part)
+                                { Foreground = CodeBrush });
                         }
                         else
                         {
