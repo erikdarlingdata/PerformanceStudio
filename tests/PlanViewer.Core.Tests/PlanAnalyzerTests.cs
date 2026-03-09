@@ -743,4 +743,20 @@ public class PlanAnalyzerTests
         }
         return null;
     }
+
+    // ---------------------------------------------------------------
+    // NoJoinPredicate: verify it flows through to TextFormatter output
+    // ---------------------------------------------------------------
+
+    [Fact]
+    public void NoJoinPredicate_AppearsInTextFormatterOutput()
+    {
+        var plan = PlanTestHelper.LoadAndAnalyze("missing-join-predicate.sqlplan");
+        var analysis = PlanViewer.Core.Output.ResultMapper.Map(plan, "file");
+        var text = PlanViewer.Core.Output.TextFormatter.Format(analysis);
+
+        Assert.Contains("[Warning]", text);
+        Assert.Contains("No Join Predicate", text);
+        Assert.Contains("often misleading", text);
+    }
 }

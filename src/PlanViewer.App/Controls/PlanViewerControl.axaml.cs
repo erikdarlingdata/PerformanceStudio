@@ -1783,8 +1783,9 @@ public partial class PlanViewerControl : UserControl
             || node.ActualRebinds > 0 || node.ActualRewinds > 0)
         {
             AddTooltipSection(stack, "Rebinds / Rewinds");
-            if (node.EstimateRebinds > 0) AddTooltipRow(stack, "Est. Rebinds", $"{node.EstimateRebinds:N1}");
-            if (node.EstimateRewinds > 0) AddTooltipRow(stack, "Est. Rewinds", $"{node.EstimateRewinds:N1}");
+            // Always show both estimated values when section is visible
+            AddTooltipRow(stack, "Est. Rebinds", $"{node.EstimateRebinds:N1}");
+            AddTooltipRow(stack, "Est. Rewinds", $"{node.EstimateRewinds:N1}");
             if (node.ActualRebinds > 0) AddTooltipRow(stack, "Actual Rebinds", $"{node.ActualRebinds:N0}");
             if (node.ActualRewinds > 0) AddTooltipRow(stack, "Actual Rewinds", $"{node.ActualRewinds:N0}");
         }

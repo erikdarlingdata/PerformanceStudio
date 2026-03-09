@@ -215,7 +215,9 @@ internal static class AdviceContentBuilder
             }
 
             // Expensive operator timing lines: "4,616ms CPU (61%), 586ms elapsed (62%)"
-            if (trimmed.Contains("ms CPU") || trimmed.Contains("ms elapsed"))
+            // Must start with a digit to avoid catching "Runtime: 1,234ms elapsed, 1,200ms CPU"
+            if ((trimmed.Contains("ms CPU") || trimmed.Contains("ms elapsed"))
+                && trimmed.Length > 0 && char.IsDigit(trimmed[0]))
             {
                 panel.Children.Add(CreateOperatorTimingLine(trimmed));
                 continue;
