@@ -443,8 +443,13 @@ public class PlanAnalyzerTests
         var plan = PlanTestHelper.LoadAndAnalyze("table_variable_plan.sqlplan");
         var warnings = PlanTestHelper.WarningsOfType(plan, "Table Variable");
 
-        Assert.Single(warnings);
-        Assert.Contains("lack column-level statistics", warnings[0].Message);
+        // Node-level + statement-level warnings
+        Assert.True(warnings.Count >= 2);
+        Assert.Contains(warnings, w => w.Message.Contains("lack column-level statistics"));
+        // Statement-level stats warning
+        var stmtWarnings = PlanTestHelper.FirstStatement(plan).PlanWarnings
+            .Where(w => w.WarningType == "Table Variable").ToList();
+        Assert.Contains(stmtWarnings, w => w.Message.Contains("lack column-level statistics"));
     }
 
     // ---------------------------------------------------------------

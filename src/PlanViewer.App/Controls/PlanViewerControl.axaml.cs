@@ -331,6 +331,8 @@ public partial class PlanViewerControl : UserControl
         if (totalWarningCount > 0)
         {
             var allWarnings = new List<PlanWarning>();
+            if (_currentStatement != null)
+                allWarnings.AddRange(_currentStatement.PlanWarnings);
             CollectWarnings(node, allWarnings);
             ToolTip.SetTip(border, BuildNodeTooltipContent(node, allWarnings));
         }
@@ -2165,9 +2167,22 @@ public partial class PlanViewerControl : UserControl
         // Annotations
         if (allCompiledNull && parameters.Count > 0)
         {
-            AddParameterAnnotation(
-                "OPTION(RECOMPILE) — parameter values embedded as literals, not sniffed",
-                "#FFB347");
+            var hasOptimizeForUnknown = statement.StatementText
+                .Contains("OPTIMIZE", StringComparison.OrdinalIgnoreCase)
+                && Regex.IsMatch(statement.StatementText, @"OPTIMIZE\s+FOR\s+UNKNOWN", RegexOptions.IgnoreCase);
+
+            if (hasOptimizeForUnknown)
+            {
+                AddParameterAnnotation(
+                    "OPTIMIZE FOR UNKNOWN — optimizer used average density estimates instead of sniffed values",
+                    "#6BB5FF");
+            }
+            else
+            {
+                AddParameterAnnotation(
+                    "OPTION(RECOMPILE) — parameter values embedded as literals, not sniffed",
+                    "#FFB347");
+            }
         }
 
         var unresolved = FindUnresolvedVariables(statement.StatementText, parameters);

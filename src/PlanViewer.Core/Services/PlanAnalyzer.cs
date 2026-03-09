@@ -388,6 +388,55 @@ public static class PlanAnalyzer
                 }
             }
         }
+
+        // Rule 22 (statement-level): Table variable warnings
+        // Walk the tree to find table variable references, then emit statement-level warnings
+        if (!cfg.IsRuleDisabled(22) && stmt.RootNode != null)
+        {
+            var hasTableVar = false;
+            var isModification = stmt.StatementType is "INSERT" or "UPDATE" or "DELETE" or "MERGE";
+            var modifiesTableVar = false;
+            CheckForTableVariables(stmt.RootNode, isModification, ref hasTableVar, ref modifiesTableVar);
+
+            if (hasTableVar)
+            {
+                stmt.PlanWarnings.Add(new PlanWarning
+                {
+                    WarningType = "Table Variable",
+                    Message = "Table variable detected. Table variables lack column-level statistics, which causes bad row estimates, join choices, and memory grant decisions. Replace with a #temp table.",
+                    Severity = PlanWarningSeverity.Warning
+                });
+            }
+
+            if (modifiesTableVar)
+            {
+                stmt.PlanWarnings.Add(new PlanWarning
+                {
+                    WarningType = "Table Variable",
+                    Message = "This query modifies a table variable, which forces the entire plan to run single-threaded. SQL Server cannot use parallelism for modifications to table variables. Replace with a #temp table to allow parallel execution.",
+                    Severity = PlanWarningSeverity.Critical
+                });
+            }
+        }
+    }
+
+    private static void CheckForTableVariables(PlanNode node, bool isModification,
+        ref bool hasTableVar, ref bool modifiesTableVar)
+    {
+        if (!string.IsNullOrEmpty(node.ObjectName) && node.ObjectName.StartsWith("@"))
+        {
+            hasTableVar = true;
+            // The modification target is typically an Insert/Update/Delete operator on a table variable
+            if (isModification && (node.PhysicalOp.Contains("Insert", StringComparison.OrdinalIgnoreCase)
+                || node.PhysicalOp.Contains("Update", StringComparison.OrdinalIgnoreCase)
+                || node.PhysicalOp.Contains("Delete", StringComparison.OrdinalIgnoreCase)
+                || node.PhysicalOp.Contains("Merge", StringComparison.OrdinalIgnoreCase)))
+            {
+                modifiesTableVar = true;
+            }
+        }
+        foreach (var child in node.Children)
+            CheckForTableVariables(child, isModification, ref hasTableVar, ref modifiesTableVar);
     }
 
     private static void AnalyzeNodeTree(PlanNode node, PlanStatement stmt, AnalyzerConfig cfg)
@@ -572,11 +621,24 @@ public static class PlanAnalyzer
                 var skewThreshold = node.PerThreadStats.Count == 2 ? 0.75 : 0.50;
                 if (skewRatio >= skewThreshold)
                 {
+                    var message = $"Thread {maxThread.ThreadId} processed {skewRatio:P0} of rows ({maxThread.ActualRows:N0}/{totalRows:N0}). Work is heavily skewed to one thread, so parallelism isn't helping much.";
+                    var severity = PlanWarningSeverity.Warning;
+
+                    // Batch mode sorts produce all output on a single thread by design
+                    // unless their parent is a batch mode Window Aggregate
+                    if (node.PhysicalOp == "Sort"
+                        && (node.ActualExecutionMode ?? node.ExecutionMode) == "Batch"
+                        && node.Parent?.PhysicalOp != "Window Aggregate")
+                    {
+                        message += " Batch mode sorts produce all output rows on a single thread by design, unless feeding a batch mode Window Aggregate.";
+                        severity = PlanWarningSeverity.Info;
+                    }
+
                     node.Warnings.Add(new PlanWarning
                     {
                         WarningType = "Parallel Skew",
-                        Message = $"Thread {maxThread.ThreadId} processed {skewRatio:P0} of rows ({maxThread.ActualRows:N0}/{totalRows:N0}). Work is heavily skewed to one thread, so parallelism isn't helping much.",
-                        Severity = PlanWarningSeverity.Warning
+                        Message = message,
+                        Severity = severity
                     });
                 }
             }
@@ -603,7 +665,7 @@ public static class PlanAnalyzer
             {
                 WarningType = "Key Lookup",
                 Message = $"Key Lookup — SQL Server found rows via a nonclustered index but had to go back to the clustered index for additional columns. Alter the nonclustered index to add the predicate column as a key column or as an INCLUDE column.\nPredicate: {Truncate(node.Predicate, 200)}",
-                Severity = PlanWarningSeverity.Warning
+                Severity = PlanWarningSeverity.Critical
             });
         }
 
@@ -829,35 +891,39 @@ public static class PlanAnalyzer
             });
         }
 
-        // Rule 24: Top above a scan on the inner side of Nested Loops
-        // This pattern means the scan executes once per outer row, and the Top
-        // limits each iteration — but with no supporting index the scan is a
-        // linear search repeated potentially millions of times.
-        if (!cfg.IsRuleDisabled(24) && node.PhysicalOp == "Nested Loops" && node.Children.Count >= 2)
+        // Rule 24: Top above a scan
+        // Detects Top or Top N Sort operators feeding from a scan. This often means the
+        // query is scanning the entire table/index and sorting just to return a few rows,
+        // when an appropriate index could satisfy the request directly.
+        if (!cfg.IsRuleDisabled(24))
         {
-            var inner = node.Children[1];
+            var isTop = node.PhysicalOp == "Top";
+            var isTopNSort = node.LogicalOp == "Top N Sort";
 
-            // Walk through pass-through operators to find Top
-            while (inner.PhysicalOp == "Compute Scalar" && inner.Children.Count > 0)
-                inner = inner.Children[0];
-
-            if (inner.PhysicalOp == "Top" && inner.Children.Count > 0)
+            if ((isTop || isTopNSort) && node.Children.Count > 0)
             {
                 // Walk through pass-through operators below the Top to find the scan
-                var scanCandidate = inner.Children[0];
-                while (scanCandidate.PhysicalOp == "Compute Scalar" && scanCandidate.Children.Count > 0)
+                var scanCandidate = node.Children[0];
+                while ((scanCandidate.PhysicalOp == "Compute Scalar" || scanCandidate.PhysicalOp == "Parallelism")
+                    && scanCandidate.Children.Count > 0)
                     scanCandidate = scanCandidate.Children[0];
 
                 if (IsScanOperator(scanCandidate))
                 {
+                    var topLabel = isTopNSort ? "Top N Sort" : "Top";
+                    var onInner = node.Parent?.PhysicalOp == "Nested Loops" && node.Parent.Children.Count >= 2
+                        && node.Parent.Children[1] == node;
+                    var innerNote = onInner
+                        ? $" This is on the inner side of Nested Loops (Node {node.Parent!.NodeId}), so the scan repeats for every outer row."
+                        : "";
                     var predInfo = !string.IsNullOrEmpty(scanCandidate.Predicate)
                         ? " The scan has a residual predicate, so it may read many rows before the Top is satisfied."
                         : "";
-                    inner.Warnings.Add(new PlanWarning
+                    node.Warnings.Add(new PlanWarning
                     {
                         WarningType = "Top Above Scan",
-                        Message = $"Top operator reads from {scanCandidate.PhysicalOp} (Node {scanCandidate.NodeId}) on the inner side of Nested Loops (Node {node.NodeId}).{predInfo} Check that you have appropriate indexes to convert the scan into a seek.",
-                        Severity = PlanWarningSeverity.Warning
+                        Message = $"{topLabel} reads from {scanCandidate.PhysicalOp} (Node {scanCandidate.NodeId}).{innerNote}{predInfo} An index on the ORDER BY columns could eliminate the scan and sort entirely.",
+                        Severity = onInner ? PlanWarningSeverity.Critical : PlanWarningSeverity.Warning
                     });
                 }
             }
@@ -1097,8 +1163,8 @@ public static class PlanAnalyzer
         while (parent != null && parent.PhysicalOp == "Compute Scalar")
             parent = parent.Parent;
 
-        // Expect TopN Sort
-        if (parent == null || parent.LogicalOp != "TopN Sort")
+        // Expect TopN Sort (XML says "TopN Sort", parser normalizes to "Top N Sort")
+        if (parent == null || parent.LogicalOp != "Top N Sort")
             return false;
 
         // Walk up to Merge Interval
