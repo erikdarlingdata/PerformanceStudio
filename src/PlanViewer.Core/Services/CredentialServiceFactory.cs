@@ -13,8 +13,7 @@ public static class CredentialServiceFactory
         if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
             return new KeychainCredentialService();
 
-        throw new PlatformNotSupportedException(
-            "Credential storage is not yet supported on this platform. " +
-            "Windows and macOS are supported.");
+        // Linux and other platforms: use in-memory storage (credentials not persisted across sessions)
+        return new InMemoryCredentialService();
     }
 }

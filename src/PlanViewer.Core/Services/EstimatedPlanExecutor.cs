@@ -1,6 +1,9 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Xml.Linq;
 using Microsoft.Data.SqlClient;
 
 namespace PlanViewer.Core.Services;
@@ -36,9 +39,9 @@ public static class EstimatedPlanExecutor
             await enableCmd.ExecuteNonQueryAsync(cancellationToken);
         }
 
-        // Execute the query — with SHOWPLAN XML ON, this returns the plan
-        // as a single-row, single-column result set (no actual execution)
-        string? planXml = null;
+        // Execute the query — with SHOWPLAN XML ON, this returns one result set
+        // per statement, each containing a ShowPlanXML document.
+        var planXmls = new List<string>();
         using (var queryCmd = new SqlCommand(queryText, connection))
         {
             queryCmd.CommandTimeout = timeoutSeconds;
@@ -49,12 +52,16 @@ public static class EstimatedPlanExecutor
             });
 
             using var reader = await queryCmd.ExecuteReaderAsync(cancellationToken);
-            if (await reader.ReadAsync(cancellationToken))
+            do
             {
-                var value = reader.GetValue(0)?.ToString();
-                if (value != null && value.TrimStart().StartsWith("<ShowPlanXML", StringComparison.Ordinal))
-                    planXml = value;
+                if (await reader.ReadAsync(cancellationToken))
+                {
+                    var value = reader.GetValue(0)?.ToString();
+                    if (value != null && value.TrimStart().StartsWith("<ShowPlanXML", StringComparison.Ordinal))
+                        planXmls.Add(value);
+                }
             }
+            while (await reader.NextResultAsync(cancellationToken));
         }
 
         // Disable SHOWPLAN XML (best effort — connection is about to close)
@@ -66,6 +73,31 @@ public static class EstimatedPlanExecutor
         }
         catch { /* connection cleanup */ }
 
-        return planXml;
+        if (planXmls.Count == 0) return null;
+        if (planXmls.Count == 1) return planXmls[0];
+        return MergeShowPlanXmls(planXmls);
+    }
+
+    /// <summary>
+    /// Merges multiple ShowPlanXML documents into one by combining all Batch elements.
+    /// </summary>
+    internal static string MergeShowPlanXmls(List<string> planXmls)
+    {
+        XNamespace ns = "http://schemas.microsoft.com/sqlserver/2004/07/showplan";
+        var baseDoc = XDocument.Parse(planXmls[0]);
+        var batchSequence = baseDoc.Root!.Element(ns + "BatchSequence")!;
+
+        for (int i = 1; i < planXmls.Count; i++)
+        {
+            var doc = XDocument.Parse(planXmls[i]);
+            var batches = doc.Root!.Element(ns + "BatchSequence")?.Elements(ns + "Batch");
+            if (batches != null)
+            {
+                foreach (var batch in batches)
+                    batchSequence.Add(batch);
+            }
+        }
+
+        return baseDoc.ToString(SaveOptions.DisableFormatting);
     }
 }

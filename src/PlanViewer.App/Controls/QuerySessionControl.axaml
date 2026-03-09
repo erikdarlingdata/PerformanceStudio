@@ -33,12 +33,12 @@
                             ToolTip.Tip="Capture estimated plan without executing (Ctrl+L)"/>
                     <TextBlock Text="|" VerticalAlignment="Center"
                                Foreground="{DynamicResource ForegroundBrush}" Margin="4,0"/>
-                    <Button x:Name="HumanAdviceButton" Content="&#x1F9D1; Advice for Humans"
+                    <Button x:Name="HumanAdviceButton" Content="&#x1F9D1; Human Advice"
                             Click="HumanAdvice_Click"
                             Height="28" Padding="10,0" FontSize="12" IsEnabled="False"
                             Theme="{StaticResource AppButton}"
                             ToolTip.Tip="Human-readable plan analysis"/>
-                    <Button x:Name="RobotAdviceButton" Content="&#x1F916; Advice for Robots"
+                    <Button x:Name="RobotAdviceButton" Content="&#x1F916; Robot Advice"
                             Click="RobotAdvice_Click"
                             Height="28" Padding="10,0" FontSize="12" IsEnabled="False"
                             Theme="{StaticResource AppButton}"
@@ -59,12 +59,12 @@
                             ToolTip.Tip="Analyze top queries from Query Store"/>
                     <TextBlock Text="|" VerticalAlignment="Center"
                                Foreground="{DynamicResource ForegroundBrush}" Margin="4,0"/>
-                    <Button x:Name="CopyReproButton" Content="&#x1F4CB; Copy Repro Script"
+                    <Button x:Name="CopyReproButton" Content="&#x1F4CB; Copy Repro"
                             Click="CopyRepro_Click"
                             Height="28" Padding="10,0" FontSize="12" IsEnabled="False"
                             Theme="{StaticResource AppButton}"
                             ToolTip.Tip="Copy reproduction script to clipboard"/>
-                    <Button x:Name="GetActualPlanButton" Content="&#x25B6; Run Repro Script"
+                    <Button x:Name="GetActualPlanButton" Content="&#x25B6; Run Repro"
                             Click="GetActualPlan_Click"
                             Height="28" Padding="10,0" FontSize="12" IsEnabled="False"
                             Theme="{StaticResource AppButton}"

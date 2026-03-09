@@ -64,6 +64,11 @@ public partial class PlanViewerControl : UserControl
     private const double MaxZoom = 3.0;
     private string _label = "";
 
+    /// <summary>
+    /// Full path on disk when the plan was loaded from a file.
+    /// </summary>
+    public string? SourceFilePath { get; set; }
+
     // Node selection
     private Border? _selectedNodeBorder;
     private IBrush? _selectedNodeOriginalBorder;
@@ -418,21 +423,28 @@ public partial class PlanViewerControl : UserControl
         // Operator name
         var fgBrush = FindBrushResource("ForegroundBrush");
 
+        // Operator name — for exchanges, show "Parallelism" + "(Gather Streams)" etc.
+        var opLabel = node.PhysicalOp;
+        if (node.PhysicalOp == "Parallelism" && !string.IsNullOrEmpty(node.LogicalOp)
+            && node.LogicalOp != "Parallelism")
+        {
+            opLabel = $"Parallelism\n({node.LogicalOp})";
+        }
         stack.Children.Add(new TextBlock
         {
-            Text = node.PhysicalOp,
+            Text = opLabel,
             FontSize = 10,
             FontWeight = FontWeight.SemiBold,
             Foreground = fgBrush,
             TextAlignment = TextAlignment.Center,
-            TextTrimming = TextTrimming.CharacterEllipsis,
+            TextWrapping = TextWrapping.Wrap,
             MaxWidth = PlanLayoutEngine.NodeWidth - 16,
             HorizontalAlignment = HorizontalAlignment.Center
         });
 
-        // Cost percentage
-        IBrush costColor = node.CostPercent >= 50 ? OrangeRedBrush
-            : node.CostPercent >= 25 ? OrangeBrush
+        // Cost percentage — only highlight in estimated plans; actual plans use duration/CPU colors
+        IBrush costColor = !node.HasActualStats && node.CostPercent >= 50 ? OrangeRedBrush
+            : !node.HasActualStats && node.CostPercent >= 25 ? OrangeBrush
             : fgBrush;
 
         stack.Children.Add(new TextBlock
@@ -447,25 +459,31 @@ public partial class PlanViewerControl : UserControl
         // Actual plan stats: elapsed time, CPU time, and row counts
         if (node.HasActualStats)
         {
-            // Elapsed time -- red if >= 1 second
-            var elapsedSec = node.ActualElapsedMs / 1000.0;
-            IBrush elapsedBrush = elapsedSec >= 1.0 ? OrangeRedBrush : fgBrush;
+            // Compute own time (subtract children in row mode)
+            var ownElapsedMs = GetOwnElapsedMs(node);
+            var ownCpuMs = GetOwnCpuMs(node);
+
+            // Elapsed time -- color based on own time, not cumulative
+            var ownElapsedSec = ownElapsedMs / 1000.0;
+            IBrush elapsedBrush = ownElapsedSec >= 1.0 ? OrangeRedBrush
+                : ownElapsedSec >= 0.1 ? OrangeBrush : fgBrush;
             stack.Children.Add(new TextBlock
             {
-                Text = $"{elapsedSec:F3}s",
+                Text = $"{ownElapsedSec:F3}s",
                 FontSize = 10,
                 Foreground = elapsedBrush,
                 TextAlignment = TextAlignment.Center,
                 HorizontalAlignment = HorizontalAlignment.Center
             });
 
-            // CPU time -- red if >= 1 second
-            var cpuSec = node.ActualCPUMs / 1000.0;
-            IBrush cpuBrush = cpuSec >= 1.0 ? OrangeRedBrush : fgBrush;
+            // CPU time -- color based on own time
+            var ownCpuSec = ownCpuMs / 1000.0;
+            IBrush cpuBrush = ownCpuSec >= 1.0 ? OrangeRedBrush
+                : ownCpuSec >= 0.1 ? OrangeBrush : fgBrush;
             stack.Children.Add(new TextBlock
             {
-                Text = $"CPU: {cpuSec:F3}s",
-                FontSize = 9,
+                Text = $"CPU: {ownCpuSec:F3}s",
+                FontSize = 10,
                 Foreground = cpuBrush,
                 TextAlignment = TextAlignment.Center,
                 HorizontalAlignment = HorizontalAlignment.Center
@@ -481,7 +499,7 @@ public partial class PlanViewerControl : UserControl
             stack.Children.Add(new TextBlock
             {
                 Text = $"{node.ActualRows:N0} of {estRows:N0}{accuracy}",
-                FontSize = 9,
+                FontSize = 10,
                 Foreground = rowBrush,
                 TextAlignment = TextAlignment.Center,
                 HorizontalAlignment = HorizontalAlignment.Center,
@@ -496,7 +514,7 @@ public partial class PlanViewerControl : UserControl
             var objBlock = new TextBlock
             {
                 Text = node.FullObjectName ?? node.ObjectName,
-                FontSize = 9,
+                FontSize = 10,
                 Foreground = fgBrush,
                 TextAlignment = TextAlignment.Center,
                 TextWrapping = TextWrapping.Wrap,
@@ -1760,6 +1778,18 @@ public partial class PlanViewerControl : UserControl
             AddTooltipRow(stack, "Actual Executions", $"{node.ActualExecutions:N0}");
         }
 
+        // Rebinds/Rewinds (spools and other operators with rebind/rewind data)
+        if (node.EstimateRebinds > 0 || node.EstimateRewinds > 0
+            || node.ActualRebinds > 0 || node.ActualRewinds > 0)
+        {
+            AddTooltipSection(stack, "Rebinds / Rewinds");
+            // Always show both estimated values when section is visible
+            AddTooltipRow(stack, "Est. Rebinds", $"{node.EstimateRebinds:N1}");
+            AddTooltipRow(stack, "Est. Rewinds", $"{node.EstimateRewinds:N1}");
+            if (node.ActualRebinds > 0) AddTooltipRow(stack, "Actual Rebinds", $"{node.ActualRebinds:N0}");
+            if (node.ActualRewinds > 0) AddTooltipRow(stack, "Actual Rewinds", $"{node.ActualRewinds:N0}");
+        }
+
         // I/O and CPU estimates
         if (node.EstimateIO > 0 || node.EstimateCPU > 0 || node.EstimatedRowSize > 0)
         {
@@ -1863,18 +1893,46 @@ public partial class PlanViewerControl : UserControl
         if (warnings != null && warnings.Count > 0)
         {
             stack.Children.Add(new Separator { Margin = new Thickness(0, 6, 0, 6) });
-            foreach (var w in warnings)
+
+            if (allWarnings != null)
             {
-                var warnColor = w.Severity == PlanWarningSeverity.Critical ? "#E57373"
-                    : w.Severity == PlanWarningSeverity.Warning ? "#FFB347" : "#6BB5FF";
-                stack.Children.Add(new TextBlock
+                // Root node: show distinct warning type names only
+                var distinct = warnings
+                    .GroupBy(w => w.WarningType)
+                    .Select(g => (Type: g.Key, MaxSeverity: g.Max(w => w.Severity), Count: g.Count()))
+                    .OrderByDescending(g => g.MaxSeverity)
+                    .ThenBy(g => g.Type);
+
+                foreach (var (type, severity, count) in distinct)
                 {
-                    Text = $"\u26A0 {w.WarningType}: {w.Message}",
-                    Foreground = new SolidColorBrush(Color.Parse(warnColor)),
-                    FontSize = 11,
-                    TextWrapping = TextWrapping.Wrap,
-                    Margin = new Thickness(0, 2, 0, 0)
-                });
+                    var warnColor = severity == PlanWarningSeverity.Critical ? "#E57373"
+                        : severity == PlanWarningSeverity.Warning ? "#FFB347" : "#6BB5FF";
+                    var label = count > 1 ? $"\u26A0 {type} ({count})" : $"\u26A0 {type}";
+                    stack.Children.Add(new TextBlock
+                    {
+                        Text = label,
+                        Foreground = new SolidColorBrush(Color.Parse(warnColor)),
+                        FontSize = 11,
+                        Margin = new Thickness(0, 2, 0, 0)
+                    });
+                }
+            }
+            else
+            {
+                // Individual node: show full warning messages
+                foreach (var w in warnings)
+                {
+                    var warnColor = w.Severity == PlanWarningSeverity.Critical ? "#E57373"
+                        : w.Severity == PlanWarningSeverity.Warning ? "#FFB347" : "#6BB5FF";
+                    stack.Children.Add(new TextBlock
+                    {
+                        Text = $"\u26A0 {w.WarningType}: {w.Message}",
+                        Foreground = new SolidColorBrush(Color.Parse(warnColor)),
+                        FontSize = 11,
+                        TextWrapping = TextWrapping.Wrap,
+                        Margin = new Thickness(0, 2, 0, 0)
+                    });
+                }
             }
         }
 
@@ -2193,6 +2251,94 @@ public partial class PlanViewerControl : UserControl
             CollectWarnings(child, warnings);
     }
 
+    /// <summary>
+    /// Computes own CPU time for a node by subtracting child times in row mode.
+    /// Batch mode reports own time directly; row mode is cumulative from leaves up.
+    /// </summary>
+    private static long GetOwnCpuMs(PlanNode node)
+    {
+        if (node.ActualCPUMs <= 0) return 0;
+        var mode = node.ActualExecutionMode ?? node.ExecutionMode;
+        if (mode == "Batch") return node.ActualCPUMs;
+        var childSum = GetChildCpuMsSum(node);
+        return Math.Max(0, node.ActualCPUMs - childSum);
+    }
+
+    /// <summary>
+    /// Computes own elapsed time for a node by subtracting child times in row mode.
+    /// </summary>
+    private static long GetOwnElapsedMs(PlanNode node)
+    {
+        if (node.ActualElapsedMs <= 0) return 0;
+        var mode = node.ActualExecutionMode ?? node.ExecutionMode;
+        if (mode == "Batch") return node.ActualElapsedMs;
+
+        // Exchange operators: Thread 0 is the coordinator whose elapsed time is the
+        // wall clock for the entire parallel branch — not the operator's own work.
+        if (IsExchangeOperator(node))
+        {
+            // If we have worker thread data, use max of worker threads
+            var workerMax = node.PerThreadStats
+                .Where(t => t.ThreadId > 0)
+                .Select(t => t.ActualElapsedMs)
+                .DefaultIfEmpty(0)
+                .Max();
+            if (workerMax > 0)
+            {
+                var childSum = GetChildElapsedMsSum(node);
+                return Math.Max(0, workerMax - childSum);
+            }
+            // Thread 0 only (coordinator) — exchange does negligible own work
+            return 0;
+        }
+
+        var childElapsedSum = GetChildElapsedMsSum(node);
+        return Math.Max(0, node.ActualElapsedMs - childElapsedSum);
+    }
+
+    private static bool IsExchangeOperator(PlanNode node) =>
+        node.PhysicalOp == "Parallelism"
+        || node.LogicalOp is "Gather Streams" or "Distribute Streams" or "Repartition Streams";
+
+    private static long GetChildCpuMsSum(PlanNode node)
+    {
+        long sum = 0;
+        foreach (var child in node.Children)
+        {
+            if (child.ActualCPUMs > 0)
+                sum += child.ActualCPUMs;
+            else
+                sum += GetChildCpuMsSum(child); // skip through transparent operators
+        }
+        return sum;
+    }
+
+    private static long GetChildElapsedMsSum(PlanNode node)
+    {
+        long sum = 0;
+        foreach (var child in node.Children)
+        {
+            if (child.PhysicalOp == "Parallelism" && child.Children.Count > 0)
+            {
+                // Exchange: take max of children (parallel branches)
+                sum += child.Children
+                    .Where(c => c.ActualElapsedMs > 0)
+                    .Select(c => c.ActualElapsedMs)
+                    .DefaultIfEmpty(0)
+                    .Max();
+            }
+            else if (child.ActualElapsedMs > 0)
+            {
+                sum += child.ActualElapsedMs;
+            }
+            else
+            {
+                sum += GetChildElapsedMsSum(child); // skip through transparent operators
+            }
+        }
+        return sum;
+    }
+
     private void ShowWaitStats(List<WaitStatInfo> waits, bool isActualPlan)
     {
         WaitStatsContent.Children.Clear();
@@ -2217,14 +2363,10 @@ public partial class PlanViewerControl : UserControl
         WaitStatsHeader.Text = $"  Wait Stats \u2014 {totalWait:N0}ms total";
 
         // Build a single Grid for all rows so columns align
-        // Wait type names are nvarchar(60), longest known is 51 chars
-        // Default UI font is proportional (~6.5px per char at size 12)
-        var longestName = sorted.Max(w => w.WaitType.Length);
-        var nameColWidth = longestName * 6.5 + 10;
-
+        // Name and duration auto-size; bar fills remaining space
         var grid = new Grid
         {
-            ColumnDefinitions = new ColumnDefinitions($"{nameColWidth},*,Auto")
+            ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto")
         };
         for (int i = 0; i < sorted.Count; i++)
             grid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
@@ -2235,12 +2377,12 @@ public partial class PlanViewerControl : UserControl
             var barFraction = maxWait > 0 ? (double)w.WaitTimeMs / maxWait : 0;
             var color = GetWaitCategoryColor(GetWaitCategory(w.WaitType));
 
-            // Wait type name
+            // Wait type name — colored by category
             var nameText = new TextBlock
             {
                 Text = w.WaitType,
                 FontSize = 12,
-                Foreground = new SolidColorBrush(Color.Parse("#E4E6EB")),
+                Foreground = new SolidColorBrush(Color.Parse(color)),
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(0, 2, 10, 2)
             };
@@ -2248,12 +2390,13 @@ public partial class PlanViewerControl : UserControl
             Grid.SetColumn(nameText, 0);
             grid.Children.Add(nameText);
 
-            // Bar — fixed max width, proportional to largest wait
+            // Bar — semi-transparent category color, compact proportional indicator
+            var barColor = Color.Parse(color);
             var colorBar = new Border
             {
-                Width = Math.Max(4, barFraction * 300),
+                Width = Math.Max(4, barFraction * 60),
                 Height = 14,
-                Background = new SolidColorBrush(Color.Parse(color)),
+                Background = new SolidColorBrush(Color.FromArgb(0x60, barColor.R, barColor.G, barColor.B)),
                 CornerRadius = new CornerRadius(2),
                 HorizontalAlignment = HorizontalAlignment.Left,
                 VerticalAlignment = VerticalAlignment.Center,
@@ -2294,7 +2437,7 @@ public partial class PlanViewerControl : UserControl
         };
         int rowIndex = 0;
 
-        void AddRow(string label, string value)
+        void AddRow(string label, string value, string? color = null)
         {
             grid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
 
@@ -2314,7 +2457,7 @@ public partial class PlanViewerControl : UserControl
             {
                 Text = value,
                 FontSize = 11,
-                Foreground = new SolidColorBrush(Color.Parse(valueColor)),
+                Foreground = new SolidColorBrush(Color.Parse(color ?? valueColor)),
                 Margin = new Thickness(0, 1, 0, 1)
             };
             Grid.SetRow(valueText, rowIndex);
@@ -2323,6 +2466,10 @@ public partial class PlanViewerControl : UserControl
 
             rowIndex++;
         }
+
+        // Efficiency thresholds: white >= 80%, yellow >= 60%, orange >= 40%, red < 40%
+        static string EfficiencyColor(double pct) => pct >= 80 ? "#E4E6EB"
+            : pct >= 60 ? "#FFD700" : pct >= 40 ? "#FFB347" : "#E57373";
 
         // Runtime stats (actual plans)
         if (statement.QueryTimeStats != null)
@@ -2335,22 +2482,43 @@ public partial class PlanViewerControl : UserControl
                 AddRow("UDF elapsed", $"{statement.QueryUdfElapsedTimeMs:N0}ms");
         }
 
-        // Memory grant
+        // Memory grant — color by utilization percentage
         if (statement.MemoryGrant != null)
         {
             var mg = statement.MemoryGrant;
-            AddRow("Memory grant", $"{mg.GrantedMemoryKB:N0} KB granted, {mg.MaxUsedMemoryKB:N0} KB used");
+            var grantPct = mg.GrantedMemoryKB > 0
+                ? (double)mg.MaxUsedMemoryKB / mg.GrantedMemoryKB * 100 : 100;
+            var grantColor = EfficiencyColor(grantPct);
+            AddRow("Memory grant",
+                $"{mg.GrantedMemoryKB:N0} KB granted, {mg.MaxUsedMemoryKB:N0} KB used ({grantPct:N0}%)",
+                grantColor);
             if (mg.GrantWaitTimeMs > 0)
-                AddRow("Grant wait", $"{mg.GrantWaitTimeMs:N0}ms");
+                AddRow("Grant wait", $"{mg.GrantWaitTimeMs:N0}ms", "#E57373");
         }
 
-        // DOP
+        // DOP + parallelism efficiency — color by efficiency
         if (statement.DegreeOfParallelism > 0)
-            AddRow("DOP", statement.DegreeOfParallelism.ToString());
+        {
+            var dopText = statement.DegreeOfParallelism.ToString();
+            string? dopColor = null;
+            if (statement.QueryTimeStats != null &&
+                statement.QueryTimeStats.ElapsedTimeMs > 0 &&
+                statement.QueryTimeStats.CpuTimeMs > 0 &&
+                statement.DegreeOfParallelism > 1)
+            {
+                // Speedup ratio: CPU/elapsed = 1.0 means serial, = DOP means perfect parallelism
+                var speedup = (double)statement.QueryTimeStats.CpuTimeMs / statement.QueryTimeStats.ElapsedTimeMs;
+                var efficiency = Math.Min(100.0, (speedup - 1.0) / (statement.DegreeOfParallelism - 1.0) * 100.0);
+                efficiency = Math.Max(0.0, efficiency);
+                dopText += $" ({efficiency:N0}% efficient)";
+                dopColor = EfficiencyColor(efficiency);
+            }
+            AddRow("DOP", dopText, dopColor);
+        }
         else if (statement.NonParallelPlanReason != null)
             AddRow("Serial", statement.NonParallelPlanReason);
 
-        // Thread stats
+        // Thread stats — color by utilization
         if (statement.ThreadStats != null)
         {
             var ts = statement.ThreadStats;
@@ -2358,10 +2526,12 @@ public partial class PlanViewerControl : UserControl
             var totalReserved = ts.Reservations.Sum(r => r.ReservedThreads);
             if (totalReserved > 0)
             {
+                var threadPct = (double)ts.UsedThreads / totalReserved * 100;
+                var threadColor = EfficiencyColor(threadPct);
                 var threadText = ts.UsedThreads == totalReserved
                     ? $"{ts.UsedThreads} used ({totalReserved} reserved)"
                     : $"{ts.UsedThreads} used of {totalReserved} reserved ({totalReserved - ts.UsedThreads} inactive)";
-                AddRow("Threads", threadText);
+                AddRow("Threads", threadText, threadColor);
             }
             else
             {
@@ -2385,7 +2555,15 @@ public partial class PlanViewerControl : UserControl
         if (!string.IsNullOrEmpty(statement.StatementOptmEarlyAbortReason))
             AddRow("Early abort", statement.StatementOptmEarlyAbortReason);
 
-        RuntimeSummaryContent.Children.Add(grid);
+        if (grid.Children.Count > 0)
+        {
+            RuntimeSummaryContent.Children.Add(grid);
+            RuntimeSummaryEmpty.IsVisible = false;
+        }
+        else
+        {
+            RuntimeSummaryEmpty.IsVisible = true;
+        }
         ShowServerContext();
     }
 
@@ -2394,9 +2572,12 @@ public partial class PlanViewerControl : UserControl
         ServerContextContent.Children.Clear();
         if (_serverMetadata == null)
         {
-            ServerContextBorder.IsVisible = false;
+            ServerContextEmpty.IsVisible = true;
+            ServerContextBorder.IsVisible = true;
             return;
         }
+
+        ServerContextEmpty.IsVisible = false;
 
         var m = _serverMetadata;
         var fgColor = "#E4E6EB";

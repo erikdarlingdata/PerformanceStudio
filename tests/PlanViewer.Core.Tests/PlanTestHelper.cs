@@ -19,6 +19,9 @@ public static class PlanTestHelper
         Assert.True(File.Exists(path), $"Test plan not found: {path}");
 
         var xml = File.ReadAllText(path);
+        // SSMS saves plans as UTF-16 with encoding="utf-16" in the XML declaration.
+        // File.ReadAllText auto-detects BOM, but XDocument.Parse chokes on the declaration.
+        xml = xml.Replace("encoding=\"utf-16\"", "encoding=\"utf-8\"");
         var plan = ShowPlanParser.Parse(xml);
         PlanAnalyzer.Analyze(plan);
         return plan;

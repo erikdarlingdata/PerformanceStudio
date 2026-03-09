@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Xml.Linq;
@@ -132,9 +133,25 @@ public partial class QuerySessionControl : UserControl
             QueryEditor.SelectAll();
         };
 
+        var executeFromCursorItem = new MenuItem { Header = "Execute from Cursor" };
+        executeFromCursorItem.Click += async (_, _) =>
+        {
+            var text = GetTextFromCursor();
+            if (!string.IsNullOrWhiteSpace(text))
+                await CaptureAndShowPlan(estimated: false, queryTextOverride: text);
+        };
+
+        var executeCurrentBatchItem = new MenuItem { Header = "Execute Current Batch" };
+        executeCurrentBatchItem.Click += async (_, _) =>
+        {
+            var text = GetCurrentBatch();
+            if (!string.IsNullOrWhiteSpace(text))
+                await CaptureAndShowPlan(estimated: false, queryTextOverride: text);
+        };
+
         QueryEditor.TextArea.ContextMenu = new ContextMenu
         {
-            Items = { cutItem, copyItem, pasteItem, new Separator(), selectAllItem }
+            Items = { cutItem, copyItem, pasteItem, new Separator(), selectAllItem, new Separator(), executeFromCursorItem, executeCurrentBatchItem }
         };
     }
 
@@ -152,6 +169,12 @@ public partial class QuerySessionControl : UserControl
                  && ExecuteEstButton.IsEnabled)
         {
             ExecuteEstimated_Click(this, new RoutedEventArgs());
+            e.Handled = true;
+        }
+        // Escape → Cancel running query
+        else if (e.Key == Key.Escape && _executionCts != null && !_executionCts.IsCancellationRequested)
+        {
+            _executionCts.Cancel();
             e.Handled = true;
         }
     }
@@ -251,6 +274,47 @@ public partial class QuerySessionControl : UserControl
         }
 
         return (doc.GetText(start, offset - start), start);
+    }
+
+    private string? GetSelectedTextOrNull()
+    {
+        var selection = QueryEditor.TextArea.Selection;
+        if (selection.IsEmpty) return null;
+        return selection.GetText();
+    }
+
+    private string GetTextFromCursor()
+    {
+        var doc = QueryEditor.Document;
+        var offset = QueryEditor.CaretOffset;
+        return doc.GetText(offset, doc.TextLength - offset);
+    }
+
+    private string? GetCurrentBatch()
+    {
+        var doc = QueryEditor.Document;
+        var caretOffset = QueryEditor.CaretOffset;
+        var text = doc.Text;
+        var goPattern = new Regex(@"^\s*GO\s*$", RegexOptions.IgnoreCase | RegexOptions.Multiline);
+        var matches = goPattern.Matches(text);
+
+        int batchStart = 0;
+        int batchEnd = text.Length;
+
+        foreach (Match m in matches)
+        {
+            if (m.Index + m.Length <= caretOffset)
+            {
+                batchStart = m.Index + m.Length;
+            }
+            else if (m.Index >= caretOffset)
+            {
+                batchEnd = m.Index;
+                break;
+            }
+        }
+
+        return text[batchStart..batchEnd].Trim();
     }
 
     private void SetStatus(string text, bool autoClear = true)
@@ -429,7 +493,7 @@ public partial class QuerySessionControl : UserControl
         await CaptureAndShowPlan(estimated: true);
     }
 
-    private async Task CaptureAndShowPlan(bool estimated)
+    private async Task CaptureAndShowPlan(bool estimated, string? queryTextOverride = null)
     {
         if (_connectionString == null || _selectedDatabase == null)
         {
@@ -437,7 +501,9 @@ public partial class QuerySessionControl : UserControl
             return;
         }
 
-        var queryText = QueryEditor.Text?.Trim();
+        var queryText = queryTextOverride?.Trim()
+                        ?? GetSelectedTextOrNull()?.Trim()
+                        ?? QueryEditor.Text?.Trim();
         if (string.IsNullOrEmpty(queryText))
         {
             SetStatus("Enter a query", autoClear: false);
@@ -448,10 +514,96 @@ public partial class QuerySessionControl : UserControl
         _executionCts = new CancellationTokenSource();
         var ct = _executionCts.Token;
 
-        var planType = estimated ? "estimated" : "actual";
-        SetStatus($"Capturing {planType} plan...");
-        ExecuteButton.IsEnabled = false;
-        ExecuteEstButton.IsEnabled = false;
+        var planType = estimated ? "Estimated" : "Actual";
+
+        // Create loading tab with cancel button
+        var loadingPanel = new StackPanel
+        {
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Width = 300
+        };
+
+        var progressBar = new ProgressBar
+        {
+            IsIndeterminate = true,
+            Height = 4,
+            Margin = new Avalonia.Thickness(0, 0, 0, 12)
+        };
+
+        var statusLabel = new TextBlock
+        {
+            Text = $"Capturing {planType.ToLower()} plan...",
+            FontSize = 14,
+            Foreground = new SolidColorBrush(Color.Parse("#B0B6C0")),
+            HorizontalAlignment = HorizontalAlignment.Center
+        };
+
+        var cancelBtn = new Button
+        {
+            Content = "\u25A0 Cancel",
+            Height = 32,
+            Width = 120,
+            Padding = new Avalonia.Thickness(16, 0),
+            FontSize = 13,
+            Margin = new Avalonia.Thickness(0, 16, 0, 0),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center,
+            Theme = (Avalonia.Styling.ControlTheme)this.FindResource("AppButton")!
+        };
+        cancelBtn.Click += (_, _) => _executionCts?.Cancel();
+
+        loadingPanel.Children.Add(progressBar);
+        loadingPanel.Children.Add(statusLabel);
+        loadingPanel.Children.Add(cancelBtn);
+
+        var loadingContainer = new Grid
+        {
+            Background = new SolidColorBrush(Color.Parse("#1A1D23")),
+            Focusable = true,
+            Children = { loadingPanel }
+        };
+        loadingContainer.KeyDown += (_, ke) =>
+        {
+            if (ke.Key == Key.Escape) { _executionCts?.Cancel(); ke.Handled = true; }
+        };
+
+        // Add loading tab and switch to it
+        _planCounter++;
+        var tabLabel = estimated ? $"Est Plan {_planCounter}" : $"Plan {_planCounter}";
+        var headerText = new TextBlock
+        {
+            Text = tabLabel,
+            VerticalAlignment = VerticalAlignment.Center,
+            FontSize = 12
+        };
+        var closeBtn = new Button
+        {
+            Content = "\u2715",
+            MinWidth = 22, MinHeight = 22, Width = 22, Height = 22,
+            Padding = new Avalonia.Thickness(0),
+            FontSize = 11,
+            Margin = new Avalonia.Thickness(6, 0, 0, 0),
+            Background = Brushes.Transparent,
+            BorderThickness = new Avalonia.Thickness(0),
+            Foreground = new SolidColorBrush(Color.FromRgb(0xE4, 0xE6, 0xEB)),
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center
+        };
+        var header = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Children = { headerText, closeBtn }
+        };
+        var loadingTab = new TabItem { Header = header, Content = loadingContainer };
+        closeBtn.Tag = loadingTab;
+        closeBtn.Click += ClosePlanTab_Click;
+
+        SubTabControl.Items.Add(loadingTab);
+        SubTabControl.SelectedItem = loadingTab;
+        loadingContainer.Focus();
 
         try
         {
@@ -466,45 +618,51 @@ public partial class QuerySessionControl : UserControl
             if (estimated)
             {
                 planXml = await EstimatedPlanExecutor.GetEstimatedPlanAsync(
-                    _connectionString, _selectedDatabase, queryText, timeoutSeconds: 60, ct);
+                    _connectionString, _selectedDatabase, queryText, timeoutSeconds: 0, ct);
             }
             else
             {
                 planXml = await ActualPlanExecutor.ExecuteForActualPlanAsync(
                     _connectionString, _selectedDatabase, queryText,
                     planXml: null, isolationLevel: null,
-                    isAzureSqlDb: isAzure, timeoutSeconds: 60, ct);
+                    isAzureSqlDb: isAzure, timeoutSeconds: 0, ct);
             }
 
             sw.Stop();
 
             if (string.IsNullOrEmpty(planXml))
             {
-                SetStatus($"No plan returned ({sw.Elapsed.TotalSeconds:F1}s)");
+                statusLabel.Text = $"No plan returned ({sw.Elapsed.TotalSeconds:F1}s)";
+                progressBar.IsVisible = false;
+                cancelBtn.IsVisible = false;
                 return;
             }
 
+            // Replace loading content with the plan viewer
             SetStatus($"{planType} plan captured ({sw.Elapsed.TotalSeconds:F1}s)");
-            AddPlanTab(planXml, queryText, estimated);
+            var viewer = new PlanViewerControl();
+            viewer.Metadata = _serverMetadata;
+            viewer.LoadPlan(planXml, tabLabel, queryText);
+            loadingTab.Content = viewer;
             HumanAdviceButton.IsEnabled = true;
             RobotAdviceButton.IsEnabled = true;
         }
         catch (OperationCanceledException)
         {
             SetStatus("Cancelled");
+            SubTabControl.Items.Remove(loadingTab);
         }
         catch (SqlException ex)
         {
-            SetStatus(ex.Message.Length > 100 ? ex.Message[..100] + "..." : ex.Message, autoClear: false);
+            statusLabel.Text = ex.Message.Length > 100 ? ex.Message[..100] + "..." : ex.Message;
+            progressBar.IsVisible = false;
+            cancelBtn.IsVisible = false;
         }
         catch (Exception ex)
         {
-            SetStatus(ex.Message.Length > 100 ? ex.Message[..100] + "..." : ex.Message, autoClear: false);
-        }
-        finally
-        {
-            ExecuteButton.IsEnabled = true;
-            ExecuteEstButton.IsEnabled = true;
+            statusLabel.Text = ex.Message.Length > 100 ? ex.Message[..100] + "..." : ex.Message;
+            progressBar.IsVisible = false;
+            cancelBtn.IsVisible = false;
         }
     }
 
@@ -550,21 +708,11 @@ public partial class QuerySessionControl : UserControl
 
     private void ShowAdviceWindow(string title, string content)
     {
-        var textBox = new TextBox
-        {
-            Text = content,
-            IsReadOnly = true,
-            AcceptsReturn = true,
-            FontFamily = new FontFamily("Consolas, Menlo, monospace"),
-            FontSize = 12,
-            Background = Brushes.Transparent,
-            BorderThickness = new Avalonia.Thickness(0),
-            TextWrapping = TextWrapping.Wrap
-        };
+        var styledContent = AdviceContentBuilder.Build(content);
 
         var scrollViewer = new ScrollViewer
         {
-            Content = textBox,
+            Content = styledContent,
             HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
             VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto
         };
@@ -1174,8 +1322,93 @@ public partial class QuerySessionControl : UserControl
         _executionCts = new CancellationTokenSource();
         var ct = _executionCts.Token;
 
-        SetStatus("Capturing actual plan...");
-        GetActualPlanButton.IsEnabled = false;
+        // Create loading tab with cancel button
+        var loadingPanel = new StackPanel
+        {
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            Width = 300
+        };
+
+        var progressBar = new ProgressBar
+        {
+            IsIndeterminate = true,
+            Height = 4,
+            Margin = new Avalonia.Thickness(0, 0, 0, 12)
+        };
+
+        var statusLabel = new TextBlock
+        {
+            Text = "Capturing actual plan...",
+            FontSize = 14,
+            Foreground = new SolidColorBrush(Color.Parse("#B0B6C0")),
+            HorizontalAlignment = HorizontalAlignment.Center
+        };
+
+        var cancelBtn = new Button
+        {
+            Content = "\u25A0 Cancel",
+            Height = 32,
+            Width = 120,
+            Padding = new Avalonia.Thickness(16, 0),
+            FontSize = 13,
+            Margin = new Avalonia.Thickness(0, 16, 0, 0),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center,
+            Theme = (Avalonia.Styling.ControlTheme)this.FindResource("AppButton")!
+        };
+        cancelBtn.Click += (_, _) => _executionCts?.Cancel();
+
+        loadingPanel.Children.Add(progressBar);
+        loadingPanel.Children.Add(statusLabel);
+        loadingPanel.Children.Add(cancelBtn);
+
+        var loadingContainer = new Grid
+        {
+            Background = new SolidColorBrush(Color.Parse("#1A1D23")),
+            Focusable = true,
+            Children = { loadingPanel }
+        };
+        loadingContainer.KeyDown += (_, ke) =>
+        {
+            if (ke.Key == Key.Escape) { _executionCts?.Cancel(); ke.Handled = true; }
+        };
+
+        _planCounter++;
+        var tabLabel = $"Plan {_planCounter}";
+        var headerText = new TextBlock
+        {
+            Text = tabLabel,
+            VerticalAlignment = VerticalAlignment.Center,
+            FontSize = 12
+        };
+        var closeBtn = new Button
+        {
+            Content = "\u2715",
+            MinWidth = 22, MinHeight = 22, Width = 22, Height = 22,
+            Padding = new Avalonia.Thickness(0),
+            FontSize = 11,
+            Margin = new Avalonia.Thickness(6, 0, 0, 0),
+            Background = Brushes.Transparent,
+            BorderThickness = new Avalonia.Thickness(0),
+            Foreground = new SolidColorBrush(Color.FromRgb(0xE4, 0xE6, 0xEB)),
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center
+        };
+        var header = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Children = { headerText, closeBtn }
+        };
+        var loadingTab = new TabItem { Header = header, Content = loadingContainer };
+        closeBtn.Tag = loadingTab;
+        closeBtn.Click += ClosePlanTab_Click;
+
+        SubTabControl.Items.Add(loadingTab);
+        SubTabControl.SelectedItem = loadingTab;
+        loadingContainer.Focus();
 
         try
         {
@@ -1185,30 +1418,40 @@ public partial class QuerySessionControl : UserControl
             var actualPlanXml = await ActualPlanExecutor.ExecuteForActualPlanAsync(
                 _connectionString, _selectedDatabase, queryText,
                 planXml, isolationLevel: null,
-                isAzureSqlDb: isAzure, timeoutSeconds: 60, ct);
+                isAzureSqlDb: isAzure, timeoutSeconds: 0, ct);
 
             sw.Stop();
 
             if (string.IsNullOrEmpty(actualPlanXml))
             {
-                SetStatus($"No actual plan returned ({sw.Elapsed.TotalSeconds:F1}s)");
+                statusLabel.Text = $"No actual plan returned ({sw.Elapsed.TotalSeconds:F1}s)";
+                progressBar.IsVisible = false;
+                cancelBtn.IsVisible = false;
                 return;
             }
 
             SetStatus($"Actual plan captured ({sw.Elapsed.TotalSeconds:F1}s)");
-            AddPlanTab(actualPlanXml, queryText, estimated: false);
+            var actualViewer = new PlanViewerControl();
+            actualViewer.Metadata = _serverMetadata;
+            actualViewer.LoadPlan(actualPlanXml, tabLabel, queryText);
+            loadingTab.Content = actualViewer;
         }
         catch (OperationCanceledException)
         {
             SetStatus("Cancelled");
+            SubTabControl.Items.Remove(loadingTab);
         }
         catch (SqlException ex)
         {
-            SetStatus(ex.Message.Length > 100 ? ex.Message[..100] + "..." : ex.Message, autoClear: false);
+            statusLabel.Text = ex.Message.Length > 100 ? ex.Message[..100] + "..." : ex.Message;
+            progressBar.IsVisible = false;
+            cancelBtn.IsVisible = false;
         }
         catch (Exception ex)
         {
-            SetStatus(ex.Message.Length > 100 ? ex.Message[..100] + "..." : ex.Message, autoClear: false);
+            statusLabel.Text = ex.Message.Length > 100 ? ex.Message[..100] + "..." : ex.Message;
+            progressBar.IsVisible = false;
+            cancelBtn.IsVisible = false;
         }
         finally
         {

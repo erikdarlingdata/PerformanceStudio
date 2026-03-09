@@ -644,6 +644,7 @@ public static class ShowPlanParser
             node.PhysicalOp = "Lazy " + node.PhysicalOp;
         }
 
+
         // Map to icon
         node.IconName = PlanIconMapper.GetIconName(node.PhysicalOp);
 
@@ -712,16 +713,36 @@ public static class ShowPlanParser
             var seekParts = new List<string>();
             foreach (var sp in seekPreds)
             {
-                var scalarOps = sp.Descendants(Ns + "ScalarOperator");
-                foreach (var so in scalarOps)
+                foreach (var seekKeys in sp.Elements(Ns + "SeekKeys"))
                 {
-                    var val = so.Attribute("ScalarString")?.Value;
-                    if (!string.IsNullOrEmpty(val))
-                        seekParts.Add(val);
+                    // Each SeekKeys has Prefix, StartRange, EndRange with ScanType
+                    foreach (var range in seekKeys.Elements())
+                    {
+                        var scanType = range.Attribute("ScanType")?.Value;
+                        var cols = range.Element(Ns + "RangeColumns")?
+                            .Elements(Ns + "ColumnReference")
+                            .Select(FormatColumnRef)
+                            .ToList();
+                        var exprs = range.Element(Ns + "RangeExpressions")?
+                            .Elements(Ns + "ScalarOperator")
+                            .Select(so => so.Attribute("ScalarString")?.Value ?? "?")
+                            .ToList();
+
+                        if (cols != null && exprs != null)
+                        {
+                            var op = scanType switch
+                            {
+                                "EQ" => "=", "GT" => ">", "GE" => ">=",
+                                "LT" => "<", "LE" => "<=", _ => scanType ?? "="
+                            };
+                            for (int ci = 0; ci < cols.Count && ci < exprs.Count; ci++)
+                                seekParts.Add($"{cols[ci]} {op} {exprs[ci]}");
+                        }
+                    }
                 }
             }
             if (seekParts.Count > 0)
-                node.SeekPredicates = string.Join(" AND ", seekParts);
+                node.SeekPredicates = string.Join(", ", seekParts);
 
             // GuessedSelectivity — check if optimizer guessed selectivity on predicates
             if (ScopedDescendants(physicalOpEl, Ns + "GuessedSelectivity").Any())
@@ -1454,8 +1475,8 @@ public static class ShowPlanParser
             result.Add(new PlanWarning
             {
                 WarningType = "No Join Predicate",
-                Message = "This join has no join predicate (possible cross join)",
-                Severity = PlanWarningSeverity.Critical
+                Message = "This join triggered a no join predicate warning, which is worth checking on, but is often misleading. The optimizer may have removed a redundant predicate after simplification.",
+                Severity = PlanWarningSeverity.Warning
             });
         }
 

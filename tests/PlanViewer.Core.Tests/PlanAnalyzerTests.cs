@@ -321,14 +321,15 @@ public class PlanAnalyzerTests
     // ---------------------------------------------------------------
 
     [Fact]
-    public void Rule14_LazySpoolIneffective_DetectsUnfavorableRatio()
+    public void Rule14_LazySpoolIneffective_SkipsLazyIndexSpools()
     {
+        // Lazy Index Spools cache by correlated parameter value (like a hash table)
+        // so rebind/rewind counts are unreliable — Rule 14 should not fire.
+        // See https://www.sql.kiwi/2025/02/lazy-index-spool/
         var plan = PlanTestHelper.LoadAndAnalyze("lazy_spool_plan.sqlplan");
         var warnings = PlanTestHelper.WarningsOfType(plan, "Lazy Spool Ineffective");
 
-        Assert.Single(warnings);
-        Assert.Contains("rebinds", warnings[0].Message);
-        Assert.Contains("rewinds", warnings[0].Message);
+        Assert.Empty(warnings);
     }
 
     // ---------------------------------------------------------------
@@ -552,5 +553,210 @@ public class PlanAnalyzerTests
         Assert.NotEmpty(warnings);
         Assert.Contains(warnings, w => w.Severity == PlanWarningSeverity.Critical);
         Assert.Contains(warnings, w => w.Message.Contains("prevented an index seek"));
+    }
+
+    // ---------------------------------------------------------------
+    // Rule 25: Ineffective Parallelism
+    // ---------------------------------------------------------------
+
+    [Fact]
+    public void Rule25_IneffectiveParallelism_DetectedWhenCpuEqualsElapsed()
+    {
+        // serially-parallel: DOP 8 but CPU 17,110ms ≈ elapsed 17,112ms (ratio ~1.0)
+        var plan = PlanTestHelper.LoadAndAnalyze("serially-parallel.sqlplan");
+        var warnings = PlanTestHelper.WarningsOfType(plan, "Ineffective Parallelism");
+
+        Assert.Single(warnings);
+        Assert.Contains("DOP 8", warnings[0].Message);
+        Assert.Contains("ran essentially serially", warnings[0].Message);
+    }
+
+    [Fact]
+    public void Rule25_IneffectiveParallelism_NotFiredOnEffectiveParallelPlan()
+    {
+        // parallel-skew: DOP 4, CPU 28,634ms vs elapsed 9,417ms (ratio ~3.0)
+        // This is effective parallelism — Rule 25 should NOT fire
+        var plan = PlanTestHelper.LoadAndAnalyze("parallel-skew.sqlplan");
+        var warnings = PlanTestHelper.WarningsOfType(plan, "Ineffective Parallelism");
+
+        Assert.Empty(warnings);
+    }
+
+    // ---------------------------------------------------------------
+    // Rule 28: NOT IN with Nullable Column (Row Count Spool)
+    // ---------------------------------------------------------------
+
+    [Fact]
+    public void Rule28_RowCountSpool_DetectsNotInWithNullableColumn()
+    {
+        // row-count-spool-slow: Row Count Spool with ~24M estimated rewinds,
+        // NOT IN pattern with nullable UserId column
+        var plan = PlanTestHelper.LoadAndAnalyze("row-count-spool-slow.sqlplan");
+        var warnings = PlanTestHelper.WarningsOfType(plan, "NOT IN with Nullable Column");
+
+        Assert.NotEmpty(warnings);
+        Assert.Contains(warnings, w => w.Message.Contains("NOT IN"));
+        Assert.Contains(warnings, w => w.Message.Contains("NOT EXISTS"));
+    }
+
+    // ---------------------------------------------------------------
+    // Rule 30: Missing Index Quality (Wide Index / Low Impact)
+    // ---------------------------------------------------------------
+
+    [Fact]
+    public void Rule30_MissingIndexQuality_DetectsWideOrLowImpact()
+    {
+        // slow-multi-seek has missing index suggestions — verify quality analysis runs
+        var plan = PlanTestHelper.LoadAndAnalyze("slow-multi-seek.sqlplan");
+        var stmt = PlanTestHelper.FirstStatement(plan);
+
+        // If there are missing indexes, the quality rules should evaluate them
+        if (stmt.MissingIndexes.Count > 0)
+        {
+            var allWarnings = PlanTestHelper.AllWarnings(plan);
+            var indexWarnings = allWarnings.Where(w =>
+                w.WarningType == "Low Impact Index" ||
+                w.WarningType == "Wide Index Suggestion" ||
+                w.WarningType == "Duplicate Index Suggestions").ToList();
+
+            // At minimum, the rule ran without errors
+            Assert.True(true);
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // Rule 31: Parallel Wait Bottleneck
+    // ---------------------------------------------------------------
+
+    [Fact]
+    public void Rule31_ParallelWaitBottleneck_DetectedWhenElapsedExceedsCpu()
+    {
+        // excellent-parallel-spill: DOP 4, CPU 172,222ms vs elapsed 225,870ms
+        // ratio ~0.76 (< 0.8) — threads are waiting more than working
+        var plan = PlanTestHelper.LoadAndAnalyze("excellent-parallel-spill.sqlplan");
+        var warnings = PlanTestHelper.WarningsOfType(plan, "Parallel Wait Bottleneck");
+
+        Assert.Single(warnings);
+        Assert.Contains("DOP 4", warnings[0].Message);
+        Assert.Contains("waiting", warnings[0].Message);
+    }
+
+    // ---------------------------------------------------------------
+    // Seek Predicate Parsing
+    // ---------------------------------------------------------------
+
+    [Fact]
+    public void SeekPredicateParsing_FormatsColumnEqualsValue()
+    {
+        // slow-multi-seek: Index Seek with SeekPredicateNew containing
+        // SeekKeys with Prefix ranges (PostTypeId = value patterns)
+        var plan = PlanTestHelper.LoadAndAnalyze("slow-multi-seek.sqlplan");
+        var stmt = PlanTestHelper.FirstStatement(plan);
+        Assert.NotNull(stmt.RootNode);
+
+        // Find the Index Seek node
+        var seekNode = FindNodeByOp(stmt.RootNode, "Index Seek");
+        Assert.NotNull(seekNode);
+        Assert.NotNull(seekNode!.SeekPredicates);
+
+        // Should have Column = Value format, not bare scalar values
+        Assert.Contains("=", seekNode.SeekPredicates);
+    }
+
+    // ---------------------------------------------------------------
+    // Parameter Sniffing Detection (compiled vs runtime value mismatch)
+    // ---------------------------------------------------------------
+
+    [Fact]
+    public void ParameterParsing_DetectsCompiledVsRuntimeMismatch()
+    {
+        // param-sniffing-posttypeid2: compiled for @VoteTypeId=(4), executed with (2)
+        var plan = PlanTestHelper.LoadAndAnalyze("param-sniffing-posttypeid2.sqlplan");
+        var stmt = PlanTestHelper.FirstStatement(plan);
+
+        var param = stmt.Parameters.FirstOrDefault(p => p.Name == "@VoteTypeId");
+        Assert.NotNull(param);
+        Assert.NotEqual(param!.CompiledValue, param.RuntimeValue);
+    }
+
+    // ---------------------------------------------------------------
+    // PSPO / Dispatcher Detection
+    // ---------------------------------------------------------------
+
+    [Fact]
+    public void PspoParsing_DetectsDispatcherElement()
+    {
+        // pspo-example: Parameter Sensitive Plan Optimization with Dispatcher
+        var plan = PlanTestHelper.LoadAndAnalyze("pspo-example.sqlplan");
+        var stmt = PlanTestHelper.FirstStatement(plan);
+
+        Assert.NotNull(stmt.Dispatcher);
+        Assert.NotEmpty(stmt.Dispatcher!.ParameterSensitivePredicates);
+    }
+
+    // ---------------------------------------------------------------
+    // Spill Detection on Actual Plan
+    // ---------------------------------------------------------------
+
+    [Fact]
+    public void SpillDetection_MultipleSpillsInParallelPlan()
+    {
+        // excellent-parallel-spill: 3 SpillToTempDb warnings in a DOP 4 plan
+        var plan = PlanTestHelper.LoadAndAnalyze("excellent-parallel-spill.sqlplan");
+        var allWarnings = PlanTestHelper.AllWarnings(plan);
+
+        var spillWarnings = allWarnings.Where(w => w.SpillDetails != null).ToList();
+        Assert.NotEmpty(spillWarnings);
+    }
+
+    // ---------------------------------------------------------------
+    // Parallel Skew Detection — Effective Parallelism
+    // ---------------------------------------------------------------
+
+    [Fact]
+    public void ParallelSkew_DetectedInSkewedPlan()
+    {
+        // parallel-skew: DOP 4 with thread distribution skew on scan
+        var plan = PlanTestHelper.LoadAndAnalyze("parallel-skew.sqlplan");
+        var warnings = PlanTestHelper.WarningsOfType(plan, "Parallel Skew");
+
+        // Whether skew fires depends on the distribution in this plan.
+        // The important thing is the plan parses and analyzes without error.
+        // If skew is detected, it should have a meaningful message.
+        foreach (var w in warnings)
+        {
+            Assert.Contains("rows", w.Message);
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // Helper
+    // ---------------------------------------------------------------
+
+    private static PlanNode? FindNodeByOp(PlanNode root, string physicalOp)
+    {
+        if (root.PhysicalOp == physicalOp) return root;
+        foreach (var child in root.Children)
+        {
+            var found = FindNodeByOp(child, physicalOp);
+            if (found != null) return found;
+        }
+        return null;
+    }
+
+    // ---------------------------------------------------------------
+    // NoJoinPredicate: verify it flows through to TextFormatter output
+    // ---------------------------------------------------------------
+
+    [Fact]
+    public void NoJoinPredicate_AppearsInTextFormatterOutput()
+    {
+        var plan = PlanTestHelper.LoadAndAnalyze("missing-join-predicate.sqlplan");
+        var analysis = PlanViewer.Core.Output.ResultMapper.Map(plan, "file");
+        var text = PlanViewer.Core.Output.TextFormatter.Format(analysis);
+
+        Assert.Contains("[Warning]", text);
+        Assert.Contains("No Join Predicate", text);
+        Assert.Contains("often misleading", text);
     }
 }

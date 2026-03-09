@@ -351,6 +351,7 @@ public partial class MainWindow : Window
 
             var viewer = new PlanViewerControl();
             viewer.LoadPlan(xml, fileName);
+            viewer.SourceFilePath = filePath;
 
             // Wrap viewer with advice toolbar
             var content = CreatePlanTabContent(viewer);
@@ -418,7 +419,7 @@ public partial class MainWindow : Window
     {
         var humanBtn = new Button
         {
-            Content = "\U0001f9d1 Advice for Humans",
+            Content = "\U0001f9d1 Human Advice",
             Height = 28,
             Padding = new Avalonia.Thickness(10, 0),
             FontSize = 12,
@@ -430,7 +431,7 @@ public partial class MainWindow : Window
 
         var robotBtn = new Button
         {
-            Content = "\U0001f916 Advice for Robots",
+            Content = "\U0001f916 Robot Advice",
             Height = 28,
             Padding = new Avalonia.Thickness(10, 0),
             FontSize = 12,
@@ -478,7 +479,7 @@ public partial class MainWindow : Window
 
         var copyReproBtn = new Button
         {
-            Content = "\U0001f4cb Copy Repro Script",
+            Content = "\U0001f4cb Copy Repro",
             Height = 28,
             Padding = new Avalonia.Thickness(10, 0),
             FontSize = 12,
@@ -508,7 +509,7 @@ public partial class MainWindow : Window
 
         var getActualPlanBtn = new Button
         {
-            Content = "\u25b6 Run Repro Script",
+            Content = "\u25b6 Run Repro",
             Height = 28,
             Padding = new Avalonia.Thickness(10, 0),
             FontSize = 12,
@@ -523,11 +524,33 @@ public partial class MainWindow : Window
             await GetActualPlanFromFile(viewer);
         };
 
+        var separator2 = new TextBlock
+        {
+            Text = "|",
+            VerticalAlignment = VerticalAlignment.Center,
+            Foreground = new SolidColorBrush(Color.Parse("#E4E6EB")),
+            Margin = new Avalonia.Thickness(4, 0)
+        };
+
+        var queryStoreBtn = new Button
+        {
+            Content = "\U0001f4ca Query Store",
+            Height = 28,
+            Padding = new Avalonia.Thickness(10, 0),
+            FontSize = 12,
+            Margin = new Avalonia.Thickness(6, 0, 0, 0),
+            VerticalContentAlignment = VerticalAlignment.Center,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            IsEnabled = false,
+            Theme = (Avalonia.Styling.ControlTheme)this.FindResource("AppButton")!
+        };
+        ToolTip.SetTip(queryStoreBtn, "Connect to a server (Ctrl+N) to use Query Store");
+
         var toolbar = new StackPanel
         {
             Orientation = Orientation.Horizontal,
             Margin = new Avalonia.Thickness(8, 6),
-            Children = { humanBtn, robotBtn, compareBtn, separator1, copyReproBtn, getActualPlanBtn }
+            Children = { humanBtn, robotBtn, compareBtn, separator1, copyReproBtn, getActualPlanBtn, separator2, queryStoreBtn }
         };
 
         var panel = new DockPanel();
@@ -540,21 +563,11 @@ public partial class MainWindow : Window
 
     private void ShowAdviceWindow(string title, string content)
     {
-        var textBox = new TextBox
-        {
-            Text = content,
-            IsReadOnly = true,
-            AcceptsReturn = true,
-            FontFamily = new FontFamily("Consolas, Menlo, monospace"),
-            FontSize = 12,
-            Background = Brushes.Transparent,
-            BorderThickness = new Avalonia.Thickness(0),
-            TextWrapping = TextWrapping.Wrap
-        };
+        var styledContent = AdviceContentBuilder.Build(content);
 
         var scrollViewer = new ScrollViewer
         {
-            Content = textBox,
+            Content = styledContent,
             HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
             VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto
         };
@@ -847,11 +860,17 @@ public partial class MainWindow : Window
         closeBtn.Click += CloseTab_Click;
 
         // Right-click context menu
+        var copyPathItem = new MenuItem { Header = "Copy Path", Tag = tab };
+        // Only visible when tab content has a file path
+        var filePath = GetTabFilePath(tab);
+        copyPathItem.IsVisible = filePath != null;
+
         var contextMenu = new ContextMenu
         {
             Items =
             {
                 new MenuItem { Header = "Rename Tab", Tag = new object[] { header, headerText } },
+                copyPathItem,
                 new Separator(),
                 new MenuItem { Header = "Close", Tag = tab, InputGesture = new KeyGesture(Key.W, KeyModifiers.Control) },
                 new MenuItem { Header = "Close Other Tabs", Tag = tab },
@@ -889,6 +908,15 @@ public partial class MainWindow : Window
                     StartRename((StackPanel)parts[0], (TextBlock)parts[1]);
                 break;
 
+            case "Copy Path":
+                if (item.Tag is TabItem pathTab)
+                {
+                    var path = GetTabFilePath(pathTab);
+                    if (path != null)
+                        _ = this.Clipboard?.SetTextAsync(path);
+                }
+                break;
+
             case "Close":
                 if (item.Tag is TabItem tab)
                 {
@@ -913,6 +941,20 @@ public partial class MainWindow : Window
                 UpdateEmptyOverlay();
                 break;
         }
+    }
+
+    private static string? GetTabFilePath(TabItem tab)
+    {
+        // Plans opened from file are wrapped in a DockPanel with the viewer as the last child
+        if (tab.Content is DockPanel dp)
+        {
+            foreach (var child in dp.Children)
+            {
+                if (child is PlanViewerControl v)
+                    return v.SourceFilePath;
+            }
+        }
+        return null;
     }
 
     private void StartRename(StackPanel header, TextBlock headerText)
@@ -1045,19 +1087,43 @@ public partial class MainWindow : Window
             HorizontalAlignment = HorizontalAlignment.Center
         };
 
+        var cancelBtn = new Button
+        {
+            Content = "\u25A0 Cancel",
+            Height = 32,
+            Width = 120,
+            Padding = new Avalonia.Thickness(16, 0),
+            FontSize = 13,
+            Margin = new Avalonia.Thickness(0, 16, 0, 0),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center,
+            Theme = (Avalonia.Styling.ControlTheme)this.FindResource("AppButton")!
+        };
+
         loadingPanel.Children.Add(progressBar);
         loadingPanel.Children.Add(statusText);
+        loadingPanel.Children.Add(cancelBtn);
+
+        var cts = new System.Threading.CancellationTokenSource();
+        cancelBtn.Click += (_, _) => cts.Cancel();
 
         var loadingContainer = new Grid
         {
             Background = new SolidColorBrush(Color.Parse("#1A1D23")),
+            Focusable = true,
             Children = { loadingPanel }
+        };
+        loadingContainer.KeyDown += (_, ke) =>
+        {
+            if (ke.Key == Avalonia.Input.Key.Escape) { cts.Cancel(); ke.Handled = true; }
         };
 
         var tab = CreateTab("Actual Plan", loadingContainer);
         MainTabControl.Items.Add(tab);
         MainTabControl.SelectedItem = tab;
         UpdateEmptyOverlay();
+        loadingContainer.Focus();
 
         try
         {
@@ -1074,13 +1140,12 @@ public partial class MainWindow : Window
 
             statusText.Text = "Capturing actual plan...";
 
-            var cts = new System.Threading.CancellationTokenSource();
             var sw = System.Diagnostics.Stopwatch.StartNew();
 
             var actualPlanXml = await ActualPlanExecutor.ExecuteForActualPlanAsync(
                 connectionString, database, queryText,
                 viewer.RawXml, isolationLevel: null,
-                isAzureSqlDb: isAzure, timeoutSeconds: 60, cts.Token);
+                isAzureSqlDb: isAzure, timeoutSeconds: 0, cts.Token);
 
             sw.Stop();
 

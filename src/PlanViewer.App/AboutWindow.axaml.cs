@@ -15,6 +15,7 @@ using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using PlanViewer.App.Mcp;
+using PlanViewer.App.Services;
 
 namespace PlanViewer.App;
 
@@ -70,6 +71,41 @@ public partial class AboutWindow : Window
             await clipboard.SetTextAsync(command);
             McpCopyStatus.Text = "Copied to clipboard!";
         }
+    }
+
+    private string? _updateUrl;
+
+    private async void CheckUpdate_Click(object? sender, RoutedEventArgs e)
+    {
+        CheckUpdateButton.IsEnabled = false;
+        UpdateStatusText.Text = "Checking...";
+        UpdateLink.IsVisible = false;
+
+        var currentVersion = Assembly.GetExecutingAssembly().GetName().Version ?? new Version(0, 0, 0);
+        var result = await UpdateChecker.CheckAsync(currentVersion);
+
+        if (result.Error != null)
+        {
+            UpdateStatusText.Text = $"Error: {result.Error}";
+        }
+        else if (result.UpdateAvailable)
+        {
+            UpdateStatusText.Text = $"New version available:";
+            UpdateLink.Text = result.LatestVersion;
+            UpdateLink.IsVisible = true;
+            _updateUrl = result.ReleaseUrl;
+        }
+        else
+        {
+            UpdateStatusText.Text = $"You're up to date ({result.LatestVersion})";
+        }
+
+        CheckUpdateButton.IsEnabled = true;
+    }
+
+    private void UpdateLink_Click(object? sender, PointerPressedEventArgs e)
+    {
+        if (_updateUrl != null) OpenUrl(_updateUrl);
     }
 
     private void CloseButton_Click(object? sender, RoutedEventArgs e) => Close();
