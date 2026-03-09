@@ -321,14 +321,15 @@ public class PlanAnalyzerTests
     // ---------------------------------------------------------------
 
     [Fact]
-    public void Rule14_LazySpoolIneffective_DetectsUnfavorableRatio()
+    public void Rule14_LazySpoolIneffective_SkipsLazyIndexSpools()
     {
+        // Lazy Index Spools cache by correlated parameter value (like a hash table)
+        // so rebind/rewind counts are unreliable — Rule 14 should not fire.
+        // See https://www.sql.kiwi/2025/02/lazy-index-spool/
         var plan = PlanTestHelper.LoadAndAnalyze("lazy_spool_plan.sqlplan");
         var warnings = PlanTestHelper.WarningsOfType(plan, "Lazy Spool Ineffective");
 
-        Assert.Single(warnings);
-        Assert.Contains("rebinds", warnings[0].Message);
-        Assert.Contains("rewinds", warnings[0].Message);
+        Assert.Empty(warnings);
     }
 
     // ---------------------------------------------------------------

@@ -442,9 +442,9 @@ public partial class PlanViewerControl : UserControl
             HorizontalAlignment = HorizontalAlignment.Center
         });
 
-        // Cost percentage
-        IBrush costColor = node.CostPercent >= 50 ? OrangeRedBrush
-            : node.CostPercent >= 25 ? OrangeBrush
+        // Cost percentage — only highlight in estimated plans; actual plans use duration/CPU colors
+        IBrush costColor = !node.HasActualStats && node.CostPercent >= 50 ? OrangeRedBrush
+            : !node.HasActualStats && node.CostPercent >= 25 ? OrangeBrush
             : fgBrush;
 
         stack.Children.Add(new TextBlock
@@ -499,7 +499,7 @@ public partial class PlanViewerControl : UserControl
             stack.Children.Add(new TextBlock
             {
                 Text = $"{node.ActualRows:N0} of {estRows:N0}{accuracy}",
-                FontSize = 9,
+                FontSize = 10,
                 Foreground = rowBrush,
                 TextAlignment = TextAlignment.Center,
                 HorizontalAlignment = HorizontalAlignment.Center,
@@ -514,7 +514,7 @@ public partial class PlanViewerControl : UserControl
             var objBlock = new TextBlock
             {
                 Text = node.FullObjectName ?? node.ObjectName,
-                FontSize = 9,
+                FontSize = 10,
                 Foreground = fgBrush,
                 TextAlignment = TextAlignment.Center,
                 TextWrapping = TextWrapping.Wrap,
@@ -1778,6 +1778,17 @@ public partial class PlanViewerControl : UserControl
             AddTooltipRow(stack, "Actual Executions", $"{node.ActualExecutions:N0}");
         }
 
+        // Rebinds/Rewinds (spools and other operators with rebind/rewind data)
+        if (node.EstimateRebinds > 0 || node.EstimateRewinds > 0
+            || node.ActualRebinds > 0 || node.ActualRewinds > 0)
+        {
+            AddTooltipSection(stack, "Rebinds / Rewinds");
+            if (node.EstimateRebinds > 0) AddTooltipRow(stack, "Est. Rebinds", $"{node.EstimateRebinds:N1}");
+            if (node.EstimateRewinds > 0) AddTooltipRow(stack, "Est. Rewinds", $"{node.EstimateRewinds:N1}");
+            if (node.ActualRebinds > 0) AddTooltipRow(stack, "Actual Rebinds", $"{node.ActualRebinds:N0}");
+            if (node.ActualRewinds > 0) AddTooltipRow(stack, "Actual Rewinds", $"{node.ActualRewinds:N0}");
+        }
+
         // I/O and CPU estimates
         if (node.EstimateIO > 0 || node.EstimateCPU > 0 || node.EstimatedRowSize > 0)
         {
@@ -2491,10 +2502,13 @@ public partial class PlanViewerControl : UserControl
             string? dopColor = null;
             if (statement.QueryTimeStats != null &&
                 statement.QueryTimeStats.ElapsedTimeMs > 0 &&
-                statement.QueryTimeStats.CpuTimeMs > 0)
+                statement.QueryTimeStats.CpuTimeMs > 0 &&
+                statement.DegreeOfParallelism > 1)
             {
-                var idealCpu = statement.QueryTimeStats.ElapsedTimeMs * statement.DegreeOfParallelism;
-                var efficiency = Math.Min(100.0, statement.QueryTimeStats.CpuTimeMs * 100.0 / idealCpu);
+                // Speedup ratio: CPU/elapsed = 1.0 means serial, = DOP means perfect parallelism
+                var speedup = (double)statement.QueryTimeStats.CpuTimeMs / statement.QueryTimeStats.ElapsedTimeMs;
+                var efficiency = Math.Min(100.0, (speedup - 1.0) / (statement.DegreeOfParallelism - 1.0) * 100.0);
+                efficiency = Math.Max(0.0, efficiency);
                 dopText += $" ({efficiency:N0}% efficient)";
                 dopColor = EfficiencyColor(efficiency);
             }
