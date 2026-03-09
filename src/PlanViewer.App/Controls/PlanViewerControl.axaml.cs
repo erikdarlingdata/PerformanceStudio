@@ -64,6 +64,11 @@ public partial class PlanViewerControl : UserControl
     private const double MaxZoom = 3.0;
     private string _label = "";
 
+    /// <summary>
+    /// Full path on disk when the plan was loaded from a file.
+    /// </summary>
+    public string? SourceFilePath { get; set; }
+
     // Node selection
     private Border? _selectedNodeBorder;
     private IBrush? _selectedNodeOriginalBorder;
@@ -418,14 +423,21 @@ public partial class PlanViewerControl : UserControl
         // Operator name
         var fgBrush = FindBrushResource("ForegroundBrush");
 
+        // Operator name — for exchanges, show "Parallelism" + "(Gather Streams)" etc.
+        var opLabel = node.PhysicalOp;
+        if (node.PhysicalOp == "Parallelism" && !string.IsNullOrEmpty(node.LogicalOp)
+            && node.LogicalOp != "Parallelism")
+        {
+            opLabel = $"Parallelism\n({node.LogicalOp})";
+        }
         stack.Children.Add(new TextBlock
         {
-            Text = node.PhysicalOp,
+            Text = opLabel,
             FontSize = 10,
             FontWeight = FontWeight.SemiBold,
             Foreground = fgBrush,
             TextAlignment = TextAlignment.Center,
-            TextTrimming = TextTrimming.CharacterEllipsis,
+            TextWrapping = TextWrapping.Wrap,
             MaxWidth = PlanLayoutEngine.NodeWidth - 16,
             HorizontalAlignment = HorizontalAlignment.Center
         });
@@ -471,7 +483,7 @@ public partial class PlanViewerControl : UserControl
             stack.Children.Add(new TextBlock
             {
                 Text = $"CPU: {ownCpuSec:F3}s",
-                FontSize = 9,
+                FontSize = 10,
                 Foreground = cpuBrush,
                 TextAlignment = TextAlignment.Center,
                 HorizontalAlignment = HorizontalAlignment.Center
@@ -2248,9 +2260,33 @@ public partial class PlanViewerControl : UserControl
         if (node.ActualElapsedMs <= 0) return 0;
         var mode = node.ActualExecutionMode ?? node.ExecutionMode;
         if (mode == "Batch") return node.ActualElapsedMs;
-        var childSum = GetChildElapsedMsSum(node);
-        return Math.Max(0, node.ActualElapsedMs - childSum);
+
+        // Exchange operators: Thread 0 is the coordinator whose elapsed time is the
+        // wall clock for the entire parallel branch — not the operator's own work.
+        if (IsExchangeOperator(node))
+        {
+            // If we have worker thread data, use max of worker threads
+            var workerMax = node.PerThreadStats
+                .Where(t => t.ThreadId > 0)
+                .Select(t => t.ActualElapsedMs)
+                .DefaultIfEmpty(0)
+                .Max();
+            if (workerMax > 0)
+            {
+                var childSum = GetChildElapsedMsSum(node);
+                return Math.Max(0, workerMax - childSum);
+            }
+            // Thread 0 only (coordinator) — exchange does negligible own work
+            return 0;
+        }
+
+        var childElapsedSum = GetChildElapsedMsSum(node);
+        return Math.Max(0, node.ActualElapsedMs - childElapsedSum);
     }
+
+    private static bool IsExchangeOperator(PlanNode node) =>
+        node.PhysicalOp == "Parallelism"
+        || node.LogicalOp is "Gather Streams" or "Distribute Streams" or "Repartition Streams";
 
     private static long GetChildCpuMsSum(PlanNode node)
     {

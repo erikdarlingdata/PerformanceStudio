@@ -1003,6 +1003,7 @@ public static class PlanAnalyzer
                !node.PhysicalOp.Contains("Constant", StringComparison.OrdinalIgnoreCase);
     }
 
+
     /// <summary>
     /// Detects non-SARGable patterns in scan predicates.
     /// Returns a description of the issue, or null if the predicate is fine.

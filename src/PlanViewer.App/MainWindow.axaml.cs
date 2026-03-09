@@ -351,6 +351,7 @@ public partial class MainWindow : Window
 
             var viewer = new PlanViewerControl();
             viewer.LoadPlan(xml, fileName);
+            viewer.SourceFilePath = filePath;
 
             // Wrap viewer with advice toolbar
             var content = CreatePlanTabContent(viewer);
@@ -859,11 +860,17 @@ public partial class MainWindow : Window
         closeBtn.Click += CloseTab_Click;
 
         // Right-click context menu
+        var copyPathItem = new MenuItem { Header = "Copy Path", Tag = tab };
+        // Only visible when tab content has a file path
+        var filePath = GetTabFilePath(tab);
+        copyPathItem.IsVisible = filePath != null;
+
         var contextMenu = new ContextMenu
         {
             Items =
             {
                 new MenuItem { Header = "Rename Tab", Tag = new object[] { header, headerText } },
+                copyPathItem,
                 new Separator(),
                 new MenuItem { Header = "Close", Tag = tab, InputGesture = new KeyGesture(Key.W, KeyModifiers.Control) },
                 new MenuItem { Header = "Close Other Tabs", Tag = tab },
@@ -901,6 +908,15 @@ public partial class MainWindow : Window
                     StartRename((StackPanel)parts[0], (TextBlock)parts[1]);
                 break;
 
+            case "Copy Path":
+                if (item.Tag is TabItem pathTab)
+                {
+                    var path = GetTabFilePath(pathTab);
+                    if (path != null)
+                        _ = this.Clipboard?.SetTextAsync(path);
+                }
+                break;
+
             case "Close":
                 if (item.Tag is TabItem tab)
                 {
@@ -925,6 +941,20 @@ public partial class MainWindow : Window
                 UpdateEmptyOverlay();
                 break;
         }
+    }
+
+    private static string? GetTabFilePath(TabItem tab)
+    {
+        // Plans opened from file are wrapped in a DockPanel with the viewer as the last child
+        if (tab.Content is DockPanel dp)
+        {
+            foreach (var child in dp.Children)
+            {
+                if (child is PlanViewerControl v)
+                    return v.SourceFilePath;
+            }
+        }
+        return null;
     }
 
     private void StartRename(StackPanel header, TextBlock headerText)

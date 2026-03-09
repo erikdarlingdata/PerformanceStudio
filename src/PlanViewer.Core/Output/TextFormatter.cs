@@ -430,4 +430,5 @@ public static class TextFormatter
         }
         return sum;
     }
+
 }

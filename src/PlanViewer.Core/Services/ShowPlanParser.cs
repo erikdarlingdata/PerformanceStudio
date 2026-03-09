@@ -644,6 +644,7 @@ public static class ShowPlanParser
             node.PhysicalOp = "Lazy " + node.PhysicalOp;
         }
 
+
         // Map to icon
         node.IconName = PlanIconMapper.GetIconName(node.PhysicalOp);
 
