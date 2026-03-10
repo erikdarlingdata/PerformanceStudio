@@ -1,0 +1,161 @@
+name: Nightly Build
+
+on:
+  schedule:
+    # 6:00 AM UTC (1:00 AM EST / 2:00 AM EDT)
+    - cron: '0 6 * * *'
+  workflow_dispatch: # manual trigger
+
+permissions:
+  contents: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      has_changes: ${{ steps.check.outputs.has_changes }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dev
+          fetch-depth: 0
+
+      - name: Check for new commits in last 24 hours
+        id: check
+        run: |
+          RECENT=$(git log --since="24 hours ago" --oneline | head -1)
+          if [ -n "$RECENT" ]; then
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+            echo "New commits found — building nightly"
+          else
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+            echo "No new commits — skipping nightly build"
+          fi
+
+  build:
+    needs: check
+    if: needs.check.outputs.has_changes == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dev
+
+      - name: Setup .NET 8.0
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Set nightly version
+        id: version
+        shell: pwsh
+        run: |
+          $base = ([xml](Get-Content src/PlanViewer.App/PlanViewer.App.csproj)).Project.PropertyGroup.Version | Where-Object { $_ }
+          $date = Get-Date -Format "yyyyMMdd"
+          $nightly = "$base-nightly.$date"
+          echo "VERSION=$nightly" >> $env:GITHUB_OUTPUT
+          echo "Nightly version: $nightly"
+
+      - name: Restore dependencies
+        run: |
+          dotnet restore src/PlanViewer.Core/PlanViewer.Core.csproj
+          dotnet restore src/PlanViewer.App/PlanViewer.App.csproj
+          dotnet restore src/PlanViewer.Cli/PlanViewer.Cli.csproj
+          dotnet restore tests/PlanViewer.Core.Tests/PlanViewer.Core.Tests.csproj
+
+      - name: Run tests
+        run: dotnet test tests/PlanViewer.Core.Tests/PlanViewer.Core.Tests.csproj -c Release --verbosity normal
+
+      - name: Publish App (all platforms)
+        run: |
+          dotnet publish src/PlanViewer.App/PlanViewer.App.csproj -c Release -r win-x64 --self-contained -o publish/win-x64
+          dotnet publish src/PlanViewer.App/PlanViewer.App.csproj -c Release -r linux-x64 --self-contained -o publish/linux-x64
+          dotnet publish src/PlanViewer.App/PlanViewer.App.csproj -c Release -r osx-x64 --self-contained -o publish/osx-x64
+          dotnet publish src/PlanViewer.App/PlanViewer.App.csproj -c Release -r osx-arm64 --self-contained -o publish/osx-arm64
+
+      - name: Package artifacts
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          New-Item -ItemType Directory -Force -Path releases
+
+          # Package Windows and Linux as flat zips
+          foreach ($rid in @('win-x64', 'linux-x64')) {
+            if (Test-Path 'README.md') { Copy-Item 'README.md' "publish/$rid/" }
+            if (Test-Path 'LICENSE') { Copy-Item 'LICENSE' "publish/$rid/" }
+            Compress-Archive -Path "publish/$rid/*" -DestinationPath "releases/PerformanceStudio-$rid-$env:VERSION.zip" -Force
+          }
+
+          # Package macOS as proper .app bundles
+          foreach ($rid in @('osx-x64', 'osx-arm64')) {
+            $appName = "PerformanceStudio.app"
+            $bundleDir = "publish/$rid-bundle/$appName"
+
+            New-Item -ItemType Directory -Force -Path "$bundleDir/Contents/MacOS"
+            New-Item -ItemType Directory -Force -Path "$bundleDir/Contents/Resources"
+
+            Copy-Item -Path "publish/$rid/*" -Destination "$bundleDir/Contents/MacOS/" -Recurse
+
+            if (Test-Path "$bundleDir/Contents/MacOS/Info.plist") {
+              Move-Item -Path "$bundleDir/Contents/MacOS/Info.plist" -Destination "$bundleDir/Contents/Info.plist" -Force
+            }
+
+            $plist = Get-Content "$bundleDir/Contents/Info.plist" -Raw
+            $plist = $plist -replace '(<key>CFBundleVersion</key>\s*<string>)[^<]*(</string>)', "`${1}$env:VERSION`${2}"
+            $plist = $plist -replace '(<key>CFBundleShortVersionString</key>\s*<string>)[^<]*(</string>)', "`${1}$env:VERSION`${2}"
+            Set-Content -Path "$bundleDir/Contents/Info.plist" -Value $plist -NoNewline
+
+            if (Test-Path "$bundleDir/Contents/MacOS/EDD.icns") {
+              Move-Item -Path "$bundleDir/Contents/MacOS/EDD.icns" -Destination "$bundleDir/Contents/Resources/EDD.icns" -Force
+            }
+
+            $wrapperDir = "publish/$rid-bundle"
+            if (Test-Path 'README.md') { Copy-Item 'README.md' "$wrapperDir/" }
+            if (Test-Path 'LICENSE') { Copy-Item 'LICENSE' "$wrapperDir/" }
+
+            Compress-Archive -Path "$wrapperDir/*" -DestinationPath "releases/PerformanceStudio-$rid-$env:VERSION.zip" -Force
+          }
+
+      - name: Generate checksums
+        shell: pwsh
+        run: |
+          $checksums = Get-ChildItem releases/*.zip | ForEach-Object {
+            $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
+            "$hash  $($_.Name)"
+          }
+          $checksums | Out-File -FilePath releases/SHA256SUMS.txt -Encoding utf8
+          Write-Host "Checksums:"
+          $checksums | ForEach-Object { Write-Host $_ }
+
+      - name: Delete previous nightly release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release delete nightly --yes --cleanup-tag 2>$null; exit 0
+        shell: pwsh
+
+      - name: Create nightly release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.VERSION }}"
+          $sha = git rev-parse --short HEAD
+          $body = @"
+          Automated nightly build from ``dev`` branch.
+
+          **Version:** ``$version``
+          **Commit:** ``$sha``
+          **Built:** $(Get-Date -Format "yyyy-MM-dd HH:mm UTC")
+
+          > These builds include the latest changes and may be unstable.
+          > For production use, download the [latest stable release](https://github.com/erikdarlingdata/PerformanceStudio/releases/latest).
+          "@
+
+          gh release create nightly `
+            --target dev `
+            --title "Nightly Build ($version)" `
+            --notes $body `
+            --prerelease `
+            releases/*.zip releases/SHA256SUMS.txt
