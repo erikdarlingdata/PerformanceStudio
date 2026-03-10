@@ -694,7 +694,7 @@ public partial class QuerySessionControl : UserControl
         if (analysis == null) { SetStatus("No plan to analyze", autoClear: false); return; }
 
         var text = TextFormatter.Format(analysis);
-        ShowAdviceWindow("Advice for Humans", text);
+        ShowAdviceWindow("Advice for Humans", text, analysis);
     }
 
     private void RobotAdvice_Click(object? sender, RoutedEventArgs e)
@@ -706,9 +706,9 @@ public partial class QuerySessionControl : UserControl
         ShowAdviceWindow("Advice for Robots", json);
     }
 
-    private void ShowAdviceWindow(string title, string content)
+    private void ShowAdviceWindow(string title, string content, AnalysisResult? analysis = null)
     {
-        var styledContent = AdviceContentBuilder.Build(content);
+        var styledContent = AdviceContentBuilder.Build(content, analysis);
 
         var scrollViewer = new ScrollViewer
         {

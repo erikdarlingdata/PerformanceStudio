@@ -444,7 +444,7 @@ public partial class MainWindow : Window
         {
             if (viewer.CurrentPlan == null) return;
             var analysis = ResultMapper.Map(viewer.CurrentPlan, "file", viewer.Metadata);
-            ShowAdviceWindow("Advice for Humans", TextFormatter.Format(analysis));
+            ShowAdviceWindow("Advice for Humans", TextFormatter.Format(analysis), analysis);
         };
 
         robotBtn.Click += (_, _) =>
@@ -566,9 +566,9 @@ public partial class MainWindow : Window
         return panel;
     }
 
-    private void ShowAdviceWindow(string title, string content)
+    private void ShowAdviceWindow(string title, string content, AnalysisResult? analysis = null)
     {
-        var styledContent = AdviceContentBuilder.Build(content);
+        var styledContent = AdviceContentBuilder.Build(content, analysis);
 
         var scrollViewer = new ScrollViewer
         {
