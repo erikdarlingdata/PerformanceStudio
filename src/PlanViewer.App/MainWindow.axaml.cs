@@ -35,16 +35,21 @@ public partial class MainWindow : Window
     private McpHostService? _mcpHost;
     private CancellationTokenSource? _mcpCts;
     private int _queryCounter;
+    private AppSettings _appSettings;
 
     public MainWindow()
     {
         _credentialService = CredentialServiceFactory.Create();
         _connectionStore = new ConnectionStore();
+        _appSettings = AppSettingsService.Load();
 
         // Listen for file paths from other instances (e.g. SSMS extension)
         StartPipeServer();
 
         InitializeComponent();
+
+        // Build the Recent Plans submenu from saved state
+        RebuildRecentPlansMenu();
 
         // Wire up drag-and-drop
         AddHandler(DragDrop.DropEvent, OnDrop);
@@ -88,7 +93,7 @@ public partial class MainWindow : Window
             }
         }, RoutingStrategies.Tunnel);
 
-        // Accept command-line argument or open a default query editor
+        // Accept command-line argument or restore previously open plans
         var args = Environment.GetCommandLineArgs();
         if (args.Length > 1 && File.Exists(args[1]))
         {
@@ -96,8 +101,8 @@ public partial class MainWindow : Window
         }
         else
         {
-            // Open with a query editor so toolbar buttons are visible on startup
-            NewQuery_Click(this, new RoutedEventArgs());
+            // Restore plans that were open in the previous session
+            RestoreOpenPlans();
         }
 
         // Start MCP server if enabled in settings
@@ -162,6 +167,9 @@ public partial class MainWindow : Window
 
     protected override async void OnClosed(EventArgs e)
     {
+        // Save the list of currently open file-based plans for session restore
+        SaveOpenPlans();
+
         _pipeCts.Cancel();
 
         if (_mcpHost != null && _mcpCts != null)
@@ -360,6 +368,9 @@ public partial class MainWindow : Window
             MainTabControl.Items.Add(tab);
             MainTabControl.SelectedItem = tab;
             UpdateEmptyOverlay();
+
+            // Track in recent plans list and persist
+            TrackRecentPlan(filePath);
         }
         catch (Exception ex)
         {
@@ -1172,6 +1183,137 @@ public partial class MainWindow : Window
         {
             statusText.Text = $"Error: {ex.Message}";
             progressBar.IsVisible = false;
+        }
+    }
+
+    // ── Recent Plans & Session Restore ────────────────────────────────────
+
+    /// <summary>
+    /// Adds a file path to the recent plans list, saves settings, and rebuilds the menu.
+    /// </summary>
+    private void TrackRecentPlan(string filePath)
+    {
+        AppSettingsService.AddRecentPlan(_appSettings, filePath);
+        AppSettingsService.Save(_appSettings);
+        RebuildRecentPlansMenu();
+    }
+
+    /// <summary>
+    /// Rebuilds the Recent Plans submenu from the current settings.
+    /// Shows a disabled "(empty)" item when the list is empty, plus a Clear Recent separator.
+    /// </summary>
+    private void RebuildRecentPlansMenu()
+    {
+        RecentPlansMenu.Items.Clear();
+
+        if (_appSettings.RecentPlans.Count == 0)
+        {
+            var emptyItem = new MenuItem
+            {
+                Header = "(empty)",
+                IsEnabled = false
+            };
+            RecentPlansMenu.Items.Add(emptyItem);
+            return;
+        }
+
+        foreach (var path in _appSettings.RecentPlans)
+        {
+            var fileName = Path.GetFileName(path);
+            var directory = Path.GetDirectoryName(path) ?? "";
+
+            // Show "filename  —  directory" so the user can distinguish same-named files
+            var displayText = string.IsNullOrEmpty(directory)
+                ? fileName
+                : $"{fileName}  —  {directory}";
+
+            var item = new MenuItem
+            {
+                Header = displayText,
+                Tag = path
+            };
+
+            item.Click += RecentPlanItem_Click;
+            RecentPlansMenu.Items.Add(item);
+        }
+
+        RecentPlansMenu.Items.Add(new Separator());
+
+        var clearItem = new MenuItem { Header = "Clear Recent Plans" };
+        clearItem.Click += ClearRecentPlans_Click;
+        RecentPlansMenu.Items.Add(clearItem);
+    }
+
+    private void RecentPlanItem_Click(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuItem item || item.Tag is not string path)
+            return;
+
+        if (!File.Exists(path))
+        {
+            // File was moved or deleted — remove from the list and notify the user
+            AppSettingsService.RemoveRecentPlan(_appSettings, path);
+            AppSettingsService.Save(_appSettings);
+            RebuildRecentPlansMenu();
+
+            ShowError($"The file no longer exists and has been removed from recent plans:\n\n{path}");
+            return;
+        }
+
+        LoadPlanFile(path);
+    }
+
+    private void ClearRecentPlans_Click(object? sender, RoutedEventArgs e)
+    {
+        _appSettings.RecentPlans.Clear();
+        AppSettingsService.Save(_appSettings);
+        RebuildRecentPlansMenu();
+    }
+
+    /// <summary>
+    /// Saves the file paths of all currently open file-based plan tabs.
+    /// </summary>
+    private void SaveOpenPlans()
+    {
+        _appSettings.OpenPlans.Clear();
+
+        foreach (var item in MainTabControl.Items)
+        {
+            if (item is not TabItem tab) continue;
+
+            var path = GetTabFilePath(tab);
+            if (!string.IsNullOrEmpty(path))
+                _appSettings.OpenPlans.Add(path);
+        }
+
+        AppSettingsService.Save(_appSettings);
+    }
+
+    /// <summary>
+    /// Restores plan tabs from the previous session. Skips files that no longer exist.
+    /// Falls back to a new query tab if nothing was restored.
+    /// </summary>
+    private void RestoreOpenPlans()
+    {
+        var restored = false;
+
+        foreach (var path in _appSettings.OpenPlans)
+        {
+            if (File.Exists(path))
+            {
+                LoadPlanFile(path);
+                restored = true;
+            }
+        }
+
+        // Clear the open plans list now that we've restored
+        _appSettings.OpenPlans.Clear();
+        AppSettingsService.Save(_appSettings);
+
+        if (!restored)
+        {
+            // Nothing to restore — open a fresh query editor like before
+            NewQuery_Click(this, new RoutedEventArgs());
         }
     }
 

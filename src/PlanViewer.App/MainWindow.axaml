@@ -21,6 +21,8 @@
                 <MenuItem Header="_Paste Plan XML" Click="PasteXml_Click"
                           InputGesture="Ctrl+V"/>
                 <Separator/>
+                <MenuItem x:Name="RecentPlansMenu" Header="_Recent Plans"/>
+                <Separator/>
                 <MenuItem Header="E_xit" Click="Exit_Click"
                           InputGesture="Alt+F4"/>
             </MenuItem>
