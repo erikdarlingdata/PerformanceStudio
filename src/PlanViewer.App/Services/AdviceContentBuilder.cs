@@ -209,6 +209,13 @@ internal static class AdviceContentBuilder
                 continue;
             }
 
+            // Missing index impact line: "dbo.Posts (impact: 95%)"
+            if (trimmed.Contains("(impact:") && trimmed.EndsWith("%)"))
+            {
+                panel.Children.Add(CreateMissingIndexImpactLine(trimmed));
+                continue;
+            }
+
             // CREATE INDEX lines (multi-line: CREATE..., ON..., INCLUDE..., WHERE...)
             if (trimmed.StartsWith("CREATE", StringComparison.OrdinalIgnoreCase))
             {
@@ -744,6 +751,38 @@ internal static class AdviceContentBuilder
         }
 
         return wrapper;
+    }
+
+    /// <summary>
+    /// Renders a missing index impact line like "dbo.Posts (impact: 95%)" with
+    /// the table name in value color and the impact colored by severity.
+    /// </summary>
+    private static SelectableTextBlock CreateMissingIndexImpactLine(string trimmed)
+    {
+        var tb = new SelectableTextBlock
+        {
+            FontFamily = MonoFont,
+            FontSize = 12,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Avalonia.Thickness(12, 2, 0, 0)
+        };
+
+        var impactStart = trimmed.IndexOf("(impact:");
+        var tableName = trimmed[..impactStart].TrimEnd();
+        var impactPart = trimmed[impactStart..];
+
+        // Parse the percentage to pick a color
+        var pctStr = impactPart.Replace("(impact:", "").Replace("%)", "").Trim();
+        var impactBrush = MutedBrush;
+        if (double.TryParse(pctStr, out var pct))
+        {
+            impactBrush = pct >= 70 ? CriticalBrush : (pct >= 40 ? WarningBrush : InfoBrush);
+        }
+
+        tb.Inlines!.Add(new Run(tableName + " ") { Foreground = ValueBrush });
+        tb.Inlines.Add(new Run(impactPart) { Foreground = impactBrush, FontWeight = FontWeight.SemiBold });
+
+        return tb;
     }
 
     /// <summary>
