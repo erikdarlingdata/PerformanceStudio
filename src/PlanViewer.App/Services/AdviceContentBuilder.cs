@@ -321,7 +321,8 @@ internal static class AdviceContentBuilder
                 continue;
             }
 
-            // Wait stats lines: "  WAITTYPE: 1,234ms" — color by category
+            // Wait stats lines: "  WAITTYPE: 1,234ms" — color by category with proportional bars
+            // Collect entire group, find global max, then render all with consistent bar scaling
             if (trimmed.Contains("ms") && trimmed.Contains(':'))
             {
                 var waitColon = trimmed.IndexOf(':');
@@ -331,7 +332,38 @@ internal static class AdviceContentBuilder
                     var waitValue = trimmed[(waitColon + 1)..].Trim();
                     if (waitValue.EndsWith("ms") && waitName == waitName.ToUpperInvariant() && !waitName.Contains(' '))
                     {
-                        panel.Children.Add(CreateWaitStatLine(waitName, waitValue));
+                        // Collect all wait stat lines in this group
+                        var waitGroup = new List<(string name, string value)>
+                        {
+                            (waitName, waitValue)
+                        };
+                        while (i + 1 < lines.Length)
+                        {
+                            var nextLine = lines[i + 1].TrimEnd('\r').TrimStart();
+                            if (string.IsNullOrWhiteSpace(nextLine)) break;
+                            var nextColon = nextLine.IndexOf(':');
+                            if (nextColon <= 0 || nextColon >= nextLine.Length - 1) break;
+                            var nextName = nextLine[..nextColon];
+                            var nextVal = nextLine[(nextColon + 1)..].Trim();
+                            if (!nextVal.EndsWith("ms") || nextName != nextName.ToUpperInvariant()
+                                || nextName.Contains(' '))
+                                break;
+                            waitGroup.Add((nextName, nextVal));
+                            i++;
+                        }
+
+                        // Find global max for bar scaling
+                        var maxWaitMs = 0.0;
+                        foreach (var (_, val) in waitGroup)
+                        {
+                            var ms = ParseWaitMs(val);
+                            if (ms > maxWaitMs) maxWaitMs = ms;
+                        }
+
+                        // Render all lines with consistent scaling
+                        foreach (var (name, val) in waitGroup)
+                            panel.Children.Add(CreateWaitStatLine(name, val, maxWaitMs));
+
                         continue;
                     }
                 }
@@ -676,22 +708,51 @@ internal static class AdviceContentBuilder
         return wrapper;
     }
 
-    private static SelectableTextBlock CreateWaitStatLine(string waitName, string waitValue)
+    private static StackPanel CreateWaitStatLine(string waitName, string waitValue, double maxWaitMs)
     {
-        var leftMargin = 12.0;
+        var wrapper = new StackPanel
+        {
+            Margin = new Avalonia.Thickness(12, 1, 0, 1)
+        };
+
         var tb = new SelectableTextBlock
         {
             FontFamily = MonoFont,
             FontSize = 12,
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Avalonia.Thickness(leftMargin, 1, 0, 1)
+            TextWrapping = TextWrapping.Wrap
         };
 
         var waitBrush = GetWaitCategoryBrush(waitName);
         tb.Inlines!.Add(new Run(waitName) { Foreground = waitBrush });
         tb.Inlines.Add(new Run(": " + waitValue) { Foreground = ValueBrush });
+        wrapper.Children.Add(tb);
 
-        return tb;
+        // Proportional bar scaled to max wait in group
+        var ms = ParseWaitMs(waitValue);
+        if (ms > 0 && maxWaitMs > 0)
+        {
+            var barWidth = MaxBarWidth * (ms / maxWaitMs);
+            wrapper.Children.Add(new Border
+            {
+                Width = Math.Max(2, barWidth),
+                Height = 4,
+                Background = waitBrush,
+                CornerRadius = new Avalonia.CornerRadius(2),
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Margin = new Avalonia.Thickness(0, 0, 0, 2)
+            });
+        }
+
+        return wrapper;
+    }
+
+    /// <summary>
+    /// Parses a wait stat value like "1,234ms" into a double.
+    /// </summary>
+    private static double ParseWaitMs(string waitValue)
+    {
+        var numStr = waitValue.Replace("ms", "").Replace(",", "").Trim();
+        return double.TryParse(numStr, out var val) ? val : 0;
     }
 
     private static SolidColorBrush GetWaitCategoryBrush(string waitType)
