@@ -132,8 +132,9 @@ public partial class PlanViewerControl : UserControl
         _splitterColumn = planGrid.ColumnDefinitions[3];
         _propertiesColumn = planGrid.ColumnDefinitions[4];
 
-        // ScaleTransform is the RenderTransform of PlanCanvas
-        _zoomTransform = (ScaleTransform)PlanCanvas.RenderTransform!;
+        // ScaleTransform is the LayoutTransform of the wrapper around PlanCanvas
+        var layoutTransform = this.FindControl<Avalonia.Controls.LayoutTransformControl>("PlanLayoutTransform")!;
+        _zoomTransform = (ScaleTransform)layoutTransform.LayoutTransform!;
 
     }
 
@@ -165,6 +166,11 @@ public partial class PlanViewerControl : UserControl
                 ShowServerContext();
         }
     }
+
+    // Events for MainWindow to wire up advice/repro actions
+    public event EventHandler? HumanAdviceRequested;
+    public event EventHandler? RobotAdviceRequested;
+    public event EventHandler? CopyReproRequested;
 
     public void LoadPlan(string planXml, string label, string? queryText = null)
     {
@@ -283,6 +289,10 @@ public partial class PlanViewerControl : UserControl
 
         // Scroll to top-left so the plan root is immediately visible
         PlanScrollViewer.Offset = new Avalonia.Vector(0, 0);
+
+        // Canvas-level context menu (zoom, advice, repro, save)
+        // Set on ScrollViewer, not Canvas — Canvas has no background so it's not hit-testable
+        PlanScrollViewer.ContextMenu = BuildCanvasContextMenu();
 
         CostText.Text = "";
     }
@@ -597,10 +607,6 @@ public partial class PlanViewerControl : UserControl
         figure.Segments.Add(new LineSegment { Point = new Point(childLeft, childCenterY) });
         geometry.Figures!.Add(figure);
 
-        var rowText = child.HasActualStats
-            ? $"Actual Rows: {child.ActualRows:N0}"
-            : $"Estimated Rows: {child.EstimateRows:N0}";
-
         var path = new AvaloniaPath
         {
             Data = geometry,
@@ -608,8 +614,75 @@ public partial class PlanViewerControl : UserControl
             StrokeThickness = thickness,
             StrokeJoin = PenLineJoin.Round
         };
-        ToolTip.SetTip(path, rowText);
+        ToolTip.SetTip(path, BuildEdgeTooltipContent(child));
         return path;
+    }
+
+    private object BuildEdgeTooltipContent(PlanNode child)
+    {
+        var panel = new StackPanel { MinWidth = 240 };
+
+        void AddRow(string label, string value)
+        {
+            var row = new Grid();
+            row.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Star));
+            row.ColumnDefinitions.Add(new ColumnDefinition(GridLength.Auto));
+            var lbl = new TextBlock
+            {
+                Text = label,
+                Foreground = new SolidColorBrush(Color.FromRgb(0xE0, 0xE0, 0xE0)),
+                FontSize = 12,
+                Margin = new Thickness(0, 1, 12, 1)
+            };
+            var val = new TextBlock
+            {
+                Text = value,
+                Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF)),
+                FontSize = 12,
+                FontWeight = FontWeight.SemiBold,
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+                Margin = new Thickness(0, 1, 0, 1)
+            };
+            Grid.SetColumn(lbl, 0);
+            Grid.SetColumn(val, 1);
+            row.Children.Add(lbl);
+            row.Children.Add(val);
+            panel.Children.Add(row);
+        }
+
+        if (child.HasActualStats)
+            AddRow("Actual Number of Rows for All Executions", $"{child.ActualRows:N0}");
+
+        AddRow("Estimated Number of Rows Per Execution", $"{child.EstimateRows:N0}");
+
+        var executions = 1.0 + child.EstimateRebinds + child.EstimateRewinds;
+        var estimatedRowsAllExec = child.EstimateRows * executions;
+        AddRow("Estimated Number of Rows for All Executions", $"{estimatedRowsAllExec:N0}");
+
+        if (child.EstimatedRowSize > 0)
+        {
+            AddRow("Estimated Row Size", FormatBytes(child.EstimatedRowSize));
+            var dataSize = estimatedRowsAllExec * child.EstimatedRowSize;
+            AddRow("Estimated Data Size", FormatBytes(dataSize));
+        }
+
+        return new Border
+        {
+            Background = new SolidColorBrush(Color.FromRgb(0x1E, 0x1E, 0x2E)),
+            BorderBrush = new SolidColorBrush(Color.FromRgb(0x3A, 0x3A, 0x5A)),
+            BorderThickness = new Thickness(1),
+            Padding = new Thickness(10, 6),
+            CornerRadius = new CornerRadius(4),
+            Child = panel
+        };
+    }
+
+    private static string FormatBytes(double bytes)
+    {
+        if (bytes < 1024) return $"{bytes:N0} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024:N0} KB";
+        if (bytes < 1024L * 1024 * 1024) return $"{bytes / (1024 * 1024):N0} MB";
+        return $"{bytes / (1024L * 1024 * 1024):N1} GB";
     }
 
     #endregion
@@ -690,6 +763,48 @@ public partial class PlanViewerControl : UserControl
             copySeekItem.Click += async (_, _) => await SetClipboardTextAsync(node.SeekPredicates!);
             menu.Items.Add(copySeekItem);
         }
+
+        return menu;
+    }
+
+    private ContextMenu BuildCanvasContextMenu()
+    {
+        var menu = new ContextMenu();
+
+        // Zoom
+        var zoomInItem = new MenuItem { Header = "Zoom In" };
+        zoomInItem.Click += (_, _) => SetZoom(_zoomLevel + ZoomStep);
+        menu.Items.Add(zoomInItem);
+
+        var zoomOutItem = new MenuItem { Header = "Zoom Out" };
+        zoomOutItem.Click += (_, _) => SetZoom(_zoomLevel - ZoomStep);
+        menu.Items.Add(zoomOutItem);
+
+        var fitItem = new MenuItem { Header = "Fit to View" };
+        fitItem.Click += ZoomFit_Click;
+        menu.Items.Add(fitItem);
+
+        menu.Items.Add(new Separator());
+
+        // Advice
+        var humanAdviceItem = new MenuItem { Header = "Human Advice" };
+        humanAdviceItem.Click += (_, _) => HumanAdviceRequested?.Invoke(this, EventArgs.Empty);
+        menu.Items.Add(humanAdviceItem);
+
+        var robotAdviceItem = new MenuItem { Header = "Robot Advice" };
+        robotAdviceItem.Click += (_, _) => RobotAdviceRequested?.Invoke(this, EventArgs.Empty);
+        menu.Items.Add(robotAdviceItem);
+
+        menu.Items.Add(new Separator());
+
+        // Repro & Save
+        var copyReproItem = new MenuItem { Header = "Copy Repro Script" };
+        copyReproItem.Click += (_, _) => CopyReproRequested?.Invoke(this, EventArgs.Empty);
+        menu.Items.Add(copyReproItem);
+
+        var saveItem = new MenuItem { Header = "Save .sqlplan" };
+        saveItem.Click += SavePlan_Click;
+        menu.Items.Add(saveItem);
 
         return menu;
     }
@@ -788,7 +903,7 @@ public partial class PlanViewerControl : UserControl
             || !string.IsNullOrEmpty(node.InnerSideJoinColumns)
             || !string.IsNullOrEmpty(node.OuterSideJoinColumns)
             || !string.IsNullOrEmpty(node.ActionColumn)
-            || node.ManyToMany || node.BitmapCreator
+            || node.ManyToMany || node.PhysicalOp == "Merge Join" || node.BitmapCreator
             || node.SortDistinct || node.StartupExpression
             || node.NLOptimized || node.WithOrderedPrefetch || node.WithUnorderedPrefetch
             || node.WithTies || node.Remoting || node.LocalParallelism
@@ -853,8 +968,10 @@ public partial class PlanViewerControl : UserControl
                 AddPropertyRow("Inner Join Cols", node.InnerSideJoinColumns, isCode: true);
             if (!string.IsNullOrEmpty(node.OuterSideJoinColumns))
                 AddPropertyRow("Outer Join Cols", node.OuterSideJoinColumns, isCode: true);
-            if (node.ManyToMany)
-                AddPropertyRow("Many to Many", "True");
+            if (node.PhysicalOp == "Merge Join")
+                AddPropertyRow("Many to Many", node.ManyToMany ? "Yes" : "No");
+            else if (node.ManyToMany)
+                AddPropertyRow("Many to Many", "Yes");
             if (!string.IsNullOrEmpty(node.ConstantScanValues))
                 AddPropertyRow("Values", node.ConstantScanValues, isCode: true);
             if (!string.IsNullOrEmpty(node.UdxUsedColumns))
@@ -2718,6 +2835,7 @@ public partial class PlanViewerControl : UserControl
 
         var fitZoom = Math.Min(viewWidth / PlanCanvas.Width, viewHeight / PlanCanvas.Height);
         SetZoom(Math.Min(fitZoom, 1.0));
+        PlanScrollViewer.Offset = new Avalonia.Vector(0, 0);
     }
 
     private void SetZoom(double level)

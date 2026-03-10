@@ -246,12 +246,13 @@
                           HorizontalContentAlignment="Left"
                           VerticalContentAlignment="Top"
                           Background="{DynamicResource BackgroundBrush}">
-                <Canvas x:Name="PlanCanvas" ClipToBounds="False"
-                        HorizontalAlignment="Left" VerticalAlignment="Top">
-                    <Canvas.RenderTransform>
+                <LayoutTransformControl x:Name="PlanLayoutTransform"
+                                        HorizontalAlignment="Left" VerticalAlignment="Top">
+                    <LayoutTransformControl.LayoutTransform>
                         <ScaleTransform ScaleX="1" ScaleY="1"/>
-                    </Canvas.RenderTransform>
-                </Canvas>
+                    </LayoutTransformControl.LayoutTransform>
+                    <Canvas x:Name="PlanCanvas" ClipToBounds="False"/>
+                </LayoutTransformControl>
             </ScrollViewer>
 
             <!-- Empty State -->
