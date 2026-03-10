@@ -2187,7 +2187,7 @@ public partial class PlanViewerControl : UserControl
 
         if (parameters.Count == 0)
         {
-            var localVars = FindUnresolvedVariables(statement.StatementText, parameters);
+            var localVars = FindUnresolvedVariables(statement.StatementText, parameters, statement.RootNode);
             if (localVars.Count > 0)
             {
                 ParametersHeader.Text = "Parameters";
@@ -2303,7 +2303,7 @@ public partial class PlanViewerControl : UserControl
             }
         }
 
-        var unresolved = FindUnresolvedVariables(statement.StatementText, parameters);
+        var unresolved = FindUnresolvedVariables(statement.StatementText, parameters, statement.RootNode);
         if (unresolved.Count > 0)
         {
             AddParameterAnnotation(
@@ -2350,7 +2350,8 @@ public partial class PlanViewerControl : UserControl
         });
     }
 
-    private static List<string> FindUnresolvedVariables(string queryText, List<PlanParameter> parameters)
+    private static List<string> FindUnresolvedVariables(string queryText, List<PlanParameter> parameters,
+        PlanNode? rootNode = null)
     {
         var unresolved = new List<string>();
         if (string.IsNullOrEmpty(queryText))
@@ -2358,6 +2359,11 @@ public partial class PlanViewerControl : UserControl
 
         var extractedNames = new HashSet<string>(
             parameters.Select(p => p.Name), StringComparer.OrdinalIgnoreCase);
+
+        // Collect table variable names from the plan tree so we don't misreport them as local variables
+        var tableVarNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (rootNode != null)
+            CollectTableVariableNames(rootNode, tableVarNames);
 
         var matches = Regex.Matches(queryText, @"@\w+", RegexOptions.IgnoreCase);
         var seenVars = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -2369,12 +2375,27 @@ public partial class PlanViewerControl : UserControl
                 continue;
             if (varName.StartsWith("@@", StringComparison.OrdinalIgnoreCase))
                 continue;
+            if (tableVarNames.Contains(varName))
+                continue;
 
             seenVars.Add(varName);
             unresolved.Add(varName);
         }
 
         return unresolved;
+    }
+
+    private static void CollectTableVariableNames(PlanNode node, HashSet<string> names)
+    {
+        if (!string.IsNullOrEmpty(node.ObjectName) && node.ObjectName.StartsWith("@"))
+        {
+            // ObjectName is like "@t.c" — extract the table variable name "@t"
+            var dotIdx = node.ObjectName.IndexOf('.');
+            var tvName = dotIdx > 0 ? node.ObjectName[..dotIdx] : node.ObjectName;
+            names.Add(tvName);
+        }
+        foreach (var child in node.Children)
+            CollectTableVariableNames(child, names);
     }
 
     private static void CollectWarnings(PlanNode node, List<PlanWarning> warnings)
