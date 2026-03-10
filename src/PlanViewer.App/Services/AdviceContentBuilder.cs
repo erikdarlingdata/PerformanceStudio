@@ -843,14 +843,17 @@ internal static class AdviceContentBuilder
             items.Add(($"\u26A0 {efficiency:F0}% parallel efficiency (DOP {dop})", effBrush));
         }
 
-        // Memory grant
+        // Memory grant — color by utilization efficiency
         if (stmt.MemoryGrant != null && stmt.MemoryGrant.GrantedKB > 0)
         {
             var grantedMB = stmt.MemoryGrant.GrantedKB / 1024.0;
             var usedPct = stmt.MemoryGrant.MaxUsedKB > 0
                 ? (double)stmt.MemoryGrant.MaxUsedKB / stmt.MemoryGrant.GrantedKB * 100.0
                 : 0.0;
-            var memBrush = usedPct < 10 ? WarningBrush : InfoBrush;
+            // Red: <10% used (massive waste), Amber: <50%, Blue: <80%, Green-ish (info): >=80%
+            var memBrush = usedPct < 10 ? CriticalBrush
+                         : usedPct < 50 ? WarningBrush
+                         : InfoBrush;
             items.Add(($"Memory grant: {grantedMB:F1} MB ({usedPct:F0}% used)", memBrush));
         }
 
