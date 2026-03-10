@@ -853,13 +853,16 @@ internal static class AdviceContentBuilder
             Margin = new Avalonia.Thickness(4)
         };
 
-        foreach (var (text, brush) in items)
+        for (int idx = 0; idx < items.Count; idx++)
         {
+            var (text, brush) = items[idx];
+            var isHeadline = idx == 0;
             cardPanel.Children.Add(new SelectableTextBlock
             {
                 Text = text,
                 FontFamily = MonoFont,
-                FontSize = 12,
+                FontSize = isHeadline ? 13 : 12,
+                FontWeight = isHeadline ? FontWeight.SemiBold : FontWeight.Normal,
                 Foreground = brush,
                 Margin = new Avalonia.Thickness(4, 2, 0, 2),
                 TextWrapping = TextWrapping.Wrap
