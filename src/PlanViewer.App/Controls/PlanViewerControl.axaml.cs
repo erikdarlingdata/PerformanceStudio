@@ -18,6 +18,7 @@ using Avalonia.Platform.Storage;
 using PlanViewer.App.Helpers;
 using PlanViewer.App.Mcp;
 using PlanViewer.Core.Models;
+using PlanViewer.Core.Output;
 using PlanViewer.Core.Services;
 
 using AvaloniaPath = Avalonia.Controls.Shapes.Path;
@@ -2622,7 +2623,7 @@ public partial class PlanViewerControl : UserControl
                 ? (double)mg.MaxUsedMemoryKB / mg.GrantedMemoryKB * 100 : 100;
             var grantColor = EfficiencyColor(grantPct);
             AddRow("Memory grant",
-                $"{mg.GrantedMemoryKB:N0} KB granted, {mg.MaxUsedMemoryKB:N0} KB used ({grantPct:N0}%)",
+                $"{TextFormatter.FormatMemoryGrantKB(mg.GrantedMemoryKB)} granted, {TextFormatter.FormatMemoryGrantKB(mg.MaxUsedMemoryKB)} used ({grantPct:N0}%)",
                 grantColor);
             if (mg.GrantWaitTimeMs > 0)
                 AddRow("Grant wait", $"{mg.GrantWaitTimeMs:N0}ms", "#E57373");

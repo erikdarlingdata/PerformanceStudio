@@ -62,13 +62,15 @@ public static class TextFormatter
                 writer.WriteLine($"Runtime: {stmt.QueryTime.ElapsedTimeMs:N0}ms elapsed, {stmt.QueryTime.CpuTimeMs:N0}ms CPU");
             if (stmt.MemoryGrant != null && stmt.MemoryGrant.GrantedKB > 0)
             {
-                var grantedMB = stmt.MemoryGrant.GrantedKB / 1024.0;
-                var usedMB = stmt.MemoryGrant.MaxUsedKB / 1024.0;
-                var pctUsed = grantedMB > 0 ? usedMB / grantedMB * 100 : 0;
+                var pctUsed = stmt.MemoryGrant.GrantedKB > 0
+                    ? (double)stmt.MemoryGrant.MaxUsedKB / stmt.MemoryGrant.GrantedKB * 100 : 0;
                 var pctContext = "";
                 if (result.ServerContext?.MaxServerMemoryMB > 0)
+                {
+                    var grantedMB = stmt.MemoryGrant.GrantedKB / 1024.0;
                     pctContext = $", {grantedMB / result.ServerContext.MaxServerMemoryMB * 100:N1}% of max server memory";
-                writer.WriteLine($"Memory grant: {grantedMB:N1} MB granted, {usedMB:N1} MB used ({pctUsed:N0}% utilized{pctContext})");
+                }
+                writer.WriteLine($"Memory grant: {FormatMemoryGrantKB(stmt.MemoryGrant.GrantedKB)} granted, {FormatMemoryGrantKB(stmt.MemoryGrant.MaxUsedKB)} used ({pctUsed:N0}% utilized{pctContext})");
             }
 
             // Expensive operators — promoted to right after memory grant.
@@ -321,6 +323,21 @@ public static class TextFormatter
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// Formats a memory value given in KB to a human-readable string.
+    /// Under 1,024 KB: show KB (e.g., "512 KB").
+    /// 1,024 KB to 1,048,576 KB: show MB with 1 decimal (e.g., "533.3 MB").
+    /// Over 1,048,576 KB: show GB with 2 decimals (e.g., "2.14 GB").
+    /// </summary>
+    public static string FormatMemoryGrantKB(long kb)
+    {
+        if (kb < 1024)
+            return $"{kb:N0} KB";
+        if (kb < 1024 * 1024)
+            return $"{kb / 1024.0:N1} MB";
+        return $"{kb / (1024.0 * 1024.0):N2} GB";
     }
 
     /// <summary>
