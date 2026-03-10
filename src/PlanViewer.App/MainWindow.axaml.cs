@@ -507,6 +507,11 @@ public partial class MainWindow : Window
             }
         };
 
+        // Wire up context menu events from PlanViewerControl
+        viewer.HumanAdviceRequested += (_, _) => humanBtn.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        viewer.RobotAdviceRequested += (_, _) => robotBtn.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        viewer.CopyReproRequested += async (_, _) => copyReproBtn.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+
         var getActualPlanBtn = new Button
         {
             Content = "\u25b6 Run Repro",
