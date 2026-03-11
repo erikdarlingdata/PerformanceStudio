@@ -451,20 +451,23 @@ public partial class MainWindow : Window
             Theme = (Avalonia.Styling.ControlTheme)this.FindResource("AppButton")!
         };
 
-        humanBtn.Click += (_, _) =>
+        Action showHumanAdvice = () =>
         {
             if (viewer.CurrentPlan == null) return;
             var analysis = ResultMapper.Map(viewer.CurrentPlan, "file", viewer.Metadata);
             ShowAdviceWindow("Advice for Humans", TextFormatter.Format(analysis), analysis);
         };
 
-        robotBtn.Click += (_, _) =>
+        Action showRobotAdvice = () =>
         {
             if (viewer.CurrentPlan == null) return;
             var analysis = ResultMapper.Map(viewer.CurrentPlan, "file", viewer.Metadata);
             var json = JsonSerializer.Serialize(analysis, new JsonSerializerOptions { WriteIndented = true });
             ShowAdviceWindow("Advice for Robots", json);
         };
+
+        humanBtn.Click += (_, _) => showHumanAdvice();
+        robotBtn.Click += (_, _) => showRobotAdvice();
 
         var compareBtn = new Button
         {
@@ -500,7 +503,7 @@ public partial class MainWindow : Window
             Theme = (Avalonia.Styling.ControlTheme)this.FindResource("AppButton")!
         };
 
-        copyReproBtn.Click += async (_, _) =>
+        Func<System.Threading.Tasks.Task> copyRepro = async () =>
         {
             if (viewer.CurrentPlan == null) return;
             var queryText = GetQueryTextFromPlan(viewer);
@@ -518,10 +521,12 @@ public partial class MainWindow : Window
             }
         };
 
+        copyReproBtn.Click += async (_, _) => await copyRepro();
+
         // Wire up context menu events from PlanViewerControl
-        viewer.HumanAdviceRequested += (_, _) => humanBtn.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-        viewer.RobotAdviceRequested += (_, _) => robotBtn.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-        viewer.CopyReproRequested += async (_, _) => copyReproBtn.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        viewer.HumanAdviceRequested += (_, _) => showHumanAdvice();
+        viewer.RobotAdviceRequested += (_, _) => showRobotAdvice();
+        viewer.CopyReproRequested += async (_, _) => await copyRepro();
 
         var getActualPlanBtn = new Button
         {
