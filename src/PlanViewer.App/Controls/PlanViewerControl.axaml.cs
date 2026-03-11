@@ -118,7 +118,8 @@ public partial class PlanViewerControl : UserControl
     public PlanViewerControl()
     {
         InitializeComponent();
-        PlanScrollViewer.PointerWheelChanged += PlanScrollViewer_PointerWheelChanged;
+        // Use Tunnel routing so Ctrl+wheel zoom fires before ScrollViewer consumes the event
+        PlanScrollViewer.AddHandler(PointerWheelChangedEvent, PlanScrollViewer_PointerWheelChanged, Avalonia.Interactivity.RoutingStrategies.Tunnel);
         // Use Tunnel routing so pan handlers fire before ScrollViewer consumes the events
         PlanScrollViewer.AddHandler(PointerPressedEvent, PlanScrollViewer_PointerPressed, Avalonia.Interactivity.RoutingStrategies.Tunnel);
         PlanScrollViewer.AddHandler(PointerMovedEvent, PlanScrollViewer_PointerMoved, Avalonia.Interactivity.RoutingStrategies.Tunnel);

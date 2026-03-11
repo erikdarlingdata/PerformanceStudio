@@ -60,8 +60,8 @@ public partial class QuerySessionControl : UserControl
         // Keybindings: F5/Ctrl+E for Execute, Ctrl+L for Estimated Plan
         KeyDown += OnKeyDown;
 
-        // Ctrl+mousewheel for font zoom
-        QueryEditor.PointerWheelChanged += OnEditorPointerWheel;
+        // Ctrl+mousewheel for font zoom — use Tunnel so it fires before ScrollViewer consumes scroll-down
+        QueryEditor.AddHandler(Avalonia.Input.InputElement.PointerWheelChangedEvent, OnEditorPointerWheel, Avalonia.Interactivity.RoutingStrategies.Tunnel);
 
         // Code completion
         QueryEditor.TextArea.TextEntering += OnTextEntering;
