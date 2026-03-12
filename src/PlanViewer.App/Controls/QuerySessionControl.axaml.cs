@@ -44,6 +44,14 @@ public partial class QuerySessionControl : UserControl
     private CancellationTokenSource? _statusClearCts;
     private CompletionWindow? _completionWindow;
 
+    public string QueryText
+    {
+        get => QueryEditor.Text ?? "";
+        set => QueryEditor.Text = value ?? "";
+    }
+
+    public string? SourceFilePath { get; set; }
+
     public QuerySessionControl(ICredentialService credentialService, ConnectionStore connectionStore)
     {
         _credentialService = credentialService;
@@ -51,7 +59,7 @@ public partial class QuerySessionControl : UserControl
         InitializeComponent();
 
         // Initialize editor with empty text so the document is ready
-        QueryEditor.Text = "";
+        QueryText = "";
         ZoomBox.SelectedIndex = 2; // 100%
 
         SetupSyntaxHighlighting();

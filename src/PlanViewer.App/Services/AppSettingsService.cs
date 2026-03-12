@@ -113,4 +113,20 @@ internal sealed class AppSettings
     /// </summary>
     [JsonPropertyName("open_plans")]
     public List<string> OpenPlans { get; set; } = new();
+
+    /// <summary>
+    /// Ordered top-level tabs that can be restored on startup.
+    /// Includes file-backed plan/query tabs only.
+    /// </summary>
+    [JsonPropertyName("open_tabs")]
+    public List<OpenTabState> OpenTabs { get; set; } = new();
+}
+
+internal sealed class OpenTabState
+{
+    [JsonPropertyName("type")]
+    public string Type { get; set; } = "plan";
+
+    [JsonPropertyName("path")]
+    public string Path { get; set; } = "";
 }

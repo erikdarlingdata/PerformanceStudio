@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Pipes;
@@ -7,6 +8,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Xml.Linq;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Input.Platform;
@@ -15,6 +17,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using PlanViewer.App.Controls;
 using PlanViewer.App.Services;
 using PlanViewer.Core.Interfaces;
@@ -28,14 +31,21 @@ namespace PlanViewer.App;
 public partial class MainWindow : Window
 {
     private const string PipeName = "SQLPerformanceStudio_OpenFile";
+    private static readonly DataFormat<string> TopLevelTabDragDataFormat =
+        DataFormat.CreateStringApplicationFormat("PerformanceStudio.TopLevelTab");
+    private static readonly IBrush TabDropCueBrush = new SolidColorBrush(Color.Parse("#4DA3FF"));
 
     private readonly ICredentialService _credentialService;
     private readonly ConnectionStore _connectionStore;
     private readonly CancellationTokenSource _pipeCts = new();
+    private readonly Dictionary<string, TabItem> _topLevelTabDragLookup = new();
+    private readonly Dictionary<Border, TextBlock> _topLevelTabDropMarkers = new();
     private McpHostService? _mcpHost;
     private CancellationTokenSource? _mcpCts;
     private int _queryCounter;
     private AppSettings _appSettings;
+    private Point? _topLevelTabDragStart;
+    private TabItem? _topLevelTabDragSource;
 
     public MainWindow()
     {
@@ -55,13 +65,17 @@ public partial class MainWindow : Window
         AddHandler(DragDrop.DropEvent, OnDrop);
         AddHandler(DragDrop.DragOverEvent, OnDragOver);
 
-        // Track tab changes to update empty overlay
-        MainTabControl.SelectionChanged += (_, _) => UpdateEmptyOverlay();
+        // Track tab changes to update empty overlay and file actions
+        MainTabControl.SelectionChanged += (_, _) =>
+        {
+            UpdateEmptyOverlay();
+            UpdateFileMenuState();
+        };
 
         // Global hotkeys via tunnel routing so they fire before AvaloniaEdit consumes them
         AddHandler(KeyDownEvent, (_, e) =>
         {
-            if (e.KeyModifiers == KeyModifiers.Control)
+            if ((e.KeyModifiers & KeyModifiers.Control) != 0)
             {
                 switch (e.Key)
                 {
@@ -73,11 +87,21 @@ public partial class MainWindow : Window
                         OpenFile_Click(this, new RoutedEventArgs());
                         e.Handled = true;
                         break;
+                    case Key.S:
+                        if (GetSelectedQuerySession() != null)
+                        {
+                            var forceSaveAs = (e.KeyModifiers & KeyModifiers.Shift) != 0;
+                            _ = SaveSelectedQueryAsync(forceSaveAs);
+                            e.Handled = true;
+                        }
+                        break;
                     case Key.W:
                         if (MainTabControl.SelectedItem is TabItem selected)
                         {
                             MainTabControl.Items.Remove(selected);
+                            ForgetTopLevelTabDragId(selected);
                             UpdateEmptyOverlay();
+                            UpdateFileMenuState();
                             e.Handled = true;
                         }
                         break;
@@ -107,6 +131,7 @@ public partial class MainWindow : Window
 
         // Start MCP server if enabled in settings
         StartMcpServer();
+        UpdateFileMenuState();
     }
 
     private void StartPipeServer()
@@ -198,6 +223,7 @@ public partial class MainWindow : Window
         MainTabControl.Items.Add(tab);
         MainTabControl.SelectedItem = tab;
         UpdateEmptyOverlay();
+        UpdateFileMenuState();
     }
 
     private async void OpenFile_Click(object? sender, RoutedEventArgs e)
@@ -209,17 +235,29 @@ public partial class MainWindow : Window
             AllowMultiple = true,
             FileTypeFilter = new[]
             {
+                new FilePickerFileType("Supported Files (.sqlplan, .sql, .xml)")
+                {
+                    Patterns = new[] { "*.sqlplan", "*.sql", "*.xml" },
+                    MimeTypes = new[] { "application/sql", "text/x-sql", "text/plain", "application/xml", "text/xml" },
+                    AppleUniformTypeIdentifiers = new[] { "public.sql", "public.plain-text", "public.xml", "public.text" }
+                },
                 new FilePickerFileType("SQL Server Execution Plans")
                 {
-                    Patterns = new[] { "*.sqlplan" }
+                    Patterns = new[] { "*.sqlplan" },
+                    MimeTypes = new[] { "application/xml", "text/xml" },
+                    AppleUniformTypeIdentifiers = new[] { "public.xml", "public.text" }
                 },
                 new FilePickerFileType("SQL Scripts")
                 {
-                    Patterns = new[] { "*.sql" }
+                    Patterns = new[] { "*.sql" },
+                    MimeTypes = new[] { "application/sql", "text/x-sql", "text/plain" },
+                    AppleUniformTypeIdentifiers = new[] { "public.sql", "public.plain-text", "public.text" }
                 },
                 new FilePickerFileType("XML Files")
                 {
-                    Patterns = new[] { "*.xml" }
+                    Patterns = new[] { "*.xml" },
+                    MimeTypes = new[] { "application/xml", "text/xml" },
+                    AppleUniformTypeIdentifiers = new[] { "public.xml", "public.text" }
                 },
                 FilePickerFileTypes.All
             }
@@ -231,6 +269,16 @@ public partial class MainWindow : Window
             if (path != null)
                 OpenFileByExtension(path);
         }
+    }
+
+    private async void SaveQuery_Click(object? sender, RoutedEventArgs e)
+    {
+        await SaveSelectedQueryAsync();
+    }
+
+    private async void SaveAsQuery_Click(object? sender, RoutedEventArgs e)
+    {
+        await SaveSelectedQueryAsync(forceSaveAs: true);
     }
 
     private async void PasteXml_Click(object? sender, RoutedEventArgs e)
@@ -260,6 +308,10 @@ public partial class MainWindow : Window
 
     private void OnDragOver(object? sender, DragEventArgs e)
     {
+        // Let tab-header drag/drop decide drag effects for internal top-level tab reordering.
+        if (e.DataTransfer.TryGetValue(TopLevelTabDragDataFormat) != null)
+            return;
+
         e.DragEffects = DragDropEffects.None;
 
         if (e.Data.Contains(DataFormats.Files))
@@ -272,6 +324,10 @@ public partial class MainWindow : Window
 
     private void OnDrop(object? sender, DragEventArgs e)
     {
+        // Internal top-level tab drop is handled by tab header drop handlers.
+        if (e.DataTransfer.TryGetValue(TopLevelTabDragDataFormat) != null)
+            return;
+
         if (!e.Data.Contains(DataFormats.Files)) return;
 
         var files = e.Data.GetFiles();
@@ -303,12 +359,14 @@ public partial class MainWindow : Window
 
             _queryCounter++;
             var session = new QuerySessionControl(_credentialService, _connectionStore);
-            session.QueryEditor.Text = text;
+            session.QueryText = text;
+            session.SourceFilePath = filePath;
 
             var tab = CreateTab(fileName, session);
             MainTabControl.Items.Add(tab);
             MainTabControl.SelectedItem = tab;
             UpdateEmptyOverlay();
+            UpdateFileMenuState();
         }
         catch (Exception ex)
         {
@@ -690,7 +748,7 @@ public partial class MainWindow : Window
 
     private static string GetTabLabel(TabItem tab)
     {
-        if (tab.Header is StackPanel sp && sp.Children.Count > 0 && sp.Children[0] is TextBlock tb)
+        if (FindHeaderTextBlock(tab.Header) is TextBlock tb)
             return tb.Text ?? "Tab";
         if (tab.Header is string s)
             return s;
@@ -871,9 +929,40 @@ public partial class MainWindow : Window
             Children = { headerText, closeBtn }
         };
 
-        var tab = new TabItem { Header = header, Content = content };
+        var insertMarker = new TextBlock
+        {
+            IsVisible = false,
+            IsHitTestVisible = false,
+            FontSize = 11,
+            FontWeight = FontWeight.Bold,
+            Foreground = TabDropCueBrush,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        var headerLayer = new Grid
+        {
+            Children = { header, insertMarker }
+        };
+
+        var headerRoot = new Border
+        {
+            Background = Brushes.Transparent,
+            Child = headerLayer
+        };
+
+        var tab = new TabItem { Header = headerRoot, Content = content };
+        headerRoot.Tag = tab;
+        _topLevelTabDropMarkers[headerRoot] = insertMarker;
         closeBtn.Tag = tab;
         closeBtn.Click += CloseTab_Click;
+
+        DragDrop.SetAllowDrop(headerRoot, true);
+        headerRoot.PointerPressed += TopLevelTabHeader_PointerPressed;
+        headerRoot.PointerMoved += TopLevelTabHeader_PointerMoved;
+        headerRoot.PointerReleased += TopLevelTabHeader_PointerReleased;
+        headerRoot.AddHandler(DragDrop.DragLeaveEvent, TopLevelTabHeader_DragLeave);
+        headerRoot.AddHandler(DragDrop.DragOverEvent, TopLevelTabHeader_DragOver);
+        headerRoot.AddHandler(DragDrop.DropEvent, TopLevelTabHeader_Drop);
 
         // Right-click context menu
         var copyPathItem = new MenuItem { Header = "Copy Path", Tag = tab };
@@ -897,7 +986,7 @@ public partial class MainWindow : Window
         foreach (var item in contextMenu.Items.OfType<MenuItem>())
             item.Click += TabContextMenu_Click;
 
-        header.ContextMenu = contextMenu;
+        headerRoot.ContextMenu = contextMenu;
 
         return tab;
     }
@@ -907,7 +996,10 @@ public partial class MainWindow : Window
         if (sender is Button btn && btn.Tag is TabItem tab)
         {
             MainTabControl.Items.Remove(tab);
+            ForgetTopLevelTabDragId(tab);
+            ForgetTopLevelTabMarker(tab);
             UpdateEmptyOverlay();
+            UpdateFileMenuState();
         }
     }
 
@@ -937,7 +1029,10 @@ public partial class MainWindow : Window
                 if (item.Tag is TabItem tab)
                 {
                     MainTabControl.Items.Remove(tab);
+                    ForgetTopLevelTabDragId(tab);
+                    ForgetTopLevelTabMarker(tab);
                     UpdateEmptyOverlay();
+                    UpdateFileMenuState();
                 }
                 break;
 
@@ -946,20 +1041,39 @@ public partial class MainWindow : Window
                 {
                     var others = MainTabControl.Items.Cast<TabItem>().Where(t => t != keepTab).ToList();
                     foreach (var t in others)
+                    {
                         MainTabControl.Items.Remove(t);
+                        ForgetTopLevelTabDragId(t);
+                        ForgetTopLevelTabMarker(t);
+                    }
                     MainTabControl.SelectedItem = keepTab;
                     UpdateEmptyOverlay();
+                    UpdateFileMenuState();
                 }
                 break;
 
             case "Close All Tabs":
+                foreach (var tabItem in MainTabControl.Items.Cast<TabItem>().ToList())
+                {
+                    ForgetTopLevelTabDragId(tabItem);
+                    ForgetTopLevelTabMarker(tabItem);
+                }
                 MainTabControl.Items.Clear();
                 UpdateEmptyOverlay();
+                UpdateFileMenuState();
                 break;
         }
     }
 
     private static string? GetTabFilePath(TabItem tab)
+    {
+        if (tab.Content is QuerySessionControl session)
+            return session.SourceFilePath;
+
+        return GetPlanTabFilePath(tab);
+    }
+
+    private static string? GetPlanTabFilePath(TabItem tab)
     {
         // Plans opened from file are wrapped in a DockPanel with the viewer as the last child
         if (tab.Content is DockPanel dp)
@@ -1012,6 +1126,293 @@ public partial class MainWindow : Window
         };
 
         textBox.LostFocus += (_, _) => CommitRename();
+    }
+
+    private QuerySessionControl? GetSelectedQuerySession()
+    {
+        return MainTabControl.SelectedItem is TabItem { Content: QuerySessionControl session }
+            ? session
+            : null;
+    }
+
+    private void UpdateFileMenuState()
+    {
+        var hasSelectedQuery = GetSelectedQuerySession() != null;
+        SaveQueryMenuItem.IsEnabled = hasSelectedQuery;
+        SaveAsQueryMenuItem.IsEnabled = hasSelectedQuery;
+    }
+
+    private async Task SaveSelectedQueryAsync(bool forceSaveAs = false)
+    {
+        var session = GetSelectedQuerySession();
+        if (session == null || MainTabControl.SelectedItem is not TabItem selectedTab)
+            return;
+
+        var filePath = session.SourceFilePath;
+        var savedToNewFile = forceSaveAs || string.IsNullOrWhiteSpace(filePath);
+
+        if (savedToNewFile)
+        {
+            var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+            {
+                Title = "Save Query",
+                DefaultExtension = "sql",
+                SuggestedFileName = BuildSuggestedQueryFileName(GetTabLabel(selectedTab)),
+                FileTypeChoices = new[]
+                {
+                    new FilePickerFileType("SQL Scripts")
+                    {
+                        Patterns = new[] { "*.sql" },
+                        MimeTypes = new[] { "application/sql", "text/x-sql", "text/plain" },
+                        AppleUniformTypeIdentifiers = new[] { "public.sql", "public.plain-text" }
+                    },
+                    FilePickerFileTypes.All
+                }
+            });
+
+            filePath = file?.TryGetLocalPath();
+            if (string.IsNullOrWhiteSpace(filePath))
+                return;
+
+            session.SourceFilePath = filePath;
+        }
+
+        try
+        {
+            var resolvedFilePath = filePath!;
+            await File.WriteAllTextAsync(resolvedFilePath, session.QueryText);
+
+            if (savedToNewFile)
+                SetTabLabel(selectedTab, Path.GetFileName(resolvedFilePath));
+        }
+        catch (Exception ex)
+        {
+            ShowError($"Failed to save query:\n\n{ex.Message}");
+        }
+    }
+
+    private static string BuildSuggestedQueryFileName(string label)
+    {
+        var invalidChars = Path.GetInvalidFileNameChars();
+        var sanitized = new string(label.Select(ch => invalidChars.Contains(ch) ? '_' : ch).ToArray()).Trim();
+        if (string.IsNullOrWhiteSpace(sanitized))
+            sanitized = "query";
+
+        return sanitized.EndsWith(".sql", StringComparison.OrdinalIgnoreCase)
+            ? sanitized
+            : $"{sanitized}.sql";
+    }
+
+    private static void SetTabLabel(TabItem tab, string label)
+    {
+        var headerText = FindHeaderTextBlock(tab.Header);
+        if (headerText != null)
+            headerText.Text = label;
+    }
+
+    private static TextBlock? FindHeaderTextBlock(object? header)
+    {
+        if (header is TextBlock textBlock)
+            return textBlock;
+
+        if (header is Border border)
+            return FindHeaderTextBlock(border.Child);
+
+        if (header is Panel panel)
+        {
+            foreach (var child in panel.Children)
+            {
+                if (child is TextBlock tb)
+                    return tb;
+
+                var nested = FindHeaderTextBlock(child);
+                if (nested != null)
+                    return nested;
+            }
+        }
+
+        return null;
+    }
+
+    private static bool IsHeaderButtonSource(object? source)
+    {
+        var visual = source as Visual;
+        while (visual != null)
+        {
+            if (visual is Button)
+                return true;
+
+            visual = visual.GetVisualParent();
+        }
+
+        return false;
+    }
+
+    private void TopLevelTabHeader_PointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (sender is not Border { Tag: TabItem tab })
+            return;
+
+        if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed || IsHeaderButtonSource(e.Source))
+            return;
+
+        _topLevelTabDragSource = tab;
+        _topLevelTabDragStart = e.GetPosition(this);
+    }
+
+    private async void TopLevelTabHeader_PointerMoved(object? sender, PointerEventArgs e)
+    {
+        if (sender is not Border { Tag: TabItem tab })
+            return;
+
+        if (_topLevelTabDragSource != tab || _topLevelTabDragStart is not Point dragStart)
+            return;
+
+        if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+        {
+            _topLevelTabDragSource = null;
+            _topLevelTabDragStart = null;
+            return;
+        }
+
+        var position = e.GetPosition(this);
+        var delta = position - dragStart;
+        if (Math.Abs(delta.X) < 8 && Math.Abs(delta.Y) < 8)
+            return;
+
+        _topLevelTabDragSource = null;
+        _topLevelTabDragStart = null;
+
+        var data = new DataTransfer();
+        data.Add(DataTransferItem.Create(TopLevelTabDragDataFormat, EnsureTopLevelTabDragId(tab)));
+        await DragDrop.DoDragDropAsync(e, data, DragDropEffects.Move);
+    }
+
+    private void TopLevelTabHeader_PointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        _topLevelTabDragSource = null;
+        _topLevelTabDragStart = null;
+    }
+
+    private void TopLevelTabHeader_DragOver(object? sender, DragEventArgs e)
+    {
+        if (sender is not Border { Tag: TabItem targetTab } headerRoot)
+            return;
+
+        var dragId = e.DataTransfer.TryGetValue(TopLevelTabDragDataFormat);
+        if (dragId == null || !_topLevelTabDragLookup.TryGetValue(dragId, out var sourceTab) || sourceTab == targetTab)
+        {
+            e.DragEffects = DragDropEffects.None;
+            ClearTabInsertionCue(headerRoot);
+            return;
+        }
+
+        var insertAfter = e.GetPosition(headerRoot).X >= headerRoot.Bounds.Width / 2;
+        ApplyTabInsertionCue(headerRoot, insertAfter);
+        e.DragEffects = DragDropEffects.Move;
+        e.Handled = true;
+    }
+
+    private void TopLevelTabHeader_DragLeave(object? sender, DragEventArgs e)
+    {
+        if (sender is Border headerRoot)
+            ClearTabInsertionCue(headerRoot);
+    }
+
+    private void TopLevelTabHeader_Drop(object? sender, DragEventArgs e)
+    {
+        if (sender is not Border { Tag: TabItem targetTab } headerRoot)
+            return;
+
+        var dragId = e.DataTransfer.TryGetValue(TopLevelTabDragDataFormat);
+        if (dragId == null || !_topLevelTabDragLookup.TryGetValue(dragId, out var sourceTab) || sourceTab == targetTab)
+            return;
+
+        var insertAfter = e.GetPosition(headerRoot).X >= headerRoot.Bounds.Width / 2;
+        ClearTabInsertionCue(headerRoot);
+        ReorderTopLevelTab(sourceTab, targetTab, insertAfter);
+        e.Handled = true;
+    }
+
+    private void ApplyTabInsertionCue(Border headerRoot, bool insertAfter)
+    {
+        headerRoot.BorderBrush = TabDropCueBrush;
+        headerRoot.BorderThickness = insertAfter
+            ? new Thickness(0, 0, 3, 0)
+            : new Thickness(3, 0, 0, 0);
+
+        if (_topLevelTabDropMarkers.TryGetValue(headerRoot, out var marker))
+        {
+            marker.Text = insertAfter ? "▶" : "◀";
+            marker.HorizontalAlignment = insertAfter ? HorizontalAlignment.Right : HorizontalAlignment.Left;
+            marker.Margin = insertAfter ? new Thickness(0, 0, 2, 0) : new Thickness(2, 0, 0, 0);
+            marker.IsVisible = true;
+        }
+    }
+
+    private void ClearTabInsertionCue(Border headerRoot)
+    {
+        headerRoot.BorderThickness = default;
+        headerRoot.BorderBrush = null;
+
+        if (_topLevelTabDropMarkers.TryGetValue(headerRoot, out var marker))
+            marker.IsVisible = false;
+    }
+
+    private string EnsureTopLevelTabDragId(TabItem tab)
+    {
+        foreach (var entry in _topLevelTabDragLookup)
+        {
+            if (ReferenceEquals(entry.Value, tab))
+                return entry.Key;
+        }
+
+        var dragId = Guid.NewGuid().ToString("N");
+        _topLevelTabDragLookup[dragId] = tab;
+        return dragId;
+    }
+
+    private void ForgetTopLevelTabDragId(TabItem tab)
+    {
+        var dragId = _topLevelTabDragLookup
+            .FirstOrDefault(entry => ReferenceEquals(entry.Value, tab))
+            .Key;
+
+        if (!string.IsNullOrEmpty(dragId))
+            _topLevelTabDragLookup.Remove(dragId);
+    }
+
+    private void ForgetTopLevelTabMarker(TabItem tab)
+    {
+        if (tab.Header is Border headerRoot)
+            _topLevelTabDropMarkers.Remove(headerRoot);
+    }
+
+    private void ReorderTopLevelTab(TabItem sourceTab, TabItem targetTab, bool insertAfter)
+    {
+        if (MainTabControl.Items is not IList items)
+            return;
+
+        var sourceIndex = items.IndexOf(sourceTab);
+        if (sourceIndex < 0)
+            return;
+
+        items.RemoveAt(sourceIndex);
+
+        var targetIndex = items.IndexOf(targetTab);
+        if (targetIndex < 0)
+        {
+            items.Add(sourceTab);
+        }
+        else
+        {
+            if (insertAfter)
+                targetIndex++;
+
+            items.Insert(targetIndex, sourceTab);
+        }
+
+        MainTabControl.SelectedItem = sourceTab;
     }
 
     /// <summary>
@@ -1276,14 +1677,32 @@ public partial class MainWindow : Window
     private void SaveOpenPlans()
     {
         _appSettings.OpenPlans.Clear();
+        _appSettings.OpenTabs.Clear();
 
         foreach (var item in MainTabControl.Items)
         {
             if (item is not TabItem tab) continue;
 
-            var path = GetTabFilePath(tab);
+            if (tab.Content is QuerySessionControl session && !string.IsNullOrEmpty(session.SourceFilePath))
+            {
+                _appSettings.OpenTabs.Add(new OpenTabState
+                {
+                    Type = "query",
+                    Path = session.SourceFilePath
+                });
+                continue;
+            }
+
+            var path = GetPlanTabFilePath(tab);
             if (!string.IsNullOrEmpty(path))
+            {
                 _appSettings.OpenPlans.Add(path);
+                _appSettings.OpenTabs.Add(new OpenTabState
+                {
+                    Type = "plan",
+                    Path = path
+                });
+            }
         }
 
         AppSettingsService.Save(_appSettings);
@@ -1297,16 +1716,36 @@ public partial class MainWindow : Window
     {
         var restored = false;
 
-        foreach (var path in _appSettings.OpenPlans)
+        if (_appSettings.OpenTabs.Count > 0)
         {
-            if (File.Exists(path))
+            foreach (var tabState in _appSettings.OpenTabs)
             {
-                LoadPlanFile(path);
+                if (string.IsNullOrWhiteSpace(tabState.Path) || !File.Exists(tabState.Path))
+                    continue;
+
+                if (string.Equals(tabState.Type, "query", StringComparison.OrdinalIgnoreCase))
+                    LoadSqlFile(tabState.Path);
+                else
+                    LoadPlanFile(tabState.Path);
+
                 restored = true;
+            }
+        }
+        else
+        {
+            // Backward-compatible restore for settings written by older versions
+            foreach (var path in _appSettings.OpenPlans)
+            {
+                if (File.Exists(path))
+                {
+                    LoadPlanFile(path);
+                    restored = true;
+                }
             }
         }
 
         // Clear the open plans list now that we've restored
+        _appSettings.OpenTabs.Clear();
         _appSettings.OpenPlans.Clear();
         AppSettingsService.Save(_appSettings);
 

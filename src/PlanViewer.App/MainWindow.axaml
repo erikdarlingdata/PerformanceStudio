@@ -16,8 +16,12 @@
             <MenuItem Header="_File">
                 <MenuItem Header="New _Query" Click="NewQuery_Click"
                           InputGesture="Ctrl+N"/>
-                <MenuItem Header="_Open .sqlplan..." Click="OpenFile_Click"
+                <MenuItem Header="_Open File..." Click="OpenFile_Click"
                           InputGesture="Ctrl+O"/>
+                <MenuItem x:Name="SaveQueryMenuItem" Header="_Save Query" Click="SaveQuery_Click"
+                          InputGesture="Ctrl+S" IsEnabled="False"/>
+                <MenuItem x:Name="SaveAsQueryMenuItem" Header="Save Query _As..." Click="SaveAsQuery_Click"
+                          InputGesture="Ctrl+Shift+S" IsEnabled="False"/>
                 <MenuItem Header="_Paste Plan XML" Click="PasteXml_Click"
                           InputGesture="Ctrl+V"/>
                 <Separator/>

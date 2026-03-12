@@ -1,5 +1,20 @@
 # Performance Studio
 
+## Fork Notice
+
+This repository is a personal fork of Erik Darling's PerformanceStudio project, maintained to support additional workflow and UX changes for day-to-day tuning work.
+
+Current fork-specific changes include:
+- query file save and save-as actions in the desktop app
+- top-level tab drag/drop behavior and related UI improvements
+- iterative app-level settings and session handling updates tied to those features
+
+Upstream source of truth: [erikdarlingdata/PerformanceStudio](https://github.com/erikdarlingdata/PerformanceStudio)
+
+If you do not specifically need the fork changes above, prefer the upstream repository for official releases and updates.
+
+---
+
 A cross-platform SQL Server execution plan analyzer with built-in MCP server for AI-assisted analysis. Parses `.sqlplan` XML, identifies performance problems, suggests missing indexes, and provides actionable warnings — from the command line or a desktop GUI.
 
 Built for developers and DBAs who want fast, automated plan analysis without clicking through SSMS.
