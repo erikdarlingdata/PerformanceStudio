@@ -79,6 +79,7 @@
                   FontSize="11"
                   Background="{DynamicResource BackgroundDarkBrush}"
                   BorderThickness="0"
+                  Sorting="ResultsGrid_Sorting"
                   ScrollViewer.HorizontalScrollBarVisibility="Auto">
             <DataGrid.ContextMenu>
                 <ContextMenu>
