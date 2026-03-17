@@ -13,6 +13,7 @@ using Avalonia.Media;
 using Microsoft.Data.SqlClient;
 using PlanViewer.Core.Interfaces;
 using PlanViewer.Core.Models;
+using PlanViewer.App.Dialogs;
 using PlanViewer.Core.Services;
 
 namespace PlanViewer.App.Controls;
@@ -218,6 +219,26 @@ public partial class QueryStoreGridControl : UserControl
             PlansSelected?.Invoke(this, new List<QueryStorePlan> { row.Plan });
     }
 
+    private async void ViewHistory_Click(object? sender, RoutedEventArgs e)
+    {
+        if (ResultsGrid.SelectedItem is not QueryStoreRow row) return;
+
+        var hoursBack = (int)(HoursBackBox.Value ?? 24);
+
+        var window = new QueryStoreHistoryWindow(
+            _connectionString,
+            row.QueryId,
+            row.FullQueryText,
+            _database,
+            hoursBack);
+
+        var topLevel = Avalonia.Controls.TopLevel.GetTopLevel(this);
+        if (topLevel is Window parentWindow)
+            await window.ShowDialog(parentWindow);
+        else
+            window.Show();
+    }
+
     // ── Context menu ────────────────────────────────────────────────────────
 
     private void ContextMenu_Opening(object? sender, System.ComponentModel.CancelEventArgs e)
@@ -225,6 +246,7 @@ public partial class QueryStoreGridControl : UserControl
         var row = ResultsGrid.SelectedItem as QueryStoreRow;
         var hasRow = row != null;
 
+        ViewHistoryItem.IsEnabled = hasRow;
         CopyQueryIdItem.IsEnabled = hasRow;
         CopyPlanIdItem.IsEnabled = hasRow;
         CopyQueryHashItem.IsEnabled = hasRow && !string.IsNullOrEmpty(row!.QueryHash);

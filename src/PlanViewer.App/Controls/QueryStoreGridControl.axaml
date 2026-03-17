@@ -102,6 +102,7 @@
             <DataGrid.ContextMenu>
                 <ContextMenu Opening="ContextMenu_Opening">
                     <MenuItem Header="Load Plan" Click="LoadHighlightedPlan_Click"/>
+                    <MenuItem x:Name="ViewHistoryItem" Header="View History" Click="ViewHistory_Click"/>
                     <Separator/>
                     <MenuItem x:Name="CopyQueryIdItem" Header="Copy Query ID"/>
                     <MenuItem x:Name="CopyPlanIdItem" Header="Copy Plan ID"/>

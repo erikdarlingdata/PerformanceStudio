@@ -257,4 +257,93 @@ OPTION (LOOP JOIN);";
 
         return plans;
     }
+
+    public static async Task<List<QueryStoreHistoryRow>> FetchHistoryAsync(
+        string connectionString, long queryId, int hoursBack = 24,
+        CancellationToken ct = default)
+    {
+        const string sql = @"
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+SELECT
+    p.plan_id,
+    CONVERT(varchar(18), MAX(p.query_plan_hash), 1),
+    rsi.start_time,
+    SUM(rs.count_executions),
+    CASE WHEN SUM(rs.count_executions) > 0
+         THEN SUM(rs.avg_duration * rs.count_executions) / SUM(rs.count_executions) / 1000.0
+         ELSE 0 END,
+    CASE WHEN SUM(rs.count_executions) > 0
+         THEN SUM(rs.avg_cpu_time * rs.count_executions) / SUM(rs.count_executions) / 1000.0
+         ELSE 0 END,
+    CASE WHEN SUM(rs.count_executions) > 0
+         THEN SUM(rs.avg_logical_io_reads * rs.count_executions) / SUM(rs.count_executions)
+         ELSE 0 END,
+    CASE WHEN SUM(rs.count_executions) > 0
+         THEN SUM(rs.avg_logical_io_writes * rs.count_executions) / SUM(rs.count_executions)
+         ELSE 0 END,
+    CASE WHEN SUM(rs.count_executions) > 0
+         THEN SUM(rs.avg_physical_io_reads * rs.count_executions) / SUM(rs.count_executions)
+         ELSE 0 END,
+    CASE WHEN SUM(rs.count_executions) > 0
+         THEN SUM(rs.avg_query_max_used_memory * rs.count_executions) / SUM(rs.count_executions) * 8.0 / 1024.0
+         ELSE 0 END,
+    CASE WHEN SUM(rs.count_executions) > 0
+         THEN SUM(rs.avg_rowcount * rs.count_executions) / SUM(rs.count_executions)
+         ELSE 0 END,
+    SUM(rs.avg_duration * rs.count_executions) / 1000.0,
+    SUM(rs.avg_cpu_time * rs.count_executions) / 1000.0,
+    SUM(rs.avg_logical_io_reads * rs.count_executions),
+    SUM(rs.avg_logical_io_writes * rs.count_executions),
+    SUM(rs.avg_physical_io_reads * rs.count_executions),
+    MIN(rs.min_dop),
+    MAX(rs.max_dop),
+    MAX(rs.last_execution_time)
+FROM sys.query_store_runtime_stats rs
+JOIN sys.query_store_runtime_stats_interval rsi
+    ON rs.runtime_stats_interval_id = rsi.runtime_stats_interval_id
+JOIN sys.query_store_plan p
+    ON rs.plan_id = p.plan_id
+WHERE p.query_id = @queryId
+AND   rsi.start_time >= DATEADD(HOUR, -@hoursBack, GETUTCDATE())
+GROUP BY p.plan_id, rsi.start_time
+ORDER BY rsi.start_time, p.plan_id;";
+
+        var rows = new List<QueryStoreHistoryRow>();
+
+        await using var conn = new SqlConnection(connectionString);
+        await conn.OpenAsync(ct);
+        await using var cmd = new SqlCommand(sql, conn) { CommandTimeout = 120 };
+        cmd.Parameters.Add(new SqlParameter("@queryId", queryId));
+        cmd.Parameters.Add(new SqlParameter("@hoursBack", hoursBack));
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+
+        while (await reader.ReadAsync(ct))
+        {
+            rows.Add(new QueryStoreHistoryRow
+            {
+                PlanId = reader.GetInt64(0),
+                QueryPlanHash = reader.IsDBNull(1) ? "" : reader.GetString(1),
+                IntervalStartUtc = ((DateTimeOffset)reader.GetValue(2)).UtcDateTime,
+                CountExecutions = reader.GetInt64(3),
+                AvgDurationMs = reader.GetDouble(4),
+                AvgCpuMs = reader.GetDouble(5),
+                AvgLogicalReads = reader.GetDouble(6),
+                AvgLogicalWrites = reader.GetDouble(7),
+                AvgPhysicalReads = reader.GetDouble(8),
+                AvgMemoryMb = reader.GetDouble(9),
+                AvgRowcount = reader.GetDouble(10),
+                TotalDurationMs = reader.GetDouble(11),
+                TotalCpuMs = reader.GetDouble(12),
+                TotalLogicalReads = reader.GetDouble(13),
+                TotalLogicalWrites = reader.GetDouble(14),
+                TotalPhysicalReads = reader.GetDouble(15),
+                MinDop = (int)reader.GetInt64(16),
+                MaxDop = (int)reader.GetInt64(17),
+                LastExecutionUtc = reader.IsDBNull(18) ? null : ((DateTimeOffset)reader.GetValue(18)).UtcDateTime,
+            });
+        }
+
+        return rows;
+    }
 }
