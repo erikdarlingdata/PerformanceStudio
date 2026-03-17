@@ -74,6 +74,8 @@ public partial class QuerySessionControl : UserControl
             QueryEditor.TextArea.Focus();
         };
 
+        DetachedFromVisualTree += (_, _) => _textMateInstallation?.Dispose();
+
         // Focus the editor when the Editor tab is selected; toggle plan-dependent buttons
         SubTabControl.SelectionChanged += (_, _) =>
         {
@@ -320,6 +322,7 @@ public partial class QuerySessionControl : UserControl
     private void SetStatus(string text, bool autoClear = true)
     {
         _statusClearCts?.Cancel();
+        _statusClearCts?.Dispose();
         StatusText.Text = text;
 
         if (autoClear && !string.IsNullOrEmpty(text))
@@ -335,44 +338,7 @@ public partial class QuerySessionControl : UserControl
 
     private async void Connect_Click(object? sender, RoutedEventArgs e)
     {
-        var dialog = new ConnectionDialog(_credentialService, _connectionStore);
-        var result = await dialog.ShowDialog<bool?>(GetParentWindow());
-
-        if (result == true && dialog.ResultConnection != null)
-        {
-            _serverConnection = dialog.ResultConnection;
-            _selectedDatabase = dialog.ResultDatabase;
-            _connectionString = _serverConnection.GetConnectionString(_credentialService, _selectedDatabase);
-
-            ServerLabel.Text = _serverConnection.ServerName;
-            ServerLabel.Foreground = Brushes.LimeGreen;
-            ConnectButton.Content = "Reconnect";
-
-            // Populate database dropdown
-            await PopulateDatabases();
-
-            // Collect server metadata for advice output
-            await FetchServerMetadataAsync();
-
-            // Select the database chosen in the dialog
-            if (_selectedDatabase != null)
-            {
-                for (int i = 0; i < DatabaseBox.Items.Count; i++)
-                {
-                    if (DatabaseBox.Items[i]?.ToString() == _selectedDatabase)
-                    {
-                        DatabaseBox.SelectedIndex = i;
-                        break;
-                    }
-                }
-            }
-
-            // Collect database metadata for the initial database
-            await FetchDatabaseMetadataAsync();
-
-            ExecuteButton.IsEnabled = true;
-            ExecuteEstButton.IsEnabled = true;
-        }
+        await ShowConnectionDialogAsync();
     }
 
     private async Task ShowConnectionDialogAsync()
@@ -515,6 +481,7 @@ public partial class QuerySessionControl : UserControl
         }
 
         _executionCts?.Cancel();
+        _executionCts?.Dispose();
         _executionCts = new CancellationTokenSource();
         var ct = _executionCts.Token;
 
@@ -900,6 +867,8 @@ public partial class QuerySessionControl : UserControl
     {
         if (sender is Button btn && btn.Tag is TabItem tab)
         {
+            if (tab.Content is PlanViewerControl viewer)
+                viewer.Clear();
             SubTabControl.Items.Remove(tab);
             UpdateCompareButtonState();
         }
@@ -919,6 +888,8 @@ public partial class QuerySessionControl : UserControl
             case "Close":
                 if (item.Tag is TabItem tab)
                 {
+                    if (tab.Content is PlanViewerControl closeViewer)
+                        closeViewer.Clear();
                     SubTabControl.Items.Remove(tab);
                     UpdateCompareButtonState();
                 }
@@ -933,7 +904,11 @@ public partial class QuerySessionControl : UserControl
                         .Where(t => t != keepTab && t.Content is PlanViewerControl)
                         .ToList();
                     foreach (var t in others)
+                    {
+                        if (t.Content is PlanViewerControl otherViewer)
+                            otherViewer.Clear();
                         SubTabControl.Items.Remove(t);
+                    }
                     SubTabControl.SelectedItem = keepTab;
                     UpdateCompareButtonState();
                 }
@@ -945,7 +920,11 @@ public partial class QuerySessionControl : UserControl
                     .Where(t => t.Content is PlanViewerControl)
                     .ToList();
                 foreach (var t in planTabs)
+                {
+                    if (t.Content is PlanViewerControl allViewer)
+                        allViewer.Clear();
                     SubTabControl.Items.Remove(t);
+                }
                 SubTabControl.SelectedIndex = 0; // back to Editor
                 UpdateCompareButtonState();
                 break;
@@ -1339,6 +1318,7 @@ public partial class QuerySessionControl : UserControl
         if (!confirmed) return;
 
         _executionCts?.Cancel();
+        _executionCts?.Dispose();
         _executionCts = new CancellationTokenSource();
         var ct = _executionCts.Token;
 

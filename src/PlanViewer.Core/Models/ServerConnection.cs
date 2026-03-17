@@ -57,11 +57,11 @@ public class ServerConnection
 
             case AuthenticationTypes.SqlServer:
                 var cred = credentialService.GetCredential(Id);
-                if (cred.HasValue)
-                {
-                    builder.UserID = cred.Value.Username;
-                    builder.Password = cred.Value.Password;
-                }
+                if (!cred.HasValue)
+                    throw new InvalidOperationException(
+                        $"SQL Server authentication credentials are missing for server '{ServerName}'. Please configure credentials before connecting.");
+                builder.UserID = cred.Value.Username;
+                builder.Password = cred.Value.Password;
                 break;
 
             default: // Windows

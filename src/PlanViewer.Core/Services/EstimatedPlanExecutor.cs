@@ -85,7 +85,9 @@ public static class EstimatedPlanExecutor
     {
         XNamespace ns = "http://schemas.microsoft.com/sqlserver/2004/07/showplan";
         var baseDoc = XDocument.Parse(planXmls[0]);
-        var batchSequence = baseDoc.Root!.Element(ns + "BatchSequence")!;
+        var batchSequence = baseDoc.Root!.Element(ns + "BatchSequence");
+        if (batchSequence == null)
+            return planXmls[0];
 
         for (int i = 1; i < planXmls.Count; i++)
         {

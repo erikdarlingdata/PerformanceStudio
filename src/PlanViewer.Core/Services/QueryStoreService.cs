@@ -122,6 +122,7 @@ FROM sys.database_query_store_options;";
             parameters.Add(new SqlParameter("@filterModule", moduleVal));
         }
 
+        var rnClause = filter?.PlanId != null ? "" : "AND r.rn = 1";
         var filterSql = filterClauses.Count > 0
             ? "\n" + string.Join("\n", filterClauses)
             : "";
@@ -209,7 +210,7 @@ FROM ranked r
 JOIN sys.query_store_plan p ON r.plan_id = p.plan_id
 JOIN sys.query_store_query q ON p.query_id = q.query_id
 JOIN sys.query_store_query_text qt ON q.query_text_id = qt.query_text_id
-WHERE r.rn = 1{filterSql}
+WHERE 1 = 1 {rnClause}{filterSql}
 ORDER BY {outerOrder} DESC
 OPTION (LOOP JOIN);";
 

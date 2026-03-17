@@ -80,9 +80,9 @@ public sealed class McpHostService : BackgroundService
         {
             /* Normal shutdown */
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            /* MCP server failed to start — app continues without it */
+            System.Diagnostics.Debug.WriteLine($"MCP server failed to start: {ex.Message}");
         }
     }
 

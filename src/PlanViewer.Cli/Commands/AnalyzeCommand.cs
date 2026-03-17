@@ -10,6 +10,8 @@ using PlanViewer.Core.Services;
 
 namespace PlanViewer.Cli.Commands;
 
+using PlanViewer.Cli;
+
 public static class AnalyzeCommand
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -142,7 +144,7 @@ public static class AnalyzeCommand
             var analyzerConfig = ConfigLoader.Load(configPath);
 
             // Load .env file if present (CLI args take precedence)
-            var env = LoadEnvFile();
+            var env = ConnectionHelper.LoadEnvFile();
             server ??= env.GetValueOrDefault("PLANVIEW_SERVER");
             database ??= env.GetValueOrDefault("PLANVIEW_DATABASE");
             login ??= env.GetValueOrDefault("PLANVIEW_LOGIN");
@@ -164,45 +166,6 @@ public static class AnalyzeCommand
 
         return cmd;
     }
-
-    #region .env File Support
-
-    private static Dictionary<string, string> LoadEnvFile()
-    {
-        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        var envPath = Path.Combine(Directory.GetCurrentDirectory(), ".env");
-
-        if (!File.Exists(envPath))
-            return result;
-
-        foreach (var line in File.ReadAllLines(envPath))
-        {
-            var trimmed = line.Trim();
-            if (string.IsNullOrEmpty(trimmed) || trimmed.StartsWith('#'))
-                continue;
-
-            var eqIndex = trimmed.IndexOf('=');
-            if (eqIndex <= 0)
-                continue;
-
-            var key = trimmed[..eqIndex].Trim();
-            var value = trimmed[(eqIndex + 1)..].Trim();
-
-            // Strip surrounding quotes
-            if (value.Length >= 2 &&
-                ((value.StartsWith('"') && value.EndsWith('"')) ||
-                 (value.StartsWith('\'') && value.EndsWith('\''))))
-            {
-                value = value[1..^1];
-            }
-
-            result[key] = value;
-        }
-
-        return result;
-    }
-
-    #endregion
 
     #region File/Stdin Analysis (existing)
 
@@ -282,6 +245,13 @@ public static class AnalyzeCommand
         ICredentialService? credentialService, string? login, string? password,
         AnalyzerConfig analyzerConfig)
     {
+        if (timeout < 0)
+        {
+            Console.Error.WriteLine("--timeout must be >= 0");
+            Environment.ExitCode = 1;
+            return;
+        }
+
         if (string.IsNullOrEmpty(database))
         {
             Console.Error.WriteLine("--database is required when using --server");
@@ -294,12 +264,21 @@ public static class AnalyzeCommand
         if (!string.IsNullOrEmpty(login))
         {
             // Direct login/password — bypass credential store entirely
-            connectionString = BuildDirectConnectionString(server, database, login, password ?? "", trustCert);
+            connectionString = ConnectionHelper.BuildConnectionString(server, database, login, password ?? "", trustCert, multipleActiveResultSets: true);
         }
         else if (credentialService != null)
         {
-            var connection = BuildServerConnection(server, auth, trustCert, credentialService);
-            connectionString = connection.GetConnectionString(credentialService, database);
+            try
+            {
+                var connection = BuildServerConnection(server, auth, trustCert, credentialService);
+                connectionString = connection.GetConnectionString(credentialService, database);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine(ex.Message);
+                Environment.ExitCode = 1;
+                return;
+            }
         }
         else
         {
@@ -429,16 +408,18 @@ public static class AnalyzeCommand
                         stmt.OperatorTree = null;
                 }
 
-                // Write .analysis.json
-                var jsonOpts = compact ? CompactJsonOptions : JsonOptions;
-                var json = JsonSerializer.Serialize(result, jsonOpts);
-                var analysisPath = Path.Combine(outDir, $"{name}.analysis.json");
-                await File.WriteAllTextAsync(analysisPath, json);
-
-                // Write .analysis.txt (human-readable)
-                var txtPath = Path.Combine(outDir, $"{name}.analysis.txt");
-                using (var writer = new StreamWriter(txtPath))
+                if (outputFormat == "json" || outputFormat == "both")
                 {
+                    var jsonOpts = compact ? CompactJsonOptions : JsonOptions;
+                    var json = JsonSerializer.Serialize(result, jsonOpts);
+                    var analysisPath = Path.Combine(outDir, $"{name}.analysis.json");
+                    await File.WriteAllTextAsync(analysisPath, json);
+                }
+
+                if (outputFormat == "text" || outputFormat == "both")
+                {
+                    var txtPath = Path.Combine(outDir, $"{name}.analysis.txt");
+                    using var writer = new StreamWriter(txtPath);
                     TextFormatter.WriteText(result, writer);
                 }
 
@@ -468,24 +449,6 @@ public static class AnalyzeCommand
             Environment.ExitCode = 1;
     }
 
-    private static string BuildDirectConnectionString(
-        string server, string database, string login, string password, bool trustCert)
-    {
-        var builder = new SqlConnectionStringBuilder
-        {
-            DataSource = server,
-            InitialCatalog = database,
-            UserID = login,
-            Password = password,
-            ApplicationName = "PlanViewer",
-            ConnectTimeout = 15,
-            MultipleActiveResultSets = true,
-            TrustServerCertificate = trustCert,
-            Encrypt = trustCert ? SqlConnectionEncryptOption.Optional : SqlConnectionEncryptOption.Mandatory
-        };
-        return builder.ConnectionString;
-    }
-
     private static ServerConnection BuildServerConnection(
         string server, string? auth, bool trustCert, ICredentialService credentialService)
     {
@@ -504,6 +467,7 @@ public static class AnalyzeCommand
         {
             Console.Error.WriteLine($"No credential found for {server}. Run: planview credential add {server} --user <username>");
             Environment.ExitCode = 1;
+            throw new InvalidOperationException("No credentials configured");
         }
 
         return new ServerConnection
