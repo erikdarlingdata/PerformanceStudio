@@ -1,0 +1,42 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!--
+        Bar chart color configuration for the Query Store grid.
+
+        Keys follow the pattern:
+          BarChart.Default          – bar color when the column is not the sort column
+          BarChart.Sorted           – bar color when the column is the current sort column
+          BarChart.<ColumnId>       – per-column override (takes priority over Default/Sorted)
+
+        Recognised ColumnId values (must match the IDs used in QueryStoreGridControl.axaml.cs):
+          Executions, TotalCpu, AvgCpu, TotalDuration, AvgDuration,
+          TotalReads, AvgReads, TotalWrites, AvgWrites,
+          TotalPhysReads, AvgPhysReads, TotalMemory, AvgMemory
+    -->
+
+    <!-- Fallback bar colour (column is not the active sort column) -->
+    <SolidColorBrush x:Key="BarChart.Default"  Color="#3A6EA8"/>
+
+    <!-- Bar colour for the column that is currently sorted -->
+    <SolidColorBrush x:Key="BarChart.Sorted"   Color="#2EAEF1"/>
+
+    <!--
+        Per-column overrides – uncomment and change the Color to customise individual columns.
+
+    <SolidColorBrush x:Key="BarChart.Executions"    Color="#7A5AF8"/>
+    <SolidColorBrush x:Key="BarChart.TotalCpu"      Color="#F87A5A"/>
+    <SolidColorBrush x:Key="BarChart.AvgCpu"        Color="#F87A5A"/>
+    <SolidColorBrush x:Key="BarChart.TotalDuration" Color="#5AF87A"/>
+    <SolidColorBrush x:Key="BarChart.AvgDuration"   Color="#5AF87A"/>
+    <SolidColorBrush x:Key="BarChart.TotalReads"    Color="#F8D45A"/>
+    <SolidColorBrush x:Key="BarChart.AvgReads"      Color="#F8D45A"/>
+    <SolidColorBrush x:Key="BarChart.TotalWrites"   Color="#F85AB0"/>
+    <SolidColorBrush x:Key="BarChart.AvgWrites"     Color="#F85AB0"/>
+    <SolidColorBrush x:Key="BarChart.TotalPhysReads" Color="#5AB0F8"/>
+    <SolidColorBrush x:Key="BarChart.AvgPhysReads"  Color="#5AB0F8"/>
+    <SolidColorBrush x:Key="BarChart.TotalMemory"   Color="#A8F85A"/>
+    <SolidColorBrush x:Key="BarChart.AvgMemory"     Color="#A8F85A"/>
+    -->
+
+</ResourceDictionary>
