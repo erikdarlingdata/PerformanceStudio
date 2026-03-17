@@ -1,0 +1,65 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+
+language: "en-US"
+early_access: false
+enable_free_tier: true
+
+reviews:
+  profile: "chill"
+  high_level_summary: true
+  review_status: true
+  commit_status: true
+  collapse_walkthrough: true
+  sequence_diagrams: false
+  poem: false
+
+  path_filters:
+    - "!**/*.Designer.cs"
+    - "!**/bin/**"
+    - "!**/obj/**"
+    - "!**/publish/**"
+    - "!**/*.user"
+    - "!**/*.suo"
+    - "!**/screenshots/**"
+
+  path_instructions:
+    - path: "src/PlanViewer.App/**/*.cs"
+      instructions: >
+        Avalonia 11.3 desktop app using code-behind pattern (not MVVM).
+        Watch for: null reference risks, proper disposal of resources,
+        async/await patterns, and Avalonia-specific UI threading.
+    - path: "src/PlanViewer.Core/**/*.cs"
+      instructions: >
+        Core library with execution plan analysis (PlanAnalyzer), XML parsing,
+        and shared services. Watch for: XML parsing safety, null handling,
+        and performance with large execution plans.
+    - path: "src/PlanViewer.Mcp/**/*.cs"
+      instructions: >
+        MCP (Model Context Protocol) server integration for AI tools.
+        Watch for: input validation, proper error responses, and serialization safety.
+    - path: "tests/**/*.cs"
+      instructions: >
+        Unit and integration tests. Watch for: test isolation,
+        meaningful assertions, and proper test data setup.
+
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - "dev"
+      - "main"
+
+  tools:
+    gitleaks:
+      enabled: true
+    github-checks:
+      enabled: true
+
+chat:
+  auto_reply: true
+
+knowledge_base:
+  learnings:
+    scope: "local"
+  pull_requests:
+    scope: "local"
