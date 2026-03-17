@@ -495,11 +495,15 @@ public partial class QuerySessionControl : UserControl
 
     private async Task CaptureAndShowPlan(bool estimated, string? queryTextOverride = null)
     {
-        if (_connectionString == null || _selectedDatabase == null)
+        if (_serverConnection == null || _selectedDatabase == null)
         {
             SetStatus("Connect to a server first", autoClear: false);
             return;
         }
+
+        // Always rebuild connection string from current database selection
+        // to guarantee the picker state is reflected at execution time
+        _connectionString = _serverConnection.GetConnectionString(_credentialService, _selectedDatabase);
 
         var queryText = queryTextOverride?.Trim()
                         ?? GetSelectedTextOrNull()?.Trim()
