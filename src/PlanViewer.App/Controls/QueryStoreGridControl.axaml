@@ -100,8 +100,17 @@
                   BorderThickness="0"
                   ScrollViewer.HorizontalScrollBarVisibility="Auto">
             <DataGrid.ContextMenu>
-                <ContextMenu>
+                <ContextMenu Opening="ContextMenu_Opening">
                     <MenuItem Header="Load Plan" Click="LoadHighlightedPlan_Click"/>
+                    <Separator/>
+                    <MenuItem x:Name="CopyQueryIdItem" Header="Copy Query ID"/>
+                    <MenuItem x:Name="CopyPlanIdItem" Header="Copy Plan ID"/>
+                    <MenuItem x:Name="CopyQueryHashItem" Header="Copy Query Hash"/>
+                    <MenuItem x:Name="CopyPlanHashItem" Header="Copy Plan Hash"/>
+                    <MenuItem x:Name="CopyModuleItem" Header="Copy Module Name"/>
+                    <Separator/>
+                    <MenuItem x:Name="CopyQueryTextItem" Header="Copy Query Text"/>
+                    <MenuItem x:Name="CopyRowItem" Header="Copy Row"/>
                 </ContextMenu>
             </DataGrid.ContextMenu>
             <DataGrid.Columns>
