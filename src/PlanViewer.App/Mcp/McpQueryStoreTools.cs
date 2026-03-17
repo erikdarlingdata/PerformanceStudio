@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using ModelContextProtocol.Server;
 using PlanViewer.App.Services;
 using PlanViewer.Core.Interfaces;
+using PlanViewer.Core.Models;
 using PlanViewer.Core.Services;
 
 #pragma warning disable CA1707 // Identifiers should not contain underscores (MCP snake_case convention)
@@ -51,7 +52,9 @@ public sealed class McpQueryStoreTools
     [Description("Fetches the top N queries from Query Store ranked by the specified metric. " +
         "Uses the application's built-in Query Store query — no arbitrary SQL is executed. " +
         "Each fetched plan is automatically loaded into the application for further analysis " +
-        "with analyze_plan, get_plan_warnings, etc. Returns summary stats and session IDs.")]
+        "with analyze_plan, get_plan_warnings, etc. Returns summary stats and session IDs. " +
+        "Optional filters narrow results server-side by query_id, plan_id, query_hash, " +
+        "plan_hash, or module name (schema.name, supports % wildcards).")]
     public static async Task<string> GetQueryStoreTop(
         PlanSessionManager sessionManager,
         ConnectionStore connectionStore,
@@ -62,7 +65,12 @@ public sealed class McpQueryStoreTools
         [Description("Ranking metric: cpu, avg-cpu, duration, avg-duration, reads, avg-reads, " +
             "writes, avg-writes, physical-reads, avg-physical-reads, memory, avg-memory, executions. " +
             "Default: cpu.")] string order_by = "cpu",
-        [Description("Hours of history to include. Default 24, max 168.")] int hours_back = 24)
+        [Description("Hours of history to include. Default 24, max 168.")] int hours_back = 24,
+        [Description("Filter by Query Store query ID.")] long? query_id = null,
+        [Description("Filter by Query Store plan ID.")] long? plan_id = null,
+        [Description("Filter by query hash (hex, e.g. 0x1AB2C3D4).")] string? query_hash = null,
+        [Description("Filter by query plan hash (hex, e.g. 0x1AB2C3D4).")] string? plan_hash = null,
+        [Description("Filter by module name (schema.name, supports % wildcards).")] string? module = null)
     {
         try
         {
@@ -76,6 +84,20 @@ public sealed class McpQueryStoreTools
             if (hours_back < 1 || hours_back > 168)
                 return "Invalid hours_back value. Must be between 1 and 168.";
 
+            QueryStoreFilter? filter = null;
+            if (query_id != null || plan_id != null ||
+                query_hash != null || plan_hash != null || module != null)
+            {
+                filter = new QueryStoreFilter
+                {
+                    QueryId = query_id,
+                    PlanId = plan_id,
+                    QueryHash = query_hash,
+                    QueryPlanHash = plan_hash,
+                    ModuleName = module,
+                };
+            }
+
             var connectionString = conn.GetConnectionString(credentialService, database);
 
             // Check Query Store is enabled first
@@ -85,7 +107,7 @@ public sealed class McpQueryStoreTools
 
             // Fetch plans using the app's built-in query
             var plans = await QueryStoreService.FetchTopPlansAsync(
-                connectionString, top, order_by, hours_back);
+                connectionString, top, order_by, hours_back, filter);
 
             if (plans.Count == 0)
                 return $"No Query Store data found in [{database}] for the last {hours_back} hours.";
@@ -126,6 +148,9 @@ public sealed class McpQueryStoreTools
                         session_id = sessionId,
                         query_id = qsPlan.QueryId,
                         plan_id = qsPlan.PlanId,
+                        query_hash = qsPlan.QueryHash,
+                        query_plan_hash = qsPlan.QueryPlanHash,
+                        module_name = string.IsNullOrEmpty(qsPlan.ModuleName) ? (string?)null : qsPlan.ModuleName,
                         label,
                         query_text = McpHelpers.Truncate(qsPlan.QueryText, 500),
                         executions = qsPlan.CountExecutions,
@@ -149,6 +174,9 @@ public sealed class McpQueryStoreTools
                         session_id = (string)"",
                         query_id = qsPlan.QueryId,
                         plan_id = qsPlan.PlanId,
+                        query_hash = qsPlan.QueryHash,
+                        query_plan_hash = qsPlan.QueryPlanHash,
+                        module_name = string.IsNullOrEmpty(qsPlan.ModuleName) ? (string?)null : qsPlan.ModuleName,
                         label,
                         query_text = McpHelpers.Truncate(qsPlan.QueryText, 500),
                         executions = qsPlan.CountExecutions,

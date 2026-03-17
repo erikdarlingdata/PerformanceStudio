@@ -72,11 +72,27 @@ public static class QueryStoreCommand
         var passwordOption = new Option<string?>(
             "--password", "SQL Server password");
 
+        var queryIdOption = new Option<long?>(
+            "--query-id", "Filter by Query Store query ID");
+
+        var planIdOption = new Option<long?>(
+            "--plan-id", "Filter by Query Store plan ID");
+
+        var queryHashOption = new Option<string?>(
+            "--query-hash", "Filter by query hash (hex, e.g. 0x1AB2C3D4)");
+
+        var planHashOption = new Option<string?>(
+            "--plan-hash", "Filter by query plan hash (hex, e.g. 0x1AB2C3D4)");
+
+        var moduleOption = new Option<string?>(
+            "--module", "Filter by module name (schema.name, supports % wildcards)");
+
         var cmd = new Command("query-store", "Analyze top queries from Query Store")
         {
             serverOption, databaseOption, topOption, orderByOption, hoursBackOption,
             outputDirOption, outputOption, compactOption, warningsOnlyOption, configOption,
-            authOption, trustCertOption, loginOption, passwordOption
+            authOption, trustCertOption, loginOption, passwordOption,
+            queryIdOption, planIdOption, queryHashOption, planHashOption, moduleOption
         };
 
         cmd.SetHandler(async (ctx) =>
@@ -95,6 +111,25 @@ public static class QueryStoreCommand
             var trustCert = ctx.ParseResult.GetValueForOption(trustCertOption);
             var login = ctx.ParseResult.GetValueForOption(loginOption);
             var password = ctx.ParseResult.GetValueForOption(passwordOption);
+            var filterQueryId = ctx.ParseResult.GetValueForOption(queryIdOption);
+            var filterPlanId = ctx.ParseResult.GetValueForOption(planIdOption);
+            var filterQueryHash = ctx.ParseResult.GetValueForOption(queryHashOption);
+            var filterPlanHash = ctx.ParseResult.GetValueForOption(planHashOption);
+            var filterModule = ctx.ParseResult.GetValueForOption(moduleOption);
+
+            QueryStoreFilter? filter = null;
+            if (filterQueryId != null || filterPlanId != null ||
+                filterQueryHash != null || filterPlanHash != null || filterModule != null)
+            {
+                filter = new QueryStoreFilter
+                {
+                    QueryId = filterQueryId,
+                    PlanId = filterPlanId,
+                    QueryHash = filterQueryHash,
+                    QueryPlanHash = filterPlanHash,
+                    ModuleName = filterModule,
+                };
+            }
 
             var analyzerConfig = ConfigLoader.Load(configPath);
 
@@ -136,7 +171,7 @@ public static class QueryStoreCommand
             try
             {
                 await RunAsync(connectionString, server, database, top, orderBy, hoursBack,
-                    outputDir, output, compact, warningsOnly, analyzerConfig);
+                    outputDir, output, compact, warningsOnly, analyzerConfig, filter);
             }
             catch (SqlException ex)
             {
@@ -157,7 +192,7 @@ public static class QueryStoreCommand
         string connectionString, string server, string database,
         int top, string orderBy, int hoursBack,
         DirectoryInfo? outputDir, string outputFormat, bool compact, bool warningsOnly,
-        AnalyzerConfig analyzerConfig)
+        AnalyzerConfig analyzerConfig, QueryStoreFilter? filter = null)
     {
         // Verify Query Store is enabled
         Console.Error.Write($"Checking Query Store on {server}/{database}... ");
@@ -174,7 +209,7 @@ public static class QueryStoreCommand
         // Fetch plans
         Console.Error.Write($"Fetching top {top} queries by {orderBy} (last {hoursBack}h)... ");
         var plans = await QueryStoreService.FetchTopPlansAsync(
-            connectionString, top, orderBy, hoursBack);
+            connectionString, top, orderBy, hoursBack, filter);
 
         if (plans.Count == 0)
         {
@@ -195,9 +230,9 @@ public static class QueryStoreCommand
         var summaryLines = new List<string>();
         summaryLines.Add($"=== Query Store Analysis: {database} ({plans.Count} queries, top by {orderBy}, last {hoursBack}h) ===");
         summaryLines.Add("");
-        summaryLines.Add(string.Format(" {0,-4} {1,-10} {2,-10} {3,14} {4,12} {5,8} {6,8}",
-            "#", "Query ID", "Plan ID", metricHeader, "Executions", "Warns", "Crit"));
-        summaryLines.Add(new string('-', 78));
+        summaryLines.Add(string.Format(" {0,-4} {1,-10} {2,-10} {3,-20} {4,-20} {5,14} {6,12} {7,8} {8,8}",
+            "#", "Query ID", "Plan ID", "Query Hash", "Module", metricHeader, "Executions", "Warns", "Crit"));
+        summaryLines.Add(new string('-', 130));
 
         for (int i = 0; i < plans.Count; i++)
         {
@@ -242,17 +277,19 @@ public static class QueryStoreCommand
                 var critical = result.Summary.CriticalWarnings;
                 var metricValue = metricFmt(qsPlan);
 
-                summaryLines.Add(string.Format(" {0,-4} {1,-10} {2,-10} {3,14} {4,12:N0} {5,8} {6,8}",
-                    i + 1, qsPlan.QueryId, qsPlan.PlanId, metricValue,
-                    qsPlan.CountExecutions, warnings, critical));
+                var moduleName = string.IsNullOrEmpty(qsPlan.ModuleName) ? "(ad hoc)" : qsPlan.ModuleName;
+                summaryLines.Add(string.Format(" {0,-4} {1,-10} {2,-10} {3,-20} {4,-20} {5,14} {6,12:N0} {7,8} {8,8}",
+                    i + 1, qsPlan.QueryId, qsPlan.PlanId, qsPlan.QueryHash,
+                    moduleName.Length > 18 ? moduleName[..18] + ".." : moduleName,
+                    metricValue, qsPlan.CountExecutions, warnings, critical));
 
                 Console.Error.WriteLine($"OK ({warnings} warnings, {critical} critical)");
             }
             catch (Exception ex)
             {
                 Console.Error.WriteLine($"ERROR: {ex.Message}");
-                summaryLines.Add(string.Format(" {0,-4} {1,-10} {2,-10} ERROR: {3}",
-                    i + 1, qsPlan.QueryId, qsPlan.PlanId, ex.Message));
+                summaryLines.Add(string.Format(" {0,-4} {1,-10} {2,-10} {3,-20} {4,-20} ERROR: {5}",
+                    i + 1, qsPlan.QueryId, qsPlan.PlanId, qsPlan.QueryHash, "", ex.Message));
             }
         }
 

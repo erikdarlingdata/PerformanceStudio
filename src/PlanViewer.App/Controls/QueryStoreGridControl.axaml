@@ -8,23 +8,19 @@
         <Border Grid.Row="0" Background="{DynamicResource BackgroundDarkBrush}" Padding="8,6"
                 BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
             <StackPanel Orientation="Horizontal" Spacing="12">
-                <StackPanel Spacing="2" VerticalAlignment="Bottom">
-                    <Button x:Name="SelectAllButton" Content="Select All" Click="SelectAll_Click"
-                            Height="28" Padding="10,0" FontSize="12"
-                            Theme="{StaticResource AppButton}"/>
+                <StackPanel Spacing="4">
+                    <TextBlock Text="Database" Foreground="{DynamicResource ForegroundBrush}" FontSize="11"/>
+                    <ComboBox x:Name="QsDatabaseBox" Width="200" Height="36" FontSize="13"
+                              SelectionChanged="QsDatabase_SelectionChanged"/>
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <Button x:Name="SelectToggleButton" Content="Select All" Click="SelectToggle_Click"
+                                Height="24" Padding="8,0" FontSize="11"
+                                Theme="{StaticResource AppButton}"/>
+                        <Button x:Name="LoadButton" Content="Load Selected" Click="LoadSelected_Click"
+                                Height="24" Padding="8,0" FontSize="11" IsEnabled="False"
+                                Theme="{StaticResource AppButton}"/>
+                    </StackPanel>
                 </StackPanel>
-                <StackPanel Spacing="2" VerticalAlignment="Bottom">
-                    <Button x:Name="SelectNoneButton" Content="Select None" Click="SelectNone_Click"
-                            Height="28" Padding="10,0" FontSize="12"
-                            Theme="{StaticResource AppButton}"/>
-                </StackPanel>
-                <StackPanel Spacing="2" VerticalAlignment="Bottom">
-                    <Button x:Name="LoadButton" Content="Load Selected Plans" Click="LoadSelected_Click"
-                            Height="28" Padding="16,0" FontSize="12" IsEnabled="False"
-                            Theme="{StaticResource AppButton}"/>
-                </StackPanel>
-                <TextBlock Text="|" VerticalAlignment="Bottom" Margin="0,0,0,4"
-                           Foreground="{DynamicResource ForegroundBrush}"/>
                 <StackPanel Spacing="4">
                     <TextBlock Text="Top N" Foreground="{DynamicResource ForegroundBrush}" FontSize="11"/>
                     <NumericUpDown x:Name="TopNBox" Value="25" Minimum="1" Maximum="100"
@@ -39,7 +35,7 @@
                 </StackPanel>
                 <StackPanel Spacing="4">
                     <TextBlock Text="Order by" Foreground="{DynamicResource ForegroundBrush}" FontSize="11"/>
-                    <ComboBox x:Name="OrderByBox" Width="180" Height="36" FontSize="13"
+                    <ComboBox x:Name="OrderByBox" Width="160" Height="36" FontSize="13"
                               SelectedIndex="0">
                         <ComboBoxItem Content="Total CPU" Tag="cpu"/>
                         <ComboBoxItem Content="Avg CPU" Tag="avg-cpu"/>
@@ -56,12 +52,35 @@
                         <ComboBoxItem Content="Executions" Tag="executions"/>
                     </ComboBox>
                 </StackPanel>
-                <StackPanel Spacing="2" VerticalAlignment="Bottom">
+                <StackPanel Spacing="4">
+                    <TextBlock Text="Search by" Foreground="{DynamicResource ForegroundBrush}" FontSize="11"/>
+                    <ComboBox x:Name="SearchTypeBox" Width="120" Height="36" FontSize="13"
+                              SelectedIndex="0">
+                        <ComboBoxItem Content="(none)" Tag=""/>
+                        <ComboBoxItem Content="Query ID" Tag="query-id"/>
+                        <ComboBoxItem Content="Plan ID" Tag="plan-id"/>
+                        <ComboBoxItem Content="Query Hash" Tag="query-hash"/>
+                        <ComboBoxItem Content="Plan Hash" Tag="plan-hash"/>
+                        <ComboBoxItem Content="Module" Tag="module"/>
+                    </ComboBox>
+                </StackPanel>
+                <StackPanel Spacing="4">
+                    <TextBlock Text=" " FontSize="11"/>
+                    <TextBox x:Name="SearchValueBox" Width="200" Height="36" FontSize="13"
+                             Watermark="0x1AB2C3, dbo.MyProc"
+                             KeyDown="SearchValue_KeyDown"/>
+                </StackPanel>
+                <StackPanel Spacing="2" VerticalAlignment="Center">
                     <Button x:Name="FetchButton" Content="Fetch" Click="Fetch_Click"
                             Height="28" Padding="16,0" FontSize="12"
                             Theme="{StaticResource AppButton}"/>
                 </StackPanel>
-                <TextBlock x:Name="StatusText" VerticalAlignment="Bottom" Margin="0,0,0,4"
+                <StackPanel Spacing="2" VerticalAlignment="Center">
+                    <Button x:Name="ClearSearchButton" Content="Clear" Click="ClearSearch_Click"
+                            Height="28" Padding="10,0" FontSize="12"
+                            Theme="{StaticResource AppButton}"/>
+                </StackPanel>
+                <TextBlock x:Name="StatusText" VerticalAlignment="Center"
                            FontSize="12" Foreground="{DynamicResource ForegroundBrush}"/>
             </StackPanel>
         </Border>
@@ -95,6 +114,9 @@
                 </DataGridTemplateColumn>
                 <DataGridTextColumn Header="QueryId" Binding="{ReflectionBinding QueryId}" Width="90"/>
                 <DataGridTextColumn Header="PlanId" Binding="{ReflectionBinding PlanId}" Width="80"/>
+                <DataGridTextColumn Header="Query Hash" Binding="{ReflectionBinding QueryHash}" Width="150"/>
+                <DataGridTextColumn Header="Plan Hash" Binding="{ReflectionBinding QueryPlanHash}" Width="150"/>
+                <DataGridTextColumn Header="Module" Binding="{ReflectionBinding ModuleName}" Width="140"/>
                 <DataGridTextColumn Header="Last Executed (Local)" Binding="{ReflectionBinding LastExecutedLocal}" Width="160"/>
                 <DataGridTextColumn Header="Executions" Binding="{ReflectionBinding ExecsDisplay}" SortMemberPath="ExecsSort" Width="100"/>
                 <DataGridTextColumn Header="Total CPU (ms)" Binding="{ReflectionBinding TotalCpuDisplay}" SortMemberPath="TotalCpuSort" Width="120"/>

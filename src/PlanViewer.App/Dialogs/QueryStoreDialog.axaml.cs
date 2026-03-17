@@ -50,7 +50,7 @@ public partial class QueryStoreDialog : Window
         try
         {
             _plans = await QueryStoreService.FetchTopPlansAsync(
-                _connectionString, topN, orderBy, hoursBack, ct);
+                _connectionString, topN, orderBy, hoursBack, filter: null, ct);
 
             if (_plans.Count == 0)
             {

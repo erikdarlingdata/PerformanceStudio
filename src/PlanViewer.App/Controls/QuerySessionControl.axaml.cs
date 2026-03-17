@@ -980,11 +980,17 @@ public partial class QuerySessionControl : UserControl
         return "Plan";
     }
 
+    private bool HasQueryStoreTab()
+    {
+        return SubTabControl.Items.OfType<TabItem>()
+            .Any(t => t.Content is QueryStoreGridControl);
+    }
+
     private async void QueryStore_Click(object? sender, RoutedEventArgs e)
     {
-        if (_connectionString == null || _selectedDatabase == null)
+        // If a QS tab already exists, always show connection dialog for a fresh tab
+        if (HasQueryStoreTab() || _connectionString == null || _selectedDatabase == null)
         {
-            // No connection — open the connection dialog and wait for it
             await ShowConnectionDialogAsync();
             if (_connectionString == null || _selectedDatabase == null)
                 return;
@@ -1009,7 +1015,11 @@ public partial class QuerySessionControl : UserControl
 
         SetStatus("");
 
-        var grid = new QueryStoreGridControl(_connectionString, _selectedDatabase!);
+        // Build database list from the current DatabaseBox
+        var databases = DatabaseBox.Items.OfType<string>().ToList();
+
+        var grid = new QueryStoreGridControl(_serverConnection!, _credentialService,
+            _selectedDatabase!, databases);
         grid.PlansSelected += OnQueryStorePlansSelected;
 
         var headerText = new TextBlock
@@ -1017,6 +1027,12 @@ public partial class QuerySessionControl : UserControl
             Text = $"Query Store — {_selectedDatabase}",
             VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
             FontSize = 12
+        };
+
+        // Update tab header when database is changed via the grid's picker
+        grid.DatabaseChanged += (_, db) =>
+        {
+            headerText.Text = $"Query Store — {db}";
         };
 
         var closeBtn = new Button

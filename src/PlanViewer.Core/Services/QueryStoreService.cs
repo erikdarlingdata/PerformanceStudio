@@ -39,10 +39,13 @@ FROM sys.database_query_store_options;";
     /// Plans are estimated plans from the plan cache — Query Store does not store actual execution plans.
     /// Supported orderBy values: cpu, avg-cpu, duration, avg-duration, reads, avg-reads,
     /// writes, avg-writes, physical-reads, avg-physical-reads, memory, avg-memory, executions.
+    /// Optional filter narrows results server-side by query_id, plan_id, query_hash,
+    /// query_plan_hash, or module name (schema.name, supports % wildcards).
     /// </summary>
     public static async Task<List<QueryStorePlan>> FetchTopPlansAsync(
         string connectionString, int topN = 25, string orderBy = "cpu",
-        int hoursBack = 24, CancellationToken ct = default)
+        int hoursBack = 24, QueryStoreFilter? filter = null,
+        CancellationToken ct = default)
     {
         var key = orderBy.ToLowerInvariant();
 
@@ -80,11 +83,55 @@ FROM sys.database_query_store_options;";
             _ => "r.total_cpu_us"
         };
 
+        // Build optional WHERE clauses from filter (parameterized for safety).
+        var filterClauses = new List<string>();
+        var parameters = new List<SqlParameter>();
+
+        if (filter?.QueryId != null)
+        {
+            filterClauses.Add("AND q.query_id = @filterQueryId");
+            parameters.Add(new SqlParameter("@filterQueryId", filter.QueryId.Value));
+        }
+        if (filter?.PlanId != null)
+        {
+            filterClauses.Add("AND r.plan_id = @filterPlanId");
+            parameters.Add(new SqlParameter("@filterPlanId", filter.PlanId.Value));
+        }
+        if (!string.IsNullOrWhiteSpace(filter?.QueryHash))
+        {
+            filterClauses.Add("AND q.query_hash = CONVERT(binary(8), @filterQueryHash, 1)");
+            parameters.Add(new SqlParameter("@filterQueryHash", filter.QueryHash.Trim()));
+        }
+        if (!string.IsNullOrWhiteSpace(filter?.QueryPlanHash))
+        {
+            filterClauses.Add("AND p.query_plan_hash = CONVERT(binary(8), @filterPlanHash, 1)");
+            parameters.Add(new SqlParameter("@filterPlanHash", filter.QueryPlanHash.Trim()));
+        }
+        if (!string.IsNullOrWhiteSpace(filter?.ModuleName))
+        {
+            // Support wildcards (%) like sp_QuickieStore. If no wildcard, exact match.
+            var moduleVal = filter.ModuleName.Trim();
+            if (moduleVal.Contains('%'))
+            {
+                filterClauses.Add("AND OBJECT_SCHEMA_NAME(q.object_id) + N'.' + OBJECT_NAME(q.object_id) LIKE @filterModule");
+            }
+            else
+            {
+                filterClauses.Add("AND OBJECT_SCHEMA_NAME(q.object_id) + N'.' + OBJECT_NAME(q.object_id) = @filterModule");
+            }
+            parameters.Add(new SqlParameter("@filterModule", moduleVal));
+        }
+
+        var filterSql = filterClauses.Count > 0
+            ? "\n" + string.Join("\n", filterClauses)
+            : "";
+
         // 1. plan_agg: aggregate runtime_stats by plan_id only (cheapest grouping,
         //    avoids joining query_text for the entire dataset).
         // 2. ranked: join the small aggregated result to plan to get query_id,
         //    ROW_NUMBER to pick best plan per query.
         // 3. Final SELECT: TOP N, then join query_text + plan XML only for winners.
+        //    Filter clauses applied here where q/p are available.
         var sql = $@"
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 
@@ -150,12 +197,19 @@ SELECT TOP ({topN})
     CAST(r.total_writes AS bigint),
     CAST(r.total_physical_reads AS bigint),
     CAST(r.total_memory_pages AS bigint),
-    r.last_execution_time
+    r.last_execution_time,
+    CONVERT(varchar(18), q.query_hash, 1),
+    CONVERT(varchar(18), p.query_plan_hash, 1),
+    CASE
+        WHEN q.object_id <> 0
+        THEN OBJECT_SCHEMA_NAME(q.object_id) + N'.' + OBJECT_NAME(q.object_id)
+        ELSE N''
+    END
 FROM ranked r
 JOIN sys.query_store_plan p ON r.plan_id = p.plan_id
 JOIN sys.query_store_query q ON p.query_id = q.query_id
 JOIN sys.query_store_query_text qt ON q.query_text_id = qt.query_text_id
-WHERE r.rn = 1
+WHERE r.rn = 1{filterSql}
 ORDER BY {outerOrder} DESC
 OPTION (LOOP JOIN);";
 
@@ -164,6 +218,8 @@ OPTION (LOOP JOIN);";
         await using var conn = new SqlConnection(connectionString);
         await conn.OpenAsync(ct);
         await using var cmd = new SqlCommand(sql, conn) { CommandTimeout = 120 };
+        foreach (var p in parameters)
+            cmd.Parameters.Add(p);
         await using var reader = await cmd.ExecuteReaderAsync(ct);
 
         while (await reader.ReadAsync(ct))
@@ -191,7 +247,10 @@ OPTION (LOOP JOIN);";
                 TotalLogicalIoWrites = reader.GetInt64(14),
                 TotalPhysicalIoReads = reader.GetInt64(15),
                 TotalMemoryGrantPages = reader.GetInt64(16),
-                LastExecutedUtc = ((DateTimeOffset)reader.GetValue(17)).UtcDateTime
+                LastExecutedUtc = ((DateTimeOffset)reader.GetValue(17)).UtcDateTime,
+                QueryHash = reader.IsDBNull(18) ? "" : reader.GetString(18),
+                QueryPlanHash = reader.IsDBNull(19) ? "" : reader.GetString(19),
+                ModuleName = reader.IsDBNull(20) ? "" : reader.GetString(20),
             });
         }
 

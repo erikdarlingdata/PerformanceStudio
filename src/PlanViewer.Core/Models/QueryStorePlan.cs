@@ -2,10 +2,26 @@ using System;
 
 namespace PlanViewer.Core.Models;
 
+/// <summary>
+/// Server-side search filter for Query Store fetches.
+/// All properties are optional — only non-null values generate WHERE clauses.
+/// </summary>
+public class QueryStoreFilter
+{
+    public long? QueryId { get; set; }
+    public long? PlanId { get; set; }
+    public string? QueryHash { get; set; }
+    public string? QueryPlanHash { get; set; }
+    public string? ModuleName { get; set; }
+}
+
 public class QueryStorePlan
 {
     public long QueryId { get; set; }
     public long PlanId { get; set; }
+    public string QueryHash { get; set; } = "";
+    public string QueryPlanHash { get; set; } = "";
+    public string ModuleName { get; set; } = "";
     public string QueryText { get; set; } = "";
     public string PlanXml { get; set; } = "";
 
