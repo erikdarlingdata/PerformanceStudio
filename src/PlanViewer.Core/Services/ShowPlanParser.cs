@@ -20,8 +20,9 @@ public static class ShowPlanParser
         {
             doc = XDocument.Parse(xml);
         }
-        catch
+        catch (Exception ex)
         {
+            plan.ParseError = ex.Message;
             return plan;
         }
 

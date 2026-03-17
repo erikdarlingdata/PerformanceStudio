@@ -6,6 +6,7 @@ namespace PlanViewer.Core.Models;
 public class ParsedPlan
 {
     public string RawXml { get; set; } = "";
+    public string? ParseError { get; set; }
     public string? BuildVersion { get; set; }
     public string? Build { get; set; }
     public bool ClusteredMode { get; set; }

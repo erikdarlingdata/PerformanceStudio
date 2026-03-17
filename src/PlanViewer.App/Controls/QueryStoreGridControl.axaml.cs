@@ -59,6 +59,8 @@ public partial class QueryStoreGridControl : UserControl
     {
         if (QsDatabaseBox.SelectedItem is not string db || db == _database) return;
 
+        _fetchCts?.Cancel();
+
         // Check if Query Store is enabled on the new database
         var newConnStr = _serverConnection.GetConnectionString(_credentialService, db);
         StatusText.Text = "Checking Query Store...";
@@ -92,6 +94,7 @@ public partial class QueryStoreGridControl : UserControl
     private async void Fetch_Click(object? sender, RoutedEventArgs e)
     {
         _fetchCts?.Cancel();
+        _fetchCts?.Dispose();
         _fetchCts = new CancellationTokenSource();
         var ct = _fetchCts.Token;
 
@@ -153,9 +156,15 @@ public partial class QueryStoreGridControl : UserControl
             case "query-id" when long.TryParse(searchValue, out var qid):
                 filter.QueryId = qid;
                 break;
+            case "query-id":
+                StatusText.Text = "Invalid Query ID";
+                return null;
             case "plan-id" when long.TryParse(searchValue, out var pid):
                 filter.PlanId = pid;
                 break;
+            case "plan-id":
+                StatusText.Text = "Invalid Plan ID";
+                return null;
             case "query-hash":
                 filter.QueryHash = searchValue;
                 break;

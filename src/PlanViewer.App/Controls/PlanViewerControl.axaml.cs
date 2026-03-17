@@ -90,8 +90,6 @@ public partial class PlanViewerControl : UserControl
     private static readonly SolidColorBrush OrangeBrush = new(Colors.Orange);
 
 
-    // Current property section for collapsible groups
-    private StackPanel? _currentPropertySection;
     // Track all property section grids for synchronized column resize
     private readonly List<ColumnDefinition> _sectionLabelColumns = new();
     private double _propertyLabelWidth = 140;
@@ -821,7 +819,6 @@ public partial class PlanViewerControl : UserControl
     private void ShowPropertiesPanel(PlanNode node)
     {
         PropertiesContent.Children.Clear();
-        _currentPropertySection = null;
         _sectionLabelColumns.Clear();
         _currentSectionGrid = null;
         _currentSectionRowIndex = 0;
@@ -1772,7 +1769,6 @@ public partial class PlanViewerControl : UserControl
             HorizontalContentAlignment = HorizontalAlignment.Stretch
         };
         PropertiesContent.Children.Add(expander);
-        _currentPropertySection = null; // No longer used — rows go into _currentSectionGrid
     }
 
     private void AddPropertyRow(string label, string value, bool isCode = false, bool indent = false)
@@ -2983,9 +2979,17 @@ public partial class PlanViewerControl : UserControl
 
         if (file != null)
         {
-            await using var stream = await file.OpenWriteAsync();
-            await using var writer = new StreamWriter(stream);
-            await writer.WriteAsync(_currentPlan.RawXml);
+            try
+            {
+                await using var stream = await file.OpenWriteAsync();
+                await using var writer = new StreamWriter(stream);
+                await writer.WriteAsync(_currentPlan.RawXml);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"SavePlan failed: {ex.Message}");
+                CostText.Text = $"Save failed: {(ex.Message.Length > 60 ? ex.Message[..60] + "..." : ex.Message)}";
+            }
         }
     }
 

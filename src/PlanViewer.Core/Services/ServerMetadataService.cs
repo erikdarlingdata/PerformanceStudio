@@ -55,9 +55,9 @@ WHERE is_value_default = 0;";
         await using var conn = new SqlConnection(connectionString);
         await conn.OpenAsync(cancellationToken);
 
-        using var cmd = new SqlCommand(ServerMetadataQuery, conn);
+        await using var cmd = new SqlCommand(ServerMetadataQuery, conn);
         cmd.CommandTimeout = 10;
-        using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
 
         // Result set 1: server properties
         if (await reader.ReadAsync(cancellationToken))
@@ -116,9 +116,9 @@ WHERE is_value_default = 0;";
         await using var conn = new SqlConnection(connectionString);
         await conn.OpenAsync(cancellationToken);
 
-        using var cmd = new SqlCommand(query, conn);
+        await using var cmd = new SqlCommand(query, conn);
         cmd.CommandTimeout = 10;
-        using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
 
         // Result set 1: sys.databases
         if (await reader.ReadAsync(cancellationToken))

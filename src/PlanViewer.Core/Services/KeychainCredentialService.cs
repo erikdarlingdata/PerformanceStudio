@@ -103,9 +103,10 @@ public class KeychainCredentialService : ICredentialService
         using var process = Process.Start(psi);
         if (process == null) return (-1, string.Empty);
 
-        var stdout = process.StandardOutput.ReadToEnd();
+        var stdoutTask = process.StandardOutput.ReadToEndAsync();
         var stderr = process.StandardError.ReadToEnd();
         process.WaitForExit();
+        var stdout = stdoutTask.Result;
 
         return (process.ExitCode, stdout + stderr);
     }

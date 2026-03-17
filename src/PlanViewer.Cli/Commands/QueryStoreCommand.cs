@@ -8,6 +8,8 @@ using PlanViewer.Core.Services;
 
 namespace PlanViewer.Cli.Commands;
 
+using PlanViewer.Cli;
+
 public static class QueryStoreCommand
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -117,6 +119,27 @@ public static class QueryStoreCommand
             var filterPlanHash = ctx.ParseResult.GetValueForOption(planHashOption);
             var filterModule = ctx.ParseResult.GetValueForOption(moduleOption);
 
+            // Load .env file if present (CLI args take precedence)
+            var env = ConnectionHelper.LoadEnvFile();
+            login ??= env.GetValueOrDefault("PLANVIEW_LOGIN");
+            password ??= env.GetValueOrDefault("PLANVIEW_PASSWORD");
+            if (!trustCert && env.GetValueOrDefault("PLANVIEW_TRUST_CERT")?.Equals("true", StringComparison.OrdinalIgnoreCase) == true)
+                trustCert = true;
+
+            if (top < 1)
+            {
+                Console.Error.WriteLine("--top must be >= 1");
+                Environment.ExitCode = 1;
+                return;
+            }
+
+            if (hoursBack < 1)
+            {
+                Console.Error.WriteLine("--hours-back must be >= 1");
+                Environment.ExitCode = 1;
+                return;
+            }
+
             QueryStoreFilter? filter = null;
             if (filterQueryId != null || filterPlanId != null ||
                 filterQueryHash != null || filterPlanHash != null || filterModule != null)
@@ -137,7 +160,7 @@ public static class QueryStoreCommand
             string connectionString;
             if (!string.IsNullOrEmpty(login))
             {
-                connectionString = BuildConnectionString(server, database, login, password ?? "", trustCert);
+                connectionString = ConnectionHelper.BuildConnectionString(server, database, login, password ?? "", trustCert);
             }
             else if (credentialService != null)
             {
@@ -330,20 +353,4 @@ public static class QueryStoreCommand
         };
     }
 
-    private static string BuildConnectionString(
-        string server, string database, string login, string password, bool trustCert)
-    {
-        var builder = new SqlConnectionStringBuilder
-        {
-            DataSource = server,
-            InitialCatalog = database,
-            UserID = login,
-            Password = password,
-            ApplicationName = "PlanViewer",
-            ConnectTimeout = 15,
-            TrustServerCertificate = trustCert,
-            Encrypt = trustCert ? SqlConnectionEncryptOption.Optional : SqlConnectionEncryptOption.Mandatory
-        };
-        return builder.ConnectionString;
-    }
 }
