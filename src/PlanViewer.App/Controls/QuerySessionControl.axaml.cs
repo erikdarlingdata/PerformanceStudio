@@ -319,10 +319,13 @@ public partial class QuerySessionControl : UserControl
         return text[batchStart..batchEnd].Trim();
     }
 
+
     private void SetStatus(string text, bool autoClear = true)
     {
         _statusClearCts?.Cancel();
         _statusClearCts?.Dispose();
+        _statusClearCts = null; // ← prevent stale reference to a disposed CTS
+
         StatusText.Text = text;
 
         if (autoClear && !string.IsNullOrEmpty(text))
@@ -331,12 +334,18 @@ public partial class QuerySessionControl : UserControl
             var token = _statusClearCts.Token;
             _ = Task.Delay(3000, token).ContinueWith(_ =>
             {
-                Avalonia.Threading.Dispatcher.UIThread.Post(() => StatusText.Text = "");
+                Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                {
+                    StatusText.Text = "";
+                    _statusClearCts = null; // ← also clear after natural expiry
+                });
             }, TaskContinuationOptions.OnlyOnRanToCompletion);
+
         }
     }
 
-    private async void Connect_Click(object? sender, RoutedEventArgs e)
+
+	private async void Connect_Click(object? sender, RoutedEventArgs e)
     {
         await ShowConnectionDialogAsync();
     }
