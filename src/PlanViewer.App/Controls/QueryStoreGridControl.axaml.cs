@@ -30,6 +30,8 @@ public partial class QueryStoreGridControl : UserControl
     private readonly Dictionary<string, ColumnFilterState> _activeFilters = new();
     private Popup? _filterPopup;
     private ColumnFilterPopup? _filterPopupContent;
+    private string? _sortedColumnTag;
+    private bool _sortAscending;
 
     public event EventHandler<List<QueryStorePlan>>? PlansSelected;
     public event EventHandler<string>? DatabaseChanged;
@@ -425,7 +427,7 @@ public partial class QueryStoreGridControl : UserControl
             _activeFilters[e.FilterState.ColumnName] = e.FilterState;
         else
             _activeFilters.Remove(e.FilterState.ColumnName);
-        ApplyFilters();
+        ApplySortAndFilters();
         UpdateFilterButtonStyles();
     }
 
@@ -458,13 +460,7 @@ public partial class QueryStoreGridControl : UserControl
 
     private void ApplyFilters()
     {
-        _filteredRows.Clear();
-        foreach (var row in _rows)
-        {
-            if (RowMatchesAllFilters(row))
-                _filteredRows.Add(row);
-        }
-        UpdateStatusText();
+        ApplySortAndFilters();
     }
 
     private bool RowMatchesAllFilters(QueryStoreRow row)
@@ -524,6 +520,107 @@ public partial class QueryStoreGridControl : UserControl
             ? $"{_rows.Count} plans"
             : $"{_filteredRows.Count} / {_rows.Count} plans (filtered)";
     }
+
+    private void ResultsGrid_Sorting(object? sender, DataGridColumnEventArgs e)
+    {
+        e.Handled = true;
+
+        var colTag = e.Column.Tag as string ?? e.Column.SortMemberPath;
+        if (colTag == null) return;
+
+        // Toggle: first click on a new column → descending; second click → ascending; third → clear
+        if (_sortedColumnTag == colTag)
+        {
+            if (!_sortAscending)
+                _sortAscending = true;   // descending → ascending
+            else
+            {
+                // ascending → clear sort
+                _sortedColumnTag = null;
+                foreach (var col in ResultsGrid.Columns)
+                    col.Tag = col.Tag; // no-op, just reset indicator below
+                UpdateSortIndicators(null);
+                ApplySortAndFilters();
+                return;
+            }
+        }
+        else
+        {
+            _sortedColumnTag = colTag;
+            _sortAscending = false;      // first click → descending
+        }
+
+        UpdateSortIndicators(e.Column);
+        ApplySortAndFilters();
+    }
+
+    private void UpdateSortIndicators(DataGridColumn? activeColumn)
+    {
+        foreach (var col in ResultsGrid.Columns)
+        {
+            if (col.Header is not StackPanel sp) continue;
+            var label = sp.Children.OfType<TextBlock>().LastOrDefault();
+            if (label == null) continue;
+
+            if (col == activeColumn)
+                label.Text = _sortAscending ? $"{GetColumnLabel(sp)} ▲" : $"{GetColumnLabel(sp)} ▼";
+            else
+                label.Text = GetColumnLabel(sp);
+        }
+    }
+
+    private static string GetColumnLabel(StackPanel header)
+    {
+        var tb = header.Children.OfType<TextBlock>().LastOrDefault();
+        if (tb == null) return string.Empty;
+        // Strip any existing sort indicator
+        return tb.Text?.TrimEnd(' ', '▲', '▼') ?? string.Empty;
+    }
+
+    private void ApplySortAndFilters()
+    {
+        IEnumerable<QueryStoreRow> source = _rows.Where(RowMatchesAllFilters);
+
+        if (_sortedColumnTag != null)
+        {
+            source = _sortAscending
+                ? source.OrderBy(r => GetSortKey(_sortedColumnTag, r))
+                : source.OrderByDescending(r => GetSortKey(_sortedColumnTag, r));
+        }
+
+        _filteredRows.Clear();
+        foreach (var row in source)
+            _filteredRows.Add(row);
+
+        UpdateStatusText();
+    }
+
+    private static IComparable GetSortKey(string columnTag, QueryStoreRow r) =>
+        columnTag switch
+        {
+            // Columns with no SortMemberPath: Avalonia uses the binding property name as key
+            "QueryId"            => (IComparable)r.QueryId,
+            "PlanId"             => r.PlanId,
+            "QueryHash"          => r.QueryHash,
+            "QueryPlanHash"      => r.QueryPlanHash,
+            "ModuleName"         => r.ModuleName,
+            "LastExecutedLocal"  => r.LastExecutedLocal,
+            // Columns with explicit SortMemberPath
+            "ExecsSort"          => r.ExecsSort,
+            "TotalCpuSort"       => r.TotalCpuSort,
+            "AvgCpuSort"         => r.AvgCpuSort,
+            "TotalDurSort"       => r.TotalDurSort,
+            "AvgDurSort"         => r.AvgDurSort,
+            "TotalReadsSort"     => r.TotalReadsSort,
+            "AvgReadsSort"       => r.AvgReadsSort,
+            "TotalWritesSort"    => r.TotalWritesSort,
+            "AvgWritesSort"      => r.AvgWritesSort,
+            "TotalPhysReadsSort" => r.TotalPhysReadsSort,
+            "AvgPhysReadsSort"   => r.AvgPhysReadsSort,
+            "TotalMemSort"       => r.TotalMemSort,
+            "AvgMemSort"         => r.AvgMemSort,
+            _                    => r.LastExecutedLocal,
+        };
 }
 
 public class QueryStoreRow : INotifyPropertyChanged

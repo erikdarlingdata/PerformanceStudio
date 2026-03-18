@@ -98,6 +98,7 @@
                   FontSize="11"
                   Background="{DynamicResource BackgroundDarkBrush}"
                   BorderThickness="0"
+                  Sorting="ResultsGrid_Sorting"
                   ScrollViewer.HorizontalScrollBarVisibility="Auto">
             <DataGrid.ContextMenu>
                 <ContextMenu Opening="ContextMenu_Opening">
@@ -122,12 +123,12 @@
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
-                <DataGridTextColumn Header="QueryId" Binding="{ReflectionBinding QueryId}" Width="90"/>
-                <DataGridTextColumn Header="PlanId" Binding="{ReflectionBinding PlanId}" Width="80"/>
-                <DataGridTextColumn Header="Query Hash" Binding="{ReflectionBinding QueryHash}" Width="150"/>
-                <DataGridTextColumn Header="Plan Hash" Binding="{ReflectionBinding QueryPlanHash}" Width="150"/>
-                <DataGridTextColumn Header="Module" Binding="{ReflectionBinding ModuleName}" Width="140"/>
-                <DataGridTextColumn Header="Last Executed (Local)" Binding="{ReflectionBinding LastExecutedLocal}" Width="160"/>
+                <DataGridTextColumn Header="QueryId" Binding="{ReflectionBinding QueryId}" SortMemberPath="QueryId" Width="90"/>
+                <DataGridTextColumn Header="PlanId" Binding="{ReflectionBinding PlanId}" SortMemberPath="PlanId" Width="80"/>
+                <DataGridTextColumn Header="Query Hash" Binding="{ReflectionBinding QueryHash}" SortMemberPath="QueryHash" Width="150"/>
+                <DataGridTextColumn Header="Plan Hash" Binding="{ReflectionBinding QueryPlanHash}" SortMemberPath="QueryPlanHash" Width="150"/>
+                <DataGridTextColumn Header="Module" Binding="{ReflectionBinding ModuleName}" SortMemberPath="ModuleName" Width="140"/>
+                <DataGridTextColumn Header="Last Executed (Local)" Binding="{ReflectionBinding LastExecutedLocal}" SortMemberPath="LastExecutedLocal" Width="160"/>
                 <DataGridTextColumn Header="Executions" Binding="{ReflectionBinding ExecsDisplay}" SortMemberPath="ExecsSort" Width="100"/>
                 <DataGridTextColumn Header="Total CPU (ms)" Binding="{ReflectionBinding TotalCpuDisplay}" SortMemberPath="TotalCpuSort" Width="120"/>
                 <DataGridTextColumn Header="Avg CPU (ms)" Binding="{ReflectionBinding AvgCpuDisplay}" SortMemberPath="AvgCpuSort" Width="110"/>
