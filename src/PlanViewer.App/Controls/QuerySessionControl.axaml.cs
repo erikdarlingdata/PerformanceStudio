@@ -322,30 +322,25 @@ public partial class QuerySessionControl : UserControl
 
     private void SetStatus(string text, bool autoClear = true)
     {
-        _statusClearCts?.Cancel();
-        _statusClearCts?.Dispose();
-        _statusClearCts = null; // ← prevent stale reference to a disposed CTS
+        var old = _statusClearCts;
+        _statusClearCts = null;
+        old?.Cancel();
+        old?.Dispose();
 
         StatusText.Text = text;
 
         if (autoClear && !string.IsNullOrEmpty(text))
         {
-            _statusClearCts = new CancellationTokenSource();
-            var token = _statusClearCts.Token;
-            _ = Task.Delay(3000, token).ContinueWith(_ =>
+            var cts = new CancellationTokenSource();
+            _statusClearCts = cts;
+            _ = Task.Delay(3000, cts.Token).ContinueWith(_ =>
             {
-                Avalonia.Threading.Dispatcher.UIThread.Post(() =>
-                {
-                    StatusText.Text = "";
-                    _statusClearCts = null; // ← also clear after natural expiry
-                });
+                Avalonia.Threading.Dispatcher.UIThread.Post(() => StatusText.Text = "");
             }, TaskContinuationOptions.OnlyOnRanToCompletion);
-
         }
     }
 
-
-	private async void Connect_Click(object? sender, RoutedEventArgs e)
+    private async void Connect_Click(object? sender, RoutedEventArgs e)
     {
         await ShowConnectionDialogAsync();
     }
