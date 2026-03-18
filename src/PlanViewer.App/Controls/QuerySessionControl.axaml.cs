@@ -973,6 +973,8 @@ public partial class QuerySessionControl : UserControl
             .Any(t => t.Content is QueryStoreGridControl);
     }
 
+    public void TriggerQueryStore() => QueryStore_Click(null, new RoutedEventArgs());
+
     private async void QueryStore_Click(object? sender, RoutedEventArgs e)
     {
         // If a QS tab already exists, always show connection dialog for a fresh tab

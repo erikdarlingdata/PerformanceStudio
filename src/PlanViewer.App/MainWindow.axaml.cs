@@ -562,10 +562,19 @@ public partial class MainWindow : Window
             Margin = new Avalonia.Thickness(6, 0, 0, 0),
             VerticalContentAlignment = VerticalAlignment.Center,
             HorizontalContentAlignment = HorizontalAlignment.Center,
-            IsEnabled = false,
             Theme = (Avalonia.Styling.ControlTheme)this.FindResource("AppButton")!
         };
-        ToolTip.SetTip(queryStoreBtn, "Connect to a server (Ctrl+N) to use Query Store");
+        ToolTip.SetTip(queryStoreBtn, "Open a Query Store session");
+        queryStoreBtn.Click += (_, _) =>
+        {
+            _queryCounter++;
+            var session = new QuerySessionControl(_credentialService, _connectionStore);
+            var tab = CreateTab($"Query {_queryCounter}", session);
+            MainTabControl.Items.Add(tab);
+            MainTabControl.SelectedItem = tab;
+            UpdateEmptyOverlay();
+            session.TriggerQueryStore();
+        };
 
         var toolbar = new StackPanel
         {
