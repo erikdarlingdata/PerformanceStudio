@@ -98,6 +98,7 @@
                   FontSize="11"
                   Background="{DynamicResource BackgroundDarkBrush}"
                   BorderThickness="0"
+                  Sorting="ResultsGrid_Sorting"
                   ScrollViewer.HorizontalScrollBarVisibility="Auto">
             <DataGrid.ContextMenu>
                 <ContextMenu Opening="ContextMenu_Opening">
@@ -122,25 +123,142 @@
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
-                <DataGridTextColumn Header="QueryId" Binding="{ReflectionBinding QueryId}" Width="90"/>
-                <DataGridTextColumn Header="PlanId" Binding="{ReflectionBinding PlanId}" Width="80"/>
-                <DataGridTextColumn Header="Query Hash" Binding="{ReflectionBinding QueryHash}" Width="150"/>
-                <DataGridTextColumn Header="Plan Hash" Binding="{ReflectionBinding QueryPlanHash}" Width="150"/>
-                <DataGridTextColumn Header="Module" Binding="{ReflectionBinding ModuleName}" Width="140"/>
-                <DataGridTextColumn Header="Last Executed (Local)" Binding="{ReflectionBinding LastExecutedLocal}" Width="160"/>
-                <DataGridTextColumn Header="Executions" Binding="{ReflectionBinding ExecsDisplay}" SortMemberPath="ExecsSort" Width="100"/>
-                <DataGridTextColumn Header="Total CPU (ms)" Binding="{ReflectionBinding TotalCpuDisplay}" SortMemberPath="TotalCpuSort" Width="120"/>
-                <DataGridTextColumn Header="Avg CPU (ms)" Binding="{ReflectionBinding AvgCpuDisplay}" SortMemberPath="AvgCpuSort" Width="110"/>
-                <DataGridTextColumn Header="Total Duration (ms)" Binding="{ReflectionBinding TotalDurDisplay}" SortMemberPath="TotalDurSort" Width="150"/>
-                <DataGridTextColumn Header="Avg Duration (ms)" Binding="{ReflectionBinding AvgDurDisplay}" SortMemberPath="AvgDurSort" Width="140"/>
-                <DataGridTextColumn Header="Total Reads" Binding="{ReflectionBinding TotalReadsDisplay}" SortMemberPath="TotalReadsSort" Width="100"/>
-                <DataGridTextColumn Header="Avg Reads" Binding="{ReflectionBinding AvgReadsDisplay}" SortMemberPath="AvgReadsSort" Width="100"/>
-                <DataGridTextColumn Header="Total Writes" Binding="{ReflectionBinding TotalWritesDisplay}" SortMemberPath="TotalWritesSort" Width="100"/>
-                <DataGridTextColumn Header="Avg Writes" Binding="{ReflectionBinding AvgWritesDisplay}" SortMemberPath="AvgWritesSort" Width="100"/>
-                <DataGridTextColumn Header="Total Physical Reads" Binding="{ReflectionBinding TotalPhysReadsDisplay}" SortMemberPath="TotalPhysReadsSort" Width="155"/>
-                <DataGridTextColumn Header="Avg Physical Reads" Binding="{ReflectionBinding AvgPhysReadsDisplay}" SortMemberPath="AvgPhysReadsSort" Width="140"/>
-                <DataGridTextColumn Header="Total Memory (MB)" Binding="{ReflectionBinding TotalMemDisplay}" SortMemberPath="TotalMemSort" Width="140"/>
-                <DataGridTextColumn Header="Avg Memory (MB)" Binding="{ReflectionBinding AvgMemDisplay}" SortMemberPath="AvgMemSort" Width="130"/>
+                <DataGridTextColumn Header="QueryId" Binding="{ReflectionBinding QueryId}" SortMemberPath="QueryId" Width="90"/>
+                <DataGridTextColumn Header="PlanId" Binding="{ReflectionBinding PlanId}" SortMemberPath="PlanId" Width="80"/>
+                <DataGridTextColumn Header="Query Hash" Binding="{ReflectionBinding QueryHash}" SortMemberPath="QueryHash" Width="150"/>
+                <DataGridTextColumn Header="Plan Hash" Binding="{ReflectionBinding QueryPlanHash}" SortMemberPath="QueryPlanHash" Width="150"/>
+                <DataGridTextColumn Header="Module" Binding="{ReflectionBinding ModuleName}" SortMemberPath="ModuleName" Width="140"/>
+                <DataGridTextColumn Header="Last Executed (Local)" Binding="{ReflectionBinding LastExecutedLocal}" SortMemberPath="LastExecutedLocal" Width="160"/>
+                <DataGridTemplateColumn Header="Executions" SortMemberPath="ExecsSort" Width="100">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate x:DataType="local:QueryStoreRow">
+                            <local:BarChartCell DisplayText="{Binding ExecsDisplay}"
+                                               Ratio="{Binding ExecsRatio}"
+                                               ColumnId="Executions"
+                                               IsSortedColumn="{Binding IsSortedColumn_Executions}"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTemplateColumn Header="Total CPU (ms)" SortMemberPath="TotalCpuSort" Width="120">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate x:DataType="local:QueryStoreRow">
+                            <local:BarChartCell DisplayText="{Binding TotalCpuDisplay}"
+                                               Ratio="{Binding TotalCpuRatio}"
+                                               ColumnId="TotalCpu"
+                                               IsSortedColumn="{Binding IsSortedColumn_TotalCpu}"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTemplateColumn Header="Avg CPU (ms)" SortMemberPath="AvgCpuSort" Width="110">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate x:DataType="local:QueryStoreRow">
+                            <local:BarChartCell DisplayText="{Binding AvgCpuDisplay}"
+                                               Ratio="{Binding AvgCpuRatio}"
+                                               ColumnId="AvgCpu"
+                                               IsSortedColumn="{Binding IsSortedColumn_AvgCpu}"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTemplateColumn Header="Total Duration (ms)" SortMemberPath="TotalDurSort" Width="150">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate x:DataType="local:QueryStoreRow">
+                            <local:BarChartCell DisplayText="{Binding TotalDurDisplay}"
+                                               Ratio="{Binding TotalDurRatio}"
+                                               ColumnId="TotalDuration"
+                                               IsSortedColumn="{Binding IsSortedColumn_TotalDuration}"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTemplateColumn Header="Avg Duration (ms)" SortMemberPath="AvgDurSort" Width="140">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate x:DataType="local:QueryStoreRow">
+                            <local:BarChartCell DisplayText="{Binding AvgDurDisplay}"
+                                               Ratio="{Binding AvgDurRatio}"
+                                               ColumnId="AvgDuration"
+                                               IsSortedColumn="{Binding IsSortedColumn_AvgDuration}"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTemplateColumn Header="Total Reads" SortMemberPath="TotalReadsSort" Width="100">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate x:DataType="local:QueryStoreRow">
+                            <local:BarChartCell DisplayText="{Binding TotalReadsDisplay}"
+                                               Ratio="{Binding TotalReadsRatio}"
+                                               ColumnId="TotalReads"
+                                               IsSortedColumn="{Binding IsSortedColumn_TotalReads}"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTemplateColumn Header="Avg Reads" SortMemberPath="AvgReadsSort" Width="100">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate x:DataType="local:QueryStoreRow">
+                            <local:BarChartCell DisplayText="{Binding AvgReadsDisplay}"
+                                               Ratio="{Binding AvgReadsRatio}"
+                                               ColumnId="AvgReads"
+                                               IsSortedColumn="{Binding IsSortedColumn_AvgReads}"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTemplateColumn Header="Total Writes" SortMemberPath="TotalWritesSort" Width="100">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate x:DataType="local:QueryStoreRow">
+                            <local:BarChartCell DisplayText="{Binding TotalWritesDisplay}"
+                                               Ratio="{Binding TotalWritesRatio}"
+                                               ColumnId="TotalWrites"
+                                               IsSortedColumn="{Binding IsSortedColumn_TotalWrites}"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTemplateColumn Header="Avg Writes" SortMemberPath="AvgWritesSort" Width="100">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate x:DataType="local:QueryStoreRow">
+                            <local:BarChartCell DisplayText="{Binding AvgWritesDisplay}"
+                                               Ratio="{Binding AvgWritesRatio}"
+                                               ColumnId="AvgWrites"
+                                               IsSortedColumn="{Binding IsSortedColumn_AvgWrites}"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTemplateColumn Header="Total Physical Reads" SortMemberPath="TotalPhysReadsSort" Width="155">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate x:DataType="local:QueryStoreRow">
+                            <local:BarChartCell DisplayText="{Binding TotalPhysReadsDisplay}"
+                                               Ratio="{Binding TotalPhysReadsRatio}"
+                                               ColumnId="TotalPhysReads"
+                                               IsSortedColumn="{Binding IsSortedColumn_TotalPhysReads}"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTemplateColumn Header="Avg Physical Reads" SortMemberPath="AvgPhysReadsSort" Width="140">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate x:DataType="local:QueryStoreRow">
+                            <local:BarChartCell DisplayText="{Binding AvgPhysReadsDisplay}"
+                                               Ratio="{Binding AvgPhysReadsRatio}"
+                                               ColumnId="AvgPhysReads"
+                                               IsSortedColumn="{Binding IsSortedColumn_AvgPhysReads}"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTemplateColumn Header="Total Memory (MB)" SortMemberPath="TotalMemSort" Width="140">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate x:DataType="local:QueryStoreRow">
+                            <local:BarChartCell DisplayText="{Binding TotalMemDisplay}"
+                                               Ratio="{Binding TotalMemRatio}"
+                                               ColumnId="TotalMemory"
+                                               IsSortedColumn="{Binding IsSortedColumn_TotalMemory}"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTemplateColumn Header="Avg Memory (MB)" SortMemberPath="AvgMemSort" Width="130">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate x:DataType="local:QueryStoreRow">
+                            <local:BarChartCell DisplayText="{Binding AvgMemDisplay}"
+                                               Ratio="{Binding AvgMemRatio}"
+                                               ColumnId="AvgMemory"
+                                               IsSortedColumn="{Binding IsSortedColumn_AvgMemory}"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
                 <DataGridTemplateColumn Header="Query Text" Width="300" MinWidth="300">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate x:DataType="local:QueryStoreRow">

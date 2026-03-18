@@ -30,6 +30,8 @@ public partial class QueryStoreGridControl : UserControl
     private readonly Dictionary<string, ColumnFilterState> _activeFilters = new();
     private Popup? _filterPopup;
     private ColumnFilterPopup? _filterPopupContent;
+    private string? _sortedColumnTag;
+    private bool _sortAscending;
 
     public event EventHandler<List<QueryStorePlan>>? PlansSelected;
     public event EventHandler<string>? DatabaseChanged;
@@ -425,7 +427,7 @@ public partial class QueryStoreGridControl : UserControl
             _activeFilters[e.FilterState.ColumnName] = e.FilterState;
         else
             _activeFilters.Remove(e.FilterState.ColumnName);
-        ApplyFilters();
+        ApplySortAndFilters();
         UpdateFilterButtonStyles();
     }
 
@@ -458,13 +460,7 @@ public partial class QueryStoreGridControl : UserControl
 
     private void ApplyFilters()
     {
-        _filteredRows.Clear();
-        foreach (var row in _rows)
-        {
-            if (RowMatchesAllFilters(row))
-                _filteredRows.Add(row);
-        }
-        UpdateStatusText();
+        ApplySortAndFilters();
     }
 
     private bool RowMatchesAllFilters(QueryStoreRow row)
@@ -524,11 +520,201 @@ public partial class QueryStoreGridControl : UserControl
             ? $"{_rows.Count} plans"
             : $"{_filteredRows.Count} / {_rows.Count} plans (filtered)";
     }
+
+    private void ResultsGrid_Sorting(object? sender, DataGridColumnEventArgs e)
+    {
+        e.Handled = true;
+
+        var colTag = e.Column.Tag as string ?? e.Column.SortMemberPath;
+        if (colTag == null) return;
+
+        // Toggle: first click on a new column → descending; second click → ascending; third → clear
+        if (_sortedColumnTag == colTag)
+        {
+            if (!_sortAscending)
+                _sortAscending = true;   // descending → ascending
+            else
+            {
+                // ascending → clear sort
+                _sortedColumnTag = null;
+                foreach (var col in ResultsGrid.Columns)
+                    col.Tag = col.Tag; // no-op, just reset indicator below
+                UpdateSortIndicators(null);
+                ApplySortAndFilters();
+                return;
+            }
+        }
+        else
+        {
+            _sortedColumnTag = colTag;
+            _sortAscending = false;      // first click → descending
+        }
+
+        UpdateSortIndicators(e.Column);
+        ApplySortAndFilters();
+    }
+
+    private void UpdateSortIndicators(DataGridColumn? activeColumn)
+    {
+        foreach (var col in ResultsGrid.Columns)
+        {
+            if (col.Header is not StackPanel sp) continue;
+            var label = sp.Children.OfType<TextBlock>().LastOrDefault();
+            if (label == null) continue;
+
+            if (col == activeColumn)
+                label.Text = _sortAscending ? $"{GetColumnLabel(sp)} ▲" : $"{GetColumnLabel(sp)} ▼";
+            else
+                label.Text = GetColumnLabel(sp);
+        }
+    }
+
+    private static string GetColumnLabel(StackPanel header)
+    {
+        var tb = header.Children.OfType<TextBlock>().LastOrDefault();
+        if (tb == null) return string.Empty;
+        // Strip any existing sort indicator
+        return tb.Text?.TrimEnd(' ', '▲', '▼') ?? string.Empty;
+    }
+
+    private void ApplySortAndFilters()
+    {
+        IEnumerable<QueryStoreRow> source = _rows.Where(RowMatchesAllFilters);
+
+        if (_sortedColumnTag != null)
+        {
+            source = _sortAscending
+                ? source.OrderBy(r => GetSortKey(_sortedColumnTag, r))
+                : source.OrderByDescending(r => GetSortKey(_sortedColumnTag, r));
+        }
+
+
+        _filteredRows.Clear();
+        foreach (var row in source)
+            _filteredRows.Add(row);
+
+        UpdateStatusText();
+        UpdateBarRatios();
+    }
+
+    // ── Bar chart ratio computation ────────────────────────────────────────
+
+    // Maps a ColumnId (used in BarChartConfig) to the accessor that returns the raw sort value.
+    private static readonly (string ColumnId, Func<QueryStoreRow, double> Accessor)[] BarColumns =
+    [
+        ("Executions",    r => r.ExecsSort),
+        ("TotalCpu",      r => r.TotalCpuSort),
+        ("AvgCpu",        r => r.AvgCpuSort),
+        ("TotalDuration", r => r.TotalDurSort),
+        ("AvgDuration",   r => r.AvgDurSort),
+        ("TotalReads",    r => r.TotalReadsSort),
+        ("AvgReads",      r => r.AvgReadsSort),
+        ("TotalWrites",   r => r.TotalWritesSort),
+        ("AvgWrites",     r => r.AvgWritesSort),
+        ("TotalPhysReads",r => r.TotalPhysReadsSort),
+        ("AvgPhysReads",  r => r.AvgPhysReadsSort),
+        ("TotalMemory",   r => r.TotalMemSort),
+        ("AvgMemory",     r => r.AvgMemSort),
+    ];
+
+    // Maps a SortMemberPath tag (used in the sort dictionary) → ColumnId
+    private static readonly Dictionary<string, string> SortTagToColumnId = new()
+    {
+        ["ExecsSort"]          = "Executions",
+        ["TotalCpuSort"]       = "TotalCpu",
+        ["AvgCpuSort"]         = "AvgCpu",
+        ["TotalDurSort"]       = "TotalDuration",
+        ["AvgDurSort"]         = "AvgDuration",
+        ["TotalReadsSort"]     = "TotalReads",
+        ["AvgReadsSort"]       = "AvgReads",
+        ["TotalWritesSort"]    = "TotalWrites",
+        ["AvgWritesSort"]      = "AvgWrites",
+        ["TotalPhysReadsSort"] = "TotalPhysReads",
+        ["AvgPhysReadsSort"]   = "AvgPhysReads",
+        ["TotalMemSort"]       = "TotalMemory",
+        ["AvgMemSort"]         = "AvgMemory",
+    };
+
+    private void UpdateBarRatios()
+    {
+        if (_filteredRows.Count == 0) return;
+
+        var sortedColumnId = _sortedColumnTag != null &&
+                             SortTagToColumnId.TryGetValue(_sortedColumnTag, out var sid) ? sid : null;
+
+        foreach (var (columnId, accessor) in BarColumns)
+        {
+            var max = _filteredRows.Max(r => accessor(r));
+            var isSorted = columnId == sortedColumnId;
+            foreach (var row in _filteredRows)
+            {
+                var ratio = max > 0 ? accessor(row) / max : 0.0;
+                row.SetBar(columnId, ratio, isSorted);
+            }
+        }
+    }
+
+    private static IComparable GetSortKey(string columnTag, QueryStoreRow r) =>
+        columnTag switch
+        {
+            // Columns with no SortMemberPath: Avalonia uses the binding property name as key
+            "QueryId"            => (IComparable)r.QueryId,
+            "PlanId"             => r.PlanId,
+            "QueryHash"          => r.QueryHash,
+            "QueryPlanHash"      => r.QueryPlanHash,
+            "ModuleName"         => r.ModuleName,
+            "LastExecutedLocal"  => r.LastExecutedLocal,
+            // Columns with explicit SortMemberPath
+            "ExecsSort"          => r.ExecsSort,
+            "TotalCpuSort"       => r.TotalCpuSort,
+            "AvgCpuSort"         => r.AvgCpuSort,
+            "TotalDurSort"       => r.TotalDurSort,
+            "AvgDurSort"         => r.AvgDurSort,
+            "TotalReadsSort"     => r.TotalReadsSort,
+            "AvgReadsSort"       => r.AvgReadsSort,
+            "TotalWritesSort"    => r.TotalWritesSort,
+            "AvgWritesSort"      => r.AvgWritesSort,
+            "TotalPhysReadsSort" => r.TotalPhysReadsSort,
+            "AvgPhysReadsSort"   => r.AvgPhysReadsSort,
+            "TotalMemSort"       => r.TotalMemSort,
+            "AvgMemSort"         => r.AvgMemSort,
+            _                    => r.LastExecutedLocal,
+        };
 }
 
 public class QueryStoreRow : INotifyPropertyChanged
 {
     private bool _isSelected = true;
+
+    // Bar ratios [0..1] per column
+    private double _execsRatio;
+    private double _totalCpuRatio;
+    private double _avgCpuRatio;
+    private double _totalDurRatio;
+    private double _avgDurRatio;
+    private double _totalReadsRatio;
+    private double _avgReadsRatio;
+    private double _totalWritesRatio;
+    private double _avgWritesRatio;
+    private double _totalPhysReadsRatio;
+    private double _avgPhysReadsRatio;
+    private double _totalMemRatio;
+    private double _avgMemRatio;
+
+    // IsSortedColumn flags
+    private bool _isSorted_Executions;
+    private bool _isSorted_TotalCpu;
+    private bool _isSorted_AvgCpu;
+    private bool _isSorted_TotalDuration;
+    private bool _isSorted_AvgDuration;
+    private bool _isSorted_TotalReads;
+    private bool _isSorted_AvgReads;
+    private bool _isSorted_TotalWrites;
+    private bool _isSorted_AvgWrites;
+    private bool _isSorted_TotalPhysReads;
+    private bool _isSorted_AvgPhysReads;
+    private bool _isSorted_TotalMemory;
+    private bool _isSorted_AvgMemory;
 
     public QueryStoreRow(QueryStorePlan plan)
     {
@@ -541,6 +727,57 @@ public class QueryStoreRow : INotifyPropertyChanged
     {
         get => _isSelected;
         set { _isSelected = value; OnPropertyChanged(); }
+    }
+
+    // ── Bar ratio properties ───────────────────────────────────────────────
+    public double ExecsRatio         { get => _execsRatio;          private set { _execsRatio = value;          OnPropertyChanged(); } }
+    public double TotalCpuRatio      { get => _totalCpuRatio;       private set { _totalCpuRatio = value;       OnPropertyChanged(); } }
+    public double AvgCpuRatio        { get => _avgCpuRatio;         private set { _avgCpuRatio = value;         OnPropertyChanged(); } }
+    public double TotalDurRatio      { get => _totalDurRatio;       private set { _totalDurRatio = value;       OnPropertyChanged(); } }
+    public double AvgDurRatio        { get => _avgDurRatio;         private set { _avgDurRatio = value;         OnPropertyChanged(); } }
+    public double TotalReadsRatio    { get => _totalReadsRatio;     private set { _totalReadsRatio = value;     OnPropertyChanged(); } }
+    public double AvgReadsRatio      { get => _avgReadsRatio;       private set { _avgReadsRatio = value;       OnPropertyChanged(); } }
+    public double TotalWritesRatio   { get => _totalWritesRatio;    private set { _totalWritesRatio = value;    OnPropertyChanged(); } }
+    public double AvgWritesRatio     { get => _avgWritesRatio;      private set { _avgWritesRatio = value;      OnPropertyChanged(); } }
+    public double TotalPhysReadsRatio{ get => _totalPhysReadsRatio; private set { _totalPhysReadsRatio = value; OnPropertyChanged(); } }
+    public double AvgPhysReadsRatio  { get => _avgPhysReadsRatio;   private set { _avgPhysReadsRatio = value;   OnPropertyChanged(); } }
+    public double TotalMemRatio      { get => _totalMemRatio;       private set { _totalMemRatio = value;       OnPropertyChanged(); } }
+    public double AvgMemRatio        { get => _avgMemRatio;         private set { _avgMemRatio = value;         OnPropertyChanged(); } }
+
+    // ── IsSortedColumn properties ──────────────────────────────────────────
+    public bool IsSortedColumn_Executions    { get => _isSorted_Executions;    private set { _isSorted_Executions = value;    OnPropertyChanged(); } }
+    public bool IsSortedColumn_TotalCpu      { get => _isSorted_TotalCpu;      private set { _isSorted_TotalCpu = value;      OnPropertyChanged(); } }
+    public bool IsSortedColumn_AvgCpu        { get => _isSorted_AvgCpu;        private set { _isSorted_AvgCpu = value;        OnPropertyChanged(); } }
+    public bool IsSortedColumn_TotalDuration { get => _isSorted_TotalDuration; private set { _isSorted_TotalDuration = value; OnPropertyChanged(); } }
+    public bool IsSortedColumn_AvgDuration   { get => _isSorted_AvgDuration;   private set { _isSorted_AvgDuration = value;   OnPropertyChanged(); } }
+    public bool IsSortedColumn_TotalReads    { get => _isSorted_TotalReads;    private set { _isSorted_TotalReads = value;    OnPropertyChanged(); } }
+    public bool IsSortedColumn_AvgReads      { get => _isSorted_AvgReads;      private set { _isSorted_AvgReads = value;      OnPropertyChanged(); } }
+    public bool IsSortedColumn_TotalWrites   { get => _isSorted_TotalWrites;   private set { _isSorted_TotalWrites = value;   OnPropertyChanged(); } }
+    public bool IsSortedColumn_AvgWrites     { get => _isSorted_AvgWrites;     private set { _isSorted_AvgWrites = value;     OnPropertyChanged(); } }
+    public bool IsSortedColumn_TotalPhysReads{ get => _isSorted_TotalPhysReads;private set { _isSorted_TotalPhysReads = value;OnPropertyChanged(); } }
+    public bool IsSortedColumn_AvgPhysReads  { get => _isSorted_AvgPhysReads;  private set { _isSorted_AvgPhysReads = value;  OnPropertyChanged(); } }
+    public bool IsSortedColumn_TotalMemory   { get => _isSorted_TotalMemory;   private set { _isSorted_TotalMemory = value;   OnPropertyChanged(); } }
+    public bool IsSortedColumn_AvgMemory     { get => _isSorted_AvgMemory;     private set { _isSorted_AvgMemory = value;     OnPropertyChanged(); } }
+
+    /// <summary>Called by the grid after each sort/filter pass to update bar rendering.</summary>
+    public void SetBar(string columnId, double ratio, bool isSorted)
+    {
+        switch (columnId)
+        {
+            case "Executions":     ExecsRatio = ratio;          IsSortedColumn_Executions = isSorted;     break;
+            case "TotalCpu":       TotalCpuRatio = ratio;       IsSortedColumn_TotalCpu = isSorted;       break;
+            case "AvgCpu":         AvgCpuRatio = ratio;         IsSortedColumn_AvgCpu = isSorted;         break;
+            case "TotalDuration":  TotalDurRatio = ratio;       IsSortedColumn_TotalDuration = isSorted;  break;
+            case "AvgDuration":    AvgDurRatio = ratio;         IsSortedColumn_AvgDuration = isSorted;    break;
+            case "TotalReads":     TotalReadsRatio = ratio;     IsSortedColumn_TotalReads = isSorted;     break;
+            case "AvgReads":       AvgReadsRatio = ratio;       IsSortedColumn_AvgReads = isSorted;       break;
+            case "TotalWrites":    TotalWritesRatio = ratio;    IsSortedColumn_TotalWrites = isSorted;    break;
+            case "AvgWrites":      AvgWritesRatio = ratio;      IsSortedColumn_AvgWrites = isSorted;      break;
+            case "TotalPhysReads": TotalPhysReadsRatio = ratio; IsSortedColumn_TotalPhysReads = isSorted; break;
+            case "AvgPhysReads":   AvgPhysReadsRatio = ratio;   IsSortedColumn_AvgPhysReads = isSorted;   break;
+            case "TotalMemory":    TotalMemRatio = ratio;       IsSortedColumn_TotalMemory = isSorted;    break;
+            case "AvgMemory":      AvgMemRatio = ratio;         IsSortedColumn_AvgMemory = isSorted;      break;
+        }
     }
 
     public long QueryId => Plan.QueryId;

@@ -1,0 +1,28 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="PlanViewer.App.Controls.BarChartCell">
+    <Grid RowDefinitions="Auto,4" Margin="2,1">
+        <!-- Numeric value text -->
+        <TextBlock x:Name="ValueText"
+                   Grid.Row="0"
+                   FontSize="11"
+                   VerticalAlignment="Center"
+                   Foreground="{DynamicResource ForegroundBrush}"/>
+
+        <!-- Bar row: background track + coloured fill -->
+        <Grid Grid.Row="1" ColumnDefinitions="*">
+            <Border x:Name="BarTrack"
+                    Height="3"
+                    CornerRadius="1"
+                    Background="{DynamicResource BackgroundLightBrush}"
+                    HorizontalAlignment="Stretch"
+                    VerticalAlignment="Center"/>
+            <Border x:Name="BarFill"
+                    Height="3"
+                    CornerRadius="1"
+                    HorizontalAlignment="Left"
+                    VerticalAlignment="Center"
+                    MinWidth="0"/>
+        </Grid>
+    </Grid>
+</UserControl>

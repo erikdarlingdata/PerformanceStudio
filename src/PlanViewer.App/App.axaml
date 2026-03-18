@@ -20,6 +20,7 @@
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
                 <ResourceInclude Source="avares://PlanViewer.App/Themes/DarkTheme.axaml"/>
+                <ResourceInclude Source="avares://PlanViewer.App/Themes/BarChartConfig.axaml"/>
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </Application.Resources>
