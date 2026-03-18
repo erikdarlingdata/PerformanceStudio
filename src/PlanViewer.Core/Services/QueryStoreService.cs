@@ -346,4 +346,59 @@ ORDER BY rsi.start_time, p.plan_id;";
 
         return rows;
     }
+
+    /// <summary>
+    /// Fetches hourly-aggregated metric data for the time-range slicer.
+    /// Returns up to 1000 hourly buckets ordered by interval start descending.
+    /// </summary>
+    public static async Task<List<QueryStoreTimeSlice>> FetchTimeSliceDataAsync(
+        string connectionString, string orderByMetric = "cpu",
+        CancellationToken ct = default)
+    {
+        const string sql = @"
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+SELECT TOP (1000)
+    DATEADD(HOUR, DATEDIFF(HOUR, 0, rsi.start_time), 0) AS bucket_hour,
+    SUM(rs.avg_cpu_time * rs.count_executions) / 1000.0 AS total_cpu_ms,
+    SUM(rs.avg_duration * rs.count_executions) / 1000.0 AS total_duration_ms,
+    SUM(rs.avg_logical_io_reads * rs.count_executions) AS total_reads,
+    SUM(rs.avg_logical_io_writes * rs.count_executions) AS total_writes,
+    SUM(rs.avg_physical_io_reads * rs.count_executions) AS total_physical_reads,
+    SUM(rs.avg_query_max_used_memory * rs.count_executions) * 8.0 / 1024.0 AS total_memory_mb,
+    SUM(rs.count_executions) AS total_executions
+FROM sys.query_store_runtime_stats rs
+JOIN sys.query_store_runtime_stats_interval rsi
+    ON rs.runtime_stats_interval_id = rsi.runtime_stats_interval_id
+GROUP BY DATEADD(HOUR, DATEDIFF(HOUR, 0, rsi.start_time), 0)
+ORDER BY bucket_hour DESC;";
+
+        var rows = new List<QueryStoreTimeSlice>();
+
+        await using var conn = new SqlConnection(connectionString);
+        await conn.OpenAsync(ct);
+        await using var cmd = new SqlCommand(sql, conn) { CommandTimeout = 120 };
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+
+        while (await reader.ReadAsync(ct))
+        {
+            // DATEADD returns plain datetime (not datetimeoffset) — read accordingly
+            var bucketHour = reader.GetDateTime(0);
+            rows.Add(new QueryStoreTimeSlice
+            {
+                IntervalStartUtc = DateTime.SpecifyKind(bucketHour, DateTimeKind.Utc),
+                TotalCpu = reader.GetDouble(1),
+                TotalDuration = reader.GetDouble(2),
+                TotalReads = reader.GetDouble(3),
+                TotalWrites = reader.GetDouble(4),
+                TotalPhysicalReads = reader.GetDouble(5),
+                TotalMemory = reader.GetDouble(6),
+                TotalExecutions = reader.GetInt64(7),
+            });
+        }
+
+        // Return in chronological order
+        rows.Reverse();
+        return rows;
+    }
 }

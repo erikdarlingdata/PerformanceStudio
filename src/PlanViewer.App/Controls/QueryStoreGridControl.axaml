@@ -3,9 +3,12 @@
              xmlns:local="using:PlanViewer.App.Controls"
              x:Class="PlanViewer.App.Controls.QueryStoreGridControl"
              Background="{DynamicResource BackgroundBrush}">
-    <Grid RowDefinitions="Auto,*">
+    <Grid RowDefinitions="Auto,Auto,*">
+        <!-- Time Range Slicer -->
+        <local:TimeRangeSlicerControl x:Name="TimeRangeSlicer" Grid.Row="0"/>
+
         <!-- Toolbar -->
-        <Border Grid.Row="0" Background="{DynamicResource BackgroundDarkBrush}" Padding="8,6"
+        <Border Grid.Row="1" Background="{DynamicResource BackgroundDarkBrush}" Padding="8,6"
                 BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
             <StackPanel Orientation="Horizontal" Spacing="12">
                 <StackPanel Spacing="4">
@@ -24,12 +27,6 @@
                 <StackPanel Spacing="4">
                     <TextBlock Text="Top N" Foreground="{DynamicResource ForegroundBrush}" FontSize="11"/>
                     <NumericUpDown x:Name="TopNBox" Value="25" Minimum="1" Maximum="100"
-                                   Width="120" Height="36" FontSize="14" FormatString="0"
-                                   HorizontalContentAlignment="Center"/>
-                </StackPanel>
-                <StackPanel Spacing="4">
-                    <TextBlock Text="Hours back" Foreground="{DynamicResource ForegroundBrush}" FontSize="11"/>
-                    <NumericUpDown x:Name="HoursBackBox" Value="24" Minimum="1" Maximum="168"
                                    Width="120" Height="36" FontSize="14" FormatString="0"
                                    HorizontalContentAlignment="Center"/>
                 </StackPanel>
@@ -86,7 +83,7 @@
         </Border>
 
         <!-- DataGrid -->
-        <DataGrid Grid.Row="1" x:Name="ResultsGrid"
+        <DataGrid Grid.Row="2" x:Name="ResultsGrid"
                   AutoGenerateColumns="False"
                   CanUserSortColumns="True"
                   CanUserReorderColumns="True"

@@ -32,6 +32,8 @@ public partial class QueryStoreGridControl : UserControl
     private ColumnFilterPopup? _filterPopupContent;
     private string? _sortedColumnTag;
     private bool _sortAscending;
+    private DateTime? _slicerStartUtc;
+    private DateTime? _slicerEndUtc;
 
     public event EventHandler<List<QueryStorePlan>>? PlansSelected;
     public event EventHandler<string>? DatabaseChanged;
@@ -50,6 +52,11 @@ public partial class QueryStoreGridControl : UserControl
         EnsureFilterPopup();
         SetupColumnHeaders();
         PopulateDatabaseBox(databases, initialDatabase);
+        TimeRangeSlicer.RangeChanged += OnTimeRangeChanged;
+        TimeRangeSlicer.IsExpanded = true;
+
+        // Auto-fetch with default settings on connect
+        Avalonia.Threading.Dispatcher.UIThread.Post(() => Fetch_Click(null, new RoutedEventArgs()), Avalonia.Threading.DispatcherPriority.Loaded);
     }
 
     private void PopulateDatabaseBox(List<string> databases, string selectedDatabase)
@@ -102,7 +109,6 @@ public partial class QueryStoreGridControl : UserControl
         var ct = _fetchCts.Token;
 
         var topN = (int)(TopNBox.Value ?? 25);
-        var hoursBack = (int)(HoursBackBox.Value ?? 24);
         var orderBy = (OrderByBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "cpu";
         var filter = BuildSearchFilter();
 
@@ -115,7 +121,7 @@ public partial class QueryStoreGridControl : UserControl
         try
         {
             var plans = await QueryStoreService.FetchTopPlansAsync(
-                _connectionString, topN, orderBy, hoursBack, filter, ct);
+                _connectionString, topN, orderBy, 8760, filter, ct);
 
             if (plans.Count == 0)
             {
@@ -129,6 +135,9 @@ public partial class QueryStoreGridControl : UserControl
             ApplyFilters();
             LoadButton.IsEnabled = true;
             SelectToggleButton.Content = "Select None";
+
+            // Load time-slicer data in the background
+            _ = LoadTimeSlicerDataAsync(orderBy, ct);
         }
         catch (OperationCanceledException)
         {
@@ -200,6 +209,24 @@ public partial class QueryStoreGridControl : UserControl
         SearchValueBox.Text = "";
     }
 
+    private async System.Threading.Tasks.Task LoadTimeSlicerDataAsync(string metric, CancellationToken ct)
+    {
+        try
+        {
+            var sliceData = await QueryStoreService.FetchTimeSliceDataAsync(_connectionString, metric, ct);
+            if (!ct.IsCancellationRequested && sliceData.Count > 0)
+                TimeRangeSlicer.LoadData(sliceData, metric);
+        }
+        catch { /* non-critical — slicer just stays empty */ }
+    }
+
+    private void OnTimeRangeChanged(object? sender, TimeRangeChangedEventArgs e)
+    {
+        _slicerStartUtc = e.StartUtc;
+        _slicerEndUtc = e.EndUtc;
+        ApplySortAndFilters();
+    }
+
     private void SelectToggle_Click(object? sender, RoutedEventArgs e)
     {
         var allSelected = _filteredRows.Count > 0 && _filteredRows.All(r => r.IsSelected);
@@ -225,14 +252,11 @@ public partial class QueryStoreGridControl : UserControl
     {
         if (ResultsGrid.SelectedItem is not QueryStoreRow row) return;
 
-        var hoursBack = (int)(HoursBackBox.Value ?? 24);
-
         var window = new QueryStoreHistoryWindow(
             _connectionString,
             row.QueryId,
             row.FullQueryText,
-            _database,
-            hoursBack);
+            _database);
 
         var topLevel = Avalonia.Controls.TopLevel.GetTopLevel(this);
         if (topLevel is Window parentWindow)
@@ -581,13 +605,20 @@ public partial class QueryStoreGridControl : UserControl
     {
         IEnumerable<QueryStoreRow> source = _rows.Where(RowMatchesAllFilters);
 
+        // Apply time-range slicer filter
+        if (_slicerStartUtc.HasValue && _slicerEndUtc.HasValue)
+        {
+            var start = _slicerStartUtc.Value;
+            var end = _slicerEndUtc.Value;
+            source = source.Where(r => r.Plan.LastExecutedUtc >= start && r.Plan.LastExecutedUtc <= end);
+        }
+
         if (_sortedColumnTag != null)
         {
             source = _sortAscending
                 ? source.OrderBy(r => GetSortKey(_sortedColumnTag, r))
                 : source.OrderByDescending(r => GetSortKey(_sortedColumnTag, r));
         }
-
 
         _filteredRows.Clear();
         foreach (var row in source)
