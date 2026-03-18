@@ -1,0 +1,21 @@
+cff-version: 1.2.0
+title: "SQL Server Performance Studio"
+message: "If you use this software, please cite it as below."
+type: software
+authors:
+  - given-names: Erik
+    family-names: Darling
+    affiliation: "Darling Data, LLC"
+    website: "https://erikdarling.com"
+repository-code: "https://github.com/erikdarlingdata/PerformanceStudio"
+license: MIT
+version: "1.2.0"
+date-released: "2026-03-18"
+keywords:
+  - sql-server
+  - execution-plan
+  - query-plan-analyzer
+  - query-optimization
+  - mcp-server
+  - cross-platform
+  - dba-tools

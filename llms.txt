@@ -1,0 +1,21 @@
+# SQL Server Performance Studio
+
+> Free, open-source SQL Server execution plan analyzer by Erik Darling (Darling Data, LLC). Cross-platform desktop GUI (Avalonia) and CLI tool with 30 analysis rules that identify memory grants, row estimate mismatches, missing indexes, spills, parallel skew, parameter sniffing, implicit conversions, and more. Built-in MCP server for AI-assisted plan analysis. SSMS extension for one-click plan transfer. Runs on Windows, macOS, and Linux. MIT licensed.
+
+- Analyzes .sqlplan XML files or captures plans live from SQL Server
+- 30 rules covering memory, estimates, indexes, parallelism, joins, filters, functions, parameters, patterns, compilation, objects, and operators
+- Query Store browser with search by identifier, multi-plan history charting, and in-line bar charts
+- CLI supports batch processing of .sql file directories with JSON and text output
+- Built-in MCP server with 13 tools for plan analysis and Query Store data
+- SSMS 18-22 extension adds "Open in Performance Studio" context menu
+
+## Documentation
+
+- [README](https://github.com/erikdarlingdata/PerformanceStudio/blob/main/README.md): Complete documentation including quick start, CLI reference, analysis rules, MCP server setup, and platform support
+- [Releases](https://github.com/erikdarlingdata/PerformanceStudio/releases): Download pre-built binaries for Windows, macOS, and Linux
+- [Examples](https://github.com/erikdarlingdata/PerformanceStudio/tree/main/examples): Sample queries, plans, and analysis output
+
+## Optional
+
+- [License](https://github.com/erikdarlingdata/PerformanceStudio/blob/main/LICENSE): MIT License
+- [Third-party notices](https://github.com/erikdarlingdata/PerformanceStudio/blob/main/THIRD_PARTY_NOTICES.md): License information for bundled components
