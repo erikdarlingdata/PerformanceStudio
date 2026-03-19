@@ -133,7 +133,7 @@ FROM sys.database_query_store_options;";
         string timeWhereClause;
         if (startUtc.HasValue && endUtc.HasValue)
         {
-            timeWhereClause = "WHERE rs.last_execution_time >= @rangeStart AND rs.last_execution_time < @rangeEnd";
+            timeWhereClause = "WHERE rsi.start_time >= @rangeStart AND rsi.end_time < @rangeEnd";
             parameters.Add(new SqlParameter("@rangeStart", startUtc.Value));
             parameters.Add(new SqlParameter("@rangeEnd", endUtc.Value));
         }
@@ -163,6 +163,7 @@ WITH plan_agg AS (
         SUM(rs.count_executions) AS total_executions,
         MAX(rs.last_execution_time) AS last_execution_time
     FROM sys.query_store_runtime_stats rs
+    JOIN sys.query_store_runtime_stats_interval rsi on rs.runtime_stats_interval_id=rsi.runtime_stats_interval_id
     {timeWhereClause}
     GROUP BY rs.plan_id
 ),
