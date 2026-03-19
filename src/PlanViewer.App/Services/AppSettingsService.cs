@@ -113,4 +113,10 @@ internal sealed class AppSettings
     /// </summary>
     [JsonPropertyName("open_plans")]
     public List<string> OpenPlans { get; set; } = new();
+
+    /// <summary>
+    /// Number of days of Query Store data to load in the time-range slicer. Default 30.
+    /// </summary>
+    [JsonPropertyName("query_store_slicer_days")]
+    public int QueryStoreSlicerDays { get; set; } = 30;
 }

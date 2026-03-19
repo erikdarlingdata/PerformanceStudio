@@ -41,11 +41,13 @@ FROM sys.database_query_store_options;";
     /// writes, avg-writes, physical-reads, avg-physical-reads, memory, avg-memory, executions.
     /// Optional filter narrows results server-side by query_id, plan_id, query_hash,
     /// query_plan_hash, or module name (schema.name, supports % wildcards).
+    /// When <paramref name="startUtc"/>/<paramref name="endUtc"/> are provided they override <paramref name="hoursBack"/>.
     /// </summary>
     public static async Task<List<QueryStorePlan>> FetchTopPlansAsync(
         string connectionString, int topN = 25, string orderBy = "cpu",
         int hoursBack = 24, QueryStoreFilter? filter = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        DateTime? startUtc = null, DateTime? endUtc = null)
     {
         var key = orderBy.ToLowerInvariant();
 
@@ -127,6 +129,19 @@ FROM sys.database_query_store_options;";
             ? "\n" + string.Join("\n", filterClauses)
             : "";
 
+        // Time-range filter: prefer explicit start/end over hoursBack
+        string timeWhereClause;
+        if (startUtc.HasValue && endUtc.HasValue)
+        {
+            timeWhereClause = "WHERE rsi.start_time >= @rangeStart AND rsi.end_time < @rangeEnd";
+            parameters.Add(new SqlParameter("@rangeStart", startUtc.Value));
+            parameters.Add(new SqlParameter("@rangeEnd", endUtc.Value));
+        }
+        else
+        {
+            timeWhereClause = $"WHERE rs.last_execution_time >= DATEADD(HOUR, -{hoursBack}, GETUTCDATE())";
+        }
+
         // 1. plan_agg: aggregate runtime_stats by plan_id only (cheapest grouping,
         //    avoids joining query_text for the entire dataset).
         // 2. ranked: join the small aggregated result to plan to get query_id,
@@ -148,7 +163,8 @@ WITH plan_agg AS (
         SUM(rs.count_executions) AS total_executions,
         MAX(rs.last_execution_time) AS last_execution_time
     FROM sys.query_store_runtime_stats rs
-    WHERE rs.last_execution_time >= DATEADD(HOUR, -{hoursBack}, GETUTCDATE())
+    JOIN sys.query_store_runtime_stats_interval rsi on rs.runtime_stats_interval_id=rsi.runtime_stats_interval_id
+    {timeWhereClause}
     GROUP BY rs.plan_id
 ),
 ranked AS (
@@ -306,6 +322,7 @@ JOIN sys.query_store_plan p
     ON rs.plan_id = p.plan_id
 WHERE p.query_id = @queryId
 AND   rsi.start_time >= DATEADD(HOUR, -@hoursBack, GETUTCDATE())
+AND   rs.first_execution_time >= DATEADD(HOUR, -@hoursBack, GETUTCDATE()) --performance: filter runtime_stats by time directly
 GROUP BY p.plan_id, rsi.start_time
 ORDER BY rsi.start_time, p.plan_id;";
 
@@ -344,6 +361,65 @@ ORDER BY rsi.start_time, p.plan_id;";
             });
         }
 
+        return rows;
+    }
+
+    /// <summary>
+    /// Fetches hourly-aggregated metric data for the time-range slicer.
+    /// Limits data to the last <paramref name="daysBack"/> days (default 30).
+    /// Returns up to 1000 hourly buckets in chronological order.
+    /// </summary>
+    public static async Task<List<QueryStoreTimeSlice>> FetchTimeSliceDataAsync(
+        string connectionString, string orderByMetric = "cpu",
+        int daysBack = 30,
+        CancellationToken ct = default)
+    {
+        var sql = $@"
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+SELECT
+    DATEADD(HOUR, DATEDIFF(HOUR, 0, rsi.start_time), 0) AS bucket_hour,
+    SUM(rs.avg_cpu_time * rs.count_executions) / 1000.0 AS total_cpu_ms,
+    SUM(rs.avg_duration * rs.count_executions) / 1000.0 AS total_duration_ms,
+    SUM(rs.avg_logical_io_reads * rs.count_executions) AS total_reads,
+    SUM(rs.avg_logical_io_writes * rs.count_executions) AS total_writes,
+    SUM(rs.avg_physical_io_reads * rs.count_executions) AS total_physical_reads,
+    SUM(rs.avg_query_max_used_memory * rs.count_executions) * 8.0 / 1024.0 AS total_memory_mb,
+    SUM(rs.count_executions) AS total_executions
+FROM sys.query_store_runtime_stats rs
+JOIN sys.query_store_runtime_stats_interval rsi
+    ON rs.runtime_stats_interval_id = rsi.runtime_stats_interval_id
+WHERE rsi.start_time >= DATEADD(DAY, -{daysBack}, GETUTCDATE())
+AND   rs.first_execution_time >= DATEADD(DAY, -{daysBack}, GETUTCDATE()) --performance: filter runtime_stats directly
+GROUP BY DATEADD(HOUR, DATEDIFF(HOUR, 0, rsi.start_time), 0)
+ORDER BY bucket_hour DESC;";
+
+        var rows = new List<QueryStoreTimeSlice>();
+
+        await using var conn = new SqlConnection(connectionString);
+        await conn.OpenAsync(ct);
+        await using var cmd = new SqlCommand(sql, conn) { CommandTimeout = 120 };
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+
+        while (await reader.ReadAsync(ct))
+        {
+            // DATEADD returns plain datetime (not datetimeoffset) — read accordingly
+            var bucketHour = reader.GetDateTime(0);
+            rows.Add(new QueryStoreTimeSlice
+            {
+                IntervalStartUtc = DateTime.SpecifyKind(bucketHour, DateTimeKind.Utc),
+                TotalCpu = reader.GetDouble(1),
+                TotalDuration = reader.GetDouble(2),
+                TotalReads = reader.GetDouble(3),
+                TotalWrites = reader.GetDouble(4),
+                TotalPhysicalReads = reader.GetDouble(5),
+                TotalMemory = reader.GetDouble(6),
+                TotalExecutions = reader.GetInt64(7),
+            });
+        }
+
+        // Return in chronological order
+        rows.Reverse();
         return rows;
     }
 }

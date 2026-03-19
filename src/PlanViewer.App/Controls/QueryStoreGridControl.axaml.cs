@@ -14,6 +14,7 @@ using Microsoft.Data.SqlClient;
 using PlanViewer.Core.Interfaces;
 using PlanViewer.Core.Models;
 using PlanViewer.App.Dialogs;
+using PlanViewer.App.Services;
 using PlanViewer.Core.Services;
 
 namespace PlanViewer.App.Controls;
@@ -32,6 +33,12 @@ public partial class QueryStoreGridControl : UserControl
     private ColumnFilterPopup? _filterPopupContent;
     private string? _sortedColumnTag;
     private bool _sortAscending;
+    private DateTime? _slicerStartUtc;
+    private DateTime? _slicerEndUtc;
+    private int _slicerDaysBack = 30;
+    private string _lastFetchedOrderBy = "cpu";
+    private bool _initialOrderByLoaded;
+    private bool _suppressRangeChanged;
 
     public event EventHandler<List<QueryStorePlan>>? PlansSelected;
     public event EventHandler<string>? DatabaseChanged;
@@ -45,11 +52,21 @@ public partial class QueryStoreGridControl : UserControl
         _credentialService = credentialService;
         _database = initialDatabase;
         _connectionString = serverConnection.GetConnectionString(credentialService, initialDatabase);
+        _slicerDaysBack = AppSettingsService.Load().QueryStoreSlicerDays;
         InitializeComponent();
         ResultsGrid.ItemsSource = _filteredRows;
         EnsureFilterPopup();
         SetupColumnHeaders();
         PopulateDatabaseBox(databases, initialDatabase);
+        TimeRangeSlicer.RangeChanged += OnTimeRangeChanged;
+        TimeRangeSlicer.IsExpanded = true;
+
+        // Auto-fetch with default settings on connect
+        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            Fetch_Click(null, new RoutedEventArgs());
+            _initialOrderByLoaded = true;
+        }, Avalonia.Threading.DispatcherPriority.Loaded);
     }
 
     private void PopulateDatabaseBox(List<string> databases, string selectedDatabase)
@@ -101,25 +118,61 @@ public partial class QueryStoreGridControl : UserControl
         _fetchCts = new CancellationTokenSource();
         var ct = _fetchCts.Token;
 
-        var topN = (int)(TopNBox.Value ?? 25);
-        var hoursBack = (int)(HoursBackBox.Value ?? 24);
         var orderBy = (OrderByBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "cpu";
+        _lastFetchedOrderBy = orderBy;
+
+        FetchButton.IsEnabled = false;
+        LoadButton.IsEnabled = false;
+        StatusText.Text = "Loading time slicer...";
+        _rows.Clear();
+        _filteredRows.Clear();
+
+        try
+        {
+            // Load slicer data first — LoadData sets a default 24h selection and
+            // fires RangeChanged which triggers FetchPlansForRangeAsync.
+            await LoadTimeSlicerDataAsync(orderBy, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            StatusText.Text = "Cancelled.";
+        }
+        catch (Exception ex)
+        {
+            StatusText.Text = ex.Message.Length > 80 ? ex.Message[..80] + "..." : ex.Message;
+        }
+        finally
+        {
+            FetchButton.IsEnabled = true;
+        }
+    }
+
+    private async System.Threading.Tasks.Task FetchPlansForRangeAsync()
+    {
+        _fetchCts?.Cancel();
+        _fetchCts?.Dispose();
+        _fetchCts = new CancellationTokenSource();
+        var ct = _fetchCts.Token;
+
+        var topN = (int)(TopNBox.Value ?? 25);
+        var orderBy = _lastFetchedOrderBy;
         var filter = BuildSearchFilter();
 
         FetchButton.IsEnabled = false;
         LoadButton.IsEnabled = false;
-        StatusText.Text = "Fetching...";
+        StatusText.Text = "Fetching plans...";
         _rows.Clear();
         _filteredRows.Clear();
 
         try
         {
             var plans = await QueryStoreService.FetchTopPlansAsync(
-                _connectionString, topN, orderBy, hoursBack, filter, ct);
+                _connectionString, topN, orderBy, ct: ct,
+                startUtc: _slicerStartUtc, endUtc: _slicerEndUtc);
 
             if (plans.Count == 0)
             {
-                StatusText.Text = "No Query Store data found.";
+                StatusText.Text = "No Query Store data found for the selected range.";
                 return;
             }
 
@@ -194,10 +247,89 @@ public partial class QueryStoreGridControl : UserControl
         }
     }
 
+    private async void OrderBy_SelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (!_initialOrderByLoaded) return;
+        var newOrderBy = (OrderByBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "cpu";
+        if (newOrderBy == _lastFetchedOrderBy) return;
+
+        _lastFetchedOrderBy = newOrderBy;
+
+        _fetchCts?.Cancel();
+        _fetchCts?.Dispose();
+        _fetchCts = new CancellationTokenSource();
+        var ct = _fetchCts.Token;
+
+        // Capture the current slicer selection so it survives the reload
+        var selStart = TimeRangeSlicer.SelectionStart;
+        var selEnd = TimeRangeSlicer.SelectionEnd;
+
+        FetchButton.IsEnabled = false;
+        StatusText.Text = "Refreshing metric...";
+
+        try
+        {
+            var sliceData = await QueryStoreService.FetchTimeSliceDataAsync(
+                _connectionString, newOrderBy, _slicerDaysBack, ct);
+            if (ct.IsCancellationRequested) return;
+
+            if (sliceData.Count > 0)
+            {
+                // Suppress the implicit RangeChanged fetch — we will refresh the grid explicitly below
+                _suppressRangeChanged = true;
+                try { TimeRangeSlicer.LoadData(sliceData, newOrderBy, selStart, selEnd); }
+                finally { _suppressRangeChanged = false; }
+
+                // Explicitly refresh the grid with the new metric and current time range
+                await FetchPlansForRangeAsync();
+            }
+            else
+            {
+                StatusText.Text = "No time-slicer data available.";
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            StatusText.Text = ex.Message.Length > 80 ? ex.Message[..80] + "..." : ex.Message;
+        }
+        finally
+        {
+            FetchButton.IsEnabled = true;
+        }
+    }
+
     private void ClearSearch_Click(object? sender, RoutedEventArgs e)
     {
         SearchTypeBox.SelectedIndex = 0;
         SearchValueBox.Text = "";
+    }
+
+    private async System.Threading.Tasks.Task LoadTimeSlicerDataAsync(string metric, CancellationToken ct)
+    {
+        try
+        {
+            var sliceData = await QueryStoreService.FetchTimeSliceDataAsync(
+                _connectionString, metric, _slicerDaysBack, ct);
+            if (ct.IsCancellationRequested) return;
+            if (sliceData.Count > 0)
+                TimeRangeSlicer.LoadData(sliceData, metric);
+            else
+                StatusText.Text = "No time-slicer data available.";
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex)
+        {
+            StatusText.Text = $"Slicer: {(ex.Message.Length > 60 ? ex.Message[..60] + "..." : ex.Message)}";
+        }
+    }
+
+    private async void OnTimeRangeChanged(object? sender, TimeRangeChangedEventArgs e)
+    {
+        _slicerStartUtc = e.StartUtc;
+        _slicerEndUtc = e.EndUtc;
+        if (_suppressRangeChanged) return;
+        await FetchPlansForRangeAsync();
     }
 
     private void SelectToggle_Click(object? sender, RoutedEventArgs e)
@@ -225,14 +357,11 @@ public partial class QueryStoreGridControl : UserControl
     {
         if (ResultsGrid.SelectedItem is not QueryStoreRow row) return;
 
-        var hoursBack = (int)(HoursBackBox.Value ?? 24);
-
         var window = new QueryStoreHistoryWindow(
             _connectionString,
             row.QueryId,
             row.FullQueryText,
-            _database,
-            hoursBack);
+            _database);
 
         var topLevel = Avalonia.Controls.TopLevel.GetTopLevel(this);
         if (topLevel is Window parentWindow)
@@ -587,7 +716,6 @@ public partial class QueryStoreGridControl : UserControl
                 ? source.OrderBy(r => GetSortKey(_sortedColumnTag, r))
                 : source.OrderByDescending(r => GetSortKey(_sortedColumnTag, r));
         }
-
 
         _filteredRows.Clear();
         foreach (var row in source)

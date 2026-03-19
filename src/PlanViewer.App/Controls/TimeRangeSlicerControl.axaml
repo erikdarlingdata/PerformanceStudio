@@ -1,0 +1,41 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="PlanViewer.App.Controls.TimeRangeSlicerControl">
+    <Border Background="{DynamicResource SlicerBackgroundBrush}"
+            BorderBrush="{DynamicResource SlicerBorderBrush}"
+            BorderThickness="0,0,0,1">
+        <Grid RowDefinitions="Auto,Auto">
+            <!-- Toggle header -->
+            <Button x:Name="ToggleButton" Grid.Row="0"
+                    Background="Transparent" BorderThickness="0"
+                    HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                    Padding="8,4" Cursor="Hand"
+                    Click="Toggle_Click">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <TextBlock x:Name="ToggleIcon" Text="▾" FontSize="12"
+                               Foreground="{DynamicResource SlicerToggleBrush}"
+                               VerticalAlignment="Center"/>
+                    <TextBlock x:Name="ToggleLabel" Text="Time Range"
+                               FontSize="11" FontWeight="SemiBold"
+                               Foreground="{DynamicResource SlicerToggleBrush}"
+                               VerticalAlignment="Center"/>
+                    <TextBlock x:Name="RangeLabel" Text=""
+                               FontSize="11"
+                               Foreground="{DynamicResource SlicerLabelBrush}"
+                               VerticalAlignment="Center" Margin="12,0,0,0"/>
+                </StackPanel>
+            </Button>
+            <!-- Slicer canvas area -->
+            <Border x:Name="SlicerBorder" Grid.Row="1" Height="120" Margin="8,0,8,6"
+                    Background="{DynamicResource SlicerBackgroundBrush}"
+                    CornerRadius="4" ClipToBounds="True">
+                <Canvas x:Name="SlicerCanvas"
+                        Background="Transparent"
+                        PointerPressed="Canvas_PointerPressed"
+                        PointerMoved="Canvas_PointerMoved"
+                        PointerReleased="Canvas_PointerReleased"
+                        PointerWheelChanged="Canvas_PointerWheelChanged"/>
+            </Border>
+        </Grid>
+    </Border>
+</UserControl>
