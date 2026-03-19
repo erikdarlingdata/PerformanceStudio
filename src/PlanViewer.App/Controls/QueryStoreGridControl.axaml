@@ -33,7 +33,7 @@
                 <StackPanel Spacing="4">
                     <TextBlock Text="Order by" Foreground="{DynamicResource ForegroundBrush}" FontSize="11"/>
                     <ComboBox x:Name="OrderByBox" Width="160" Height="36" FontSize="13"
-                              SelectedIndex="0">
+                              SelectedIndex="0" SelectionChanged="OrderBy_SelectionChanged">
                         <ComboBoxItem Content="Total CPU" Tag="cpu"/>
                         <ComboBoxItem Content="Avg CPU" Tag="avg-cpu"/>
                         <ComboBoxItem Content="Total Duration" Tag="duration"/>

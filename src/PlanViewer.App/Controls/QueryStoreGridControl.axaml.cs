@@ -37,6 +37,8 @@ public partial class QueryStoreGridControl : UserControl
     private DateTime? _slicerEndUtc;
     private int _slicerDaysBack = 30;
     private string _lastFetchedOrderBy = "cpu";
+    private bool _initialOrderByLoaded;
+    private bool _suppressRangeChanged;
 
     public event EventHandler<List<QueryStorePlan>>? PlansSelected;
     public event EventHandler<string>? DatabaseChanged;
@@ -60,7 +62,11 @@ public partial class QueryStoreGridControl : UserControl
         TimeRangeSlicer.IsExpanded = true;
 
         // Auto-fetch with default settings on connect
-        Avalonia.Threading.Dispatcher.UIThread.Post(() => Fetch_Click(null, new RoutedEventArgs()), Avalonia.Threading.DispatcherPriority.Loaded);
+        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            Fetch_Click(null, new RoutedEventArgs());
+            _initialOrderByLoaded = true;
+        }, Avalonia.Threading.DispatcherPriority.Loaded);
     }
 
     private void PopulateDatabaseBox(List<string> databases, string selectedDatabase)
@@ -241,6 +247,58 @@ public partial class QueryStoreGridControl : UserControl
         }
     }
 
+    private async void OrderBy_SelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (!_initialOrderByLoaded) return;
+        var newOrderBy = (OrderByBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "cpu";
+        if (newOrderBy == _lastFetchedOrderBy) return;
+
+        _lastFetchedOrderBy = newOrderBy;
+
+        _fetchCts?.Cancel();
+        _fetchCts?.Dispose();
+        _fetchCts = new CancellationTokenSource();
+        var ct = _fetchCts.Token;
+
+        // Capture the current slicer selection so it survives the reload
+        var selStart = TimeRangeSlicer.SelectionStart;
+        var selEnd = TimeRangeSlicer.SelectionEnd;
+
+        FetchButton.IsEnabled = false;
+        StatusText.Text = "Refreshing metric...";
+
+        try
+        {
+            var sliceData = await QueryStoreService.FetchTimeSliceDataAsync(
+                _connectionString, newOrderBy, _slicerDaysBack, ct);
+            if (ct.IsCancellationRequested) return;
+
+            if (sliceData.Count > 0)
+            {
+                // Suppress the implicit RangeChanged fetch — we will refresh the grid explicitly below
+                _suppressRangeChanged = true;
+                try { TimeRangeSlicer.LoadData(sliceData, newOrderBy, selStart, selEnd); }
+                finally { _suppressRangeChanged = false; }
+
+                // Explicitly refresh the grid with the new metric and current time range
+                await FetchPlansForRangeAsync();
+            }
+            else
+            {
+                StatusText.Text = "No time-slicer data available.";
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            StatusText.Text = ex.Message.Length > 80 ? ex.Message[..80] + "..." : ex.Message;
+        }
+        finally
+        {
+            FetchButton.IsEnabled = true;
+        }
+    }
+
     private void ClearSearch_Click(object? sender, RoutedEventArgs e)
     {
         SearchTypeBox.SelectedIndex = 0;
@@ -270,6 +328,7 @@ public partial class QueryStoreGridControl : UserControl
     {
         _slicerStartUtc = e.StartUtc;
         _slicerEndUtc = e.EndUtc;
+        if (_suppressRangeChanged) return;
         await FetchPlansForRangeAsync();
     }
 

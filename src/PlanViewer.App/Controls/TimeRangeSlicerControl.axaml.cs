@@ -52,22 +52,32 @@ public partial class TimeRangeSlicerControl : UserControl
         }
     }
 
-    public void LoadData(List<QueryStoreTimeSlice> data, string metric)
+    public void LoadData(List<QueryStoreTimeSlice> data, string metric,
+        DateTime? selectionStart = null, DateTime? selectionEnd = null)
     {
         _data = data;
         _metric = metric;
 
-        // Default selection: last 24 hours
-        _rangeEnd = 1.0;
-        if (_data.Count >= 2)
+        if (selectionStart.HasValue && selectionEnd.HasValue && _data.Count >= 2)
         {
-            var last = _data[^1].IntervalStartUtc.AddHours(1);
-            var start24h = last.AddHours(-24);
-            _rangeStart = GetNormFromDateTime(start24h);
+            // Restore a previous selection
+            _rangeStart = GetNormFromDateTime(selectionStart.Value);
+            _rangeEnd = GetNormFromDateTime(selectionEnd.Value);
         }
         else
         {
-            _rangeStart = 0;
+            // Default selection: last 24 hours
+            _rangeEnd = 1.0;
+            if (_data.Count >= 2)
+            {
+                var last = _data[^1].IntervalStartUtc.AddHours(1);
+                var start24h = last.AddHours(-24);
+                _rangeStart = GetNormFromDateTime(start24h);
+            }
+            else
+            {
+                _rangeStart = 0;
+            }
         }
 
         UpdateRangeLabel();

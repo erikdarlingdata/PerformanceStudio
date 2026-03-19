@@ -375,7 +375,7 @@ ORDER BY rsi.start_time, p.plan_id;";
         var sql = $@"
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 
-SELECT TOP (1000)
+SELECT
     DATEADD(HOUR, DATEDIFF(HOUR, 0, rsi.start_time), 0) AS bucket_hour,
     SUM(rs.avg_cpu_time * rs.count_executions) / 1000.0 AS total_cpu_ms,
     SUM(rs.avg_duration * rs.count_executions) / 1000.0 AS total_duration_ms,
