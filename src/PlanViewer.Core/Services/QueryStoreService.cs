@@ -322,6 +322,7 @@ JOIN sys.query_store_plan p
     ON rs.plan_id = p.plan_id
 WHERE p.query_id = @queryId
 AND   rsi.start_time >= DATEADD(HOUR, -@hoursBack, GETUTCDATE())
+AND   rs.first_execution_time >= DATEADD(HOUR, -@hoursBack, GETUTCDATE()) --performance: filter runtime_stats by time directly
 GROUP BY p.plan_id, rsi.start_time
 ORDER BY rsi.start_time, p.plan_id;";
 
@@ -389,6 +390,7 @@ FROM sys.query_store_runtime_stats rs
 JOIN sys.query_store_runtime_stats_interval rsi
     ON rs.runtime_stats_interval_id = rsi.runtime_stats_interval_id
 WHERE rsi.start_time >= DATEADD(DAY, -{daysBack}, GETUTCDATE())
+AND   rs.first_execution_time >= DATEADD(DAY, -{daysBack}, GETUTCDATE()) --performance: filter runtime_stats directly
 GROUP BY DATEADD(HOUR, DATEDIFF(HOUR, 0, rsi.start_time), 0)
 ORDER BY bucket_hour DESC;";
 
