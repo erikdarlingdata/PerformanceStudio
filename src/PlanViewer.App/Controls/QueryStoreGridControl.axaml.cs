@@ -14,6 +14,7 @@ using Microsoft.Data.SqlClient;
 using PlanViewer.Core.Interfaces;
 using PlanViewer.Core.Models;
 using PlanViewer.App.Dialogs;
+using PlanViewer.App.Services;
 using PlanViewer.Core.Services;
 
 namespace PlanViewer.App.Controls;
@@ -34,6 +35,8 @@ public partial class QueryStoreGridControl : UserControl
     private bool _sortAscending;
     private DateTime? _slicerStartUtc;
     private DateTime? _slicerEndUtc;
+    private int _slicerDaysBack = 30;
+    private string _lastFetchedOrderBy = "cpu";
 
     public event EventHandler<List<QueryStorePlan>>? PlansSelected;
     public event EventHandler<string>? DatabaseChanged;
@@ -47,6 +50,7 @@ public partial class QueryStoreGridControl : UserControl
         _credentialService = credentialService;
         _database = initialDatabase;
         _connectionString = serverConnection.GetConnectionString(credentialService, initialDatabase);
+        _slicerDaysBack = AppSettingsService.Load().QueryStoreSlicerDays;
         InitializeComponent();
         ResultsGrid.ItemsSource = _filteredRows;
         EnsureFilterPopup();
@@ -108,24 +112,61 @@ public partial class QueryStoreGridControl : UserControl
         _fetchCts = new CancellationTokenSource();
         var ct = _fetchCts.Token;
 
-        var topN = (int)(TopNBox.Value ?? 25);
         var orderBy = (OrderByBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "cpu";
+        _lastFetchedOrderBy = orderBy;
+
+        FetchButton.IsEnabled = false;
+        LoadButton.IsEnabled = false;
+        StatusText.Text = "Loading time slicer...";
+        _rows.Clear();
+        _filteredRows.Clear();
+
+        try
+        {
+            // Load slicer data first — LoadData sets a default 24h selection and
+            // fires RangeChanged which triggers FetchPlansForRangeAsync.
+            await LoadTimeSlicerDataAsync(orderBy, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            StatusText.Text = "Cancelled.";
+        }
+        catch (Exception ex)
+        {
+            StatusText.Text = ex.Message.Length > 80 ? ex.Message[..80] + "..." : ex.Message;
+        }
+        finally
+        {
+            FetchButton.IsEnabled = true;
+        }
+    }
+
+    private async System.Threading.Tasks.Task FetchPlansForRangeAsync()
+    {
+        _fetchCts?.Cancel();
+        _fetchCts?.Dispose();
+        _fetchCts = new CancellationTokenSource();
+        var ct = _fetchCts.Token;
+
+        var topN = (int)(TopNBox.Value ?? 25);
+        var orderBy = _lastFetchedOrderBy;
         var filter = BuildSearchFilter();
 
         FetchButton.IsEnabled = false;
         LoadButton.IsEnabled = false;
-        StatusText.Text = "Fetching...";
+        StatusText.Text = "Fetching plans...";
         _rows.Clear();
         _filteredRows.Clear();
 
         try
         {
             var plans = await QueryStoreService.FetchTopPlansAsync(
-                _connectionString, topN, orderBy, 8760, filter, ct);
+                _connectionString, topN, orderBy, ct: ct,
+                startUtc: _slicerStartUtc, endUtc: _slicerEndUtc);
 
             if (plans.Count == 0)
             {
-                StatusText.Text = "No Query Store data found.";
+                StatusText.Text = "No Query Store data found for the selected range.";
                 return;
             }
 
@@ -135,9 +176,6 @@ public partial class QueryStoreGridControl : UserControl
             ApplyFilters();
             LoadButton.IsEnabled = true;
             SelectToggleButton.Content = "Select None";
-
-            // Load time-slicer data in the background
-            _ = LoadTimeSlicerDataAsync(orderBy, ct);
         }
         catch (OperationCanceledException)
         {
@@ -213,18 +251,26 @@ public partial class QueryStoreGridControl : UserControl
     {
         try
         {
-            var sliceData = await QueryStoreService.FetchTimeSliceDataAsync(_connectionString, metric, ct);
-            if (!ct.IsCancellationRequested && sliceData.Count > 0)
+            var sliceData = await QueryStoreService.FetchTimeSliceDataAsync(
+                _connectionString, metric, _slicerDaysBack, ct);
+            if (ct.IsCancellationRequested) return;
+            if (sliceData.Count > 0)
                 TimeRangeSlicer.LoadData(sliceData, metric);
+            else
+                StatusText.Text = "No time-slicer data available.";
         }
-        catch { /* non-critical — slicer just stays empty */ }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception ex)
+        {
+            StatusText.Text = $"Slicer: {(ex.Message.Length > 60 ? ex.Message[..60] + "..." : ex.Message)}";
+        }
     }
 
-    private void OnTimeRangeChanged(object? sender, TimeRangeChangedEventArgs e)
+    private async void OnTimeRangeChanged(object? sender, TimeRangeChangedEventArgs e)
     {
         _slicerStartUtc = e.StartUtc;
         _slicerEndUtc = e.EndUtc;
-        ApplySortAndFilters();
+        await FetchPlansForRangeAsync();
     }
 
     private void SelectToggle_Click(object? sender, RoutedEventArgs e)
@@ -604,14 +650,6 @@ public partial class QueryStoreGridControl : UserControl
     private void ApplySortAndFilters()
     {
         IEnumerable<QueryStoreRow> source = _rows.Where(RowMatchesAllFilters);
-
-        // Apply time-range slicer filter
-        if (_slicerStartUtc.HasValue && _slicerEndUtc.HasValue)
-        {
-            var start = _slicerStartUtc.Value;
-            var end = _slicerEndUtc.Value;
-            source = source.Where(r => r.Plan.LastExecutedUtc >= start && r.Plan.LastExecutedUtc <= end);
-        }
 
         if (_sortedColumnTag != null)
         {

@@ -56,8 +56,20 @@ public partial class TimeRangeSlicerControl : UserControl
     {
         _data = data;
         _metric = metric;
-        _rangeStart = 0;
-        _rangeEnd = 1;
+
+        // Default selection: last 24 hours
+        _rangeEnd = 1.0;
+        if (_data.Count >= 2)
+        {
+            var last = _data[^1].IntervalStartUtc.AddHours(1);
+            var start24h = last.AddHours(-24);
+            _rangeStart = GetNormFromDateTime(start24h);
+        }
+        else
+        {
+            _rangeStart = 0;
+        }
+
         UpdateRangeLabel();
         Redraw();
         FireRangeChanged();
