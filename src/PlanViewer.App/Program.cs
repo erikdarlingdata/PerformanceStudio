@@ -3,6 +3,7 @@ using System;
 using System.IO;
 using System.IO.Pipes;
 using System.Threading;
+using Velopack;
 
 namespace PlanViewer.App;
 
@@ -14,6 +15,8 @@ class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        VelopackApp.Build().Run();
+
         // If another instance is running, send the file path to it and exit
         if (args.Length > 0 && TrySendToRunningInstance(args[0]))
             return;

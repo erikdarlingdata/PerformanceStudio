@@ -16,6 +16,7 @@ using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using PlanViewer.App.Mcp;
 using PlanViewer.App.Services;
+using Velopack;
 
 namespace PlanViewer.App;
 
@@ -74,6 +75,8 @@ public partial class AboutWindow : Window
     }
 
     private string? _updateUrl;
+    private UpdateManager? _velopackMgr;
+    private UpdateInfo? _velopackUpdate;
 
     private async void CheckUpdate_Click(object? sender, RoutedEventArgs e)
     {
@@ -81,6 +84,32 @@ public partial class AboutWindow : Window
         UpdateStatusText.Text = "Checking...";
         UpdateLink.IsVisible = false;
 
+        // Try Velopack first (Windows only, supports download + apply)
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            try
+            {
+                _velopackMgr = new UpdateManager(
+                    new Velopack.Sources.GithubSource(
+                        "https://github.com/erikdarlingdata/PerformanceStudio", null, false));
+
+                _velopackUpdate = await _velopackMgr.CheckForUpdatesAsync();
+                if (_velopackUpdate != null)
+                {
+                    UpdateStatusText.Text = "Update available:";
+                    UpdateLink.Text = $"v{_velopackUpdate.TargetFullRelease.Version} — click to download and install";
+                    UpdateLink.IsVisible = true;
+                    CheckUpdateButton.IsEnabled = true;
+                    return;
+                }
+            }
+            catch
+            {
+                // Velopack packages may not exist yet — fall through
+            }
+        }
+
+        // Fallback: GitHub API check (opens browser)
         var currentVersion = Assembly.GetExecutingAssembly().GetName().Version ?? new Version(0, 0, 0);
         var result = await UpdateChecker.CheckAsync(currentVersion);
 
@@ -103,8 +132,30 @@ public partial class AboutWindow : Window
         CheckUpdateButton.IsEnabled = true;
     }
 
-    private void UpdateLink_Click(object? sender, PointerPressedEventArgs e)
+    private async void UpdateLink_Click(object? sender, PointerPressedEventArgs e)
     {
+        // Velopack download + apply
+        if (_velopackMgr != null && _velopackUpdate != null)
+        {
+            try
+            {
+                UpdateLink.IsVisible = false;
+                UpdateStatusText.Text = "Downloading update...";
+
+                await _velopackMgr.DownloadUpdatesAsync(_velopackUpdate);
+
+                UpdateStatusText.Text = "Update downloaded — restarting...";
+                _velopackMgr.ApplyUpdatesAndRestart(_velopackUpdate.TargetFullRelease);
+            }
+            catch (Exception ex)
+            {
+                UpdateStatusText.Text = $"Update failed: {ex.Message}";
+                UpdateLink.IsVisible = false;
+            }
+            return;
+        }
+
+        // Fallback: open browser
         if (_updateUrl != null) OpenUrl(_updateUrl);
     }
 

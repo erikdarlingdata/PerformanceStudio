@@ -64,6 +64,22 @@ jobs:
           dotnet publish src/PlanViewer.App/PlanViewer.App.csproj -c Release -r osx-x64 --self-contained -o publish/osx-x64
           dotnet publish src/PlanViewer.App/PlanViewer.App.csproj -c Release -r osx-arm64 --self-contained -o publish/osx-arm64
 
+      - name: Create Velopack release (Windows)
+        if: steps.check.outputs.EXISTS == 'false'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          dotnet tool install -g vpk
+          New-Item -ItemType Directory -Force -Path releases/velopack
+
+          # Download previous release for delta generation
+          vpk download github --repoUrl https://github.com/${{ github.repository }} --channel win -o releases/velopack
+
+          # Pack Windows release
+          vpk pack -u PerformanceStudio -v $env:VERSION -p publish/win-x64 -e PlanViewer.App.exe -o releases/velopack --channel win
+
       - name: Package and upload
         if: steps.check.outputs.EXISTS == 'false'
         shell: pwsh
@@ -116,7 +132,7 @@ jobs:
             Compress-Archive -Path "$wrapperDir/*" -DestinationPath "releases/PerformanceStudio-$rid.zip" -Force
           }
 
-          # Checksums
+          # Checksums (zips only, Velopack has its own checksums)
           $checksums = Get-ChildItem releases/*.zip | ForEach-Object {
             $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
             "$hash  $($_.Name)"
@@ -125,5 +141,8 @@ jobs:
           Write-Host "Checksums:"
           $checksums | ForEach-Object { Write-Host $_ }
 
-          # Upload
+          # Upload zips + checksums
           gh release upload "v$env:VERSION" releases/*.zip releases/SHA256SUMS.txt --clobber
+
+          # Upload Velopack artifacts
+          vpk upload github --repoUrl https://github.com/${{ github.repository }} --channel win -o releases/velopack --releaseName "v$env:VERSION" --tag "v$env:VERSION" --merge
