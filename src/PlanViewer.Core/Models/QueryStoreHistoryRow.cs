@@ -1,4 +1,5 @@
 using System;
+using PlanViewer.Core.Services;
 
 namespace PlanViewer.Core.Models;
 
@@ -27,6 +28,6 @@ public class QueryStoreHistoryRow
     public int MaxDop { get; set; }
     public DateTime? LastExecutionUtc { get; set; }
 
-    public string IntervalStartLocal => IntervalStartUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm");
-    public string LastExecutionLocal => LastExecutionUtc?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "";
+    public string IntervalStartLocal => TimeDisplayHelper.FormatForDisplay(IntervalStartUtc);
+    public string LastExecutionLocal => LastExecutionUtc.HasValue ? TimeDisplayHelper.FormatForDisplay(LastExecutionUtc.Value) : "";
 }

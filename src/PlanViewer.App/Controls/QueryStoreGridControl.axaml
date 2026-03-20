@@ -67,6 +67,15 @@
                              Watermark="0x1AB2C3, dbo.MyProc"
                              KeyDown="SearchValue_KeyDown"/>
                 </StackPanel>
+                <StackPanel Spacing="4">
+                    <TextBlock Text="Time display" Foreground="{DynamicResource ForegroundBrush}" FontSize="11"/>
+                    <ComboBox x:Name="TimeDisplayBox" Width="100" Height="36" FontSize="13"
+                              SelectedIndex="0" SelectionChanged="TimeDisplay_SelectionChanged">
+                        <ComboBoxItem Content="Local" Tag="Local"/>
+                        <ComboBoxItem Content="UTC" Tag="Utc"/>
+                        <ComboBoxItem Content="Server" Tag="Server"/>
+                    </ComboBox>
+                </StackPanel>
                 <StackPanel Spacing="2" VerticalAlignment="Center">
                     <Button x:Name="FetchButton" Content="Fetch" Click="Fetch_Click"
                             Height="28" Padding="16,0" FontSize="12"

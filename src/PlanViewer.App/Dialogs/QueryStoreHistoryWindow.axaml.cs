@@ -107,8 +107,8 @@ public partial class QueryStoreHistoryWindow : Window
             {
                 var planCount = _historyData.Select(r => r.PlanId).Distinct().Count();
                 var totalExec = _historyData.Sum(r => r.CountExecutions);
-                var first = _historyData.Min(r => r.IntervalStartUtc).ToLocalTime();
-                var last = _historyData.Max(r => r.IntervalStartUtc).ToLocalTime();
+                var first = TimeDisplayHelper.ConvertForDisplay(_historyData.Min(r => r.IntervalStartUtc));
+                var last = TimeDisplayHelper.ConvertForDisplay(_historyData.Max(r => r.IntervalStartUtc));
                 StatusText.Text = $"{_historyData.Count} intervals, {planCount} plan(s), " +
                                   $"{totalExec:N0} total executions | " +
                                   $"{first:MM/dd HH:mm} to {last:MM/dd HH:mm}";
@@ -158,7 +158,7 @@ public partial class QueryStoreHistoryWindow : Window
         foreach (var group in planGroups)
         {
             var ordered = group.OrderBy(r => r.IntervalStartUtc).ToList();
-            var xs = ordered.Select(r => r.IntervalStartUtc.ToLocalTime().ToOADate()).ToArray();
+            var xs = ordered.Select(r => TimeDisplayHelper.ConvertForDisplay(r.IntervalStartUtc).ToOADate()).ToArray();
             var ys = ordered.Select(r => GetMetricValue(r, tag)).ToArray();
 
             var scatter = HistoryChart.Plot.Add.Scatter(xs, ys);

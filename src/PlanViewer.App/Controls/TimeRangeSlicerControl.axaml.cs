@@ -8,6 +8,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using PlanViewer.Core.Models;
+using PlanViewer.Core.Services;
 
 namespace PlanViewer.App.Controls;
 
@@ -167,7 +168,7 @@ public partial class TimeRangeSlicerControl : UserControl
 
     // ── Drawing ────────────────────────────────────────────────────────────
 
-    private void Redraw()
+    public void Redraw()
     {
         SlicerCanvas.Children.Clear();
         if (_data.Count < 2) return;
@@ -238,7 +239,7 @@ public partial class TimeRangeSlicerControl : UserControl
         for (int i = 0; i < n; i += labelInterval)
         {
             var x = i * stepX + stepX / 2;
-            var dt = _data[i].IntervalStartUtc.ToLocalTime();
+            var dt = TimeDisplayHelper.ConvertForDisplay(_data[i].IntervalStartUtc);
             var label = dt.ToString("MM/dd HH:mm");
             var tb = new TextBlock
             {
@@ -531,8 +532,8 @@ public partial class TimeRangeSlicerControl : UserControl
             RangeLabel.Text = "";
             return;
         }
-        var start = GetDateTimeAtNorm(_rangeStart).ToLocalTime();
-        var end = GetDateTimeAtNorm(_rangeEnd).ToLocalTime();
+        var start = TimeDisplayHelper.ConvertForDisplay(GetDateTimeAtNorm(_rangeStart));
+        var end = TimeDisplayHelper.ConvertForDisplay(GetDateTimeAtNorm(_rangeEnd));
         var span = end - start;
         RangeLabel.Text = $"{start:yyyy-MM-dd HH:mm} → {end:yyyy-MM-dd HH:mm}  ({span.TotalHours:F0}h)";
     }

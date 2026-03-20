@@ -299,6 +299,29 @@ public partial class QueryStoreGridControl : UserControl
         }
     }
 
+    private void TimeDisplay_SelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (!IsInitialized) return;
+        var tag = (TimeDisplayBox.SelectedItem as ComboBoxItem)?.Tag?.ToString();
+        if (tag == null) return;
+        TimeDisplayHelper.Current = tag switch
+        {
+            "Utc" => TimeDisplayMode.Utc,
+            "Server" => TimeDisplayMode.Server,
+            _ => TimeDisplayMode.Local
+        };
+        // Refresh grid display
+        if (_filteredRows.Count > 0)
+        {
+            foreach (var row in _filteredRows)
+                row.NotifyTimeDisplayChanged();
+            ResultsGrid.ItemsSource = null;
+            ResultsGrid.ItemsSource = _filteredRows;
+        }
+        // Refresh slicer labels
+        TimeRangeSlicer.Redraw();
+    }
+
     private void ClearSearch_Click(object? sender, RoutedEventArgs e)
     {
         SearchTypeBox.SelectedIndex = 0;
@@ -943,7 +966,10 @@ public class QueryStoreRow : INotifyPropertyChanged
     public long TotalMemSort => Plan.TotalMemoryGrantPages;
     public double AvgMemSort => Plan.AvgMemoryGrantPages;
 
-    public string LastExecutedLocal => Plan.LastExecutedUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm");
+    public string LastExecutedLocal => TimeDisplayHelper.FormatForDisplay(Plan.LastExecutedUtc);
+
+    public void NotifyTimeDisplayChanged() => OnPropertyChanged(nameof(LastExecutedLocal));
+
     public string QueryPreview => Plan.QueryText.Length > 80
         ? Plan.QueryText[..80].Replace("\n", " ").Replace("\r", "") + "..."
         : Plan.QueryText.Replace("\n", " ").Replace("\r", "");

@@ -362,6 +362,7 @@ public partial class QuerySessionControl : UserControl
 
             await PopulateDatabases();
             await FetchServerMetadataAsync();
+            await FetchServerUtcOffset();
 
             if (_selectedDatabase != null)
             {
@@ -437,6 +438,22 @@ public partial class QuerySessionControl : UserControl
             // Non-fatal — advice will just lack server context
             _serverMetadata = null;
         }
+    }
+
+    private async Task FetchServerUtcOffset()
+    {
+        if (_connectionString == null) return;
+        try
+        {
+            await using var conn = new SqlConnection(_connectionString);
+            await conn.OpenAsync();
+            await using var cmd = new SqlCommand(
+                "SELECT DATEDIFF(MINUTE, GETUTCDATE(), GETDATE())", conn);
+            var offset = await cmd.ExecuteScalarAsync();
+            if (offset is int mins)
+                PlanViewer.Core.Services.TimeDisplayHelper.ServerUtcOffsetMinutes = mins;
+        }
+        catch { }
     }
 
     private async Task FetchDatabaseMetadataAsync()

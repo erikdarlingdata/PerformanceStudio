@@ -139,7 +139,8 @@ FROM sys.database_query_store_options;";
         }
         else
         {
-            timeWhereClause = $"WHERE rs.last_execution_time >= DATEADD(HOUR, -{hoursBack}, GETUTCDATE())";
+            timeWhereClause = "WHERE rs.last_execution_time >= DATEADD(HOUR, -@hoursBack, GETUTCDATE())";
+            parameters.Add(new SqlParameter("@hoursBack", hoursBack));
         }
 
         // 1. plan_agg: aggregate runtime_stats by plan_id only (cheapest grouping,
@@ -374,7 +375,7 @@ ORDER BY rsi.start_time, p.plan_id;";
         int daysBack = 30,
         CancellationToken ct = default)
     {
-        var sql = $@"
+        var sql = @"
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 
 SELECT
@@ -389,8 +390,8 @@ SELECT
 FROM sys.query_store_runtime_stats rs
 JOIN sys.query_store_runtime_stats_interval rsi
     ON rs.runtime_stats_interval_id = rsi.runtime_stats_interval_id
-WHERE rsi.start_time >= DATEADD(DAY, -{daysBack}, GETUTCDATE())
-AND   rs.first_execution_time >= DATEADD(DAY, -{daysBack}, GETUTCDATE()) --performance: filter runtime_stats directly
+WHERE rsi.start_time >= DATEADD(DAY, -@daysBack, GETUTCDATE())
+AND   rs.first_execution_time >= DATEADD(DAY, -@daysBack, GETUTCDATE()) --performance: filter runtime_stats directly
 GROUP BY DATEADD(HOUR, DATEDIFF(HOUR, 0, rsi.start_time), 0)
 ORDER BY bucket_hour DESC;";
 
@@ -399,6 +400,7 @@ ORDER BY bucket_hour DESC;";
         await using var conn = new SqlConnection(connectionString);
         await conn.OpenAsync(ct);
         await using var cmd = new SqlCommand(sql, conn) { CommandTimeout = 120 };
+        cmd.Parameters.Add(new SqlParameter("@daysBack", daysBack));
         await using var reader = await cmd.ExecuteReaderAsync(ct);
 
         while (await reader.ReadAsync(ct))
