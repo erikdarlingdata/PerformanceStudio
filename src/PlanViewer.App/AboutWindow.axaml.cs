@@ -132,9 +132,18 @@ public partial class AboutWindow : Window
         CheckUpdateButton.IsEnabled = true;
     }
 
+    private bool _updateDownloaded;
+
     private async void UpdateLink_Click(object? sender, PointerPressedEventArgs e)
     {
-        // Velopack download + apply
+        // Step 3: User clicks "Restart now" after download
+        if (_updateDownloaded && _velopackMgr != null && _velopackUpdate != null)
+        {
+            _velopackMgr.ApplyUpdatesAndRestart(_velopackUpdate.TargetFullRelease);
+            return;
+        }
+
+        // Step 2: User clicks to download
         if (_velopackMgr != null && _velopackUpdate != null)
         {
             try
@@ -144,8 +153,10 @@ public partial class AboutWindow : Window
 
                 await _velopackMgr.DownloadUpdatesAsync(_velopackUpdate);
 
-                UpdateStatusText.Text = "Update downloaded — restarting...";
-                _velopackMgr.ApplyUpdatesAndRestart(_velopackUpdate.TargetFullRelease);
+                _updateDownloaded = true;
+                UpdateStatusText.Text = "Update downloaded.";
+                UpdateLink.Text = "Restart now to apply";
+                UpdateLink.IsVisible = true;
             }
             catch (Exception ex)
             {
