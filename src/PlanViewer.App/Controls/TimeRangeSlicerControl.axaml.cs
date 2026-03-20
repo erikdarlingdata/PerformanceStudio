@@ -140,12 +140,18 @@ public partial class TimeRangeSlicerControl : UserControl
     {
         return _metric switch
         {
-            "cpu" or "avg-cpu" => _data.Select(d => d.TotalCpu).ToArray(),
-            "duration" or "avg-duration" => _data.Select(d => d.TotalDuration).ToArray(),
-            "reads" or "avg-reads" => _data.Select(d => d.TotalReads).ToArray(),
-            "writes" or "avg-writes" => _data.Select(d => d.TotalWrites).ToArray(),
-            "physical-reads" or "avg-physical-reads" => _data.Select(d => d.TotalPhysicalReads).ToArray(),
-            "memory" or "avg-memory" => _data.Select(d => d.TotalMemory).ToArray(),
+            "cpu" => _data.Select(d => d.TotalCpu).ToArray(),
+            "avg-cpu" => _data.Select(d => d.AvgCpu).ToArray(),
+            "duration" => _data.Select(d => d.TotalDuration).ToArray(),
+            "avg-duration" => _data.Select(d => d.AvgDuration).ToArray(),
+            "reads" => _data.Select(d => d.TotalReads).ToArray(),
+            "avg-reads" => _data.Select(d => d.AvgReads).ToArray(),
+            "writes" => _data.Select(d => d.TotalWrites).ToArray(),
+            "avg-writes" => _data.Select(d => d.AvgWrites).ToArray(),
+            "physical-reads" => _data.Select(d => d.TotalPhysicalReads).ToArray(),
+            "avg-physical-reads" => _data.Select(d => d.AvgPhysicalReads).ToArray(),
+            "memory" => _data.Select(d => d.TotalMemory).ToArray(),
+            "avg-memory" => _data.Select(d => d.AvgMemory).ToArray(),
             "executions" => _data.Select(d => (double)d.TotalExecutions).ToArray(),
             _ => _data.Select(d => d.TotalCpu).ToArray(),
         };
@@ -155,12 +161,18 @@ public partial class TimeRangeSlicerControl : UserControl
     {
         return _metric switch
         {
-            "cpu" or "avg-cpu" => "Total CPU (ms)",
-            "duration" or "avg-duration" => "Total Duration (ms)",
-            "reads" or "avg-reads" => "Total Reads",
-            "writes" or "avg-writes" => "Total Writes",
-            "physical-reads" or "avg-physical-reads" => "Total Physical Reads",
-            "memory" or "avg-memory" => "Total Memory (MB)",
+            "cpu" => "Total CPU (ms)",
+            "avg-cpu" => "Avg CPU (ms)",
+            "duration" => "Total Duration (ms)",
+            "avg-duration" => "Avg Duration (ms)",
+            "reads" => "Total Reads",
+            "avg-reads" => "Avg Reads",
+            "writes" => "Total Writes",
+            "avg-writes" => "Avg Writes",
+            "physical-reads" => "Total Physical Reads",
+            "avg-physical-reads" => "Avg Physical Reads",
+            "memory" => "Total Memory (MB)",
+            "avg-memory" => "Avg Memory (MB)",
             "executions" => "Executions",
             _ => "Total CPU (ms)",
         };
@@ -256,8 +268,8 @@ public partial class TimeRangeSlicerControl : UserControl
         var metricTb = new TextBlock
         {
             Text = GetMetricLabel(),
-            FontSize = 9,
-            Foreground = labelBrush,
+            FontSize = 12,
+            Foreground = TryFindBrush("ForegroundBrush", new SolidColorBrush(Color.Parse("#E4E6EB"))),
         };
         Canvas.SetRight(metricTb, 4);
         Canvas.SetTop(metricTb, 2);
