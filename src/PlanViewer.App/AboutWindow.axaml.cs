@@ -136,10 +136,49 @@ public partial class AboutWindow : Window
 
     private async void UpdateLink_Click(object? sender, PointerPressedEventArgs e)
     {
-        // Step 3: User clicks "Restart now" after download
+        // Step 3: User clicks "Restart now" after download — confirm first
         if (_updateDownloaded && _velopackMgr != null && _velopackUpdate != null)
         {
-            _velopackMgr.ApplyUpdatesAndRestart(_velopackUpdate.TargetFullRelease);
+            var dialog = new Avalonia.Controls.Window
+            {
+                Title = "Update Ready",
+                Width = 350, Height = 150,
+                WindowStartupLocation = Avalonia.Controls.WindowStartupLocation.CenterOwner,
+                CanResize = false
+            };
+
+            var result = false;
+            var panel = new Avalonia.Controls.StackPanel
+            {
+                Margin = new Avalonia.Thickness(20),
+                Spacing = 15
+            };
+            panel.Children.Add(new Avalonia.Controls.TextBlock
+            {
+                Text = "The application will close and restart with the new version. Continue?",
+                TextWrapping = Avalonia.Media.TextWrapping.Wrap
+            });
+            var buttonPanel = new Avalonia.Controls.StackPanel
+            {
+                Orientation = Avalonia.Layout.Orientation.Horizontal,
+                HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+                Spacing = 8
+            };
+            var okButton = new Avalonia.Controls.Button { Content = "Restart Now" };
+            var cancelButton = new Avalonia.Controls.Button { Content = "Later" };
+            okButton.Click += (_, _) => { result = true; dialog.Close(); };
+            cancelButton.Click += (_, _) => { dialog.Close(); };
+            buttonPanel.Children.Add(okButton);
+            buttonPanel.Children.Add(cancelButton);
+            panel.Children.Add(buttonPanel);
+            dialog.Content = panel;
+
+            await dialog.ShowDialog(this);
+
+            if (result)
+            {
+                _velopackMgr.ApplyUpdatesAndRestart(_velopackUpdate.TargetFullRelease);
+            }
             return;
         }
 
