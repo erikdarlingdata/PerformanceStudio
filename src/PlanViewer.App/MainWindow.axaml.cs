@@ -48,6 +48,9 @@ public partial class MainWindow : Window
 
         InitializeComponent();
 
+        // Check for updates on startup (non-blocking)
+        _ = CheckForUpdatesOnStartupAsync();
+
         // Build the Recent Plans submenu from saved state
         RebuildRecentPlansMenu();
 
@@ -1358,5 +1361,53 @@ public partial class MainWindow : Window
             }
         };
         dialog.ShowDialog(this);
+    }
+
+    private async Task CheckForUpdatesOnStartupAsync()
+    {
+        try
+        {
+            await Task.Delay(5000); // Don't slow down startup
+
+            if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(
+                System.Runtime.InteropServices.OSPlatform.Windows))
+            {
+                try
+                {
+                    var mgr = new Velopack.UpdateManager(
+                        new Velopack.Sources.GithubSource(
+                            "https://github.com/erikdarlingdata/PerformanceStudio", null, false));
+
+                    var update = await mgr.CheckForUpdatesAsync();
+                    if (update != null)
+                    {
+                        await Dispatcher.UIThread.InvokeAsync(() =>
+                        {
+                            Title = $"Performance Studio — Update v{update.TargetFullRelease.Version} available (Help > About)";
+                        });
+                        return;
+                    }
+                }
+                catch
+                {
+                    // Velopack not available — fall through
+                }
+            }
+
+            var currentVersion = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version
+                ?? new Version(0, 0, 0);
+            var result = await UpdateChecker.CheckAsync(currentVersion);
+            if (result.UpdateAvailable)
+            {
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    Title = $"Performance Studio — Update {result.LatestVersion} available (Help > About)";
+                });
+            }
+        }
+        catch
+        {
+            // Never crash on update check
+        }
     }
 }
