@@ -6,7 +6,7 @@
     <AssemblyName>InstallSsmsExtension</AssemblyName>
     <RootNamespace>PlanViewer.Ssms.Installer</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Version>1.2.2</Version>
+    <Version>1.2.3</Version>
     <Authors>Erik Darling</Authors>
     <Company>Darling Data LLC</Company>
     <Product>SQL Performance Studio</Product>
