@@ -155,7 +155,7 @@
                 <DataGridTemplateColumn SortMemberPath="WaitGrandTotalSort" Width="160">
                     <DataGridTemplateColumn.Header>
                         <StackPanel Orientation="Horizontal" Spacing="4">
-                            <Button Content="%" Width="20" Height="18" Padding="0"
+                            <Button Content="v" Width="20" Height="18" Padding="0"
                                     FontSize="10" FontWeight="Bold"
                                     Background="Transparent" BorderThickness="1"
                                     BorderBrush="{DynamicResource ForegroundMutedBrush}"

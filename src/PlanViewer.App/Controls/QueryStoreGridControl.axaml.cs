@@ -42,7 +42,7 @@ public partial class QueryStoreGridControl : UserControl
     private bool _suppressRangeChanged;
     private string? _waitHighlightCategory;
     private bool _waitStatsEnabled = true;
-    private bool _waitPercentMode = true;
+    private bool _waitPercentMode;
 
     public event EventHandler<List<QueryStorePlan>>? PlansSelected;
     public event EventHandler<string>? DatabaseChanged;
@@ -1115,7 +1115,7 @@ public class QueryStoreRow : INotifyPropertyChanged
         set { _waitHighlightCategory = value; OnPropertyChanged(); }
     }
 
-    private bool _waitPercentMode = true;
+    private bool _waitPercentMode;
     private double _waitMaxGrandTotal = 1.0;
 
     public bool WaitPercentMode

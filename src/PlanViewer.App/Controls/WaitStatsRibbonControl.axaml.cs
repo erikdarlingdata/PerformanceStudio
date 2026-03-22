@@ -1,5 +1,4 @@
 using System;
-using System;
 using System.Collections.Generic;
 using System.Linq;
 using Avalonia;
@@ -65,20 +64,27 @@ public partial class WaitStatsRibbonControl : UserControl
 
         var top3 = new HashSet<string>(globalTotals.Take(3).Select(x => x.Cat));
 
-        // Group by hour
-        var buckets = _data
+        // Group by hour into a lookup
+        var bucketLookup = _data
             .GroupBy(d => d.IntervalStartUtc)
-            .OrderBy(g => g.Key)
-            .ToList();
+            .ToDictionary(g => g.Key, g => g.ToList());
 
-        if (buckets.Count == 0) return;
+        if (bucketLookup.Count == 0) return;
 
-        var n = buckets.Count;
+        // Build a complete hourly timeline from min to max
+        var minHour = bucketLookup.Keys.Min();
+        var maxHour = bucketLookup.Keys.Max();
+        var allHours = new List<DateTime>();
+        for (var hr = minHour; hr <= maxHour; hr = hr.AddHours(1))
+            allHours.Add(hr);
+
+        var n = allHours.Count;
+        if (n == 0) return;
         var barGap = Math.Min(2.0, Math.Max(0.5, w / n * 0.1));
         var stepX = w / n;
 
-        // Compute max total per bucket for Y scaling
-        var maxTotal = buckets.Max(b => b.Sum(x => x.WaitRatio));
+        // Compute max total per bucket for Y scaling (only buckets with data)
+        var maxTotal = bucketLookup.Values.Max(b => b.Sum(x => x.WaitRatio));
         if (maxTotal <= 0) maxTotal = 1;
 
         // Build ordered category list: top3 first, then "Others"
@@ -90,8 +96,13 @@ public partial class WaitStatsRibbonControl : UserControl
 
         for (int i = 0; i < n; i++)
         {
-            var bucket = buckets[i];
+            var hour = allHours[i];
             var x = i * stepX;
+
+            // Skip drawing if no data for this hour (gap in timeline)
+            if (!bucketLookup.TryGetValue(hour, out var bucketItems))
+                continue;
+
             double y = PaddingTop + chartH; // bottom
 
             // Aggregate into top3 + Others per bucket
@@ -99,7 +110,7 @@ public partial class WaitStatsRibbonControl : UserControl
             foreach (var cat in orderedCats)
                 catValues[cat] = 0;
 
-            foreach (var s in bucket)
+            foreach (var s in bucketItems)
             {
                 if (top3.Contains(s.WaitCategoryDesc))
                     catValues[s.WaitCategoryDesc] += s.WaitRatio;
@@ -130,7 +141,21 @@ public partial class WaitStatsRibbonControl : UserControl
                 Canvas.SetTop(rect, y);
                 RibbonCanvas.Children.Add(rect);
 
-                ToolTip.SetTip(rect, $"{cat}: {ratio:P2}");
+                var intervalStart = hour;
+                var intervalEnd = intervalStart.AddHours(1);
+                var startDisplay = TimeDisplayHelper.FormatForDisplay(intervalStart, "yyyy-MM-dd HH:mm");
+                var endDisplay = intervalStart.Date == intervalEnd.Date
+                    ? TimeDisplayHelper.FormatForDisplay(intervalEnd, "HH:mm")
+                    : TimeDisplayHelper.FormatForDisplay(intervalEnd, "yyyy-MM-dd HH:mm");
+                var tipBlock = new TextBlock
+                {
+                    Text = $"{cat}: {ratio:P2}\n{startDisplay} \u2013 {endDisplay}",
+                    FontSize = 13,
+                    Padding = new Thickness(6, 4),
+                };
+                ToolTip.SetTip(rect, tipBlock);
+                ToolTip.SetVerticalOffset(rect, 12);
+                ToolTip.SetShowDelay(rect, 200);
 
                 var capturedCat = cat;
                 rect.PointerPressed += (_, pe) =>
@@ -149,7 +174,7 @@ public partial class WaitStatsRibbonControl : UserControl
         int labelInterval = Math.Max(1, n / 6);
         for (int i = 0; i < n; i += labelInterval)
         {
-            var dt = buckets[i].Key;
+            var dt = allHours[i];
             var tb = new TextBlock
             {
                 Text = TimeDisplayHelper.FormatForDisplay(dt, "MM/dd HH:mm"),

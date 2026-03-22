@@ -473,11 +473,15 @@ ORDER BY wait_ratio DESC;";
         return rows;
     }
 
-    /// <summary>
-    /// Per-plan wait stats aggregated for a time range, grouped by plan_id + category.
-    /// WaitRatio = SUM(total_query_wait_time_ms) / interval_duration_ms.
-    /// </summary>
-    public static async Task<List<(long PlanId, WaitCategoryTotal Wait)>> FetchPlanWaitStatsAsync(
+	/// <summary>
+	/// Per-plan wait stats aggregated for a time range, grouped by plan_id + category.
+	/// WaitRatio = SUM(total_query_wait_time_ms) / sum(rs.avg_duration*rs.count_executions 
+	/// ==> May be challenged. But at the detail level we use the plan duration use query stats. 
+    /// So it is different from the other wait ratio calculation, which is based on the interval duration. 
+    /// We can consider to align them in the future if needed. 
+	/// 
+	/// </summary>
+	public static async Task<List<(long PlanId, WaitCategoryTotal Wait)>> FetchPlanWaitStatsAsync(
         string connectionString, DateTime startUtc, DateTime endUtc,
         CancellationToken ct = default)
     {
@@ -488,10 +492,11 @@ SELECT
     ws.wait_category,
     ws.wait_category_desc,
     1.0 * SUM(ws.total_query_wait_time_ms)
-        / (1000.0 * DATEDIFF(SECOND, @start, @end)) AS wait_ratio
+        / sum(rs.avg_duration*rs.count_executions) AS wait_ratio
 FROM sys.query_store_wait_stats ws
 JOIN sys.query_store_runtime_stats_interval rsi
     ON ws.runtime_stats_interval_id = rsi.runtime_stats_interval_id
+JOIN sys.query_store_runtime_stats rs ON rs.runtime_stats_interval_id = rsi.runtime_stats_interval_id and rs.plan_id=ws.plan_id
 WHERE rsi.start_time >= @start AND rsi.start_time < @end
 AND   ws.execution_type = 0
 " + WaitCategoryExclusion + @"
@@ -511,7 +516,7 @@ ORDER BY ws.plan_id, wait_ratio DESC;";
             {
                 WaitCategory = reader.GetInt16(1),
                 WaitCategoryDesc = reader.GetString(2),
-                WaitRatio = (double)reader.GetDecimal(3),
+                WaitRatio = reader.GetDouble(3),
             }));
         }
         return rows;
