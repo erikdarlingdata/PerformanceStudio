@@ -1,0 +1,9 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="PlanViewer.App.Controls.WaitProfileBarControl">
+    <Border x:Name="BarBorder" CornerRadius="2" ClipToBounds="True"
+            Background="{DynamicResource BackgroundLightBrush}"
+            MinHeight="14">
+        <Canvas x:Name="BarCanvas"/>
+    </Border>
+</UserControl>
