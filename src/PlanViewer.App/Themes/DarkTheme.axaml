@@ -64,4 +64,31 @@
     <SolidColorBrush x:Key="SlicerLabelBrush" Color="#99E4E6EB"/>
     <SolidColorBrush x:Key="SlicerToggleBrush" Color="#E4E6EB"/>
 
+    <!-- Wait Stats category colors (fixed per category) -->
+    <SolidColorBrush x:Key="WaitCategory.Unknown"            Color="#8E8E93"/>
+    <SolidColorBrush x:Key="WaitCategory.CPU"                Color="#00bd23"/>
+    <SolidColorBrush x:Key="WaitCategory.Worker Thread"      Color="#19ff25"/>
+    <SolidColorBrush x:Key="WaitCategory.Lock"               Color="#EE5A24"/>
+    <SolidColorBrush x:Key="WaitCategory.Latch"              Color="#F368E0"/>
+    <SolidColorBrush x:Key="WaitCategory.Buffer Latch"       Color="#f5069e"/>
+    <SolidColorBrush x:Key="WaitCategory.Buffer IO"          Color="#2d13f2"/>
+    <SolidColorBrush x:Key="WaitCategory.Compilation"        Color="#A29BFE"/>
+    <SolidColorBrush x:Key="WaitCategory.SQL CLR"            Color="#b8dcdc"/>
+    <SolidColorBrush x:Key="WaitCategory.Mirroring"          Color="#54625f"/>
+    <SolidColorBrush x:Key="WaitCategory.Transaction"        Color="#c77416"/>
+    <SolidColorBrush x:Key="WaitCategory.Preemptive"         Color="#FD79A8"/>
+    <SolidColorBrush x:Key="WaitCategory.Service Broker"     Color="#E17055"/>
+    <SolidColorBrush x:Key="WaitCategory.Tran Log IO"        Color="#0984E3"/>
+    <SolidColorBrush x:Key="WaitCategory.Network IO"         Color="#75bbf8"/>
+    <SolidColorBrush x:Key="WaitCategory.Parallelism"        Color="#fd01d3"/>
+    <SolidColorBrush x:Key="WaitCategory.Memory"             Color="#FDCB6E"/>
+    <SolidColorBrush x:Key="WaitCategory.Tracing"            Color="#B2BEC3"/>
+    <SolidColorBrush x:Key="WaitCategory.Full Text Search"   Color="#DFE6E9"/>
+    <SolidColorBrush x:Key="WaitCategory.Other Disk IO"      Color="#636E72"/>
+    <SolidColorBrush x:Key="WaitCategory.Replication"        Color="#81ECEC"/>
+    <SolidColorBrush x:Key="WaitCategory.Log Rate Governor"  Color="#FAB1A0"/>
+    <SolidColorBrush x:Key="WaitCategory.Others"             Color="#555D66"/>
+    <SolidColorBrush x:Key="WaitCategory.Highlight"          Color="#FFFFFF"/>
+
 </ResourceDictionary>
+ 
