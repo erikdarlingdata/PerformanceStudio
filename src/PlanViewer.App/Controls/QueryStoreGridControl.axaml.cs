@@ -192,11 +192,8 @@ public partial class QueryStoreGridControl : UserControl
             SelectToggleButton.Content = "Select None";
 
             // Fetch wait stats in parallel (non-blocking for plan display)
-            Debug.WriteLine($"[WAITSTATS] Gate check: _waitStatsEnabled={_waitStatsEnabled}, start={_slicerStartUtc}, end={_slicerEndUtc}");
             if (_waitStatsEnabled && _slicerStartUtc.HasValue && _slicerEndUtc.HasValue)
                 _ = FetchWaitStatsAsync(_slicerStartUtc.Value, _slicerEndUtc.Value, ct);
-            else
-                Debug.WriteLine("[WAITSTATS] Skipped FetchWaitStatsAsync (gate failed)");
         }
         catch (OperationCanceledException)
         {
@@ -375,35 +372,27 @@ public partial class QueryStoreGridControl : UserControl
     private async System.Threading.Tasks.Task FetchWaitStatsAsync(
         DateTime startUtc, DateTime endUtc, CancellationToken ct)
     {
-        Debug.WriteLine($"[WAITSTATS] FetchWaitStatsAsync called: {startUtc:O} → {endUtc:O}, _waitStatsEnabled={_waitStatsEnabled}");
         try
         {
             // Global (bar)
             var globalWaits = await QueryStoreService.FetchGlobalWaitStatsAsync(
                 _connectionString, startUtc, endUtc, ct);
-            Debug.WriteLine($"[WAITSTATS] FetchGlobalWaitStatsAsync returned {globalWaits.Count} rows");
             foreach (var w in globalWaits)
-                Debug.WriteLine($"[WAITSTATS]   cat={w.WaitCategoryDesc}, ratio={w.WaitRatio}");
-            if (ct.IsCancellationRequested) { Debug.WriteLine("[WAITSTATS] Cancelled after global fetch"); return; }
+            if (ct.IsCancellationRequested) { return; }
             var globalProfile = QueryStoreService.BuildWaitProfile(globalWaits);
-            Debug.WriteLine($"[WAITSTATS] BuildWaitProfile → GrandTotalRatio={globalProfile.GrandTotalRatio}, Segments={globalProfile.Segments.Count}");
             foreach (var s in globalProfile.Segments)
-                Debug.WriteLine($"[WAITSTATS]   seg: {s.Category} WaitRatio={s.WaitRatio} Ratio={s.Ratio} IsNamed={s.IsNamed}");
             WaitStatsProfile.SetBarProfile(globalProfile);
-            Debug.WriteLine("[WAITSTATS] SetBarProfile called");
 
             // Global (ribbon) — fetched lazily, data ready for toggle
             var ribbonData = await QueryStoreService.FetchGlobalWaitStatsRibbonAsync(
                 _connectionString, startUtc, endUtc, ct);
-            Debug.WriteLine($"[WAITSTATS] FetchGlobalWaitStatsRibbonAsync returned {ribbonData.Count} rows");
-            if (ct.IsCancellationRequested) { Debug.WriteLine("[WAITSTATS] Cancelled after ribbon fetch"); return; }
+            if (ct.IsCancellationRequested) { return; }
             WaitStatsProfile.SetRibbonData(ribbonData);
 
             // Per-plan
             var planWaits = await QueryStoreService.FetchPlanWaitStatsAsync(
                 _connectionString, startUtc, endUtc, ct);
-            Debug.WriteLine($"[WAITSTATS] FetchPlanWaitStatsAsync returned {planWaits.Count} rows");
-            if (ct.IsCancellationRequested) { Debug.WriteLine("[WAITSTATS] Cancelled after plan waits fetch"); return; }
+            if (ct.IsCancellationRequested) { return; }
 
             var byPlan = planWaits
                 .GroupBy(x => x.PlanId)
@@ -417,9 +406,7 @@ public partial class QueryStoreGridControl : UserControl
                     row.WaitProfile = null;
             }
             UpdateWaitBarMode();
-            Debug.WriteLine("[WAITSTATS] FetchWaitStatsAsync completed successfully");
         }
-        catch (OperationCanceledException) { Debug.WriteLine("[WAITSTATS] FetchWaitStatsAsync CANCELLED"); }
         catch (Exception ex) { Debug.WriteLine($"[WAITSTATS] FetchWaitStatsAsync EXCEPTION: {ex}"); }
     }
 
@@ -467,8 +454,11 @@ public partial class QueryStoreGridControl : UserControl
     private void OnWaitStatsCollapsedChanged(object? sender, bool collapsed)
     {
         _waitStatsEnabled = !collapsed;
-        // WaitProfile column is at index 6
-        ResultsGrid.Columns[6].IsVisible = !collapsed;
+
+        var waitProfileCol = ResultsGrid.Columns
+            .FirstOrDefault(c => c.SortMemberPath == "WaitGrandTotalSort");
+        if (waitProfileCol != null)
+            waitProfileCol.IsVisible = !collapsed;
 
         if (!collapsed && _slicerStartUtc.HasValue && _slicerEndUtc.HasValue)
         {
