@@ -473,14 +473,13 @@ ORDER BY wait_ratio DESC;";
         return rows;
     }
 
-	/// <summary>
-	/// Per-plan wait stats aggregated for a time range, grouped by plan_id + category.
-	/// WaitRatio = SUM(total_query_wait_time_ms) / sum(rs.avg_duration*rs.count_executions) 
-	/// ==> May be challenged. But at the detail level we use the plan duration use query stats. 
-    /// So it is different from the other wait ratio calculation, which is based on the interval duration. 
-    /// We can consider to align them in the future if needed.
-	/// </summary>
-	public static async Task<List<(long PlanId, WaitCategoryTotal Wait)>> FetchPlanWaitStatsAsync(
+    /// <summary>
+    /// Per-plan wait stats aggregated for a time range, grouped by plan_id + category.
+    /// WaitRatio = SUM(total_query_wait_time_ms) / SUM(avg_duration * count_executions).
+    /// This differs from the global/hourly WTR (which divides by wall-clock interval) because
+    /// at plan level we measure what fraction of actual execution time was spent waiting.
+    /// </summary>
+    public static async Task<List<(long PlanId, WaitCategoryTotal Wait)>> FetchPlanWaitStatsAsync(
         string connectionString, DateTime startUtc, DateTime endUtc,
         CancellationToken ct = default)
     {
