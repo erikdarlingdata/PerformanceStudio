@@ -7,6 +7,7 @@ using Avalonia.Controls.Shapes;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
+using Avalonia.Threading;
 using PlanViewer.Core.Models;
 using PlanViewer.Core.Services;
 
@@ -29,6 +30,22 @@ public partial class TimeRangeSlicerControl : UserControl
     private const double ChartPaddingBottom = 20;
     private const double MoveBarHeight = 14; // height of the draggable move bar at the top of the selection
 
+    // Cached brushes and objects to avoid allocations on every Redraw
+    private static readonly SolidColorBrush FallbackChartFillBrush   = new(Color.Parse("#332EAEF1"));
+    private static readonly SolidColorBrush FallbackChartLineBrush   = new(Color.Parse("#2EAEF1"));
+    private static readonly SolidColorBrush FallbackLabelBrush       = new(Color.Parse("#99E4E6EB"));
+    private static readonly SolidColorBrush FallbackDayLineBrush     = new(Color.Parse("#55E4E6EB"));
+    private static readonly SolidColorBrush FallbackForegroundBrush  = new(Color.Parse("#E4E6EB"));
+    private static readonly SolidColorBrush FallbackOverlayBrush     = new(Color.Parse("#99000000"));
+    private static readonly SolidColorBrush FallbackSelectedBrush    = new(Color.Parse("#22FFFFFF"));
+    private static readonly SolidColorBrush FallbackHandleBrush      = new(Color.Parse("#E4E6EB"));
+    private static readonly SolidColorBrush MoveBarBrush             = new(Color.Parse("#33FFFFFF"));
+    private static readonly SolidColorBrush SelectRectFillBrush      = new(Color.Parse("#442EAEF1"));
+    private static readonly Avalonia.Collections.AvaloniaList<double> DashArray = new() { 3, 3 };
+    private static readonly Cursor CursorSizeAll     = new(StandardCursorType.SizeAll);
+    private static readonly Cursor CursorSizeWE      = new(StandardCursorType.SizeWestEast);
+    private static readonly FontFamily TooltipFont   = new("Cascadia Mono,Consolas,monospace");
+
     // Line points computed in Redraw(), used for hover hit-testing
     private Point[] _linePoints = Array.Empty<Point>();
     private double  _stepX;
@@ -42,6 +59,7 @@ public partial class TimeRangeSlicerControl : UserControl
     private double _selectRectCurrentX;  // canvas-x of current pointer during drag-select
 
     private int _hoveredIndex = -1;  // bucket index under the mouse (-1 = none)
+    private DispatcherTimer? _rangeChangedDebounce;
 
     public event EventHandler<TimeRangeChangedEventArgs>? RangeChanged;
 
@@ -131,10 +149,13 @@ public partial class TimeRangeSlicerControl : UserControl
     {
         if (_data.Count == 0) return 0;
         var n = _data.Count;
-        // Binary-search for the bucket containing dt
+        if (dt < _data[0].IntervalStartUtc) return 0;
+        // Find first bucket whose end is past dt
         var idx = _data.FindIndex(b => b.IntervalStartUtc.AddHours(1) > dt);
         if (idx < 0) return 1.0; // dt is past all buckets
-        if (dt < _data[0].IntervalStartUtc) return 0;
+        // If dt is before this bucket's start (gap), snap to this bucket's start
+        if (dt < _data[idx].IntervalStartUtc)
+            return (double)idx / n;
         var frac = (double)(dt.Ticks - _data[idx].IntervalStartUtc.Ticks) / TimeSpan.TicksPerHour;
         return Math.Clamp((idx + Math.Clamp(frac, 0, 1)) / n, 0, 1);
     }
@@ -233,7 +254,7 @@ public partial class TimeRangeSlicerControl : UserControl
         _stepX      = stepX;
 
         // Area fill
-        var fillBrush = TryFindBrush("SlicerChartFillBrush", new SolidColorBrush(Color.Parse("#332EAEF1")));
+        var fillBrush = TryFindBrush("SlicerChartFillBrush", FallbackChartFillBrush);
         var areaGeometry = new StreamGeometry();
         using (var ctx = areaGeometry.Open())
         {
@@ -250,7 +271,7 @@ public partial class TimeRangeSlicerControl : UserControl
         });
 
         // Line
-        var lineBrush = TryFindBrush("SlicerChartLineBrush", new SolidColorBrush(Color.Parse("#2EAEF1")));
+        var lineBrush = TryFindBrush("SlicerChartLineBrush", FallbackChartLineBrush);
         var lineGeometry = new StreamGeometry();
         using (var ctx = lineGeometry.Open())
         {
@@ -267,7 +288,7 @@ public partial class TimeRangeSlicerControl : UserControl
         });
 
         // X-axis labels (show a few ticks)
-        var labelBrush = TryFindBrush("SlicerLabelBrush", new SolidColorBrush(Color.Parse("#99E4E6EB")));
+        var labelBrush = TryFindBrush("SlicerLabelBrush", FallbackLabelBrush);
         int labelInterval = Math.Max(1, n / 8);
         for (int i = 0; i < n; i += labelInterval)
         {
@@ -290,7 +311,7 @@ public partial class TimeRangeSlicerControl : UserControl
         {
             Text = GetMetricLabel(),
             FontSize = 12,
-            Foreground = TryFindBrush("ForegroundBrush", new SolidColorBrush(Color.Parse("#E4E6EB"))),
+            Foreground = TryFindBrush("ForegroundBrush", FallbackForegroundBrush),
         };
         Canvas.SetRight(metricTb, 4);
         Canvas.SetTop(metricTb, 2);
@@ -298,7 +319,7 @@ public partial class TimeRangeSlicerControl : UserControl
 
         // ── Day-boundary vertical dashed lines ─────────────────────────────
         // Walk buckets and detect when the display-mode date changes.
-        var dayLineBrush = TryFindBrush("SlicerLabelBrush", new SolidColorBrush(Color.Parse("#55E4E6EB")));
+        var dayLineBrush = TryFindBrush("SlicerLabelBrush", FallbackDayLineBrush);
         for (int di = 1; di < n; di++)
         {
             var prevDisplay = TimeDisplayHelper.ConvertForDisplay(_data[di - 1].IntervalStartUtc);
@@ -312,7 +333,7 @@ public partial class TimeRangeSlicerControl : UserControl
                     EndPoint   = new Point(xDay, chartBottom),
                     Stroke = dayLineBrush,
                     StrokeThickness = 1,
-                    StrokeDashArray = new Avalonia.Collections.AvaloniaList<double> { 3, 3 },
+                    StrokeDashArray = DashArray,
                     Opacity = 0.5,
                 });
                 var dayLabel = new TextBlock
@@ -329,9 +350,9 @@ public partial class TimeRangeSlicerControl : UserControl
         }
 
         // ── Overlays + selection ───────────────────────────────────────────
-        var overlayBrush = TryFindBrush("SlicerOverlayBrush", new SolidColorBrush(Color.Parse("#99000000")));
-        var selectedBrush = TryFindBrush("SlicerSelectedBrush", new SolidColorBrush(Color.Parse("#22FFFFFF")));
-        var handleBrush = TryFindBrush("SlicerHandleBrush", new SolidColorBrush(Color.Parse("#E4E6EB")));
+        var overlayBrush = TryFindBrush("SlicerOverlayBrush", FallbackOverlayBrush);
+        var selectedBrush = TryFindBrush("SlicerSelectedBrush", FallbackSelectedBrush);
+        var handleBrush = TryFindBrush("SlicerHandleBrush", FallbackHandleBrush);
 
         var selLeft = _rangeStart * w;
         var selRight = _rangeEnd * w;
@@ -399,13 +420,12 @@ public partial class TimeRangeSlicerControl : UserControl
         });
 
         // ── Move bar at the top of the selection ────────────────────────────
-        var moveBarBrush = new SolidColorBrush(Color.Parse("#33FFFFFF"));
         var moveBar = new Rectangle
         {
             Width  = Math.Max(0, selRight - selLeft),
             Height = MoveBarHeight,
-            Fill   = moveBarBrush,
-            Cursor = new Cursor(StandardCursorType.SizeAll),
+            Fill   = MoveBarBrush,
+            Cursor = CursorSizeAll,
         };
         Canvas.SetLeft(moveBar, selLeft);
         Canvas.SetTop(moveBar, 0);
@@ -431,13 +451,13 @@ public partial class TimeRangeSlicerControl : UserControl
         {
             var rx1 = Math.Min(_selectRectOriginX, _selectRectCurrentX);
             var rx2 = Math.Max(_selectRectOriginX, _selectRectCurrentX);
-            var selRectBrush = TryFindBrush("SlicerChartLineBrush", new SolidColorBrush(Color.Parse("#2EAEF1")));
+            var selRectBrush = TryFindBrush("SlicerChartLineBrush", FallbackChartLineBrush);
             // Semi-transparent fill
             SlicerCanvas.Children.Add(new Rectangle
             {
                 Width = rx2 - rx1,
                 Height = h,
-                Fill = new SolidColorBrush(Color.Parse("#442EAEF1")),
+                Fill = SelectRectFillBrush,
             });
             Canvas.SetLeft(SlicerCanvas.Children[^1], rx1);
             Canvas.SetTop(SlicerCanvas.Children[^1], 0);
@@ -457,7 +477,7 @@ public partial class TimeRangeSlicerControl : UserControl
         // ── Per-bucket hit rectangles: tooltip + hover dot ───────────────────────────
         // Drawn last so they are on top of all overlays and receive pointer events.
         var metricLabel = GetMetricLabel();
-        var dotBrush = TryFindBrush("SlicerChartLineBrush", new SolidColorBrush(Color.Parse("#2EAEF1")));
+        var dotBrush = TryFindBrush("SlicerChartLineBrush", FallbackChartLineBrush);
         for (int i = 0; i < n; i++)
         {
             var bucketDisplay    = TimeDisplayHelper.ConvertForDisplay(_data[i].IntervalStartUtc);
@@ -465,12 +485,12 @@ public partial class TimeRangeSlicerControl : UserControl
             var val              = values[i];
             var valText          = _metric is "executions" ? $"{val:N0}" : $"{val:N2}";
 
-            TextBlock MakeTipContent() => new TextBlock
+            var tipContent = new TextBlock
             {
                 Text = $"{metricLabel}: {valText}\n" +
                        $"{bucketDisplay:yyyy-MM-dd HH:mm} \u2013 {bucketDisplayEnd:HH:mm}{TimeDisplayHelper.Suffix}",
                 FontSize   = 12,
-                FontFamily = new FontFamily("Cascadia Mono,Consolas,monospace"),
+                FontFamily = TooltipFont,
                 Padding    = new Thickness(6, 4),
             };
 
@@ -482,7 +502,7 @@ public partial class TimeRangeSlicerControl : UserControl
                 Opacity = 1,
             };
 
-            ToolTip.SetTip(hitRect, MakeTipContent());
+            ToolTip.SetTip(hitRect, tipContent);
             ToolTip.SetPlacement(hitRect, PlacementMode.Pointer);
             ToolTip.SetHorizontalOffset(hitRect, 0);
             ToolTip.SetVerticalOffset(hitRect, -16);
@@ -650,12 +670,12 @@ public partial class TimeRangeSlicerControl : UserControl
 
             if (pos.Y <= MoveBarHeight && pos.X >= selLeft && pos.X <= selRight)
             {
-                SlicerCanvas.Cursor = new Cursor(StandardCursorType.SizeAll);
+                SlicerCanvas.Cursor = CursorSizeAll;
             }
             else if (Math.Abs(pos.X - selLeft) <= HandleGripWidthPx ||
                      Math.Abs(pos.X - selRight) <= HandleGripWidthPx)
             {
-                SlicerCanvas.Cursor = new Cursor(StandardCursorType.SizeWestEast);
+                SlicerCanvas.Cursor = CursorSizeWE;
             }
             else
             {
@@ -804,8 +824,23 @@ public partial class TimeRangeSlicerControl : UserControl
 
         UpdateRangeLabel();
         Redraw();
-        FireRangeChanged();
+        DebouncedFireRangeChanged();
         e.Handled = true;
+    }
+
+    private void DebouncedFireRangeChanged()
+    {
+        _rangeChangedDebounce?.Stop();
+        _rangeChangedDebounce = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(250),
+        };
+        _rangeChangedDebounce.Tick += (_, _) =>
+        {
+            _rangeChangedDebounce.Stop();
+            FireRangeChanged();
+        };
+        _rangeChangedDebounce.Start();
     }
 
     private void UpdateRangeLabel()
