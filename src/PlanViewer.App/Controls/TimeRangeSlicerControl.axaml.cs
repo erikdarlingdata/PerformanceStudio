@@ -27,6 +27,7 @@ public partial class TimeRangeSlicerControl : UserControl
     private const double MinIntervalHours = 3;
     private const double ChartPaddingTop = 16;
     private const double ChartPaddingBottom = 20;
+    private const double MoveBarHeight = 14; // height of the draggable move bar at the top of the selection
 
     // Line points computed in Redraw(), used for hover hit-testing
     private Point[] _linePoints = Array.Empty<Point>();
@@ -48,6 +49,8 @@ public partial class TimeRangeSlicerControl : UserControl
     {
         InitializeComponent();
         SlicerBorder.SizeChanged += (_, _) => Redraw();
+        SlicerCanvas.Focusable = true;
+        SlicerCanvas.KeyDown += Canvas_KeyDown;
     }
 
     public bool IsExpanded
@@ -395,6 +398,34 @@ public partial class TimeRangeSlicerControl : UserControl
             Opacity = 0.5,
         });
 
+        // ── Move bar at the top of the selection ────────────────────────────
+        var moveBarBrush = new SolidColorBrush(Color.Parse("#33FFFFFF"));
+        var moveBar = new Rectangle
+        {
+            Width  = Math.Max(0, selRight - selLeft),
+            Height = MoveBarHeight,
+            Fill   = moveBarBrush,
+            Cursor = new Cursor(StandardCursorType.SizeAll),
+        };
+        Canvas.SetLeft(moveBar, selLeft);
+        Canvas.SetTop(moveBar, 0);
+        SlicerCanvas.Children.Add(moveBar);
+        // Grip dots in the move bar centre
+        var moveBarMidX = (selLeft + selRight) / 2;
+        var moveBarMidY = MoveBarHeight / 2;
+        for (int gi = -1; gi <= 1; gi++)
+        {
+            var dot = new Ellipse
+            {
+                Width = 3, Height = 3,
+                Fill = handleBrush,
+                Opacity = 0.5,
+            };
+            Canvas.SetLeft(dot, moveBarMidX + gi * 6 - 1.5);
+            Canvas.SetTop(dot, moveBarMidY - 1.5);
+            SlicerCanvas.Children.Add(dot);
+        }
+
         // ── Drag-select rectangle overlay ──────────────────────────────────
         if (_dragMode == DragMode.SelectRect)
         {
@@ -452,8 +483,10 @@ public partial class TimeRangeSlicerControl : UserControl
             };
 
             ToolTip.SetTip(hitRect, MakeTipContent());
+            ToolTip.SetPlacement(hitRect, PlacementMode.Pointer);
+            ToolTip.SetHorizontalOffset(hitRect, 0);
+            ToolTip.SetVerticalOffset(hitRect, -16);
             ToolTip.SetShowDelay(hitRect, 300);
-            ToolTip.SetVerticalOffset(hitRect, 10);
 
             Canvas.SetLeft(hitRect, i * stepX);
             Canvas.SetTop(hitRect, chartTop);
@@ -544,6 +577,7 @@ public partial class TimeRangeSlicerControl : UserControl
     private void Canvas_PointerPressed(object? sender, PointerPressedEventArgs e)
     {
         if (_data.Count < 2) return;
+        SlicerCanvas.Focus();
         var pos = e.GetPosition(SlicerCanvas);
         var w = SlicerBorder.Bounds.Width;
         if (w <= 0) return;
@@ -554,6 +588,15 @@ public partial class TimeRangeSlicerControl : UserControl
         _dragOriginX = pos.X;
         _dragOriginRangeStart = _rangeStart;
         _dragOriginRangeEnd = _rangeEnd;
+
+        // Click on move bar (top strip of the selection) → move
+        if (pos.Y <= MoveBarHeight && pos.X >= selLeft && pos.X <= selRight)
+        {
+            _dragMode = DragMode.MoveRange;
+            e.Pointer.Capture(SlicerCanvas);
+            e.Handled = true;
+            return;
+        }
 
         // Check if near left handle
         if (Math.Abs(pos.X - selLeft) <= HandleGripWidthPx)
@@ -573,8 +616,9 @@ public partial class TimeRangeSlicerControl : UserControl
             return;
         }
 
-        // Check if inside selection → move
-        if (pos.X >= selLeft && pos.X <= selRight)
+        // Inside selection: Shift+click → move, plain click → box-select (refine)
+        if (pos.X >= selLeft && pos.X <= selRight
+            && e.KeyModifiers.HasFlag(KeyModifiers.Shift))
         {
             _dragMode = DragMode.MoveRange;
             e.Pointer.Capture(SlicerCanvas);
@@ -582,7 +626,7 @@ public partial class TimeRangeSlicerControl : UserControl
             return;
         }
 
-        // Click outside selection → start drag-select rectangle
+        // Default: start drag-select rectangle (works both inside and outside selection)
         _selectRectOriginX = pos.X;
         _selectRectCurrentX = pos.X;
         _dragMode = DragMode.SelectRect;
@@ -604,14 +648,14 @@ public partial class TimeRangeSlicerControl : UserControl
             var selLeft  = _rangeStart * w;
             var selRight = _rangeEnd * w;
 
-            if (Math.Abs(pos.X - selLeft) <= HandleGripWidthPx ||
-                Math.Abs(pos.X - selRight) <= HandleGripWidthPx)
-            {
-                SlicerCanvas.Cursor = new Cursor(StandardCursorType.SizeWestEast);
-            }
-            else if (pos.X >= selLeft && pos.X <= selRight)
+            if (pos.Y <= MoveBarHeight && pos.X >= selLeft && pos.X <= selRight)
             {
                 SlicerCanvas.Cursor = new Cursor(StandardCursorType.SizeAll);
+            }
+            else if (Math.Abs(pos.X - selLeft) <= HandleGripWidthPx ||
+                     Math.Abs(pos.X - selRight) <= HandleGripWidthPx)
+            {
+                SlicerCanvas.Cursor = new Cursor(StandardCursorType.SizeWestEast);
             }
             else
             {
@@ -730,6 +774,33 @@ public partial class TimeRangeSlicerControl : UserControl
 
         _rangeStart = Math.Max(0, newStart);
         _rangeEnd = Math.Min(1, newEnd);
+
+        UpdateRangeLabel();
+        Redraw();
+        FireRangeChanged();
+        e.Handled = true;
+    }
+
+    private void Canvas_KeyDown(object? sender, KeyEventArgs e)
+    {
+        if (_data.Count < 2) return;
+        var n = _data.Count;
+        var step = 1.0 / n; // one bucket
+
+        double delta = e.Key switch
+        {
+            Key.Left  => -step,
+            Key.Right =>  step,
+            _ => 0,
+        };
+        if (delta == 0) return;
+
+        var span = _rangeEnd - _rangeStart;
+        var newStart = _rangeStart + delta;
+        if (newStart < 0) newStart = 0;
+        if (newStart + span > 1) newStart = 1 - span;
+        _rangeStart = newStart;
+        _rangeEnd = newStart + span;
 
         UpdateRangeLabel();
         Redraw();
