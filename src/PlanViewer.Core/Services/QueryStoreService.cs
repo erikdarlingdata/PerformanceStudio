@@ -195,13 +195,10 @@ ranked AS (
         ROW_NUMBER() OVER (PARTITION BY p.query_id ORDER BY {orderClause} DESC) AS rn
     FROM plan_agg pa
     JOIN sys.query_store_plan p ON pa.plan_id = p.plan_id
-    WHERE p.query_plan IS NOT NULL
 )
 SELECT TOP ({topN})
     r.query_id,
     r.plan_id,
-    qt.query_sql_text,
-    CAST(p.query_plan AS nvarchar(max)) AS query_plan,
     r.avg_cpu_us,
     r.avg_duration_us,
     r.avg_reads,
@@ -209,27 +206,59 @@ SELECT TOP ({topN})
     r.avg_physical_reads,
     r.avg_memory_pages,
     r.total_executions,
-    CAST(r.total_cpu_us AS bigint),
-    CAST(r.total_duration_us AS bigint),
-    CAST(r.total_reads AS bigint),
-    CAST(r.total_writes AS bigint),
-    CAST(r.total_physical_reads AS bigint),
-    CAST(r.total_memory_pages AS bigint),
+    CAST(r.total_cpu_us AS bigint) total_cpu_us,
+    CAST(r.total_duration_us AS bigint) total_duration_us,
+    CAST(r.total_reads AS bigint) total_reads,
+    CAST(r.total_writes AS bigint) total_writes,
+    CAST(r.total_physical_reads AS bigint) total_physical_reads,
+    CAST(r.total_memory_pages AS bigint) total_memory_pages,
     r.last_execution_time,
-    CONVERT(varchar(18), q.query_hash, 1),
-    CONVERT(varchar(18), p.query_plan_hash, 1),
+    CONVERT(varchar(18), q.query_hash, 1) query_hash,
+    CONVERT(varchar(18), p.query_plan_hash, 1) query_plan_hash,
     CASE
         WHEN q.object_id <> 0
         THEN OBJECT_SCHEMA_NAME(q.object_id) + N'.' + OBJECT_NAME(q.object_id)
         ELSE N''
-    END
+    END procname
+INTO #top_plans
 FROM ranked r
-JOIN sys.query_store_plan p ON r.plan_id = p.plan_id
+LEFT OUTER JOIN sys.query_store_plan p ON r.plan_id = p.plan_id
+LEFT OUTER JOIN sys.query_store_query q ON p.query_id = q.query_id
+LEFT OUTER JOIN sys.query_store_query_text qt ON q.query_text_id = qt.query_text_id
+WHERE 1 = 1 {rnClause}{filterSql}
+ORDER BY {outerOrder} DESC;
+
+SELECT 
+    topplans.query_id,
+    topplans.plan_id,
+    qt.query_sql_text,
+    CAST(p.query_plan AS nvarchar(max)) AS query_plan,
+    topplans.avg_cpu_us,
+    topplans.avg_duration_us,
+    topplans.avg_reads,
+    topplans.avg_writes,
+    topplans.avg_physical_reads,
+    topplans.avg_memory_pages,
+    topplans.total_executions,
+    topplans.total_cpu_us,
+    topplans.total_duration_us,
+    topplans.total_reads,
+    topplans.total_writes,
+    topplans.total_physical_reads,
+    topplans.total_memory_pages,
+    topplans.last_execution_time,
+    CONVERT(varchar(18), q.query_hash, 1) query_hash,
+    CONVERT(varchar(18), p.query_plan_hash, 1) query_plan_hash,
+    CASE
+        WHEN q.object_id <> 0
+        THEN OBJECT_SCHEMA_NAME(q.object_id) + N'.' + OBJECT_NAME(q.object_id)
+        ELSE N''
+    END objectname 
+FROM #top_plans topplans
+JOIN sys.query_store_plan p ON topplans.plan_id = p.plan_id
 JOIN sys.query_store_query q ON p.query_id = q.query_id
 JOIN sys.query_store_query_text qt ON q.query_text_id = qt.query_text_id
-WHERE 1 = 1 {rnClause}{filterSql}
-ORDER BY {outerOrder} DESC
-OPTION (LOOP JOIN);";
+";
 
         var plans = new List<QueryStorePlan>();
 
@@ -508,12 +537,44 @@ ORDER BY wait_ratio DESC;";
     /// WaitRatio = SUM(total_query_wait_time_ms) / SUM(avg_duration * count_executions).
     /// This differs from the global/hourly WTR (which divides by wall-clock interval) because
     /// at plan level we measure what fraction of actual execution time was spent waiting.
+    /// When <paramref name="planIds"/> is provided, only those plan IDs are queried (via temp table).
     /// </summary>
     public static async Task<List<(long PlanId, WaitCategoryTotal Wait)>> FetchPlanWaitStatsAsync(
         string connectionString, DateTime startUtc, DateTime endUtc,
+        IEnumerable<long>? planIds = null,
         CancellationToken ct = default)
     {
-        const string sql = @"
+        var rows = new List<(long, WaitCategoryTotal)>();
+        await using var conn = new SqlConnection(connectionString);
+        await conn.OpenAsync(ct);
+
+        // When plan IDs are supplied, load them into a temp table for an efficient JOIN filter.
+        var planIdFilter = "";
+        if (planIds != null)
+        {
+            var ids = planIds.Distinct().ToList();
+            if (ids.Count == 0)
+                return rows;
+
+            const string createTmp = @"
+CREATE TABLE #plan_ids (plan_id bigint NOT NULL PRIMARY KEY);";
+            await using (var createCmd = new SqlCommand(createTmp, conn))
+                await createCmd.ExecuteNonQueryAsync(ct);
+
+            // Bulk-insert in batches of 1000 using VALUES rows
+            for (int i = 0; i < ids.Count; i += 1000)
+            {
+                var batch = ids.Skip(i).Take(1000);
+                var valuesSql = "INSERT INTO #plan_ids (plan_id) VALUES " +
+                    string.Join(",", batch.Select(id => $"({id})")) + ";";
+                await using var insertCmd = new SqlCommand(valuesSql, conn);
+                await insertCmd.ExecuteNonQueryAsync(ct);
+            }
+
+            planIdFilter = "\n AND   EXISTS (SELECT 1 FROM #plan_ids pid WHERE pid.plan_id = ws.plan_id)";
+        }
+
+        var sql = @"
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 SELECT
     ws.plan_id,
@@ -527,13 +588,10 @@ JOIN sys.query_store_runtime_stats_interval rsi
 JOIN sys.query_store_runtime_stats rs ON rs.runtime_stats_interval_id = rsi.runtime_stats_interval_id and rs.plan_id=ws.plan_id
 WHERE rsi.start_time >= @start AND rsi.start_time < @end
 AND   ws.execution_type = 0
-" + WaitCategoryExclusion + @"
+" + WaitCategoryExclusion + planIdFilter + @"
 GROUP BY ws.plan_id, ws.wait_category, ws.wait_category_desc
 ORDER BY ws.plan_id, wait_ratio DESC;";
 
-        var rows = new List<(long, WaitCategoryTotal)>();
-        await using var conn = new SqlConnection(connectionString);
-        await conn.OpenAsync(ct);
         await using var cmd = new SqlCommand(sql, conn) { CommandTimeout = 120 };
         cmd.Parameters.Add(new SqlParameter("@start", startUtc));
         cmd.Parameters.Add(new SqlParameter("@end", endUtc));

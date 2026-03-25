@@ -184,14 +184,23 @@ public partial class QueryStoreGridControl : UserControl
         FetchButton.IsEnabled = false;
         LoadButton.IsEnabled = false;
         StatusText.Text = "Fetching plans...";
+        GridLoadingOverlay.IsVisible = true;
+        GridLoadingText.Text = "Fetching plans...";
         _rows.Clear();
         _filteredRows.Clear();
+
+        // Start global + ribbon wait stats early (they don't depend on plan results)
+        System.Threading.Tasks.Task? globalWaitTask = null;
+        if (_waitStatsSupported && _waitStatsEnabled && _slicerStartUtc.HasValue && _slicerEndUtc.HasValue)
+            globalWaitTask = FetchGlobalWaitStatsOnlyAsync(_slicerStartUtc.Value, _slicerEndUtc.Value, ct);
 
         try
         {
             var plans = await QueryStoreService.FetchTopPlansAsync(
                 _connectionString, topN, orderBy, ct: ct,
                 startUtc: _slicerStartUtc, endUtc: _slicerEndUtc);
+
+            GridLoadingOverlay.IsVisible = false;
 
             if (plans.Count == 0)
             {
@@ -206,9 +215,9 @@ public partial class QueryStoreGridControl : UserControl
             LoadButton.IsEnabled = true;
             SelectToggleButton.Content = "Select None";
 
-            // Fetch wait stats in parallel (non-blocking for plan display)
+            // Fetch per-plan wait stats after grid is populated (needs plan IDs)
             if (_waitStatsSupported && _waitStatsEnabled && _slicerStartUtc.HasValue && _slicerEndUtc.HasValue)
-                _ = FetchWaitStatsAsync(_slicerStartUtc.Value, _slicerEndUtc.Value, ct);
+                _ = FetchPerPlanWaitStatsAsync(_slicerStartUtc.Value, _slicerEndUtc.Value, ct);
         }
         catch (OperationCanceledException)
         {
@@ -220,6 +229,7 @@ public partial class QueryStoreGridControl : UserControl
         }
         finally
         {
+            GridLoadingOverlay.IsVisible = false;
             FetchButton.IsEnabled = true;
         }
     }
@@ -384,18 +394,21 @@ public partial class QueryStoreGridControl : UserControl
 
     // ── Wait stats ─────────────────────────────────────────────────────────
 
-    private async System.Threading.Tasks.Task FetchWaitStatsAsync(
+    /// <summary>
+    /// Fetches global bar + ribbon wait stats (independent of grid plan IDs).
+    /// Shows loading indicator on the wait stats panel.
+    /// </summary>
+    private async System.Threading.Tasks.Task FetchGlobalWaitStatsOnlyAsync(
         DateTime startUtc, DateTime endUtc, CancellationToken ct)
     {
+        WaitStatsProfile.SetLoading(true);
         try
         {
             // Global (bar)
             var globalWaits = await QueryStoreService.FetchGlobalWaitStatsAsync(
                 _connectionString, startUtc, endUtc, ct);
-            foreach (var w in globalWaits)
             if (ct.IsCancellationRequested) { return; }
             var globalProfile = QueryStoreService.BuildWaitProfile(globalWaits);
-            foreach (var s in globalProfile.Segments)
             WaitStatsProfile.SetBarProfile(globalProfile);
 
             // Global (ribbon) — fetched lazily, data ready for toggle
@@ -403,10 +416,25 @@ public partial class QueryStoreGridControl : UserControl
                 _connectionString, startUtc, endUtc, ct);
             if (ct.IsCancellationRequested) { return; }
             WaitStatsProfile.SetRibbonData(ribbonData);
+        }
+        catch (Exception ex) { Debug.WriteLine($"[WAITSTATS] FetchGlobalWaitStatsOnlyAsync EXCEPTION: {ex}"); }
+        finally
+        {
+            WaitStatsProfile.SetLoading(false);
+        }
+    }
 
-            // Per-plan
+    /// <summary>
+    /// Fetches per-plan wait stats for the plan IDs currently in the grid.
+    /// </summary>
+    private async System.Threading.Tasks.Task FetchPerPlanWaitStatsAsync(
+        DateTime startUtc, DateTime endUtc, CancellationToken ct)
+    {
+        try
+        {
+            var visiblePlanIds = _rows.Select(r => r.PlanId).ToList();
             var planWaits = await QueryStoreService.FetchPlanWaitStatsAsync(
-                _connectionString, startUtc, endUtc, ct);
+                _connectionString, startUtc, endUtc, visiblePlanIds, ct);
             if (ct.IsCancellationRequested) { return; }
 
             var byPlan = planWaits
@@ -422,7 +450,17 @@ public partial class QueryStoreGridControl : UserControl
             }
             UpdateWaitBarMode();
         }
-        catch (Exception ex) { Debug.WriteLine($"[WAITSTATS] FetchWaitStatsAsync EXCEPTION: {ex}"); }
+        catch (Exception ex) { Debug.WriteLine($"[WAITSTATS] FetchPerPlanWaitStatsAsync EXCEPTION: {ex}"); }
+    }
+
+    /// <summary>
+    /// Full wait stats fetch (global + ribbon + per-plan). Used when re-expanding the wait stats panel.
+    /// </summary>
+    private async System.Threading.Tasks.Task FetchWaitStatsAsync(
+        DateTime startUtc, DateTime endUtc, CancellationToken ct)
+    {
+        await FetchGlobalWaitStatsOnlyAsync(startUtc, endUtc, ct);
+        await FetchPerPlanWaitStatsAsync(startUtc, endUtc, ct);
     }
 
     private void OnWaitCategoryClicked(object? sender, string category)
