@@ -532,6 +532,31 @@ public partial class TimeRangeSlicerControl : UserControl
             Canvas.SetTop(dot,  dotY - DotR);
             SlicerCanvas.Children.Add(dot);
         }
+
+        // ── Handle hit zones ──────────────────────────────────────────────
+        // Drawn last so they sit above per-bucket tooltip rectangles and
+        // receive pointer events in the handle areas without interference.
+        var leftHitZone = new Rectangle
+        {
+            Width  = HandleGripWidthPx * 2,
+            Height = h,
+            Fill   = Brushes.Transparent,
+            Cursor = CursorSizeWE,
+        };
+        Canvas.SetLeft(leftHitZone, selLeft - HandleGripWidthPx);
+        Canvas.SetTop(leftHitZone, 0);
+        SlicerCanvas.Children.Add(leftHitZone);
+
+        var rightHitZone = new Rectangle
+        {
+            Width  = HandleGripWidthPx * 2,
+            Height = h,
+            Fill   = Brushes.Transparent,
+            Cursor = CursorSizeWE,
+        };
+        Canvas.SetLeft(rightHitZone, selRight - HandleGripWidthPx);
+        Canvas.SetTop(rightHitZone, 0);
+        SlicerCanvas.Children.Add(rightHitZone);
     }
 
     private void DrawHandle(double x, double canvasHeight, IBrush brush)
