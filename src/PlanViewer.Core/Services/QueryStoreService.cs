@@ -427,6 +427,36 @@ ORDER BY bucket_hour DESC;";
 
     // ── Wait stats ─────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Checks whether Query Store wait stats capture is enabled for the connected database.
+    /// Returns false on SQL Server 2016 (where the option doesn't exist) or when capture is OFF.
+    /// </summary>
+    public static async Task<bool> IsWaitStatsCaptureEnabledAsync(
+        string connectionString, CancellationToken ct = default)
+    {
+        const string sql = @"
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+SELECT CASE
+    WHEN EXISTS (
+        SELECT 1 FROM sys.database_query_store_options
+        WHERE wait_stats_capture_mode_desc = 'ON'
+    ) THEN 1 ELSE 0 END;";
+
+        try
+        {
+            await using var conn = new SqlConnection(connectionString);
+            await conn.OpenAsync(ct);
+            await using var cmd = new SqlCommand(sql, conn) { CommandTimeout = 10 };
+            var result = await cmd.ExecuteScalarAsync(ct);
+            return result is int i && i == 1;
+        }
+        catch
+        {
+            // Column doesn't exist on SQL 2016, or query store not enabled
+            return false;
+        }
+    }
+
     // Excluded: 11 = Idle, 18 = User Wait
     private const string WaitCategoryExclusion = "AND ws.wait_category NOT IN (11, 18)";
 
