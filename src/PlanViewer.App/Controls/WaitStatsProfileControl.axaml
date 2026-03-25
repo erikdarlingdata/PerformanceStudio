@@ -43,6 +43,17 @@
                     <DataGridTextColumn Header="% of Total" Binding="{ReflectionBinding RatioText}" Width="Auto"/>
                 </DataGrid.Columns>
             </DataGrid>
+            <!-- Loading overlay -->
+            <Border x:Name="WaitLoadingOverlay" IsVisible="False"
+                    Background="#80000000" CornerRadius="0"
+                    HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="6">
+                    <ProgressBar IsIndeterminate="True" Width="140" Height="3"/>
+                    <TextBlock Text="Loading wait stats..."
+                               FontSize="11" HorizontalAlignment="Center"
+                               Foreground="{DynamicResource ForegroundBrush}"/>
+                </StackPanel>
+            </Border>
         </Grid>
     </Grid>
 </UserControl>
