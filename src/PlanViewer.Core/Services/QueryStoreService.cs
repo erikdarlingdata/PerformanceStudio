@@ -52,18 +52,18 @@ FROM sys.database_query_store_options;";
         var key = orderBy.ToLowerInvariant();
 
         // ROW_NUMBER order: pick the "best" plan per query_id.
-        // References pre-aggregated columns from plan_agg CTE.
+        // References pre-aggregated columns from #plan_stats temp table.
         // avg- variants still rank by total CPU (most impactful plan).
         var orderClause = key switch
         {
-            "cpu"              => "pa.total_cpu_us",
-            "duration"         => "pa.total_duration_us",
-            "reads"            => "pa.total_reads",
-            "writes"           => "pa.total_writes",
-            "physical-reads"   => "pa.total_physical_reads",
-            "memory"           => "pa.total_memory_pages",
-            "executions"       => "pa.total_executions",
-            _ => "pa.total_cpu_us"
+            "cpu"              => "ps.total_cpu_us",
+            "duration"         => "ps.total_duration_us",
+            "reads"            => "ps.total_reads",
+            "writes"           => "ps.total_writes",
+            "physical-reads"   => "ps.total_physical_reads",
+            "memory"           => "ps.total_memory_pages",
+            "executions"       => "ps.total_executions",
+            _ => "ps.total_cpu_us"
         };
 
         // Final ORDER BY — either a total or avg column from ranked CTE.
@@ -96,7 +96,7 @@ FROM sys.database_query_store_options;";
         }
         if (filter?.PlanId != null)
         {
-            filterClauses.Add("AND r.plan_id = @filterPlanId");
+            filterClauses.Add("AND tp.plan_id = @filterPlanId");
             parameters.Add(new SqlParameter("@filterPlanId", filter.PlanId.Value));
         }
         if (!string.IsNullOrWhiteSpace(filter?.QueryHash))
@@ -129,74 +129,118 @@ FROM sys.database_query_store_options;";
             ? "\n" + string.Join("\n", filterClauses)
             : "";
 
-        // Time-range filter: prefer explicit start/end over hoursBack
-        string timeWhereClause;
+        // Time-range filter: always filter on interval start_time (indexed).
+        // The hoursBack fallback also uses interval start_time instead of
+        // rs.last_execution_time to avoid scanning all of runtime_stats.
+        string intervalWhereClause;
         if (startUtc.HasValue && endUtc.HasValue)
         {
-            timeWhereClause = "WHERE rsi.start_time >= @rangeStart AND rsi.end_time < @rangeEnd";
+            intervalWhereClause = "WHERE rsi.start_time >= @rangeStart AND rsi.start_time < @rangeEnd";
             parameters.Add(new SqlParameter("@rangeStart", startUtc.Value));
             parameters.Add(new SqlParameter("@rangeEnd", endUtc.Value));
         }
         else
         {
-            timeWhereClause = "WHERE rs.last_execution_time >= DATEADD(HOUR, -@hoursBack, GETUTCDATE())";
+            intervalWhereClause = "WHERE rsi.start_time >= DATEADD(HOUR, -@hoursBack, GETUTCDATE())";
             parameters.Add(new SqlParameter("@hoursBack", hoursBack));
         }
 
-        // Two-phase approach for performance (see GitHub issue #143):
-        // Phase 1: Aggregate + rank into #top_plans using only numeric columns.
-        //   - No join to query_text/plan XML (expensive nvarchar(max) columns).
-        //   - Removed WHERE p.query_plan IS NOT NULL (implicit conversion on nvarchar(max)).
-        //   - Removed OPTION (LOOP JOIN) — hurts more than it helps in testing.
-        // Phase 2: Join only the TOP N winners to text/plan/metadata tables.
+        // Multi-phase approach modeled on sp_QuickieStore (see GitHub issue #143):
+        //
+        // Phase 1: Materialize matching interval IDs into #intervals (tiny table,
+        //          clustered PK). All subsequent phases reference this via EXISTS
+        //          semi-join instead of re-evaluating the time predicate.
+        //
+        // Phase 2: Aggregate runtime_stats by plan_id into #plan_stats (clustered
+        //          PK on plan_id). Uses EXISTS against #intervals — no direct join
+        //          to the interval table, letting the optimizer use a semi-join.
+        //
+        // Phase 3: Rank plans per query_id, pick best per query, materialize TOP N
+        //          into #top_plans. Still no nvarchar(max) columns.
+        //
+        // Phase 4: Final SELECT — join only the TOP N winners to query_text, plan
+        //          XML, and query metadata. Uses OUTER APPLY + TRY_CONVERT for
+        //          safe plan XML retrieval.
+        //
+        // OPTION (RECOMPILE) on aggregation phases prevents parameter sniffing on
+        // date range parameters producing bad plans for different time windows.
         var sql = $@"
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 
-DROP TABLE IF EXISTS #top_plans;
+/* Phase 1: Pre-filter matching interval IDs */
+DROP TABLE IF EXISTS #intervals;
+CREATE TABLE #intervals (
+    runtime_stats_interval_id bigint NOT NULL PRIMARY KEY CLUSTERED
+);
+INSERT INTO #intervals (runtime_stats_interval_id)
+SELECT rsi.runtime_stats_interval_id
+FROM sys.query_store_runtime_stats_interval AS rsi
+{intervalWhereClause}
+OPTION (RECOMPILE);
 
-WITH plan_agg AS (
-    SELECT
-        rs.plan_id,
-        SUM(rs.avg_cpu_time * rs.count_executions) AS total_cpu_us,
-        SUM(rs.avg_duration * rs.count_executions) AS total_duration_us,
-        SUM(rs.avg_logical_io_reads * rs.count_executions) AS total_reads,
-        SUM(rs.avg_logical_io_writes * rs.count_executions) AS total_writes,
-        SUM(rs.avg_physical_io_reads * rs.count_executions) AS total_physical_reads,
-        SUM(rs.avg_query_max_used_memory * rs.count_executions) AS total_memory_pages,
-        SUM(rs.count_executions) AS total_executions,
-        MAX(rs.last_execution_time) AS last_execution_time
-    FROM sys.query_store_runtime_stats rs
-    JOIN sys.query_store_runtime_stats_interval rsi on rs.runtime_stats_interval_id=rsi.runtime_stats_interval_id
-    {timeWhereClause}
-    GROUP BY rs.plan_id
-),
-ranked AS (
+/* Phase 2: Aggregate runtime stats by plan_id */
+DROP TABLE IF EXISTS #plan_stats;
+CREATE TABLE #plan_stats (
+    plan_id bigint NOT NULL PRIMARY KEY CLUSTERED,
+    total_cpu_us float NOT NULL,
+    total_duration_us float NOT NULL,
+    total_reads float NOT NULL,
+    total_writes float NOT NULL,
+    total_physical_reads float NOT NULL,
+    total_memory_pages float NOT NULL,
+    total_executions bigint NOT NULL,
+    last_execution_time datetimeoffset NOT NULL
+);
+INSERT INTO #plan_stats
+SELECT
+    rs.plan_id,
+    SUM(rs.avg_cpu_time * rs.count_executions),
+    SUM(rs.avg_duration * rs.count_executions),
+    SUM(rs.avg_logical_io_reads * rs.count_executions),
+    SUM(rs.avg_logical_io_writes * rs.count_executions),
+    SUM(rs.avg_physical_io_reads * rs.count_executions),
+    SUM(rs.avg_query_max_used_memory * rs.count_executions),
+    SUM(rs.count_executions),
+    MAX(rs.last_execution_time)
+FROM sys.query_store_runtime_stats AS rs
+WHERE EXISTS
+(
+    SELECT 1
+    FROM #intervals AS i
+    WHERE i.runtime_stats_interval_id = rs.runtime_stats_interval_id
+)
+GROUP BY rs.plan_id
+OPTION (RECOMPILE);
+
+/* Phase 3: Rank best plan per query, materialize TOP N */
+DROP TABLE IF EXISTS #top_plans;
+WITH ranked AS (
     SELECT
         p.query_id,
-        pa.plan_id,
-        pa.total_cpu_us,
-        pa.total_duration_us,
-        pa.total_reads,
-        pa.total_writes,
-        pa.total_physical_reads,
-        pa.total_memory_pages,
-        pa.total_executions,
-        pa.last_execution_time,
-        CASE WHEN pa.total_executions > 0
-             THEN pa.total_cpu_us / pa.total_executions ELSE 0 END AS avg_cpu_us,
-        CASE WHEN pa.total_executions > 0
-             THEN pa.total_duration_us / pa.total_executions ELSE 0 END AS avg_duration_us,
-        CASE WHEN pa.total_executions > 0
-             THEN pa.total_reads / pa.total_executions ELSE 0 END AS avg_reads,
-        CASE WHEN pa.total_executions > 0
-             THEN pa.total_writes / pa.total_executions ELSE 0 END AS avg_writes,
-        CASE WHEN pa.total_executions > 0
-             THEN pa.total_physical_reads / pa.total_executions ELSE 0 END AS avg_physical_reads,
-        CASE WHEN pa.total_executions > 0
-             THEN pa.total_memory_pages / pa.total_executions ELSE 0 END AS avg_memory_pages,
+        ps.plan_id,
+        ps.total_cpu_us,
+        ps.total_duration_us,
+        ps.total_reads,
+        ps.total_writes,
+        ps.total_physical_reads,
+        ps.total_memory_pages,
+        ps.total_executions,
+        ps.last_execution_time,
+        CASE WHEN ps.total_executions > 0
+             THEN ps.total_cpu_us / ps.total_executions ELSE 0 END AS avg_cpu_us,
+        CASE WHEN ps.total_executions > 0
+             THEN ps.total_duration_us / ps.total_executions ELSE 0 END AS avg_duration_us,
+        CASE WHEN ps.total_executions > 0
+             THEN ps.total_reads / ps.total_executions ELSE 0 END AS avg_reads,
+        CASE WHEN ps.total_executions > 0
+             THEN ps.total_writes / ps.total_executions ELSE 0 END AS avg_writes,
+        CASE WHEN ps.total_executions > 0
+             THEN ps.total_physical_reads / ps.total_executions ELSE 0 END AS avg_physical_reads,
+        CASE WHEN ps.total_executions > 0
+             THEN ps.total_memory_pages / ps.total_executions ELSE 0 END AS avg_memory_pages,
         ROW_NUMBER() OVER (PARTITION BY p.query_id ORDER BY {orderClause} DESC) AS rn
-    FROM plan_agg pa
-    JOIN sys.query_store_plan p ON pa.plan_id = p.plan_id
+    FROM #plan_stats AS ps
+    JOIN sys.query_store_plan AS p ON ps.plan_id = p.plan_id
 )
 SELECT TOP ({topN})
     r.query_id,
@@ -216,15 +260,16 @@ SELECT TOP ({topN})
     CAST(r.total_memory_pages AS bigint) AS total_memory_pages,
     r.last_execution_time
 INTO #top_plans
-FROM ranked r
+FROM ranked AS r
 WHERE 1 = 1 {rnClause}
 ORDER BY {outerOrder} DESC;
 
+/* Phase 4: Hydrate winners with text, plan XML, and metadata */
 SELECT
     tp.query_id,
     tp.plan_id,
     qt.query_sql_text,
-    CAST(p.query_plan AS nvarchar(max)) AS query_plan,
+    TRY_CONVERT(nvarchar(max), p.query_plan) AS query_plan,
     tp.avg_cpu_us,
     tp.avg_duration_us,
     tp.avg_reads,
@@ -246,10 +291,10 @@ SELECT
         THEN OBJECT_SCHEMA_NAME(q.object_id) + N'.' + OBJECT_NAME(q.object_id)
         ELSE N''
     END
-FROM #top_plans tp
-JOIN sys.query_store_plan p ON tp.plan_id = p.plan_id
-JOIN sys.query_store_query q ON p.query_id = q.query_id
-JOIN sys.query_store_query_text qt ON q.query_text_id = qt.query_text_id
+FROM #top_plans AS tp
+JOIN sys.query_store_plan AS p ON tp.plan_id = p.plan_id
+JOIN sys.query_store_query AS q ON p.query_id = q.query_id
+JOIN sys.query_store_query_text AS qt ON q.query_text_id = qt.query_text_id
 WHERE 1 = 1{filterSql}
 ORDER BY {outerOrder} DESC;";
 
