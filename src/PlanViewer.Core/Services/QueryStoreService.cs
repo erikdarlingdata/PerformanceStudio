@@ -143,14 +143,16 @@ FROM sys.database_query_store_options;";
             parameters.Add(new SqlParameter("@hoursBack", hoursBack));
         }
 
-        // 1. plan_agg: aggregate runtime_stats by plan_id only (cheapest grouping,
-        //    avoids joining query_text for the entire dataset).
-        // 2. ranked: join the small aggregated result to plan to get query_id,
-        //    ROW_NUMBER to pick best plan per query.
-        // 3. Final SELECT: TOP N, then join query_text + plan XML only for winners.
-        //    Filter clauses applied here where q/p are available.
+        // Two-phase approach for performance (see GitHub issue #143):
+        // Phase 1: Aggregate + rank into #top_plans using only numeric columns.
+        //   - No join to query_text/plan XML (expensive nvarchar(max) columns).
+        //   - Removed WHERE p.query_plan IS NOT NULL (implicit conversion on nvarchar(max)).
+        //   - Removed OPTION (LOOP JOIN) — hurts more than it helps in testing.
+        // Phase 2: Join only the TOP N winners to text/plan/metadata tables.
         var sql = $@"
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+DROP TABLE IF EXISTS #top_plans;
 
 WITH plan_agg AS (
     SELECT
@@ -195,13 +197,10 @@ ranked AS (
         ROW_NUMBER() OVER (PARTITION BY p.query_id ORDER BY {orderClause} DESC) AS rn
     FROM plan_agg pa
     JOIN sys.query_store_plan p ON pa.plan_id = p.plan_id
-    WHERE p.query_plan IS NOT NULL
 )
 SELECT TOP ({topN})
     r.query_id,
     r.plan_id,
-    qt.query_sql_text,
-    CAST(p.query_plan AS nvarchar(max)) AS query_plan,
     r.avg_cpu_us,
     r.avg_duration_us,
     r.avg_reads,
@@ -209,13 +208,37 @@ SELECT TOP ({topN})
     r.avg_physical_reads,
     r.avg_memory_pages,
     r.total_executions,
-    CAST(r.total_cpu_us AS bigint),
-    CAST(r.total_duration_us AS bigint),
-    CAST(r.total_reads AS bigint),
-    CAST(r.total_writes AS bigint),
-    CAST(r.total_physical_reads AS bigint),
-    CAST(r.total_memory_pages AS bigint),
-    r.last_execution_time,
+    CAST(r.total_cpu_us AS bigint) AS total_cpu_us,
+    CAST(r.total_duration_us AS bigint) AS total_duration_us,
+    CAST(r.total_reads AS bigint) AS total_reads,
+    CAST(r.total_writes AS bigint) AS total_writes,
+    CAST(r.total_physical_reads AS bigint) AS total_physical_reads,
+    CAST(r.total_memory_pages AS bigint) AS total_memory_pages,
+    r.last_execution_time
+INTO #top_plans
+FROM ranked r
+WHERE 1 = 1 {rnClause}
+ORDER BY {outerOrder} DESC;
+
+SELECT
+    tp.query_id,
+    tp.plan_id,
+    qt.query_sql_text,
+    CAST(p.query_plan AS nvarchar(max)) AS query_plan,
+    tp.avg_cpu_us,
+    tp.avg_duration_us,
+    tp.avg_reads,
+    tp.avg_writes,
+    tp.avg_physical_reads,
+    tp.avg_memory_pages,
+    tp.total_executions,
+    tp.total_cpu_us,
+    tp.total_duration_us,
+    tp.total_reads,
+    tp.total_writes,
+    tp.total_physical_reads,
+    tp.total_memory_pages,
+    tp.last_execution_time,
     CONVERT(varchar(18), q.query_hash, 1),
     CONVERT(varchar(18), p.query_plan_hash, 1),
     CASE
@@ -223,13 +246,12 @@ SELECT TOP ({topN})
         THEN OBJECT_SCHEMA_NAME(q.object_id) + N'.' + OBJECT_NAME(q.object_id)
         ELSE N''
     END
-FROM ranked r
-JOIN sys.query_store_plan p ON r.plan_id = p.plan_id
+FROM #top_plans tp
+JOIN sys.query_store_plan p ON tp.plan_id = p.plan_id
 JOIN sys.query_store_query q ON p.query_id = q.query_id
 JOIN sys.query_store_query_text qt ON q.query_text_id = qt.query_text_id
-WHERE 1 = 1 {rnClause}{filterSql}
-ORDER BY {outerOrder} DESC
-OPTION (LOOP JOIN);";
+WHERE 1 = 1{filterSql}
+ORDER BY {outerOrder} DESC;";
 
         var plans = new List<QueryStorePlan>();
 
