@@ -1021,11 +1021,26 @@ public partial class QuerySessionControl : UserControl
 
         SetStatus("");
 
+        // Check if wait stats are supported (SQL 2017+ / Azure) and capture is enabled
+        var supportsWaitStats = _serverMetadata?.SupportsQueryStoreWaitStats ?? false;
+        if (supportsWaitStats)
+        {
+            try
+            {
+                var connStr = _serverConnection!.GetConnectionString(_credentialService, _selectedDatabase!);
+                supportsWaitStats = await QueryStoreService.IsWaitStatsCaptureEnabledAsync(connStr);
+            }
+            catch
+            {
+                supportsWaitStats = false;
+            }
+        }
+
         // Build database list from the current DatabaseBox
         var databases = DatabaseBox.Items.OfType<string>().ToList();
 
         var grid = new QueryStoreGridControl(_serverConnection!, _credentialService,
-            _selectedDatabase!, databases);
+            _selectedDatabase!, databases, supportsWaitStats);
         grid.PlansSelected += OnQueryStorePlansSelected;
 
         var headerText = new TextBlock

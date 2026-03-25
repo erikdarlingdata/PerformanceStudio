@@ -41,6 +41,7 @@ public partial class QueryStoreGridControl : UserControl
     private bool _initialOrderByLoaded;
     private bool _suppressRangeChanged;
     private string? _waitHighlightCategory;
+    private bool _waitStatsSupported;  // false until version + capture mode confirmed
     private bool _waitStatsEnabled = true;
     private bool _waitPercentMode;
 
@@ -50,12 +51,13 @@ public partial class QueryStoreGridControl : UserControl
     public string Database => _database;
 
     public QueryStoreGridControl(ServerConnection serverConnection, ICredentialService credentialService,
-        string initialDatabase, List<string> databases)
+        string initialDatabase, List<string> databases, bool supportsWaitStats = false)
     {
         _serverConnection = serverConnection;
         _credentialService = credentialService;
         _database = initialDatabase;
         _connectionString = serverConnection.GetConnectionString(credentialService, initialDatabase);
+        _waitStatsSupported = supportsWaitStats;
         _slicerDaysBack = AppSettingsService.Load().QueryStoreSlicerDays;
         InitializeComponent();
         ResultsGrid.ItemsSource = _filteredRows;
@@ -68,6 +70,19 @@ public partial class QueryStoreGridControl : UserControl
         WaitStatsProfile.CategoryClicked += OnWaitCategoryClicked;
         WaitStatsProfile.CategoryDoubleClicked += OnWaitCategoryDoubleClicked;
         WaitStatsProfile.CollapsedChanged += OnWaitStatsCollapsedChanged;
+
+        if (!_waitStatsSupported)
+        {
+            // Hide wait stats panel and column when server doesn't support it
+            WaitStatsProfile.Collapse();
+            WaitStatsChevronButton.IsVisible = false;
+            WaitStatsSplitter.IsVisible = false;
+            SlicerRow.ColumnDefinitions[2].Width = new GridLength(0);
+            var waitProfileCol = ResultsGrid.Columns
+                .FirstOrDefault(c => c.SortMemberPath == "WaitGrandTotalSort");
+            if (waitProfileCol != null)
+                waitProfileCol.IsVisible = false;
+        }
 
         // Auto-fetch with default settings on connect
         Avalonia.Threading.Dispatcher.UIThread.Post(() =>
@@ -192,7 +207,7 @@ public partial class QueryStoreGridControl : UserControl
             SelectToggleButton.Content = "Select None";
 
             // Fetch wait stats in parallel (non-blocking for plan display)
-            if (_waitStatsEnabled && _slicerStartUtc.HasValue && _slicerEndUtc.HasValue)
+            if (_waitStatsSupported && _waitStatsEnabled && _slicerStartUtc.HasValue && _slicerEndUtc.HasValue)
                 _ = FetchWaitStatsAsync(_slicerStartUtc.Value, _slicerEndUtc.Value, ct);
         }
         catch (OperationCanceledException)
@@ -460,7 +475,7 @@ public partial class QueryStoreGridControl : UserControl
         if (waitProfileCol != null)
             waitProfileCol.IsVisible = !collapsed;
 
-        if (!collapsed && _slicerStartUtc.HasValue && _slicerEndUtc.HasValue)
+        if (!collapsed && _waitStatsSupported && _slicerStartUtc.HasValue && _slicerEndUtc.HasValue)
         {
             // Re-fetch wait stats when expanding — reuse the shared CTS
             var ct = _fetchCts?.Token ?? CancellationToken.None;

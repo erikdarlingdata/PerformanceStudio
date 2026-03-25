@@ -28,6 +28,12 @@ public class ServerMetadata
     /// </summary>
     public bool SupportsScopedConfigs =>
         IsAzure || (int.TryParse(ProductVersion?.Split('.')[0], out var major) && major >= 13);
+
+    /// <summary>
+    /// Whether sys.query_store_wait_stats is available (SQL 2017+ or Azure).
+    /// </summary>
+    public bool SupportsQueryStoreWaitStats =>
+        IsAzure || (int.TryParse(ProductVersion?.Split('.')[0], out var major) && major >= 14);
 }
 
 public class DatabaseMetadata
