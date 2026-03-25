@@ -462,9 +462,9 @@ public partial class QueryStoreGridControl : UserControl
 
         if (!collapsed && _slicerStartUtc.HasValue && _slicerEndUtc.HasValue)
         {
-            // Re-fetch wait stats when expanding
-            var cts = new CancellationTokenSource();
-            _ = FetchWaitStatsAsync(_slicerStartUtc.Value, _slicerEndUtc.Value, cts.Token);
+            // Re-fetch wait stats when expanding — reuse the shared CTS
+            var ct = _fetchCts?.Token ?? CancellationToken.None;
+            _ = FetchWaitStatsAsync(_slicerStartUtc.Value, _slicerEndUtc.Value, ct);
         }
     }
 
