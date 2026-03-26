@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
-using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
@@ -190,9 +189,8 @@ public partial class QueryStoreGridControl : UserControl
         _filteredRows.Clear();
 
         // Start global + ribbon wait stats early (they don't depend on plan results)
-        System.Threading.Tasks.Task? globalWaitTask = null;
         if (_waitStatsSupported && _waitStatsEnabled && _slicerStartUtc.HasValue && _slicerEndUtc.HasValue)
-            globalWaitTask = FetchGlobalWaitStatsOnlyAsync(_slicerStartUtc.Value, _slicerEndUtc.Value, ct);
+            _ = FetchGlobalWaitStatsOnlyAsync(_slicerStartUtc.Value, _slicerEndUtc.Value, ct);
 
         try
         {
@@ -417,7 +415,8 @@ public partial class QueryStoreGridControl : UserControl
             if (ct.IsCancellationRequested) { return; }
             WaitStatsProfile.SetRibbonData(ribbonData);
         }
-        catch (Exception ex) { Debug.WriteLine($"[WAITSTATS] FetchGlobalWaitStatsOnlyAsync EXCEPTION: {ex}"); }
+        catch (OperationCanceledException) { }
+        catch (Exception) { }
         finally
         {
             WaitStatsProfile.SetLoading(false);
@@ -450,7 +449,8 @@ public partial class QueryStoreGridControl : UserControl
             }
             UpdateWaitBarMode();
         }
-        catch (Exception ex) { Debug.WriteLine($"[WAITSTATS] FetchPerPlanWaitStatsAsync EXCEPTION: {ex}"); }
+        catch (OperationCanceledException) { }
+        catch (Exception) { }
     }
 
     /// <summary>

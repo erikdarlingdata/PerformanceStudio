@@ -56,14 +56,14 @@ FROM sys.database_query_store_options;";
         // avg- variants still rank by total CPU (most impactful plan).
         var orderClause = key switch
         {
-            "cpu"              => "total_cpu_us",
-            "duration"         => "total_duration_us",
-            "reads"            => "total_reads",
-            "writes"           => "total_writes",
-            "physical-reads"   => "total_physical_reads",
-            "memory"           => "total_memory_pages",
-            "executions"       => "total_executions",
-            _ => "total_cpu_us"
+            "cpu"              => "ps.total_cpu_us",
+            "duration"         => "ps.total_duration_us",
+            "reads"            => "ps.total_reads",
+            "writes"           => "ps.total_writes",
+            "physical-reads"   => "ps.total_physical_reads",
+            "memory"           => "ps.total_memory_pages",
+            "executions"       => "ps.total_executions",
+            _ => "ps.total_cpu_us"
         };
 
         // Final ORDER BY — either a total or avg column from ranked CTE.
