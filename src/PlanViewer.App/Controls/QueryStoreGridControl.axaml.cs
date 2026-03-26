@@ -151,9 +151,9 @@ public partial class QueryStoreGridControl : UserControl
 
         try
         {
-            // Load slicer data first — LoadData sets a default 24h selection and
-            // fires RangeChanged which triggers FetchPlansForRangeAsync.
-            await LoadTimeSlicerDataAsync(orderBy, ct);
+            // Load slicer data, preserving the current selection if one exists.
+            // Without this, LoadData defaults to last 24h and the user's range is lost.
+            await LoadTimeSlicerDataAsync(orderBy, ct, _slicerStartUtc, _slicerEndUtc);
         }
         catch (OperationCanceledException)
         {
@@ -195,7 +195,7 @@ public partial class QueryStoreGridControl : UserControl
         try
         {
             var plans = await QueryStoreService.FetchTopPlansAsync(
-                _connectionString, topN, orderBy, ct: ct,
+                _connectionString, topN, orderBy, filter: filter, ct: ct,
                 startUtc: _slicerStartUtc, endUtc: _slicerEndUtc);
 
             GridLoadingOverlay.IsVisible = false;
@@ -363,7 +363,9 @@ public partial class QueryStoreGridControl : UserControl
         SearchValueBox.Text = "";
     }
 
-    private async System.Threading.Tasks.Task LoadTimeSlicerDataAsync(string metric, CancellationToken ct)
+    private async System.Threading.Tasks.Task LoadTimeSlicerDataAsync(
+        string metric, CancellationToken ct,
+        DateTime? preserveStart = null, DateTime? preserveEnd = null)
     {
         try
         {
@@ -371,7 +373,7 @@ public partial class QueryStoreGridControl : UserControl
                 _connectionString, metric, _slicerDaysBack, ct);
             if (ct.IsCancellationRequested) return;
             if (sliceData.Count > 0)
-                TimeRangeSlicer.LoadData(sliceData, metric);
+                TimeRangeSlicer.LoadData(sliceData, metric, preserveStart, preserveEnd);
             else
                 StatusText.Text = "No time-slicer data available.";
         }
