@@ -575,12 +575,44 @@ ORDER BY wait_ratio DESC;";
     /// WaitRatio = SUM(total_query_wait_time_ms) / SUM(avg_duration * count_executions).
     /// This differs from the global/hourly WTR (which divides by wall-clock interval) because
     /// at plan level we measure what fraction of actual execution time was spent waiting.
+    /// When <paramref name="planIds"/> is provided, only those plan IDs are queried (via temp table).
     /// </summary>
     public static async Task<List<(long PlanId, WaitCategoryTotal Wait)>> FetchPlanWaitStatsAsync(
         string connectionString, DateTime startUtc, DateTime endUtc,
+        IEnumerable<long>? planIds = null,
         CancellationToken ct = default)
     {
-        const string sql = @"
+        var rows = new List<(long, WaitCategoryTotal)>();
+        await using var conn = new SqlConnection(connectionString);
+        await conn.OpenAsync(ct);
+
+        // When plan IDs are supplied, load them into a temp table for an efficient JOIN filter.
+        var planIdFilter = "";
+        if (planIds != null)
+        {
+            var ids = planIds.Distinct().ToList();
+            if (ids.Count == 0)
+                return rows;
+
+            const string createTmp = @"
+CREATE TABLE #plan_ids (plan_id bigint NOT NULL PRIMARY KEY);";
+            await using (var createCmd = new SqlCommand(createTmp, conn))
+                await createCmd.ExecuteNonQueryAsync(ct);
+
+            // Bulk-insert in batches of 1000 using VALUES rows
+            for (int i = 0; i < ids.Count; i += 1000)
+            {
+                var batch = ids.Skip(i).Take(1000);
+                var valuesSql = "INSERT INTO #plan_ids (plan_id) VALUES " +
+                    string.Join(",", batch.Select(id => $"({id})")) + ";";
+                await using var insertCmd = new SqlCommand(valuesSql, conn);
+                await insertCmd.ExecuteNonQueryAsync(ct);
+            }
+
+            planIdFilter = "\nAND   EXISTS (SELECT 1 FROM #plan_ids pid WHERE pid.plan_id = ws.plan_id)";
+        }
+
+        var sql = @"
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 SELECT
     ws.plan_id,
@@ -594,13 +626,10 @@ JOIN sys.query_store_runtime_stats_interval rsi
 JOIN sys.query_store_runtime_stats rs ON rs.runtime_stats_interval_id = rsi.runtime_stats_interval_id and rs.plan_id=ws.plan_id
 WHERE rsi.start_time >= @start AND rsi.start_time < @end
 AND   ws.execution_type = 0
-" + WaitCategoryExclusion + @"
+" + WaitCategoryExclusion + planIdFilter + @"
 GROUP BY ws.plan_id, ws.wait_category, ws.wait_category_desc
 ORDER BY ws.plan_id, wait_ratio DESC;";
 
-        var rows = new List<(long, WaitCategoryTotal)>();
-        await using var conn = new SqlConnection(connectionString);
-        await conn.OpenAsync(ct);
         await using var cmd = new SqlCommand(sql, conn) { CommandTimeout = 120 };
         cmd.Parameters.Add(new SqlParameter("@start", startUtc));
         cmd.Parameters.Add(new SqlParameter("@end", endUtc));
