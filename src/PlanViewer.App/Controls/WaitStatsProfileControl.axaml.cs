@@ -74,6 +74,11 @@ public partial class WaitStatsProfileControl : UserControl
         CollapsedChanged?.Invoke(this, true);
     }
 
+    public void SetLoading(bool isLoading)
+    {
+        WaitLoadingOverlay.IsVisible = isLoading;
+    }
+
     private void ToggleChart_Click(object? sender, RoutedEventArgs e)
     {
         // Cycle: Bar -> Ribbon -> Bar (skip table; table has its own button)

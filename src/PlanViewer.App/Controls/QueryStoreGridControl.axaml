@@ -109,8 +109,9 @@
             </StackPanel>
         </Border>
 
-        <!-- DataGrid -->
-        <DataGrid Grid.Row="2" x:Name="ResultsGrid"
+        <!-- DataGrid + loading overlay -->
+        <Grid Grid.Row="2">
+        <DataGrid x:Name="ResultsGrid"
                   AutoGenerateColumns="False"
                   CanUserSortColumns="True"
                   CanUserReorderColumns="True"
@@ -318,5 +319,17 @@
                 </DataGridTemplateColumn>
             </DataGrid.Columns>
         </DataGrid>
+        <!-- Loading overlay -->
+        <Border x:Name="GridLoadingOverlay" IsVisible="False"
+                Background="#80000000" CornerRadius="0"
+                HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8">
+                <ProgressBar IsIndeterminate="True" Width="200" Height="4"/>
+                <TextBlock x:Name="GridLoadingText" Text="Fetching plans..."
+                           FontSize="12" HorizontalAlignment="Center"
+                           Foreground="{DynamicResource ForegroundBrush}"/>
+            </StackPanel>
+        </Border>
+        </Grid>
     </Grid>
 </UserControl>

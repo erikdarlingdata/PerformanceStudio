@@ -56,33 +56,33 @@ FROM sys.database_query_store_options;";
         // avg- variants still rank by total CPU (most impactful plan).
         var orderClause = key switch
         {
-            "cpu"              => "ps.total_cpu_us",
-            "duration"         => "ps.total_duration_us",
-            "reads"            => "ps.total_reads",
-            "writes"           => "ps.total_writes",
-            "physical-reads"   => "ps.total_physical_reads",
-            "memory"           => "ps.total_memory_pages",
-            "executions"       => "ps.total_executions",
-            _ => "ps.total_cpu_us"
+            "cpu"              => "total_cpu_us",
+            "duration"         => "total_duration_us",
+            "reads"            => "total_reads",
+            "writes"           => "total_writes",
+            "physical-reads"   => "total_physical_reads",
+            "memory"           => "total_memory_pages",
+            "executions"       => "total_executions",
+            _ => "total_cpu_us"
         };
 
         // Final ORDER BY — either a total or avg column from ranked CTE.
         var outerOrder = key switch
         {
-            "cpu"              => "r.total_cpu_us",
-            "duration"         => "r.total_duration_us",
-            "reads"            => "r.total_reads",
-            "writes"           => "r.total_writes",
-            "physical-reads"   => "r.total_physical_reads",
-            "memory"           => "r.total_memory_pages",
-            "executions"       => "r.total_executions",
-            "avg-cpu"          => "r.avg_cpu_us",
-            "avg-duration"     => "r.avg_duration_us",
-            "avg-reads"        => "r.avg_reads",
-            "avg-writes"       => "r.avg_writes",
-            "avg-physical-reads" => "r.avg_physical_reads",
-            "avg-memory"       => "r.avg_memory_pages",
-            _ => "r.total_cpu_us"
+            "cpu"                => "total_cpu_us",
+            "duration"           => "total_duration_us",
+            "reads"              => "total_reads",
+            "writes"             => "total_writes",
+            "physical-reads"     => "total_physical_reads",
+            "memory"             => "total_memory_pages",
+            "executions"         => "total_executions",
+            "avg-cpu"            => "avg_cpu_us",
+            "avg-duration"       => "avg_duration_us",
+            "avg-reads"          => "avg_reads",
+            "avg-writes"         => "avg_writes",
+            "avg-physical-reads" => "avg_physical_reads",
+            "avg-memory"         => "avg_memory_pages",
+            _ => "total_cpu_us"
         };
 
         // Build optional WHERE clauses from filter (parameterized for safety).
@@ -575,12 +575,44 @@ ORDER BY wait_ratio DESC;";
     /// WaitRatio = SUM(total_query_wait_time_ms) / SUM(avg_duration * count_executions).
     /// This differs from the global/hourly WTR (which divides by wall-clock interval) because
     /// at plan level we measure what fraction of actual execution time was spent waiting.
+    /// When <paramref name="planIds"/> is provided, only those plan IDs are queried (via temp table).
     /// </summary>
     public static async Task<List<(long PlanId, WaitCategoryTotal Wait)>> FetchPlanWaitStatsAsync(
         string connectionString, DateTime startUtc, DateTime endUtc,
+        IEnumerable<long>? planIds = null,
         CancellationToken ct = default)
     {
-        const string sql = @"
+        var rows = new List<(long, WaitCategoryTotal)>();
+        await using var conn = new SqlConnection(connectionString);
+        await conn.OpenAsync(ct);
+
+        // When plan IDs are supplied, load them into a temp table for an efficient JOIN filter.
+        var planIdFilter = "";
+        if (planIds != null)
+        {
+            var ids = planIds.Distinct().ToList();
+            if (ids.Count == 0)
+                return rows;
+
+            const string createTmp = @"
+CREATE TABLE #plan_ids (plan_id bigint NOT NULL PRIMARY KEY);";
+            await using (var createCmd = new SqlCommand(createTmp, conn))
+                await createCmd.ExecuteNonQueryAsync(ct);
+
+            // Bulk-insert in batches of 1000 using VALUES rows
+            for (int i = 0; i < ids.Count; i += 1000)
+            {
+                var batch = ids.Skip(i).Take(1000);
+                var valuesSql = "INSERT INTO #plan_ids (plan_id) VALUES " +
+                    string.Join(",", batch.Select(id => $"({id})")) + ";";
+                await using var insertCmd = new SqlCommand(valuesSql, conn);
+                await insertCmd.ExecuteNonQueryAsync(ct);
+            }
+
+            planIdFilter = "\nAND   EXISTS (SELECT 1 FROM #plan_ids pid WHERE pid.plan_id = ws.plan_id)";
+        }
+
+        var sql = @"
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 SELECT
     ws.plan_id,
@@ -594,13 +626,10 @@ JOIN sys.query_store_runtime_stats_interval rsi
 JOIN sys.query_store_runtime_stats rs ON rs.runtime_stats_interval_id = rsi.runtime_stats_interval_id and rs.plan_id=ws.plan_id
 WHERE rsi.start_time >= @start AND rsi.start_time < @end
 AND   ws.execution_type = 0
-" + WaitCategoryExclusion + @"
+" + WaitCategoryExclusion + planIdFilter + @"
 GROUP BY ws.plan_id, ws.wait_category, ws.wait_category_desc
 ORDER BY ws.plan_id, wait_ratio DESC;";
 
-        var rows = new List<(long, WaitCategoryTotal)>();
-        await using var conn = new SqlConnection(connectionString);
-        await conn.OpenAsync(ct);
         await using var cmd = new SqlCommand(sql, conn) { CommandTimeout = 120 };
         cmd.Parameters.Add(new SqlParameter("@start", startUtc));
         cmd.Parameters.Add(new SqlParameter("@end", endUtc));
