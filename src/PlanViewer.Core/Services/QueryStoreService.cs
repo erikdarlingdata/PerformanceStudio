@@ -56,33 +56,33 @@ FROM sys.database_query_store_options;";
         // avg- variants still rank by total CPU (most impactful plan).
         var orderClause = key switch
         {
-            "cpu"              => "ps.total_cpu_us",
-            "duration"         => "ps.total_duration_us",
-            "reads"            => "ps.total_reads",
-            "writes"           => "ps.total_writes",
-            "physical-reads"   => "ps.total_physical_reads",
-            "memory"           => "ps.total_memory_pages",
-            "executions"       => "ps.total_executions",
-            _ => "ps.total_cpu_us"
+            "cpu"              => "total_cpu_us",
+            "duration"         => "total_duration_us",
+            "reads"            => "total_reads",
+            "writes"           => "total_writes",
+            "physical-reads"   => "total_physical_reads",
+            "memory"           => "total_memory_pages",
+            "executions"       => "total_executions",
+            _ => "total_cpu_us"
         };
 
         // Final ORDER BY — either a total or avg column from ranked CTE.
         var outerOrder = key switch
         {
-            "cpu"              => "r.total_cpu_us",
-            "duration"         => "r.total_duration_us",
-            "reads"            => "r.total_reads",
-            "writes"           => "r.total_writes",
-            "physical-reads"   => "r.total_physical_reads",
-            "memory"           => "r.total_memory_pages",
-            "executions"       => "r.total_executions",
-            "avg-cpu"          => "r.avg_cpu_us",
-            "avg-duration"     => "r.avg_duration_us",
-            "avg-reads"        => "r.avg_reads",
-            "avg-writes"       => "r.avg_writes",
-            "avg-physical-reads" => "r.avg_physical_reads",
-            "avg-memory"       => "r.avg_memory_pages",
-            _ => "r.total_cpu_us"
+            "cpu"                => "total_cpu_us",
+            "duration"           => "total_duration_us",
+            "reads"              => "total_reads",
+            "writes"             => "total_writes",
+            "physical-reads"     => "total_physical_reads",
+            "memory"             => "total_memory_pages",
+            "executions"         => "total_executions",
+            "avg-cpu"            => "avg_cpu_us",
+            "avg-duration"       => "avg_duration_us",
+            "avg-reads"          => "avg_reads",
+            "avg-writes"         => "avg_writes",
+            "avg-physical-reads" => "avg_physical_reads",
+            "avg-memory"         => "avg_memory_pages",
+            _ => "total_cpu_us"
         };
 
         // Build optional WHERE clauses from filter (parameterized for safety).
