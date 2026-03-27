@@ -40,6 +40,7 @@ public partial class QueryStoreGridControl : UserControl
     private bool _initialOrderByLoaded;
     private bool _suppressRangeChanged;
     private string? _waitHighlightCategory;
+    private const int AutoSelectTopN = 1; // number of rows auto-selected after each fetch
     private bool _waitStatsSupported;  // false until version + capture mode confirmed
     private bool _waitStatsEnabled = true;
     private bool _waitPercentMode;
@@ -210,7 +211,7 @@ public partial class QueryStoreGridControl : UserControl
 
             ApplyFilters();
             LoadButton.IsEnabled = true;
-            SelectToggleButton.Content = "Select None";
+            SelectToggleButton.Content = "Select All";
 
             // Fetch per-plan wait stats after grid is populated (needs plan IDs)
             if (_waitStatsSupported && _waitStatsEnabled && _slicerStartUtc.HasValue && _slicerEndUtc.HasValue)
@@ -495,6 +496,7 @@ public partial class QueryStoreGridControl : UserControl
         // Clear column sort indicators since we're using custom sort
         _sortedColumnTag = null;
         UpdateSortIndicators(null);
+        ReapplyTopNSelection();
         UpdateBarRatios();
     }
 
@@ -936,6 +938,13 @@ public partial class QueryStoreGridControl : UserControl
         return tb.Text?.TrimEnd(' ', '▲', '▼') ?? string.Empty;
     }
 
+    private void ReapplyTopNSelection()
+    {
+        if (_filteredRows.Count == 0) return;
+        foreach (var r in _rows) r.IsSelected = false;
+        foreach (var r in _filteredRows.Take(AutoSelectTopN)) r.IsSelected = true;
+    }
+
     private void ApplySortAndFilters()
     {
         IEnumerable<QueryStoreRow> source = _rows.Where(RowMatchesAllFilters);
@@ -951,6 +960,7 @@ public partial class QueryStoreGridControl : UserControl
         foreach (var row in source)
             _filteredRows.Add(row);
 
+        ReapplyTopNSelection();
         UpdateStatusText();
         UpdateBarRatios();
     }
@@ -1045,7 +1055,7 @@ public partial class QueryStoreGridControl : UserControl
 
 public class QueryStoreRow : INotifyPropertyChanged
 {
-    private bool _isSelected = true;
+    private bool _isSelected = false;
 
     // Bar ratios [0..1] per column
     private double _execsRatio;
