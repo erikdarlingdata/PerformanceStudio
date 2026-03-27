@@ -44,10 +44,6 @@ public partial class TimeRangeSlicerControl : UserControl
     private static readonly Cursor CursorSizeWE      = new(StandardCursorType.SizeWestEast);
     private static readonly FontFamily TooltipFont   = new("Cascadia Mono,Consolas,monospace");
 
-    // Line points computed in Redraw(), used for hover hit-testing
-    private Point[] _linePoints = Array.Empty<Point>();
-    private double  _stepX;
-
     private enum DragMode { None, MoveRange, DragStart, DragEnd, SelectRect }
     private DragMode _dragMode = DragMode.None;
     private double _dragOriginX;
@@ -56,7 +52,6 @@ public partial class TimeRangeSlicerControl : UserControl
     private double _selectRectOriginX;   // canvas-x where drag-select started
     private double _selectRectCurrentX;  // canvas-x of current pointer during drag-select
 
-    private int _hoveredIndex = -1;  // bucket index under the mouse (-1 = none)
     private string _activeFilterTag = "24"; // tag of the currently active quick-filter button
     private DispatcherTimer? _rangeChangedDebounce;
 
@@ -359,10 +354,6 @@ public partial class TimeRangeSlicerControl : UserControl
             var y = chartBottom - (values[i] / max) * chartHeight;
             linePoints.Add(new Point(x, y));
         }
-        // Cache for Y-proximity hit-testing in pointer events
-        _linePoints = linePoints.ToArray();
-        _stepX      = stepX;
-
         // Area fill
         var fillBrush = TryFindBrush("SlicerChartFillBrush", FallbackChartFillBrush);
         var areaGeometry = new StreamGeometry();
@@ -623,13 +614,18 @@ public partial class TimeRangeSlicerControl : UserControl
             SlicerCanvas.Children.Add(hitRect);
         }
 
-        // ── Hover dot ──────────────────────────────────────────────────
-        var dotIdx = _hoveredIndex;
-        if (dotIdx >= 0 && dotIdx < n)
+        // ── Peak dot: fixed at the maximum-value bucket within the selection ──
+        var selStartIdx = (int)Math.Floor(_rangeStart * n);
+        var selEndIdx   = Math.Min(n - 1, (int)Math.Ceiling(_rangeEnd * n) - 1);
+        if (selStartIdx <= selEndIdx)
         {
+            var peakIdx = selStartIdx;
+            for (int pi = selStartIdx + 1; pi <= selEndIdx; pi++)
+                if (values[pi] > values[peakIdx]) peakIdx = pi;
+
             const double DotR = 7;
-            var dotX = dotIdx * stepX + stepX / 2;
-            var dotY = chartBottom - (values[dotIdx] / max) * chartHeight;
+            var dotX = peakIdx * stepX + stepX / 2;
+            var dotY = chartBottom - (values[peakIdx] / max) * chartHeight;
             var dot = new Ellipse
             {
                 Width           = DotR * 2,
@@ -703,28 +699,6 @@ public partial class TimeRangeSlicerControl : UserControl
         if (this.TryFindResource(key, this.ActualThemeVariant, out var resource) && resource is IBrush brush)
             return brush;
         return fallback;
-    }
-
-    /// <summary>
-    /// Finds the bucket index whose line point is closest horizontally to <paramref name="pos"/>,
-    /// or -1 if none qualifies.
-    /// </summary>
-    private int FindNearestLineIndex(Point pos)
-    {
-        if (_linePoints.Length == 0) return -1;
-        var best = -1;
-        var bestDist = double.MaxValue;
-        for (int i = 0; i < _linePoints.Length; i++)
-        {
-            var lp = _linePoints[i];
-            var dx = Math.Abs(pos.X - lp.X);
-            if (dx <= _stepX / 2 + 2 && dx < bestDist)
-            {
-                bestDist = dx;
-                best = i;
-            }
-        }
-        return best;
     }
 
     // ── Interaction ────────────────────────────────────────────────────────
@@ -817,13 +791,6 @@ public partial class TimeRangeSlicerControl : UserControl
                 SlicerCanvas.Cursor = Cursor.Default;
             }
 
-            // Y-proximity hover for dot
-            var newHover = FindNearestLineIndex(pos);
-            if (newHover != _hoveredIndex)
-            {
-                _hoveredIndex = newHover;
-                Redraw();
-            }
             return;
         }
 
