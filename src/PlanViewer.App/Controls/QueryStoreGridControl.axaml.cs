@@ -64,7 +64,6 @@ public partial class QueryStoreGridControl : UserControl
         SetupColumnHeaders();
         PopulateDatabaseBox(databases, initialDatabase);
         TimeRangeSlicer.RangeChanged += OnTimeRangeChanged;
-        TimeRangeSlicer.IsExpanded = true;
 
         WaitStatsProfile.CategoryClicked += OnWaitCategoryClicked;
         WaitStatsProfile.CategoryDoubleClicked += OnWaitCategoryDoubleClicked;
