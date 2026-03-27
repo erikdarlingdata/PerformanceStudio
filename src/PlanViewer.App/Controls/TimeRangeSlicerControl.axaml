@@ -7,25 +7,26 @@
         <Grid RowDefinitions="Auto,Auto">
             <!-- Header with range label button that opens date/time picker popup -->
             <Panel Grid.Row="0">
-                <StackPanel Orientation="Horizontal" Spacing="6" Margin="8,4">
-                    <TextBlock Text="📅" FontSize="12"
+                <Grid ColumnDefinitions="Auto,Auto,*,Auto" Margin="8,4">
+                    <TextBlock Grid.Column="0" Text="📅" FontSize="12"
                                VerticalAlignment="Center"/>
-                    <TextBlock x:Name="ToggleLabel" Text="Time Range"
+                    <TextBlock Grid.Column="1" x:Name="ToggleLabel" Text="Time Range"
                                FontSize="11" FontWeight="SemiBold"
                                Foreground="{DynamicResource SlicerToggleBrush}"
-                               VerticalAlignment="Center"/>
-                    <TextBlock x:Name="RangeLabel" Text=""
-                               FontSize="11"
+                               VerticalAlignment="Center" Margin="6,0,0,0"/>
+                    <TextBlock Grid.Column="2" x:Name="RangeLabel" Text=""
+                               FontSize="11" FontFamily="Cascadia Mono,Consolas,monospace"
                                Foreground="{DynamicResource SlicerLabelBrush}"
-                               VerticalAlignment="Center" Margin="12,0,0,0"/>
-                    <StackPanel x:Name="QuickFilterPanel" Orientation="Horizontal" Spacing="2" Margin="12,0,0,0" VerticalAlignment="Center">
+                               VerticalAlignment="Center" Margin="12,0,0,0"
+                               TextTrimming="CharacterEllipsis"/>
+                    <StackPanel Grid.Column="3" x:Name="QuickFilterPanel" Orientation="Horizontal" Spacing="2" Margin="12,0,0,0" VerticalAlignment="Center">
                         <Button x:Name="QF_3"      Content="3h"     Tag="3"   Click="QuickFilter_Click"   Height="20" MinWidth="32" Padding="6,0" FontSize="10" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Background="Transparent" BorderThickness="1" BorderBrush="{DynamicResource SlicerBorderBrush}" Foreground="{DynamicResource SlicerLabelBrush}" Cursor="Hand"/>
                         <Button x:Name="QF_24"     Content="24h"    Tag="24"  Click="QuickFilter_Click"   Height="20" MinWidth="32" Padding="6,0" FontSize="10" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Background="Transparent" BorderThickness="1" BorderBrush="{DynamicResource SlicerBorderBrush}" Foreground="{DynamicResource SlicerLabelBrush}" Cursor="Hand"/>
                         <Button x:Name="QF_168"    Content="7d"     Tag="168" Click="QuickFilter_Click"   Height="20" MinWidth="32" Padding="6,0" FontSize="10" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Background="Transparent" BorderThickness="1" BorderBrush="{DynamicResource SlicerBorderBrush}" Foreground="{DynamicResource SlicerLabelBrush}" Cursor="Hand"/>
                         <Button x:Name="QF_720"    Content="30d"    Tag="720" Click="QuickFilter_Click"   Height="20" MinWidth="32" Padding="6,0" FontSize="10" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Background="Transparent" BorderThickness="1" BorderBrush="{DynamicResource SlicerBorderBrush}" Foreground="{DynamicResource SlicerLabelBrush}" Cursor="Hand"/>
                         <Button x:Name="QF_Custom" Content="Custom" Tag="0"   Click="CustomFilter_Click"  Height="20" MinWidth="42" Padding="6,0" FontSize="10" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" Background="Transparent" BorderThickness="1" BorderBrush="{DynamicResource SlicerBorderBrush}" Foreground="{DynamicResource SlicerLabelBrush}" Cursor="Hand"/>
                     </StackPanel>
-                </StackPanel>
+                </Grid>
                 <Popup x:Name="DateTimePopup"
                        PlacementTarget="{Binding #QF_Custom}"
                        Placement="BottomEdgeAlignedLeft"
