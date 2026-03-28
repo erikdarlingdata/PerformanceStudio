@@ -215,14 +215,20 @@ public partial class WaitStatsRibbonControl : UserControl
                 };
                 RibbonCanvas.Children.Add(avgLine);
 
-                var avgLabel = new TextBlock
+                var avgLabel = new Border
                 {
-                    Text = $"avg:{WaitRatioFormatter.Format(avgWait)}",
-                    FontSize = 8,
-                    Foreground = dashBrush,
+                    Background = new SolidColorBrush(Color.Parse("#B0D0D0D0")),
+                    CornerRadius = new CornerRadius(3),
+                    Padding = new Thickness(4, 1),
+                    Child = new TextBlock
+                    {
+                        Text = $"avg:{WaitRatioFormatter.Format(avgWait)}",
+                        FontSize = 10,
+                        Foreground = Brushes.Black,
+                    },
                 };
                 Canvas.SetLeft(avgLabel, 2);
-                Canvas.SetTop(avgLabel, avgY - 12);
+                Canvas.SetTop(avgLabel, avgY - 16);
                 RibbonCanvas.Children.Add(avgLabel);
             }
         }
