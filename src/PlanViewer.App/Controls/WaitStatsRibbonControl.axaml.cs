@@ -228,7 +228,7 @@ public partial class WaitStatsRibbonControl : UserControl
                     },
                 };
                 Canvas.SetLeft(avgLabel, 2);
-                Canvas.SetTop(avgLabel, avgY - 16);
+                Canvas.SetTop(avgLabel, Math.Max(0, avgY - 16));
                 RibbonCanvas.Children.Add(avgLabel);
             }
         }
@@ -246,8 +246,18 @@ public partial class WaitStatsRibbonControl : UserControl
 
         if (dayIndices.Count > 0)
         {
-            foreach (var i in dayIndices)
+            // Skip labels when day boundaries are too dense to avoid overlap
+            // ~40px per label is a reasonable minimum at fontSize=8
+            int labelSkip = 1;
+            if (dayIndices.Count > 1)
             {
+                var avgGapPx = (dayIndices[^1] - dayIndices[0]) * stepX / (dayIndices.Count - 1);
+                if (avgGapPx < 40) labelSkip = (int)Math.Ceiling(40.0 / avgGapPx);
+            }
+
+            for (int li = 0; li < dayIndices.Count; li += labelSkip)
+            {
+                var i = dayIndices[li];
                 var dt = allHours[i];
                 var tb = new TextBlock
                 {
