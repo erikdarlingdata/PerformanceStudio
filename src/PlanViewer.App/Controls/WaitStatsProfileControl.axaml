@@ -3,46 +3,33 @@
              xmlns:local="using:PlanViewer.App.Controls"
              x:Class="PlanViewer.App.Controls.WaitStatsProfileControl">
     <Grid RowDefinitions="Auto,*">
-        <!-- Header: toggle chart type -->
-        <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="6" Margin="4,2">
-            <Button x:Name="ToggleChartButton" Content="☰"
+        <!-- Header row: left controls + right-aligned legend button -->
+        <Grid Grid.Row="0" ColumnDefinitions="Auto,Auto,*,Auto" Margin="4,2">
+            <Button x:Name="ToggleChartButton" Grid.Column="0" Content="&#x25A4;"
                     Width="22" Height="22" Padding="0"
                     FontSize="12" Background="Transparent" BorderThickness="0"
                     Foreground="{DynamicResource ForegroundBrush}"
                     ToolTip.Tip="Toggle bar / ribbon chart"
                     Click="ToggleChart_Click"/>
-            <TextBlock x:Name="TitleText" Text="Wait Stats"
+            <TextBlock x:Name="TitleText" Grid.Column="1" Text="Wait Stats"
                        FontSize="11" FontWeight="SemiBold"
                        Foreground="{DynamicResource SlicerToggleBrush}"
-                       VerticalAlignment="Center"/>
-            <Button x:Name="TableViewButton" Content="▦"
-                    Width="22" Height="22" Padding="0"
-                    FontSize="12" Background="Transparent" BorderThickness="0"
+                       VerticalAlignment="Center" Margin="6,0,0,0"/>
+            <!-- spacer -->
+            <Button x:Name="LegendButton" Grid.Column="3" Content="Legend"
+                    Height="20" Padding="8,0"
+                    FontSize="10"
+                    Background="Transparent" BorderThickness="1"
+                    BorderBrush="{DynamicResource ForegroundMutedBrush}"
                     Foreground="{DynamicResource ForegroundBrush}"
-                    ToolTip.Tip="Show wait stats as table"
-                    Click="TableView_Click"/>
-        </StackPanel>
+                    ToolTip.Tip="Show color legend"
+                    VerticalAlignment="Center"
+                    Click="Legend_Click"/>
+        </Grid>
         <!-- Content area -->
         <Grid Grid.Row="1" x:Name="ContentArea" MinHeight="24">
-            <local:WaitProfileBarControl x:Name="GlobalBar" PercentMode="True"/>
-            <local:WaitStatsRibbonControl x:Name="GlobalRibbon" IsVisible="False"/>
-            <DataGrid x:Name="TableGrid" IsVisible="False"
-                      AutoGenerateColumns="False"
-                      CanUserSortColumns="True"
-                      CanUserResizeColumns="True"
-                      IsReadOnly="True"
-                      SelectionMode="Single"
-                      GridLinesVisibility="Horizontal"
-                      HeadersVisibility="Column"
-                      FontSize="11"
-                      Background="{DynamicResource BackgroundDarkBrush}"
-                      BorderThickness="0">
-                <DataGrid.Columns>
-                    <DataGridTextColumn Header="Category" Binding="{ReflectionBinding Category}" Width="*"/>
-                    <DataGridTextColumn Header="Wait Ratio" Binding="{ReflectionBinding WaitRatioText}" Width="Auto"/>
-                    <DataGridTextColumn Header="% of Total" Binding="{ReflectionBinding RatioText}" Width="Auto"/>
-                </DataGrid.Columns>
-            </DataGrid>
+            <local:WaitProfileBarControl x:Name="GlobalBar" PercentMode="True" IsVisible="False"/>
+            <local:WaitStatsRibbonControl x:Name="GlobalRibbon"/>
             <!-- Loading overlay -->
             <Border x:Name="WaitLoadingOverlay" IsVisible="False"
                     Background="#80000000" CornerRadius="0"

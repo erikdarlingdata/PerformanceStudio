@@ -113,7 +113,7 @@ public partial class WaitProfileBarControl : UserControl
             Canvas.SetTop(rect, 0);
             BarCanvas.Children.Add(rect);
 
-            ToolTip.SetTip(rect, $"{seg.Category}: {seg.WaitRatio:P2} ({seg.Ratio:P1} of total)");
+            ToolTip.SetTip(rect, $"{seg.Category}: {WaitRatioFormatter.Format(seg.WaitRatio)} ({seg.Ratio:P1} of total)");
 
             var capturedCategory = seg.Category;
             rect.PointerPressed += (_, e) =>

@@ -4,6 +4,33 @@ using System.Collections.Generic;
 namespace PlanViewer.Core.Models;
 
 /// <summary>
+/// Formats a WaitRatio value using adapted time-based units instead of percentages.
+/// WaitRatio is expressed in seconds-of-wait per second-of-wall-clock.
+///   - Below 1 s/sec → display as ms/sec  (e.g. "320 ms/sec")
+///   - 1 to 60 s/sec → display as s/sec   (e.g. "4.2 s/sec")
+///   - Above 60 s/sec → display as min/sec (e.g. "1.5 min/sec")
+/// </summary>
+public static class WaitRatioFormatter
+{
+    public static string Format(double waitRatio)
+    {
+        if (waitRatio < 0) waitRatio = 0;
+
+        if (waitRatio < 1.0)
+        {
+            var ms = waitRatio * 1000.0;
+            return ms < 10 ? $"{ms:N1} ms/sec" : $"{ms:N0} ms/sec";
+        }
+        if (waitRatio < 60.0)
+        {
+            return $"{waitRatio:N1} s/sec";
+        }
+        var min = waitRatio / 60.0;
+        return $"{min:N1} min/sec";
+    }
+}
+
+/// <summary>
 /// A single wait category aggregated over a time range.
 /// WaitRatio = SUM(total_query_wait_time_ms) / interval_ms.
 /// </summary>
