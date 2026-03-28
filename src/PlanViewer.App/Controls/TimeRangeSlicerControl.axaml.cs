@@ -17,7 +17,6 @@ public partial class TimeRangeSlicerControl : UserControl
 {
     private List<QueryStoreTimeSlice> _data = new();
     private string _metric = "cpu";
-    private bool _isExpanded = true;
 
     // Range as normalised [0..1] positions within _data
     private double _rangeStart;
@@ -25,7 +24,6 @@ public partial class TimeRangeSlicerControl : UserControl
 
     private const double HandleWidthPx = 8;
     private const double HandleGripWidthPx = 20; // extended hit-test area for easier grabbing
-    private const double MinIntervalHours = 3;
     private const double ChartPaddingTop = 16;
     private const double ChartPaddingBottom = 20;
     private const double MoveBarHeight = 14; // height of the draggable move bar at the top of the selection
@@ -46,10 +44,6 @@ public partial class TimeRangeSlicerControl : UserControl
     private static readonly Cursor CursorSizeWE      = new(StandardCursorType.SizeWestEast);
     private static readonly FontFamily TooltipFont   = new("Cascadia Mono,Consolas,monospace");
 
-    // Line points computed in Redraw(), used for hover hit-testing
-    private Point[] _linePoints = Array.Empty<Point>();
-    private double  _stepX;
-
     private enum DragMode { None, MoveRange, DragStart, DragEnd, SelectRect }
     private DragMode _dragMode = DragMode.None;
     private double _dragOriginX;
@@ -58,7 +52,7 @@ public partial class TimeRangeSlicerControl : UserControl
     private double _selectRectOriginX;   // canvas-x where drag-select started
     private double _selectRectCurrentX;  // canvas-x of current pointer during drag-select
 
-    private int _hoveredIndex = -1;  // bucket index under the mouse (-1 = none)
+    private string _activeFilterTag = "24"; // tag of the currently active quick-filter button
     private DispatcherTimer? _rangeChangedDebounce;
 
     public event EventHandler<TimeRangeChangedEventArgs>? RangeChanged;
@@ -69,17 +63,7 @@ public partial class TimeRangeSlicerControl : UserControl
         SlicerBorder.SizeChanged += (_, _) => Redraw();
         SlicerCanvas.Focusable = true;
         SlicerCanvas.KeyDown += Canvas_KeyDown;
-    }
-
-    public bool IsExpanded
-    {
-        get => _isExpanded;
-        set
-        {
-            _isExpanded = value;
-            SlicerBorder.IsVisible = _isExpanded;
-            ToggleIcon.Text = _isExpanded ? "▾" : "▸";
-        }
+        HighlightActiveFilter();
     }
 
     public void LoadData(List<QueryStoreTimeSlice> data, string metric,
@@ -98,6 +82,7 @@ public partial class TimeRangeSlicerControl : UserControl
         {
             // Default selection: last 24 hours
             _rangeEnd = 1.0;
+            _activeFilterTag = "24";
             if (_data.Count >= 2)
             {
                 var last = _data[^1].IntervalStartUtc.AddHours(1);
@@ -108,6 +93,7 @@ public partial class TimeRangeSlicerControl : UserControl
             {
                 _rangeStart = 0;
             }
+            HighlightActiveFilter();
         }
 
         UpdateRangeLabel();
@@ -165,14 +151,133 @@ public partial class TimeRangeSlicerControl : UserControl
         get
         {
             if (_data.Count == 0) return 0;
-            var n = _data.Count;
-            return Math.Min(MinIntervalHours / n, 1);
+            return 1.0 / _data.Count;
         }
     }
 
-    private void Toggle_Click(object? sender, RoutedEventArgs e)
+    private void CustomFilter_Click(object? sender, RoutedEventArgs e)
     {
-        IsExpanded = !IsExpanded;
+        PopulatePickersFromSelection();
+        DateTimePopup.IsOpen = true;
+    }
+
+    private void PopupApply_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_data.Count < 2) { DateTimePopup.IsOpen = false; return; }
+
+        var startDate = StartDatePicker.SelectedDate;
+        var startTime = StartTimePicker.SelectedTime;
+        var endDate = EndDatePicker.SelectedDate;
+        var endTime = EndTimePicker.SelectedTime;
+
+        if (!startDate.HasValue || !endDate.HasValue) { DateTimePopup.IsOpen = false; return; }
+
+        var startDt = startDate.Value.Date + (startTime ?? TimeSpan.Zero);
+        var endDt = endDate.Value.Date + (endTime ?? TimeSpan.Zero);
+
+        // Convert display time back to UTC
+        var startUtc = ConvertFromDisplay(startDt);
+        var endUtc = ConvertFromDisplay(endDt);
+
+        if (endUtc <= startUtc) endUtc = startUtc.AddHours(1);
+
+        _rangeStart = GetNormFromDateTime(startUtc);
+        _rangeEnd = GetNormFromDateTime(endUtc);
+
+        // Enforce minimum interval
+        if (_rangeEnd - _rangeStart < MinNormInterval)
+            _rangeEnd = Math.Min(1, _rangeStart + MinNormInterval);
+
+        _activeFilterTag = "0";
+        HighlightActiveFilter();
+
+        DateTimePopup.IsOpen = false;
+        UpdateRangeLabel();
+        Redraw();
+        FireRangeChanged();
+    }
+
+    private void PopupCancel_Click(object? sender, RoutedEventArgs e)
+    {
+        DateTimePopup.IsOpen = false;
+    }
+
+    private void QuickFilter_Click(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Button btn && btn.Tag is string hoursStr && int.TryParse(hoursStr, out var hours))
+        {
+            _activeFilterTag = hoursStr;
+            HighlightActiveFilter();
+            ApplyQuickFilter(hours);
+        }
+    }
+
+    private void ApplyQuickFilter(int hours)
+    {
+        if (_data.Count < 2) return;
+        var last = _data[^1].IntervalStartUtc.AddHours(1);
+        var start = last.AddHours(-hours);
+        _rangeStart = GetNormFromDateTime(start);
+        _rangeEnd = 1.0;
+        UpdateRangeLabel();
+        Redraw();
+        FireRangeChanged();
+    }
+
+    private void HighlightActiveFilter()
+    {
+        var accentBrush = TryFindBrush("AccentBrush", FallbackChartLineBrush);
+        var normalFg = TryFindBrush("SlicerLabelBrush", FallbackLabelBrush);
+        var normalBorder = TryFindBrush("SlicerBorderBrush", FallbackDayLineBrush);
+
+        foreach (var child in QuickFilterPanel.Children)
+        {
+            if (child is not Button btn) continue;
+            var tag = btn.Tag as string ?? "";
+            if (tag == _activeFilterTag)
+            {
+                btn.BorderBrush = accentBrush;
+                btn.Foreground = accentBrush;
+            }
+            else
+            {
+                btn.BorderBrush = normalBorder;
+                btn.Foreground = normalFg;
+            }
+        }
+    }
+
+    private void PopulatePickersFromSelection()
+    {
+        if (_data.Count == 0) return;
+
+        var startDisplay = TimeDisplayHelper.ConvertForDisplay(GetDateTimeAtNorm(_rangeStart));
+        var endDisplay = TimeDisplayHelper.ConvertForDisplay(GetDateTimeAtNorm(_rangeEnd));
+
+        StartDatePicker.SelectedDate = startDisplay.Date;
+        StartTimePicker.SelectedTime = startDisplay.TimeOfDay;
+
+        EndDatePicker.SelectedDate = endDisplay.Date;
+        EndTimePicker.SelectedTime = endDisplay.TimeOfDay;
+
+        // Set display date range limits from data bounds
+        var firstDisplay = TimeDisplayHelper.ConvertForDisplay(_data[0].IntervalStartUtc);
+        var lastDisplay = TimeDisplayHelper.ConvertForDisplay(_data[^1].IntervalStartUtc.AddHours(1));
+        StartDatePicker.DisplayDateStart = firstDisplay.Date;
+        StartDatePicker.DisplayDateEnd = lastDisplay.Date;
+        EndDatePicker.DisplayDateStart = firstDisplay.Date;
+        EndDatePicker.DisplayDateEnd = lastDisplay.Date;
+    }
+
+    private static DateTime ConvertFromDisplay(DateTime displayTime)
+    {
+        return TimeDisplayHelper.Current switch
+        {
+            TimeDisplayMode.Local => displayTime.ToUniversalTime(),
+            TimeDisplayMode.Utc => DateTime.SpecifyKind(displayTime, DateTimeKind.Utc),
+            TimeDisplayMode.Server => displayTime.AddMinutes(-TimeDisplayHelper.ServerUtcOffsetMinutes),
+            _ => displayTime.ToUniversalTime()
+        };
     }
 
     private double[] GetMetricValues()
@@ -249,10 +354,6 @@ public partial class TimeRangeSlicerControl : UserControl
             var y = chartBottom - (values[i] / max) * chartHeight;
             linePoints.Add(new Point(x, y));
         }
-        // Cache for Y-proximity hit-testing in pointer events
-        _linePoints = linePoints.ToArray();
-        _stepX      = stepX;
-
         // Area fill
         var fillBrush = TryFindBrush("SlicerChartFillBrush", FallbackChartFillBrush);
         var areaGeometry = new StreamGeometry();
@@ -513,13 +614,18 @@ public partial class TimeRangeSlicerControl : UserControl
             SlicerCanvas.Children.Add(hitRect);
         }
 
-        // ── Hover dot ──────────────────────────────────────────────────
-        var dotIdx = _hoveredIndex;
-        if (dotIdx >= 0 && dotIdx < n)
+        // ── Peak dot: fixed at the maximum-value bucket within the selection ──
+        var selStartIdx = (int)Math.Floor(_rangeStart * n);
+        var selEndIdx   = Math.Min(n - 1, (int)Math.Ceiling(_rangeEnd * n) - 1);
+        if (selStartIdx <= selEndIdx)
         {
+            var peakIdx = selStartIdx;
+            for (int pi = selStartIdx + 1; pi <= selEndIdx; pi++)
+                if (values[pi] > values[peakIdx]) peakIdx = pi;
+
             const double DotR = 7;
-            var dotX = dotIdx * stepX + stepX / 2;
-            var dotY = chartBottom - (values[dotIdx] / max) * chartHeight;
+            var dotX = peakIdx * stepX + stepX / 2;
+            var dotY = chartBottom - (values[peakIdx] / max) * chartHeight;
             var dot = new Ellipse
             {
                 Width           = DotR * 2,
@@ -593,28 +699,6 @@ public partial class TimeRangeSlicerControl : UserControl
         if (this.TryFindResource(key, this.ActualThemeVariant, out var resource) && resource is IBrush brush)
             return brush;
         return fallback;
-    }
-
-    /// <summary>
-    /// Finds the bucket index whose line point is closest horizontally to <paramref name="pos"/>,
-    /// or -1 if none qualifies.
-    /// </summary>
-    private int FindNearestLineIndex(Point pos)
-    {
-        if (_linePoints.Length == 0) return -1;
-        var best = -1;
-        var bestDist = double.MaxValue;
-        for (int i = 0; i < _linePoints.Length; i++)
-        {
-            var lp = _linePoints[i];
-            var dx = Math.Abs(pos.X - lp.X);
-            if (dx <= _stepX / 2 + 2 && dx < bestDist)
-            {
-                bestDist = dx;
-                best = i;
-            }
-        }
-        return best;
     }
 
     // ── Interaction ────────────────────────────────────────────────────────
@@ -707,13 +791,6 @@ public partial class TimeRangeSlicerControl : UserControl
                 SlicerCanvas.Cursor = Cursor.Default;
             }
 
-            // Y-proximity hover for dot
-            var newHover = FindNearestLineIndex(pos);
-            if (newHover != _hoveredIndex)
-            {
-                _hoveredIndex = newHover;
-                Redraw();
-            }
             return;
         }
 
@@ -785,6 +862,8 @@ public partial class TimeRangeSlicerControl : UserControl
 
         _dragMode = DragMode.None;
         e.Pointer.Capture(null);
+        _activeFilterTag = "0";
+        HighlightActiveFilter();
         UpdateRangeLabel();
         Redraw();
         FireRangeChanged();
@@ -820,6 +899,8 @@ public partial class TimeRangeSlicerControl : UserControl
         _rangeStart = Math.Max(0, newStart);
         _rangeEnd = Math.Min(1, newEnd);
 
+        _activeFilterTag = "0";
+        HighlightActiveFilter();
         UpdateRangeLabel();
         Redraw();
         FireRangeChanged();
@@ -878,7 +959,10 @@ public partial class TimeRangeSlicerControl : UserControl
         var start = TimeDisplayHelper.ConvertForDisplay(GetDateTimeAtNorm(_rangeStart));
         var end = TimeDisplayHelper.ConvertForDisplay(GetDateTimeAtNorm(_rangeEnd));
         var span = end - start;
-        RangeLabel.Text = $"{start:yyyy-MM-dd HH:mm} → {end:yyyy-MM-dd HH:mm}  ({span.TotalHours:F0}h)";
+        var spanText = span.TotalHours >= 48
+            ? $"{span.TotalDays:F1}d"
+            : $"{span.TotalHours:F0}h";
+        RangeLabel.Text = $"{start:yyyy-MM-dd HH:mm} → {end:yyyy-MM-dd HH:mm}  ({spanText})";
     }
 
     private void FireRangeChanged()
