@@ -1,11 +1,11 @@
 <UserControl xmlns="https://github.com/avaloniaui"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:local="using:PlanViewer.App.Controls"
+xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+xmlns:local="using:PlanViewer.App.Controls"
              x:Class="PlanViewer.App.Controls.WaitStatsProfileControl">
     <Grid RowDefinitions="Auto,*">
         <!-- Header: toggle chart type -->
         <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="6" Margin="4,2">
-            <Button x:Name="ToggleChartButton" Content="☰"
+            <Button x:Name="ToggleChartButton" Content="▤"
                     Width="22" Height="22" Padding="0"
                     FontSize="12" Background="Transparent" BorderThickness="0"
                     Foreground="{DynamicResource ForegroundBrush}"
@@ -15,34 +15,17 @@
                        FontSize="11" FontWeight="SemiBold"
                        Foreground="{DynamicResource SlicerToggleBrush}"
                        VerticalAlignment="Center"/>
-            <Button x:Name="TableViewButton" Content="▦"
+            <Button x:Name="LegendButton" Content="◆"
                     Width="22" Height="22" Padding="0"
                     FontSize="12" Background="Transparent" BorderThickness="0"
                     Foreground="{DynamicResource ForegroundBrush}"
-                    ToolTip.Tip="Show wait stats as table"
-                    Click="TableView_Click"/>
+                    ToolTip.Tip="Show color legend"
+                    Click="Legend_Click"/>
         </StackPanel>
         <!-- Content area -->
         <Grid Grid.Row="1" x:Name="ContentArea" MinHeight="24">
-            <local:WaitProfileBarControl x:Name="GlobalBar" PercentMode="True"/>
-            <local:WaitStatsRibbonControl x:Name="GlobalRibbon" IsVisible="False"/>
-            <DataGrid x:Name="TableGrid" IsVisible="False"
-                      AutoGenerateColumns="False"
-                      CanUserSortColumns="True"
-                      CanUserResizeColumns="True"
-                      IsReadOnly="True"
-                      SelectionMode="Single"
-                      GridLinesVisibility="Horizontal"
-                      HeadersVisibility="Column"
-                      FontSize="11"
-                      Background="{DynamicResource BackgroundDarkBrush}"
-                      BorderThickness="0">
-                <DataGrid.Columns>
-                    <DataGridTextColumn Header="Category" Binding="{ReflectionBinding Category}" Width="*"/>
-                    <DataGridTextColumn Header="Wait Ratio" Binding="{ReflectionBinding WaitRatioText}" Width="Auto"/>
-                    <DataGridTextColumn Header="% of Total" Binding="{ReflectionBinding RatioText}" Width="Auto"/>
-                </DataGrid.Columns>
-            </DataGrid>
+            <local:WaitProfileBarControl x:Name="GlobalBar" PercentMode="True" IsVisible="False"/>
+            <local:WaitStatsRibbonControl x:Name="GlobalRibbon"/>
             <!-- Loading overlay -->
             <Border x:Name="WaitLoadingOverlay" IsVisible="False"
                     Background="#80000000" CornerRadius="0"

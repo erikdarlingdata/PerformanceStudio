@@ -22,7 +22,7 @@ public partial class WaitStatsRibbonControl : UserControl
     public event EventHandler<string>? CategoryClicked;
     public event EventHandler<string>? CategoryDoubleClicked;
 
-    private const double PaddingTop = 4;
+    private const double PaddingTop = 14; // extra room for average label
     private const double PaddingBottom = 16;
 
     public WaitStatsRibbonControl()
@@ -94,6 +94,30 @@ public partial class WaitStatsRibbonControl : UserControl
             .ToList();
         orderedCats.Add("Others");
 
+        // ── Vertical dashed lines at day boundaries (00:00) ────────────────
+        var dashBrush = TryFindBrush("SlicerLabelBrush", new SolidColorBrush(Color.Parse("#99E4E6EB")));
+        for (int i = 0; i < n; i++)
+        {
+            if (allHours[i].Hour == 0)
+            {
+                var lineX = i * stepX;
+                var line = new Line
+                {
+                    StartPoint = new Point(lineX, PaddingTop),
+                    EndPoint = new Point(lineX, PaddingTop + chartH),
+                    Stroke = dashBrush,
+                    StrokeThickness = 1,
+                    StrokeDashArray = [4, 4],
+                    Opacity = 0.5,
+                };
+                RibbonCanvas.Children.Add(line);
+            }
+        }
+
+        // ── Stacked bars ───────────────────────────────────────────────────
+        double totalWaitSum = 0;
+        int bucketsWithData = 0;
+
         for (int i = 0; i < n; i++)
         {
             var hour = allHours[i];
@@ -117,6 +141,10 @@ public partial class WaitStatsRibbonControl : UserControl
                 else
                     catValues["Others"] += s.WaitRatio;
             }
+
+            var bucketTotal = catValues.Values.Sum();
+            totalWaitSum += bucketTotal;
+            bucketsWithData++;
 
             // Draw stacked from bottom
             foreach (var cat in orderedCats)
@@ -149,7 +177,7 @@ public partial class WaitStatsRibbonControl : UserControl
                     : TimeDisplayHelper.FormatForDisplay(intervalEnd, "yyyy-MM-dd HH:mm");
                 var tipBlock = new TextBlock
                 {
-                    Text = $"{cat}: {ratio:P2}\n{startDisplay} \u2013 {endDisplay}",
+                    Text = $"{cat}: {WaitRatioFormatter.Format(ratio)}\n{startDisplay} \u2013 {endDisplay}",
                     FontSize = 13,
                     Padding = new Thickness(6, 4),
                 };
@@ -169,21 +197,80 @@ public partial class WaitStatsRibbonControl : UserControl
             }
         }
 
-        // X-axis labels
-        var labelBrush = TryFindBrush("SlicerLabelBrush", new SolidColorBrush(Color.Parse("#99E4E6EB")));
-        int labelInterval = Math.Max(1, n / 6);
-        for (int i = 0; i < n; i += labelInterval)
+        // ── Horizontal dashed average line ─────────────────────────────────
+        if (bucketsWithData > 0)
         {
-            var dt = allHours[i];
-            var tb = new TextBlock
+            var avgWait = totalWaitSum / bucketsWithData;
+            if (avgWait > 0 && avgWait <= maxTotal)
             {
-                Text = TimeDisplayHelper.FormatForDisplay(dt, "MM/dd HH:mm"),
-                FontSize = 8,
-                Foreground = labelBrush,
-            };
-            Canvas.SetLeft(tb, i * stepX);
-            Canvas.SetTop(tb, h - PaddingBottom + 1);
-            RibbonCanvas.Children.Add(tb);
+                var avgY = PaddingTop + chartH - (avgWait / maxTotal) * chartH;
+                var avgLine = new Line
+                {
+                    StartPoint = new Point(0, avgY),
+                    EndPoint = new Point(w, avgY),
+                    Stroke = dashBrush,
+                    StrokeThickness = 1,
+                    StrokeDashArray = [6, 3],
+                    Opacity = 0.7,
+                };
+                RibbonCanvas.Children.Add(avgLine);
+
+                var avgLabel = new TextBlock
+                {
+                    Text = $"avg:{WaitRatioFormatter.Format(avgWait)}",
+                    FontSize = 8,
+                    Foreground = dashBrush,
+                };
+                Canvas.SetLeft(avgLabel, 2);
+                Canvas.SetTop(avgLabel, avgY - 12);
+                RibbonCanvas.Children.Add(avgLabel);
+            }
+        }
+
+        // ── X-axis labels aligned to day boundaries (00:00) ────────────────
+        var labelBrush = dashBrush;
+
+        // Collect day-boundary indices
+        var dayIndices = new List<int>();
+        for (int i = 0; i < n; i++)
+        {
+            if (allHours[i].Hour == 0)
+                dayIndices.Add(i);
+        }
+
+        if (dayIndices.Count > 0)
+        {
+            foreach (var i in dayIndices)
+            {
+                var dt = allHours[i];
+                var tb = new TextBlock
+                {
+                    Text = TimeDisplayHelper.FormatForDisplay(dt, "MM/dd"),
+                    FontSize = 8,
+                    Foreground = labelBrush,
+                };
+                Canvas.SetLeft(tb, i * stepX + 2);
+                Canvas.SetTop(tb, h - PaddingBottom + 1);
+                RibbonCanvas.Children.Add(tb);
+            }
+        }
+        else
+        {
+            // Fallback if no day boundary exists (range < 1 day)
+            int labelInterval = Math.Max(1, n / 6);
+            for (int i = 0; i < n; i += labelInterval)
+            {
+                var dt = allHours[i];
+                var tb = new TextBlock
+                {
+                    Text = TimeDisplayHelper.FormatForDisplay(dt, "MM/dd HH:mm"),
+                    FontSize = 8,
+                    Foreground = labelBrush,
+                };
+                Canvas.SetLeft(tb, i * stepX);
+                Canvas.SetTop(tb, h - PaddingBottom + 1);
+                RibbonCanvas.Children.Add(tb);
+            }
         }
     }
 
