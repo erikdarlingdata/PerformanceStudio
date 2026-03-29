@@ -244,9 +244,15 @@ public partial class QueryStoreHistoryWindow : Window
             _planHashColorMap.TryGetValue(row.QueryPlanHash, out var color))
         {
             var avColor = Avalonia.Media.Color.FromRgb(color.R, color.G, color.B);
-            e.Row.Tag = new SolidColorBrush(avColor);
+            var brush = new SolidColorBrush(avColor);
+            e.Row.Tag = brush;
+
+            // Try to apply immediately (works for recycled rows whose visual tree already exists)
+            if (TryApplyColorIndicator(e.Row, brush))
+                return;
         }
 
+        // Visual tree not ready yet (first load) — defer to Loaded
         e.Row.Loaded -= OnRowLoaded;
         e.Row.Loaded += OnRowLoaded;
     }
@@ -256,17 +262,23 @@ public partial class QueryStoreHistoryWindow : Window
         if (sender is not DataGridRow dgRow) return;
         dgRow.Loaded -= OnRowLoaded;
 
-        if (dgRow.Tag is not SolidColorBrush brush) return;
+        if (dgRow.Tag is SolidColorBrush brush)
+            TryApplyColorIndicator(dgRow, brush);
+    }
 
+    private bool TryApplyColorIndicator(DataGridRow dgRow, SolidColorBrush brush)
+    {
         var presenter = FindVisualChild<DataGridCellsPresenter>(dgRow);
-        if (presenter == null) return;
+        if (presenter == null) return false;
 
         var cell = presenter.Children.OfType<DataGridCell>().FirstOrDefault();
-        if (cell == null) return;
+        if (cell == null) return false;
 
         var border = FindVisualChild<Border>(cell, "ColorIndicator");
-        if (border != null)
-            border.Background = brush;
+        if (border == null) return false;
+
+        border.Background = brush;
+        return true;
     }
 
     private static T? FindVisualChild<T>(Avalonia.Visual parent, string? name = null) where T : Avalonia.Visual
