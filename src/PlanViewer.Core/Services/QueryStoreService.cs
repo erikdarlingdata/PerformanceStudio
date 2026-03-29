@@ -546,6 +546,119 @@ ORDER BY rsi.start_time, p.plan_id;";
     }
 
     /// <summary>
+    /// Fetches interval-level history rows for all queries sharing the given query_hash,
+    /// grouped by query_plan_hash and interval start.
+    /// Smart aggregation: SUM for totals/executions, weighted AVG for averages, MAX for last_execution.
+    /// When <paramref name="startUtc"/>/<paramref name="endUtc"/> are provided they define the
+    /// time window; otherwise falls back to <paramref name="hoursBack"/>.
+    /// </summary>
+    public static async Task<List<QueryStoreHistoryRow>> FetchAggregateHistoryAsync(
+        string connectionString, string queryHash, int hoursBack = 24,
+        CancellationToken ct = default,
+        DateTime? startUtc = null, DateTime? endUtc = null)
+    {
+        var parameters = new List<SqlParameter>();
+        parameters.Add(new SqlParameter("@queryHash", queryHash.Trim()));
+
+        string timeFilter;
+        if (startUtc.HasValue && endUtc.HasValue)
+        {
+            timeFilter = "AND rsi.start_time >= @rangeStart AND rsi.start_time < @rangeEnd";
+            parameters.Add(new SqlParameter("@rangeStart", startUtc.Value));
+            parameters.Add(new SqlParameter("@rangeEnd", endUtc.Value));
+        }
+        else
+        {
+            timeFilter = "AND rsi.start_time >= DATEADD(HOUR, -@hoursBack, GETUTCDATE())";
+            parameters.Add(new SqlParameter("@hoursBack", hoursBack));
+        }
+
+        var sql = $@"
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+SELECT
+    CONVERT(varchar(18), p.query_plan_hash, 1),
+    rsi.start_time,
+    SUM(rs.count_executions),
+    CASE WHEN SUM(rs.count_executions) > 0
+         THEN SUM(rs.avg_duration * rs.count_executions) / SUM(rs.count_executions) / 1000.0
+         ELSE 0 END,
+    CASE WHEN SUM(rs.count_executions) > 0
+         THEN SUM(rs.avg_cpu_time * rs.count_executions) / SUM(rs.count_executions) / 1000.0
+         ELSE 0 END,
+    CASE WHEN SUM(rs.count_executions) > 0
+         THEN SUM(rs.avg_logical_io_reads * rs.count_executions) / SUM(rs.count_executions)
+         ELSE 0 END,
+    CASE WHEN SUM(rs.count_executions) > 0
+         THEN SUM(rs.avg_logical_io_writes * rs.count_executions) / SUM(rs.count_executions)
+         ELSE 0 END,
+    CASE WHEN SUM(rs.count_executions) > 0
+         THEN SUM(rs.avg_physical_io_reads * rs.count_executions) / SUM(rs.count_executions)
+         ELSE 0 END,
+    CASE WHEN SUM(rs.count_executions) > 0
+         THEN SUM(rs.avg_query_max_used_memory * rs.count_executions) / SUM(rs.count_executions) * 8.0 / 1024.0
+         ELSE 0 END,
+    CASE WHEN SUM(rs.count_executions) > 0
+         THEN SUM(rs.avg_rowcount * rs.count_executions) / SUM(rs.count_executions)
+         ELSE 0 END,
+    SUM(rs.avg_duration * rs.count_executions) / 1000.0,
+    SUM(rs.avg_cpu_time * rs.count_executions) / 1000.0,
+    SUM(rs.avg_logical_io_reads * rs.count_executions),
+    SUM(rs.avg_logical_io_writes * rs.count_executions),
+    SUM(rs.avg_physical_io_reads * rs.count_executions),
+    MIN(rs.min_dop),
+    MAX(rs.max_dop),
+    MAX(rs.last_execution_time)
+FROM sys.query_store_runtime_stats rs
+JOIN sys.query_store_runtime_stats_interval rsi
+    ON rs.runtime_stats_interval_id = rsi.runtime_stats_interval_id
+JOIN sys.query_store_plan p
+    ON rs.plan_id = p.plan_id
+JOIN sys.query_store_query q
+    ON p.query_id = q.query_id
+WHERE q.query_hash = CONVERT(binary(8), @queryHash, 1)
+{timeFilter}
+GROUP BY p.query_plan_hash, rsi.start_time
+ORDER BY rsi.start_time, p.query_plan_hash;";
+
+        var rows = new List<QueryStoreHistoryRow>();
+
+        await using var conn = new SqlConnection(connectionString);
+        await conn.OpenAsync(ct);
+        await using var cmd = new SqlCommand(sql, conn) { CommandTimeout = 120 };
+        foreach (var p in parameters)
+            cmd.Parameters.Add(p);
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+
+        while (await reader.ReadAsync(ct))
+        {
+            rows.Add(new QueryStoreHistoryRow
+            {
+                QueryPlanHash = reader.IsDBNull(0) ? "" : reader.GetString(0),
+                IntervalStartUtc = ((DateTimeOffset)reader.GetValue(1)).UtcDateTime,
+                CountExecutions = reader.GetInt64(2),
+                AvgDurationMs = reader.GetDouble(3),
+                AvgCpuMs = reader.GetDouble(4),
+                AvgLogicalReads = reader.GetDouble(5),
+                AvgLogicalWrites = reader.GetDouble(6),
+                AvgPhysicalReads = reader.GetDouble(7),
+                AvgMemoryMb = reader.GetDouble(8),
+                AvgRowcount = reader.GetDouble(9),
+                TotalDurationMs = reader.GetDouble(10),
+                TotalCpuMs = reader.GetDouble(11),
+                TotalLogicalReads = reader.GetDouble(12),
+                TotalLogicalWrites = reader.GetDouble(13),
+                TotalPhysicalReads = reader.GetDouble(14),
+                MinDop = (int)reader.GetInt64(15),
+                MaxDop = (int)reader.GetInt64(16),
+                LastExecutionUtc = reader.IsDBNull(17) ? null : ((DateTimeOffset)reader.GetValue(17)).UtcDateTime,
+            });
+        }
+
+        return rows;
+    }
+
+    /// <summary>
     /// Fetches hourly-aggregated metric data for the time-range slicer.
     /// Limits data to the last <paramref name="daysBack"/> days (default 30).
     /// Returns up to 1000 hourly buckets in chronological order.

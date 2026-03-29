@@ -42,11 +42,10 @@
         <Border Grid.Row="2" Background="{DynamicResource BackgroundDarkBrush}" Padding="8,6"
                 BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="3"
                 Margin="0,0,0,8">
-            <StackPanel Orientation="Horizontal" Spacing="12">
-                <StackPanel Spacing="2">
-                    <TextBlock Text="Metric" FontSize="11"
-                               Foreground="{DynamicResource ForegroundBrush}"/>
+            <Grid ColumnDefinitions="Auto,*">
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="12">
                     <ComboBox x:Name="MetricSelector" Width="200" Height="32" FontSize="13"
+                              VerticalAlignment="Center"
                               SelectionChanged="MetricSelector_SelectionChanged">
                         <ComboBoxItem Content="Avg CPU (ms)" Tag="AvgCpuMs" IsSelected="True"/>
                         <ComboBoxItem Content="Avg Duration (ms)" Tag="AvgDurationMs"/>
@@ -62,20 +61,19 @@
                         <ComboBoxItem Content="Total Physical Reads" Tag="TotalPhysicalReads"/>
                         <ComboBoxItem Content="Executions" Tag="CountExecutions"/>
                     </ComboBox>
+                    <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                        <Button x:Name="RangePeriodButton" Content="Range Period" Click="RangePeriod_Click"
+                                Height="28" Padding="16,0" FontSize="12"
+                                Theme="{StaticResource AppButton}"/>
+                        <Button x:Name="FullHistoryButton" Content="Full History" Click="FullHistory_Click"
+                                Height="28" Padding="16,0" FontSize="12"
+                                Theme="{StaticResource AppButton}"/>
+                    </StackPanel>
                 </StackPanel>
-                <StackPanel Spacing="2" VerticalAlignment="Bottom">
-                    <Button x:Name="RangeToggleButton" Content="Range Period" Click="RangeToggle_Click"
-                            Height="28" Padding="16,0" FontSize="12"
-                            Theme="{StaticResource AppButton}"/>
-                </StackPanel>
-                <StackPanel Spacing="2" VerticalAlignment="Bottom">
-                    <Button x:Name="RefreshButton" Content="Refresh" Click="Refresh_Click"
-                            Height="28" Padding="16,0" FontSize="12"
-                            Theme="{StaticResource AppButton}"/>
-                </StackPanel>
-                <TextBlock x:Name="StatusText" VerticalAlignment="Center"
+                <TextBlock Grid.Column="1" x:Name="StatusText" VerticalAlignment="Center"
+                           HorizontalAlignment="Right"
                            FontSize="12" Foreground="{DynamicResource ForegroundBrush}"/>
-            </StackPanel>
+            </Grid>
         </Border>
 
         <!-- Row 3: Chart -->
@@ -96,7 +94,13 @@
                   BorderThickness="0"
                   ScrollViewer.HorizontalScrollBarVisibility="Auto">
             <DataGrid.Columns>
-                <DataGridTextColumn Header="Plan ID" Binding="{ReflectionBinding PlanId}" Width="80"/>
+                <DataGridTemplateColumn Header="" Width="6" CanUserResize="False" CanUserSort="False" CanUserReorder="False">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Border x:Name="ColorIndicator" Width="6" CornerRadius="2"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
                 <DataGridTextColumn Header="Plan Hash" Binding="{ReflectionBinding QueryPlanHash}" Width="150"/>
                 <DataGridTextColumn Header="Interval Start" Binding="{ReflectionBinding IntervalStartLocal}" Width="140"/>
                 <DataGridTextColumn Header="Executions" Binding="{ReflectionBinding CountExecutions}" Width="90"/>

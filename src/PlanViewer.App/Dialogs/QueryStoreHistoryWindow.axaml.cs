@@ -1,4 +1,5 @@
 using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -8,6 +9,7 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
+using Avalonia.VisualTree;
 using PlanViewer.Core.Models;
 using PlanViewer.Core.Services;
 using ScottPlot;
@@ -26,11 +28,25 @@ public partial class QueryStoreHistoryWindow : Window
     private bool _useFullHistory;
     private CancellationTokenSource? _fetchCts;
     private List<QueryStoreHistoryRow> _historyData = new();
-    private readonly List<(ScottPlot.Plottables.Scatter Scatter, string Label)> _scatters = new();
+    private readonly List<(ScottPlot.Plottables.Scatter Scatter, string Label, string PlanHash)> _scatters = new();
 
     // Hover tooltip
     private readonly Popup _tooltip;
     private readonly TextBlock _tooltipText;
+
+    // Box selection state
+    private bool _isDragging;
+    private Point _dragStartPoint;
+    private ScottPlot.Plottables.Rectangle? _selectionRect;
+    private readonly HashSet<int> _selectedRowIndices = new();
+
+    // Color mapping: plan hash -> color
+    private readonly Dictionary<string, ScottPlot.Color> _planHashColorMap = new();
+
+    // Active button highlight brush
+    private static readonly SolidColorBrush ActiveButtonBg = new(Avalonia.Media.Color.FromRgb(0x4F, 0xC3, 0xF7));
+    private static readonly SolidColorBrush ActiveButtonFg = new(Avalonia.Media.Color.FromRgb(0x11, 0x12, 0x17));
+    private static readonly SolidColorBrush InactiveButtonFg = new(Avalonia.Media.Color.FromRgb(0x9D, 0xA5, 0xB4));
 
     private static readonly ScottPlot.Color[] PlanColors =
     {
@@ -57,7 +73,7 @@ public partial class QueryStoreHistoryWindow : Window
         ["avg-writes"]       = "AvgLogicalWrites",
         ["physical-reads"]   = "TotalPhysicalReads",
         ["avg-physical-reads"] = "AvgPhysicalReads",
-        ["memory"]           = "TotalCpuMs", // no total memory metric in history, fallback
+        ["memory"]           = "TotalCpuMs",
         ["avg-memory"]       = "AvgMemoryMb",
         ["executions"]       = "CountExecutions",
     };
@@ -93,7 +109,7 @@ public partial class QueryStoreHistoryWindow : Window
 
         // Default to range period mode when slicer range is available
         _useFullHistory = !(_slicerStartUtc.HasValue && _slicerEndUtc.HasValue);
-        UpdateRangeToggleButton();
+        UpdateRangeButtons();
 
         // Build hover tooltip
         _tooltipText = new TextBlock
@@ -121,6 +137,11 @@ public partial class QueryStoreHistoryWindow : Window
 
         HistoryChart.PointerMoved += OnChartPointerMoved;
         HistoryChart.PointerExited += (_, _) => _tooltip.IsOpen = false;
+        HistoryChart.PointerPressed += OnChartPointerPressed;
+        HistoryChart.PointerReleased += OnChartPointerReleased;
+
+        // Disable ScottPlot's built-in left-click-drag pan so our box selection works
+        HistoryChart.UserInputProcessor.LeftClickDragPan(enable: false);
 
         Opened += async (_, _) => await LoadHistoryAsync();
     }
@@ -142,33 +163,34 @@ public partial class QueryStoreHistoryWindow : Window
         _fetchCts = new CancellationTokenSource();
         var ct = _fetchCts.Token;
 
-        RefreshButton.IsEnabled = false;
         StatusText.Text = "Loading...";
 
         try
         {
             if (_useFullHistory)
             {
-                _historyData = await QueryStoreService.FetchHistoryByHashAsync(
+                _historyData = await QueryStoreService.FetchAggregateHistoryAsync(
                     _connectionString, _queryHash, _maxHoursBack, ct);
             }
             else if (_slicerStartUtc.HasValue && _slicerEndUtc.HasValue)
             {
-                _historyData = await QueryStoreService.FetchHistoryByHashAsync(
+                _historyData = await QueryStoreService.FetchAggregateHistoryAsync(
                     _connectionString, _queryHash, ct: ct,
                     startUtc: _slicerStartUtc.Value, endUtc: _slicerEndUtc.Value);
             }
             else
             {
-                _historyData = await QueryStoreService.FetchHistoryByHashAsync(
+                _historyData = await QueryStoreService.FetchAggregateHistoryAsync(
                     _connectionString, _queryHash, _maxHoursBack, ct);
             }
 
+            BuildColorMap();
             HistoryDataGrid.ItemsSource = _historyData;
+            ApplyColorIndicators();
 
             if (_historyData.Count > 0)
             {
-                var planCount = _historyData.Select(r => r.PlanId).Distinct().Count();
+                var planCount = _historyData.Select(r => r.QueryPlanHash).Distinct().Count();
                 var totalExec = _historyData.Sum(r => r.CountExecutions);
                 var first = TimeDisplayHelper.ConvertForDisplay(_historyData.Min(r => r.IntervalStartUtc));
                 var last = TimeDisplayHelper.ConvertForDisplay(_historyData.Max(r => r.IntervalStartUtc));
@@ -191,16 +213,79 @@ public partial class QueryStoreHistoryWindow : Window
         {
             StatusText.Text = ex.Message.Length > 80 ? ex.Message[..80] + "..." : ex.Message;
         }
-        finally
+    }
+
+    private void BuildColorMap()
+    {
+        _planHashColorMap.Clear();
+        var hashes = _historyData.Select(r => r.QueryPlanHash).Distinct().OrderBy(h => h).ToList();
+        for (int i = 0; i < hashes.Count; i++)
+            _planHashColorMap[hashes[i]] = PlanColors[i % PlanColors.Length];
+    }
+
+    private void ApplyColorIndicators()
+    {
+        HistoryDataGrid.LoadingRow -= OnDataGridLoadingRow;
+        HistoryDataGrid.LoadingRow += OnDataGridLoadingRow;
+    }
+
+    private void OnDataGridLoadingRow(object? sender, DataGridRowEventArgs e)
+    {
+        if (e.Row.DataContext is QueryStoreHistoryRow row &&
+            _planHashColorMap.TryGetValue(row.QueryPlanHash, out var color))
         {
-            RefreshButton.IsEnabled = true;
+            var avColor = Avalonia.Media.Color.FromRgb(color.R, color.G, color.B);
+            // Find the ColorIndicator border in the first cell
+            e.Row.Tag = new SolidColorBrush(avColor);
         }
+
+        // Defer color application after visual tree is built
+        e.Row.Loaded -= OnRowLoaded;
+        e.Row.Loaded += OnRowLoaded;
+    }
+
+    private void OnRowLoaded(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not DataGridRow dgRow) return;
+        dgRow.Loaded -= OnRowLoaded;
+
+        if (dgRow.Tag is not SolidColorBrush brush) return;
+
+        // Walk the visual tree to find the Border named ColorIndicator
+        var presenter = FindVisualChild<DataGridCellsPresenter>(dgRow);
+        if (presenter == null) return;
+
+        // First column cell (index 0) contains our color indicator
+        var cell = presenter.Children.OfType<DataGridCell>().FirstOrDefault();
+        if (cell == null) return;
+
+        var border = FindVisualChild<Border>(cell, "ColorIndicator");
+        if (border != null)
+            border.Background = brush;
+    }
+
+    private static T? FindVisualChild<T>(Avalonia.Visual parent, string? name = null) where T : Avalonia.Visual
+    {
+        if (parent is T t && (name == null || (t is Control c && c.Name == name)))
+            return t;
+
+        var children = parent.GetVisualChildren();
+        foreach (var child in children)
+        {
+            if (child is Avalonia.Visual vc)
+            {
+                var found = FindVisualChild<T>(vc, name);
+                if (found != null) return found;
+            }
+        }
+        return null;
     }
 
     private void UpdateChart()
     {
         HistoryChart.Plot.Clear();
         _scatters.Clear();
+        _selectionRect = null;
 
         if (_historyData.Count == 0)
         {
@@ -213,53 +298,315 @@ public partial class QueryStoreHistoryWindow : Window
         var label = selected?.Content?.ToString() ?? "Avg CPU (ms)";
 
         var planGroups = _historyData
-            .GroupBy(r => r.PlanId)
+            .GroupBy(r => r.QueryPlanHash)
             .OrderBy(g => g.Key)
             .ToList();
 
-        int colorIndex = 0;
         foreach (var group in planGroups)
         {
+            var planHash = group.Key;
+            var color = _planHashColorMap.GetValueOrDefault(planHash, PlanColors[0]);
+
             var ordered = group.OrderBy(r => r.IntervalStartUtc).ToList();
             var xs = ordered.Select(r => TimeDisplayHelper.ConvertForDisplay(r.IntervalStartUtc).ToOADate()).ToArray();
             var ys = ordered.Select(r => GetMetricValue(r, tag)).ToArray();
 
             var scatter = HistoryChart.Plot.Add.Scatter(xs, ys);
-            scatter.Color = PlanColors[colorIndex % PlanColors.Length];
-            scatter.LegendText = $"Plan {group.Key}";
+            scatter.Color = color;
+            scatter.LegendText = planHash.Length > 10 ? planHash[..10] : planHash;
             scatter.LineWidth = 2;
-            scatter.MarkerSize = ordered.Count <= 2 ? 8 : 4;
+            scatter.MarkerSize = ordered.Count <= 2 ? 8 : 5;
+            scatter.MarkerLineColor = ScottPlot.Color.FromHex("#888888");
+            scatter.MarkerLineWidth = 0.5f;
 
-            _scatters.Add((scatter, $"Plan {group.Key}"));
-            colorIndex++;
+            _scatters.Add((scatter, planHash.Length > 10 ? planHash[..10] : planHash, planHash));
         }
 
-        // Add average line
+        // Add average line with built-in label
         var allValues = _historyData.Select(r => GetMetricValue(r, tag)).ToArray();
         if (allValues.Length > 0)
         {
             var avg = allValues.Average();
             var hLine = HistoryChart.Plot.Add.HorizontalLine(avg);
-            hLine.Color = ScottPlot.Color.FromHex("#FFD54F");
+            hLine.Color = ScottPlot.Color.FromHex("#FFD54F").WithAlpha(80);
             hLine.LineWidth = 1.5f;
             hLine.LinePattern = LinePattern.Dashed;
-            hLine.LegendText = $"avg: {avg:N2} {label}";
+            hLine.LegendText = $"avg:{avg:N2}";
+            hLine.Text = $"avg:{avg:N2}";
+            hLine.LabelFontColor = ScottPlot.Color.FromHex("#9DA5B4");
+            hLine.LabelFontSize = 11;
+            hLine.LabelBackgroundColor = ScottPlot.Color.FromHex("#22252b").WithAlpha(180);
+            hLine.LabelOppositeAxis = true;
         }
+
+        // Y-axis always includes 0 as origin
+        HistoryChart.Plot.Axes.AutoScale();
+        var yLimits = HistoryChart.Plot.Axes.GetLimits();
+        HistoryChart.Plot.Axes.SetLimitsY(0, yLimits.Top * 1.1);
 
         // Show legend when multiple plans exist
         HistoryChart.Plot.ShowLegend(planGroups.Count > 1 || allValues.Length > 0
             ? Alignment.UpperRight
             : Alignment.UpperRight);
 
-        HistoryChart.Plot.Axes.DateTimeTicksBottom();
+        // Smart X-axis labels
+        ConfigureSmartXAxis();
+
         HistoryChart.Plot.YLabel(label);
         ApplyDarkTheme();
         HistoryChart.Refresh();
     }
 
+    private void ConfigureSmartXAxis()
+    {
+        if (_historyData.Count == 0) return;
+
+        var minTime = _historyData.Min(r => r.IntervalStartUtc);
+        var maxTime = _historyData.Max(r => r.IntervalStartUtc);
+        var span = maxTime - minTime;
+
+        // Use ScottPlot's DateTime tick generator with smart formatting
+        HistoryChart.Plot.Axes.DateTimeTicksBottom();
+
+        // Customize tick label format based on span
+        if (span.TotalHours <= 48)
+        {
+            // Short range: show HH:mm on top line, MM/dd below
+            HistoryChart.Plot.Axes.Bottom.TickLabelStyle.ForeColor = ScottPlot.Color.FromHex("#9DA5B4");
+            HistoryChart.Plot.Axes.Bottom.TickGenerator = new ScottPlot.TickGenerators.DateTimeAutomatic
+            {
+                LabelFormatter = dt => dt.ToString("HH:mm\nMM/dd")
+            };
+        }
+        else if (span.TotalDays <= 14)
+        {
+            // Medium range: show HH:mm on top, MM/dd below
+            HistoryChart.Plot.Axes.Bottom.TickGenerator = new ScottPlot.TickGenerators.DateTimeAutomatic
+            {
+                LabelFormatter = dt => dt.ToString("HH:mm\nMM/dd")
+            };
+        }
+        else
+        {
+            // Large range: show MM/dd on top, yyyy below
+            HistoryChart.Plot.Axes.Bottom.TickGenerator = new ScottPlot.TickGenerators.DateTimeAutomatic
+            {
+                LabelFormatter = dt => dt.ToString("MM/dd\nyyyy")
+            };
+        }
+    }
+
+    // ── Box selection ────────────────────────────────────────────────────
+
+    private void OnChartPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (!e.GetCurrentPoint(HistoryChart).Properties.IsLeftButtonPressed) return;
+
+        _isDragging = true;
+        _dragStartPoint = e.GetPosition(HistoryChart);
+
+        // Remove old selection rect
+        if (_selectionRect != null)
+        {
+            HistoryChart.Plot.Remove(_selectionRect);
+            _selectionRect = null;
+        }
+
+        e.Handled = true;
+    }
+
+    private void OnChartPointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        if (!_isDragging) return;
+        _isDragging = false;
+
+        var endPoint = e.GetPosition(HistoryChart);
+        var startCoords = PixelToCoordinates(_dragStartPoint);
+        var endCoords = PixelToCoordinates(endPoint);
+
+        // Determine if this was a click (small drag) or a box selection
+        var dx = Math.Abs(endPoint.X - _dragStartPoint.X);
+        var dy = Math.Abs(endPoint.Y - _dragStartPoint.Y);
+
+        if (dx < 5 && dy < 5)
+        {
+            // Single click: find nearest dot and select it
+            HandleSingleClickSelection(endPoint);
+        }
+        else
+        {
+            // Box selection
+            HandleBoxSelection(startCoords, endCoords);
+        }
+
+        e.Handled = true;
+    }
+
+    private ScottPlot.Coordinates PixelToCoordinates(Point pos)
+    {
+        var scaling = HistoryChart.Bounds.Width > 0
+            ? (float)(HistoryChart.Plot.RenderManager.LastRender.FigureRect.Width / HistoryChart.Bounds.Width)
+            : 1f;
+        var pixel = new ScottPlot.Pixel((float)(pos.X * scaling), (float)(pos.Y * scaling));
+        return HistoryChart.Plot.GetCoordinates(pixel);
+    }
+
+    private void HandleSingleClickSelection(Point clickPoint)
+    {
+        if (_scatters.Count == 0) return;
+
+        var scaling = HistoryChart.Bounds.Width > 0
+            ? (float)(HistoryChart.Plot.RenderManager.LastRender.FigureRect.Width / HistoryChart.Bounds.Width)
+            : 1f;
+        var pixel = new ScottPlot.Pixel((float)(clickPoint.X * scaling), (float)(clickPoint.Y * scaling));
+        var mouseCoords = HistoryChart.Plot.GetCoordinates(pixel);
+
+        double bestDist = double.MaxValue;
+        ScottPlot.DataPoint bestPoint = default;
+        string bestPlanHash = "";
+        bool found = false;
+
+        foreach (var (scatter, _, planHash) in _scatters)
+        {
+            var nearest = scatter.Data.GetNearest(mouseCoords, HistoryChart.Plot.LastRender);
+            if (!nearest.IsReal) continue;
+
+            var nearestPixel = HistoryChart.Plot.GetPixel(
+                new ScottPlot.Coordinates(nearest.X, nearest.Y));
+            var d = Math.Sqrt(Math.Pow(nearestPixel.X - pixel.X, 2) + Math.Pow(nearestPixel.Y - pixel.Y, 2));
+
+            if (d < 30 && d < bestDist)
+            {
+                bestDist = d;
+                bestPoint = nearest;
+                bestPlanHash = planHash;
+                found = true;
+            }
+        }
+
+        _selectedRowIndices.Clear();
+
+        if (found)
+        {
+            var clickedTime = DateTime.FromOADate(bestPoint.X);
+            for (int i = 0; i < _historyData.Count; i++)
+            {
+                var row = _historyData[i];
+                var displayTime = TimeDisplayHelper.ConvertForDisplay(row.IntervalStartUtc);
+                if (row.QueryPlanHash == bestPlanHash &&
+                    Math.Abs((displayTime - clickedTime).TotalMinutes) < 1)
+                {
+                    _selectedRowIndices.Add(i);
+                }
+            }
+        }
+
+        HighlightGridRows();
+    }
+
+    private void HandleBoxSelection(ScottPlot.Coordinates start, ScottPlot.Coordinates end)
+    {
+        var x1 = Math.Min(start.X, end.X);
+        var x2 = Math.Max(start.X, end.X);
+        var y1 = Math.Min(start.Y, end.Y);
+        var y2 = Math.Max(start.Y, end.Y);
+
+        // Draw selection rectangle on chart
+        if (_selectionRect != null)
+            HistoryChart.Plot.Remove(_selectionRect);
+
+        _selectionRect = HistoryChart.Plot.Add.Rectangle(x1, x2, y1, y2);
+        _selectionRect.FillColor = ScottPlot.Color.FromHex("#4FC3F7").WithAlpha(30);
+        _selectionRect.LineColor = ScottPlot.Color.FromHex("#4FC3F7").WithAlpha(120);
+        _selectionRect.LineWidth = 1;
+        HistoryChart.Refresh();
+
+        // Find all data points inside the box
+        var tag = (MetricSelector.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "AvgCpuMs";
+        _selectedRowIndices.Clear();
+
+        for (int i = 0; i < _historyData.Count; i++)
+        {
+            var row = _historyData[i];
+            var xVal = TimeDisplayHelper.ConvertForDisplay(row.IntervalStartUtc).ToOADate();
+            var yVal = GetMetricValue(row, tag);
+
+            if (xVal >= x1 && xVal <= x2 && yVal >= y1 && yVal <= y2)
+                _selectedRowIndices.Add(i);
+        }
+
+        HighlightGridRows();
+    }
+
+    private void HighlightGridRows()
+    {
+        // Clear all row highlighting first, then apply selection
+        var highlightBrush = new SolidColorBrush(Avalonia.Media.Color.FromArgb(60, 79, 195, 247));
+        var transparentBrush = Brushes.Transparent;
+
+        // Scroll to first selected row if any
+        if (_selectedRowIndices.Count > 0)
+        {
+            var firstIdx = _selectedRowIndices.Min();
+            if (firstIdx < _historyData.Count)
+                HistoryDataGrid.ScrollIntoView(_historyData[firstIdx], null);
+        }
+
+        // Use LoadingRow event + force refresh to highlight
+        HistoryDataGrid.LoadingRow -= OnHighlightLoadingRow;
+        HistoryDataGrid.LoadingRow += OnHighlightLoadingRow;
+
+        // Force grid to re-render rows
+        var source = _historyData;
+        HistoryDataGrid.ItemsSource = null;
+        HistoryDataGrid.ItemsSource = source;
+    }
+
+    private void OnHighlightLoadingRow(object? sender, DataGridRowEventArgs e)
+    {
+        var idx = e.Row.GetIndex();
+        if (_selectedRowIndices.Contains(idx))
+        {
+            e.Row.Background = new SolidColorBrush(Avalonia.Media.Color.FromArgb(60, 79, 195, 247));
+        }
+        else if (_selectedRowIndices.Count > 0)
+        {
+            e.Row.Background = Brushes.Transparent;
+        }
+        else
+        {
+            e.Row.Background = Brushes.Transparent;
+        }
+    }
+
     private void OnChartPointerMoved(object? sender, PointerEventArgs e)
     {
         if (_scatters.Count == 0) { _tooltip.IsOpen = false; return; }
+
+        // If dragging, update selection rectangle preview
+        if (_isDragging)
+        {
+            var currentPoint = e.GetPosition(HistoryChart);
+            var startCoords = PixelToCoordinates(_dragStartPoint);
+            var currentCoords = PixelToCoordinates(currentPoint);
+
+            if (_selectionRect != null)
+                HistoryChart.Plot.Remove(_selectionRect);
+
+            var x1 = Math.Min(startCoords.X, currentCoords.X);
+            var x2 = Math.Max(startCoords.X, currentCoords.X);
+            var y1 = Math.Min(startCoords.Y, currentCoords.Y);
+            var y2 = Math.Max(startCoords.Y, currentCoords.Y);
+
+            _selectionRect = HistoryChart.Plot.Add.Rectangle(x1, x2, y1, y2);
+            _selectionRect.FillColor = ScottPlot.Color.FromHex("#4FC3F7").WithAlpha(30);
+            _selectionRect.LineColor = ScottPlot.Color.FromHex("#4FC3F7").WithAlpha(120);
+            _selectionRect.LineWidth = 1;
+            HistoryChart.Refresh();
+
+            _tooltip.IsOpen = false;
+            return;
+        }
 
         try
         {
@@ -275,19 +622,19 @@ public partial class QueryStoreHistoryWindow : Window
             string bestLabel = "";
             bool found = false;
 
-            foreach (var (scatter, chartLabel) in _scatters)
+            foreach (var (scatter, chartLabel, _) in _scatters)
             {
                 var nearest = scatter.Data.GetNearest(mouseCoords, HistoryChart.Plot.LastRender);
                 if (!nearest.IsReal) continue;
 
                 var nearestPixel = HistoryChart.Plot.GetPixel(
                     new ScottPlot.Coordinates(nearest.X, nearest.Y));
-                double dx = Math.Abs(nearestPixel.X - pixel.X);
-                double dy = Math.Abs(nearestPixel.Y - pixel.Y);
+                double ddx = Math.Abs(nearestPixel.X - pixel.X);
+                double ddy = Math.Abs(nearestPixel.Y - pixel.Y);
 
-                if (dx < 80 && dy < bestDist)
+                if (ddx < 80 && ddy < bestDist)
                 {
-                    bestDist = dy;
+                    bestDist = ddy;
                     bestPoint = nearest;
                     bestLabel = chartLabel;
                     found = true;
@@ -348,22 +695,37 @@ public partial class QueryStoreHistoryWindow : Window
         HistoryChart.Plot.Legend.OutlineColor = ScottPlot.Color.FromHex("#3A3D45");
     }
 
-    private void UpdateRangeToggleButton()
+    private void UpdateRangeButtons()
     {
         if (_useFullHistory)
         {
-            RangeToggleButton.Content = "Full History";
+            FullHistoryButton.Background = ActiveButtonBg;
+            FullHistoryButton.Foreground = ActiveButtonFg;
+            RangePeriodButton.Background = Brushes.Transparent;
+            RangePeriodButton.Foreground = InactiveButtonFg;
         }
         else
         {
-            RangeToggleButton.Content = "Range Period";
+            RangePeriodButton.Background = ActiveButtonBg;
+            RangePeriodButton.Foreground = ActiveButtonFg;
+            FullHistoryButton.Background = Brushes.Transparent;
+            FullHistoryButton.Foreground = InactiveButtonFg;
         }
     }
 
-    private async void RangeToggle_Click(object? sender, RoutedEventArgs e)
+    private async void RangePeriod_Click(object? sender, RoutedEventArgs e)
     {
-        _useFullHistory = !_useFullHistory;
-        UpdateRangeToggleButton();
+        if (!_useFullHistory) return;
+        _useFullHistory = false;
+        UpdateRangeButtons();
+        await LoadHistoryAsync();
+    }
+
+    private async void FullHistory_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_useFullHistory) return;
+        _useFullHistory = true;
+        UpdateRangeButtons();
         await LoadHistoryAsync();
     }
 
@@ -371,11 +733,6 @@ public partial class QueryStoreHistoryWindow : Window
     {
         if (IsVisible && _historyData.Count > 0)
             UpdateChart();
-    }
-
-    private async void Refresh_Click(object? sender, RoutedEventArgs e)
-    {
-        await LoadHistoryAsync();
     }
 
     private async void CopyQuery_Click(object? sender, RoutedEventArgs e)
