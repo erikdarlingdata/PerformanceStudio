@@ -110,6 +110,7 @@
         <!-- Row 4: DataGrid -->
         <DataGrid Grid.Row="4" x:Name="HistoryDataGrid"
                   AutoGenerateColumns="False" IsReadOnly="True"
+                  SelectionMode="Extended"
                   CanUserSortColumns="True" CanUserReorderColumns="True"
                   CanUserResizeColumns="True"
                   GridLinesVisibility="Horizontal" HeadersVisibility="Column"

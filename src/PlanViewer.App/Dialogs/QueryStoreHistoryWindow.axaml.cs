@@ -51,6 +51,10 @@ public partial class QueryStoreHistoryWindow : Window
     private bool _legendExpanded;
     private bool _suppressGridSelectionEvent;
 
+    // Legend highlight: which plan hash is currently highlighted (null = none)
+    private string? _highlightedPlanHash;
+    private ScottPlot.Plottables.HorizontalLine? _avgLine;
+
     // Active button highlight brush
     private static readonly SolidColorBrush ActiveButtonBg = new(Avalonia.Media.Color.FromRgb(0x4F, 0xC3, 0xF7));
     private static readonly SolidColorBrush ActiveButtonFg = new(Avalonia.Media.Color.FromRgb(0x11, 0x12, 0x17));
@@ -306,7 +310,13 @@ public partial class QueryStoreHistoryWindow : Window
         foreach (var (hash, color) in _planHashColorMap.OrderBy(kv => kv.Key))
         {
             var avColor = Avalonia.Media.Color.FromRgb(color.R, color.G, color.B);
-            var item = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 6 };
+            var item = new StackPanel
+            {
+                Orientation = Avalonia.Layout.Orientation.Horizontal,
+                Spacing = 6,
+                Tag = hash,
+                Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand)
+            };
             item.Children.Add(new Border
             {
                 Width = 12, Height = 12,
@@ -321,8 +331,88 @@ public partial class QueryStoreHistoryWindow : Window
                 VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
                 Foreground = new SolidColorBrush(Avalonia.Media.Color.FromRgb(0xE0, 0xE0, 0xE0))
             });
+            item.PointerPressed += OnLegendItemClicked;
             LegendItemsPanel.Children.Add(item);
         }
+    }
+
+    private void OnLegendItemClicked(object? sender, PointerPressedEventArgs e)
+    {
+        if (sender is not StackPanel panel || panel.Tag is not string planHash) return;
+
+        // Toggle: click again to deselect
+        if (_highlightedPlanHash == planHash)
+            _highlightedPlanHash = null;
+        else
+            _highlightedPlanHash = planHash;
+
+        ApplyPlanHighlight();
+        UpdateLegendVisuals();
+    }
+
+    private void UpdateLegendVisuals()
+    {
+        foreach (var child in LegendItemsPanel.Children)
+        {
+            if (child is not StackPanel panel || panel.Tag is not string hash) continue;
+            var isActive = _highlightedPlanHash == null || _highlightedPlanHash == hash;
+            panel.Opacity = isActive ? 1.0 : 0.4;
+        }
+    }
+
+    private void ApplyPlanHighlight()
+    {
+        var tag = (MetricSelector.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "AvgCpuMs";
+
+        foreach (var (scatter, _, planHash) in _scatters)
+        {
+            if (_highlightedPlanHash == null)
+            {
+                // No highlight: restore normal appearance
+                var color = _planHashColorMap.GetValueOrDefault(planHash, PlanColors[0]);
+                scatter.Color = color.WithAlpha(140);
+                scatter.LineWidth = 2;
+                scatter.MarkerSize = 8;
+            }
+            else if (planHash == _highlightedPlanHash)
+            {
+                // Highlighted plan: emphasized
+                var color = _planHashColorMap.GetValueOrDefault(planHash, PlanColors[0]);
+                scatter.Color = color.WithAlpha(220);
+                scatter.LineWidth = 4;
+                scatter.MarkerSize = 10;
+            }
+            else
+            {
+                // Other plans: dimmed
+                var color = _planHashColorMap.GetValueOrDefault(planHash, PlanColors[0]);
+                scatter.Color = color.WithAlpha(40);
+                scatter.LineWidth = 1;
+                scatter.MarkerSize = 5;
+            }
+        }
+
+        // Recompute average line based on highlighted plan or all data
+        if (_avgLine != null)
+        {
+            var relevantRows = _highlightedPlanHash != null
+                ? _historyData.Where(r => r.QueryPlanHash == _highlightedPlanHash).ToList()
+                : _historyData;
+
+            if (relevantRows.Count > 0)
+            {
+                var avg = relevantRows.Select(r => GetMetricValue(r, tag)).Average();
+                _avgLine.Y = avg;
+                _avgLine.Text = $"avg: {avg:N0}";
+                _avgLine.IsVisible = true;
+            }
+            else
+            {
+                _avgLine.IsVisible = false;
+            }
+        }
+
+        HistoryChart.Refresh();
     }
 
     private void LegendToggle_Click(object? sender, RoutedEventArgs e)
@@ -340,6 +430,8 @@ public partial class QueryStoreHistoryWindow : Window
         _scatters.Clear();
         _selectionRect = null;
         _highlightMarkers.Clear();
+        _avgLine = null;
+        _highlightedPlanHash = null;
 
         if (_historyData.Count == 0)
         {
@@ -382,19 +474,19 @@ public partial class QueryStoreHistoryWindow : Window
         if (allValues.Length > 0)
         {
             var avg = allValues.Average();
-            var hLine = HistoryChart.Plot.Add.HorizontalLine(avg);
-            hLine.Color = ScottPlot.Color.FromHex("#FFD54F").WithAlpha(150);
-            hLine.LineWidth = 2f;
-            hLine.LinePattern = LinePattern.DenselyDashed;
-            hLine.Text = $"avg: {avg:N0}";
-            hLine.LabelFontColor = ScottPlot.Color.FromHex("#9DA5B4");
-            hLine.LabelFontSize = 11;
-            hLine.LabelBackgroundColor = ScottPlot.Color.FromHex("#333333").WithAlpha(270);
-            hLine.LabelOppositeAxis = false;
-            hLine.LabelRotation = 0;
-            hLine.LabelAlignment = Alignment.LowerLeft;
-            hLine.LabelOffsetX = 38;
-            hLine.LabelOffsetY = -8;
+            _avgLine = HistoryChart.Plot.Add.HorizontalLine(avg);
+            _avgLine.Color = ScottPlot.Color.FromHex("#FFD54F").WithAlpha(150);
+            _avgLine.LineWidth = 2f;
+            _avgLine.LinePattern = LinePattern.DenselyDashed;
+            _avgLine.Text = $"avg: {avg:N0}";
+            _avgLine.LabelFontColor = ScottPlot.Color.FromHex("#9DA5B4");
+            _avgLine.LabelFontSize = 11;
+            _avgLine.LabelBackgroundColor = ScottPlot.Color.FromHex("#333333").WithAlpha(270);
+            _avgLine.LabelOppositeAxis = false;
+            _avgLine.LabelRotation = 0;
+            _avgLine.LabelAlignment = Alignment.LowerLeft;
+            _avgLine.LabelOffsetX = 38;
+            _avgLine.LabelOffsetY = -8;
         }
 
         // Y-axis always includes 0 as origin
@@ -479,13 +571,14 @@ public partial class QueryStoreHistoryWindow : Window
             var xs = group.Select(r => TimeDisplayHelper.ConvertForDisplay(r.IntervalStartUtc).ToOADate()).ToArray();
             var ys = group.Select(r => GetMetricValue(r, tag)).ToArray();
 
+            // Bigger filled dot with white border for emphasis
             var highlight = HistoryChart.Plot.Add.Scatter(xs, ys);
             highlight.LineWidth = 0;
-            highlight.MarkerSize = 12;
-            highlight.MarkerShape = MarkerShape.OpenCircle;
+            highlight.MarkerSize = 14;
+            highlight.MarkerShape = MarkerShape.FilledCircle;
+            highlight.Color = color;
             highlight.MarkerLineColor = ScottPlot.Colors.White;
-            highlight.MarkerLineWidth = 2f;
-            highlight.Color = ScottPlot.Colors.Transparent;
+            highlight.MarkerLineWidth = 2.5f;
 
             _highlightMarkers.Add(highlight);
         }
@@ -671,16 +764,18 @@ public partial class QueryStoreHistoryWindow : Window
     private void HistoryDataGrid_SelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
         if (_suppressGridSelectionEvent) return;
-        if (HistoryDataGrid.SelectedItems == null || HistoryDataGrid.SelectedItems.Count == 0) return;
 
         _selectedRowIndices.Clear();
-        foreach (var item in HistoryDataGrid.SelectedItems)
+        if (HistoryDataGrid.SelectedItems != null)
         {
-            if (item is QueryStoreHistoryRow row)
+            foreach (var item in HistoryDataGrid.SelectedItems)
             {
-                var idx = _historyData.IndexOf(row);
-                if (idx >= 0)
-                    _selectedRowIndices.Add(idx);
+                if (item is QueryStoreHistoryRow row)
+                {
+                    var idx = _historyData.IndexOf(row);
+                    if (idx >= 0)
+                        _selectedRowIndices.Add(idx);
+                }
             }
         }
 
