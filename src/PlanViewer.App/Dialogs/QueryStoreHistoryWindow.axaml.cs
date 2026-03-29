@@ -17,8 +17,13 @@ namespace PlanViewer.App.Dialogs;
 public partial class QueryStoreHistoryWindow : Window
 {
     private readonly string _connectionString;
-    private readonly long _queryId;
+    private readonly string _queryHash;
     private readonly string _database;
+    private readonly string _queryText;
+    private readonly DateTime? _slicerStartUtc;
+    private readonly DateTime? _slicerEndUtc;
+    private readonly int _maxHoursBack;
+    private bool _useFullHistory;
     private CancellationTokenSource? _fetchCts;
     private List<QueryStoreHistoryRow> _historyData = new();
     private readonly List<(ScottPlot.Plottables.Scatter Scatter, string Label)> _scatters = new();
@@ -39,21 +44,56 @@ public partial class QueryStoreHistoryWindow : Window
         ScottPlot.Color.FromHex("#A1887F"),
     };
 
-    public QueryStoreHistoryWindow(string connectionString, long queryId,
-        string queryText, string database, int hoursBack = 24)
+    // Map grid orderBy tags to history metric tags
+    private static readonly Dictionary<string, string> OrderByToMetricTag = new()
+    {
+        ["cpu"]              = "TotalCpuMs",
+        ["avg-cpu"]          = "AvgCpuMs",
+        ["duration"]         = "TotalDurationMs",
+        ["avg-duration"]     = "AvgDurationMs",
+        ["reads"]            = "TotalLogicalReads",
+        ["avg-reads"]        = "AvgLogicalReads",
+        ["writes"]           = "TotalLogicalWrites",
+        ["avg-writes"]       = "AvgLogicalWrites",
+        ["physical-reads"]   = "TotalPhysicalReads",
+        ["avg-physical-reads"] = "AvgPhysicalReads",
+        ["memory"]           = "TotalCpuMs", // no total memory metric in history, fallback
+        ["avg-memory"]       = "AvgMemoryMb",
+        ["executions"]       = "CountExecutions",
+    };
+
+    public QueryStoreHistoryWindow(string connectionString, string queryHash,
+        string queryText, string database,
+        string initialMetricTag = "AvgCpuMs",
+        DateTime? slicerStartUtc = null, DateTime? slicerEndUtc = null,
+        int slicerDaysBack = 30)
     {
         _connectionString = connectionString;
-        _queryId = queryId;
+        _queryHash = queryHash;
         _database = database;
+        _queryText = queryText;
+        _slicerStartUtc = slicerStartUtc;
+        _slicerEndUtc = slicerEndUtc;
+        _maxHoursBack = slicerDaysBack * 24;
         InitializeComponent();
 
-        HoursBackBox.Value = hoursBack;
+        QueryIdentifierText.Text = $"Query Store History: {queryHash} in [{database}]";
+        QueryTextBox.Text = queryText;
 
-        var preview = queryText.Length > 120
-            ? queryText[..120].Replace("\n", " ").Replace("\r", "") + "..."
-            : queryText.Replace("\n", " ").Replace("\r", "");
-        QueryIdentifierText.Text = $"Query Store History: Query {queryId} in [{database}]";
-        SummaryText.Text = preview;
+        // Select initial metric in the combo box
+        var metricTag = initialMetricTag;
+        foreach (ComboBoxItem item in MetricSelector.Items)
+        {
+            if (item.Tag?.ToString() == metricTag)
+            {
+                MetricSelector.SelectedItem = item;
+                break;
+            }
+        }
+
+        // Default to range period mode when slicer range is available
+        _useFullHistory = !(_slicerStartUtc.HasValue && _slicerEndUtc.HasValue);
+        UpdateRangeToggleButton();
 
         // Build hover tooltip
         _tooltipText = new TextBlock
@@ -85,6 +125,16 @@ public partial class QueryStoreHistoryWindow : Window
         Opened += async (_, _) => await LoadHistoryAsync();
     }
 
+    /// <summary>
+    /// Maps a grid orderBy tag (e.g. "cpu", "avg-duration") to the history metric tag.
+    /// </summary>
+    public static string MapOrderByToMetricTag(string orderBy)
+    {
+        return OrderByToMetricTag.TryGetValue(orderBy?.ToLowerInvariant() ?? "", out var tag)
+            ? tag
+            : "AvgCpuMs";
+    }
+
     private async System.Threading.Tasks.Task LoadHistoryAsync()
     {
         _fetchCts?.Cancel();
@@ -92,14 +142,27 @@ public partial class QueryStoreHistoryWindow : Window
         _fetchCts = new CancellationTokenSource();
         var ct = _fetchCts.Token;
 
-        var hoursBack = (int)(HoursBackBox.Value ?? 24);
         RefreshButton.IsEnabled = false;
         StatusText.Text = "Loading...";
 
         try
         {
-            _historyData = await QueryStoreService.FetchHistoryAsync(
-                _connectionString, _queryId, hoursBack, ct);
+            if (_useFullHistory)
+            {
+                _historyData = await QueryStoreService.FetchHistoryByHashAsync(
+                    _connectionString, _queryHash, _maxHoursBack, ct);
+            }
+            else if (_slicerStartUtc.HasValue && _slicerEndUtc.HasValue)
+            {
+                _historyData = await QueryStoreService.FetchHistoryByHashAsync(
+                    _connectionString, _queryHash, ct: ct,
+                    startUtc: _slicerStartUtc.Value, endUtc: _slicerEndUtc.Value);
+            }
+            else
+            {
+                _historyData = await QueryStoreService.FetchHistoryByHashAsync(
+                    _connectionString, _queryHash, _maxHoursBack, ct);
+            }
 
             HistoryDataGrid.ItemsSource = _historyData;
 
@@ -171,6 +234,23 @@ public partial class QueryStoreHistoryWindow : Window
             colorIndex++;
         }
 
+        // Add average line
+        var allValues = _historyData.Select(r => GetMetricValue(r, tag)).ToArray();
+        if (allValues.Length > 0)
+        {
+            var avg = allValues.Average();
+            var hLine = HistoryChart.Plot.Add.HorizontalLine(avg);
+            hLine.Color = ScottPlot.Color.FromHex("#FFD54F");
+            hLine.LineWidth = 1.5f;
+            hLine.LinePattern = LinePattern.Dashed;
+            hLine.LegendText = $"avg: {avg:N2} {label}";
+        }
+
+        // Show legend when multiple plans exist
+        HistoryChart.Plot.ShowLegend(planGroups.Count > 1 || allValues.Length > 0
+            ? Alignment.UpperRight
+            : Alignment.UpperRight);
+
         HistoryChart.Plot.Axes.DateTimeTicksBottom();
         HistoryChart.Plot.YLabel(label);
         ApplyDarkTheme();
@@ -195,7 +275,7 @@ public partial class QueryStoreHistoryWindow : Window
             string bestLabel = "";
             bool found = false;
 
-            foreach (var (scatter, label) in _scatters)
+            foreach (var (scatter, chartLabel) in _scatters)
             {
                 var nearest = scatter.Data.GetNearest(mouseCoords, HistoryChart.Plot.LastRender);
                 if (!nearest.IsReal) continue;
@@ -209,7 +289,7 @@ public partial class QueryStoreHistoryWindow : Window
                 {
                     bestDist = dy;
                     bestPoint = nearest;
-                    bestLabel = label;
+                    bestLabel = chartLabel;
                     found = true;
                 }
             }
@@ -268,6 +348,25 @@ public partial class QueryStoreHistoryWindow : Window
         HistoryChart.Plot.Legend.OutlineColor = ScottPlot.Color.FromHex("#3A3D45");
     }
 
+    private void UpdateRangeToggleButton()
+    {
+        if (_useFullHistory)
+        {
+            RangeToggleButton.Content = "Full History";
+        }
+        else
+        {
+            RangeToggleButton.Content = "Range Period";
+        }
+    }
+
+    private async void RangeToggle_Click(object? sender, RoutedEventArgs e)
+    {
+        _useFullHistory = !_useFullHistory;
+        UpdateRangeToggleButton();
+        await LoadHistoryAsync();
+    }
+
     private void MetricSelector_SelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
         if (IsVisible && _historyData.Count > 0)
@@ -277,6 +376,14 @@ public partial class QueryStoreHistoryWindow : Window
     private async void Refresh_Click(object? sender, RoutedEventArgs e)
     {
         await LoadHistoryAsync();
+    }
+
+    private async void CopyQuery_Click(object? sender, RoutedEventArgs e)
+    {
+        if (string.IsNullOrEmpty(_queryText)) return;
+        var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+        if (clipboard != null)
+            await clipboard.SetTextAsync(_queryText);
     }
 
     private void Close_Click(object? sender, RoutedEventArgs e) => Close();

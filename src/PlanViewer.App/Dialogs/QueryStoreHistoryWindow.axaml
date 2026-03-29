@@ -9,19 +9,37 @@
         Icon="avares://PlanViewer.App/EDD.ico"
         Background="{DynamicResource BackgroundBrush}">
 
-    <Grid Margin="12" RowDefinitions="Auto,Auto,300,*,Auto">
+    <Grid Margin="12" RowDefinitions="Auto,Auto,Auto,300,*,Auto">
 
         <!-- Row 0: Header -->
         <StackPanel Grid.Row="0" Margin="0,0,0,8">
             <TextBlock x:Name="QueryIdentifierText" FontSize="16" FontWeight="Bold"
                        Foreground="{DynamicResource ForegroundBrush}"/>
-            <TextBlock x:Name="SummaryText" FontSize="12" Margin="0,4,0,0"
-                       Foreground="{DynamicResource ForegroundBrush}"
-                       TextTrimming="CharacterEllipsis"/>
         </StackPanel>
 
-        <!-- Row 1: Controls toolbar -->
-        <Border Grid.Row="1" Background="{DynamicResource BackgroundDarkBrush}" Padding="8,6"
+        <!-- Row 1: Query preview area -->
+        <Border Grid.Row="1" Background="{DynamicResource BackgroundDarkBrush}"
+                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="3"
+                Margin="0,0,0,8" MaxHeight="160" MinHeight="40">
+            <Grid ColumnDefinitions="*,Auto">
+                <ScrollViewer Grid.Column="0" HorizontalScrollBarVisibility="Auto"
+                              VerticalScrollBarVisibility="Auto">
+                    <TextBox x:Name="QueryTextBox" IsReadOnly="True"
+                             TextWrapping="Wrap" AcceptsReturn="True"
+                             FontFamily="Cascadia Mono,Consolas,monospace"
+                             FontSize="12" Padding="8,6"
+                             Foreground="{DynamicResource ForegroundBrush}"
+                             Background="Transparent" BorderThickness="0"/>
+                </ScrollViewer>
+                <Button Grid.Column="1" Content="Copy" Click="CopyQuery_Click"
+                        VerticalAlignment="Top" Margin="4,4,4,4"
+                        Padding="10,4" FontSize="11"
+                        Theme="{StaticResource AppButton}"/>
+            </Grid>
+        </Border>
+
+        <!-- Row 2: Controls toolbar -->
+        <Border Grid.Row="2" Background="{DynamicResource BackgroundDarkBrush}" Padding="8,6"
                 BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="3"
                 Margin="0,0,0,8">
             <StackPanel Orientation="Horizontal" Spacing="12">
@@ -45,12 +63,10 @@
                         <ComboBoxItem Content="Executions" Tag="CountExecutions"/>
                     </ComboBox>
                 </StackPanel>
-                <StackPanel Spacing="2">
-                    <TextBlock Text="Hours back" FontSize="11"
-                               Foreground="{DynamicResource ForegroundBrush}"/>
-                    <NumericUpDown x:Name="HoursBackBox" Value="24" Minimum="1" Maximum="720"
-                                   Width="120" Height="32" FontSize="13" FormatString="0"
-                                   HorizontalContentAlignment="Center"/>
+                <StackPanel Spacing="2" VerticalAlignment="Bottom">
+                    <Button x:Name="RangeToggleButton" Content="Range Period" Click="RangeToggle_Click"
+                            Height="28" Padding="16,0" FontSize="12"
+                            Theme="{StaticResource AppButton}"/>
                 </StackPanel>
                 <StackPanel Spacing="2" VerticalAlignment="Bottom">
                     <Button x:Name="RefreshButton" Content="Refresh" Click="Refresh_Click"
@@ -62,15 +78,15 @@
             </StackPanel>
         </Border>
 
-        <!-- Row 2: Chart -->
-        <Border Grid.Row="2" Background="{DynamicResource BackgroundDarkBrush}"
+        <!-- Row 3: Chart -->
+        <Border Grid.Row="3" Background="{DynamicResource BackgroundDarkBrush}"
                 BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="3"
                 Margin="0,0,0,8">
             <scottplot:AvaPlot x:Name="HistoryChart"/>
         </Border>
 
-        <!-- Row 3: DataGrid -->
-        <DataGrid Grid.Row="3" x:Name="HistoryDataGrid"
+        <!-- Row 4: DataGrid -->
+        <DataGrid Grid.Row="4" x:Name="HistoryDataGrid"
                   AutoGenerateColumns="False" IsReadOnly="True"
                   CanUserSortColumns="True" CanUserReorderColumns="True"
                   CanUserResizeColumns="True"
@@ -102,8 +118,8 @@
             </DataGrid.Columns>
         </DataGrid>
 
-        <!-- Row 4: Footer -->
-        <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right"
+        <!-- Row 5: Footer -->
+        <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Right"
                     Margin="0,8,0,0">
             <Button Content="Close" Click="Close_Click" Padding="20,6" FontSize="12"
                     Theme="{StaticResource AppButton}"/>
