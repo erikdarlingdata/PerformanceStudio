@@ -28,6 +28,20 @@ public class QueryStoreHistoryRow
     public int MaxDop { get; set; }
     public DateTime? LastExecutionUtc { get; set; }
 
+    // Display-formatted properties (2 decimal places)
+    public string AvgDurationMsDisplay => AvgDurationMs.ToString("N2");
+    public string AvgCpuMsDisplay => AvgCpuMs.ToString("N2");
+    public string AvgLogicalReadsDisplay => AvgLogicalReads.ToString("N2");
+    public string AvgLogicalWritesDisplay => AvgLogicalWrites.ToString("N2");
+    public string AvgPhysicalReadsDisplay => AvgPhysicalReads.ToString("N2");
+    public string AvgMemoryMbDisplay => AvgMemoryMb.ToString("N2");
+    public string AvgRowcountDisplay => AvgRowcount.ToString("N2");
+    public string TotalDurationMsDisplay => TotalDurationMs.ToString("N2");
+    public string TotalCpuMsDisplay => TotalCpuMs.ToString("N2");
+    public string TotalLogicalReadsDisplay => TotalLogicalReads.ToString("N2");
+    public string TotalLogicalWritesDisplay => TotalLogicalWrites.ToString("N2");
+    public string TotalPhysicalReadsDisplay => TotalPhysicalReads.ToString("N2");
+
     public string IntervalStartLocal => TimeDisplayHelper.FormatForDisplay(IntervalStartUtc);
     public string LastExecutionLocal => LastExecutionUtc.HasValue ? TimeDisplayHelper.FormatForDisplay(LastExecutionUtc.Value) : "";
 }

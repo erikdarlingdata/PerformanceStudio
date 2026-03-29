@@ -76,12 +76,36 @@
             </Grid>
         </Border>
 
-        <!-- Row 3: Chart -->
-        <Border Grid.Row="3" Background="{DynamicResource BackgroundDarkBrush}"
-                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="3"
-                Margin="0,0,0,8">
-            <scottplot:AvaPlot x:Name="HistoryChart"/>
-        </Border>
+        <!-- Row 3: Chart with legend overlay -->
+        <Grid Grid.Row="3" Margin="0,0,0,8">
+            <Border Background="{DynamicResource BackgroundDarkBrush}"
+                    BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="3">
+                <scottplot:AvaPlot x:Name="HistoryChart"/>
+            </Border>
+            <!-- Legend toggle button (top-right overlay) -->
+            <Button x:Name="LegendToggleButton" Click="LegendToggle_Click"
+                    HorizontalAlignment="Right" VerticalAlignment="Top"
+                    Margin="0,26,18,10" Padding="8,3" FontSize="11"
+                    Background="#33333333" Foreground="{DynamicResource ForegroundBrush}"
+                    BorderThickness="1" BorderBrush="{DynamicResource BorderBrush}"
+                    CornerRadius="3">
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                    <TextBlock Text="Legend"/>
+                    <TextBlock x:Name="LegendArrow" Text="▼" FontSize="9" VerticalAlignment="Center"/>
+                </StackPanel>
+            </Button>
+            <!-- Collapsible legend panel -->
+            <Border x:Name="LegendPanel" IsVisible="False"
+                    HorizontalAlignment="Right" VerticalAlignment="Top"
+                    Margin="0,52,18,10" MaxHeight="180" MinWidth="140"
+                    Background="{DynamicResource BackgroundDarkBrush}"
+                    BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="3"
+                    Padding="6,4">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel x:Name="LegendItemsPanel" Spacing="3"/>
+                </ScrollViewer>
+            </Border>
+        </Grid>
 
         <!-- Row 4: DataGrid -->
         <DataGrid Grid.Row="4" x:Name="HistoryDataGrid"
@@ -92,6 +116,7 @@
                   FontSize="11"
                   Background="{DynamicResource BackgroundDarkBrush}"
                   BorderThickness="0"
+                  SelectionChanged="HistoryDataGrid_SelectionChanged"
                   ScrollViewer.HorizontalScrollBarVisibility="Auto">
             <DataGrid.Columns>
                 <DataGridTemplateColumn Header="" Width="6" CanUserResize="False" CanUserSort="False" CanUserReorder="False">
@@ -104,18 +129,18 @@
                 <DataGridTextColumn Header="Plan Hash" Binding="{ReflectionBinding QueryPlanHash}" Width="150"/>
                 <DataGridTextColumn Header="Interval Start" Binding="{ReflectionBinding IntervalStartLocal}" Width="140"/>
                 <DataGridTextColumn Header="Executions" Binding="{ReflectionBinding CountExecutions}" Width="90"/>
-                <DataGridTextColumn Header="Avg Duration (ms)" Binding="{ReflectionBinding AvgDurationMs}" Width="130"/>
-                <DataGridTextColumn Header="Avg CPU (ms)" Binding="{ReflectionBinding AvgCpuMs}" Width="110"/>
-                <DataGridTextColumn Header="Avg Reads" Binding="{ReflectionBinding AvgLogicalReads}" Width="90"/>
-                <DataGridTextColumn Header="Avg Writes" Binding="{ReflectionBinding AvgLogicalWrites}" Width="90"/>
-                <DataGridTextColumn Header="Avg Phys Reads" Binding="{ReflectionBinding AvgPhysicalReads}" Width="110"/>
-                <DataGridTextColumn Header="Avg Memory (MB)" Binding="{ReflectionBinding AvgMemoryMb}" Width="120"/>
-                <DataGridTextColumn Header="Avg Rows" Binding="{ReflectionBinding AvgRowcount}" Width="80"/>
-                <DataGridTextColumn Header="Total Duration (ms)" Binding="{ReflectionBinding TotalDurationMs}" Width="140"/>
-                <DataGridTextColumn Header="Total CPU (ms)" Binding="{ReflectionBinding TotalCpuMs}" Width="120"/>
-                <DataGridTextColumn Header="Total Reads" Binding="{ReflectionBinding TotalLogicalReads}" Width="100"/>
-                <DataGridTextColumn Header="Total Writes" Binding="{ReflectionBinding TotalLogicalWrites}" Width="100"/>
-                <DataGridTextColumn Header="Total Phys Reads" Binding="{ReflectionBinding TotalPhysicalReads}" Width="120"/>
+                <DataGridTextColumn Header="Avg Duration (ms)" Binding="{ReflectionBinding AvgDurationMsDisplay}" Width="130"/>
+                <DataGridTextColumn Header="Avg CPU (ms)" Binding="{ReflectionBinding AvgCpuMsDisplay}" Width="110"/>
+                <DataGridTextColumn Header="Avg Reads" Binding="{ReflectionBinding AvgLogicalReadsDisplay}" Width="90"/>
+                <DataGridTextColumn Header="Avg Writes" Binding="{ReflectionBinding AvgLogicalWritesDisplay}" Width="90"/>
+                <DataGridTextColumn Header="Avg Phys Reads" Binding="{ReflectionBinding AvgPhysicalReadsDisplay}" Width="110"/>
+                <DataGridTextColumn Header="Avg Memory (MB)" Binding="{ReflectionBinding AvgMemoryMbDisplay}" Width="120"/>
+                <DataGridTextColumn Header="Avg Rows" Binding="{ReflectionBinding AvgRowcountDisplay}" Width="80"/>
+                <DataGridTextColumn Header="Total Duration (ms)" Binding="{ReflectionBinding TotalDurationMsDisplay}" Width="140"/>
+                <DataGridTextColumn Header="Total CPU (ms)" Binding="{ReflectionBinding TotalCpuMsDisplay}" Width="120"/>
+                <DataGridTextColumn Header="Total Reads" Binding="{ReflectionBinding TotalLogicalReadsDisplay}" Width="100"/>
+                <DataGridTextColumn Header="Total Writes" Binding="{ReflectionBinding TotalLogicalWritesDisplay}" Width="100"/>
+                <DataGridTextColumn Header="Total Phys Reads" Binding="{ReflectionBinding TotalPhysicalReadsDisplay}" Width="120"/>
                 <DataGridTextColumn Header="Min DOP" Binding="{ReflectionBinding MinDop}" Width="70"/>
                 <DataGridTextColumn Header="Max DOP" Binding="{ReflectionBinding MaxDop}" Width="70"/>
                 <DataGridTextColumn Header="Last Execution" Binding="{ReflectionBinding LastExecutionLocal}" Width="140"/>
