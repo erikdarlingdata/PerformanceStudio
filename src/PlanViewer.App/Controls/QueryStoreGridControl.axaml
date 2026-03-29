@@ -4,8 +4,26 @@
              x:Class="PlanViewer.App.Controls.QueryStoreGridControl"
              Background="{DynamicResource BackgroundBrush}">
     <Grid RowDefinitions="Auto,Auto,*">
-        <!-- Time Range Slicer -->
-        <local:TimeRangeSlicerControl x:Name="TimeRangeSlicer" Grid.Row="0"/>
+        <!-- Time Range Slicer + Wait Stats Profile -->
+        <Grid Grid.Row="0" x:Name="SlicerRow" ColumnDefinitions="2*,Auto,*">
+            <local:TimeRangeSlicerControl x:Name="TimeRangeSlicer" Grid.Column="0"/>
+            <!-- Resizable separator with chevron overlay -->
+            <GridSplitter x:Name="WaitStatsSplitter" Grid.Column="1" Width="14"
+                          Background="{DynamicResource BorderBrush}"
+                          ResizeDirection="Columns"/>
+            <Button x:Name="WaitStatsChevronButton" Grid.Column="1"
+                    Content="»"
+                    Width="14" Height="28" Padding="0"
+                    FontSize="11" FontWeight="Bold"
+                    Background="Transparent" BorderThickness="0"
+                    Foreground="{DynamicResource ForegroundBrush}"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    IsHitTestVisible="True"
+                    ToolTip.Tip="Collapse / expand wait stats panel"
+                    Click="WaitStatsChevron_Click"/>
+            <local:WaitStatsProfileControl x:Name="WaitStatsProfile" Grid.Column="2"/>
+        </Grid>
 
         <!-- Toolbar -->
         <Border Grid.Row="1" Background="{DynamicResource BackgroundDarkBrush}" Padding="8,6"
@@ -91,8 +109,9 @@
             </StackPanel>
         </Border>
 
-        <!-- DataGrid -->
-        <DataGrid Grid.Row="2" x:Name="ResultsGrid"
+        <!-- DataGrid + loading overlay -->
+        <Grid Grid.Row="2">
+        <DataGrid x:Name="ResultsGrid"
                   AutoGenerateColumns="False"
                   CanUserSortColumns="True"
                   CanUserReorderColumns="True"
@@ -134,6 +153,29 @@
                 <DataGridTextColumn Header="Query Hash" Binding="{ReflectionBinding QueryHash}" SortMemberPath="QueryHash" Width="150"/>
                 <DataGridTextColumn Header="Plan Hash" Binding="{ReflectionBinding QueryPlanHash}" SortMemberPath="QueryPlanHash" Width="150"/>
                 <DataGridTextColumn Header="Module" Binding="{ReflectionBinding ModuleName}" SortMemberPath="ModuleName" Width="140"/>
+                <DataGridTemplateColumn SortMemberPath="WaitGrandTotalSort" Width="160">
+                    <DataGridTemplateColumn.Header>
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <Button Content="v" Width="20" Height="18" Padding="0"
+                                    FontSize="10" FontWeight="Bold"
+                                    Background="Transparent" BorderThickness="1"
+                                    BorderBrush="{DynamicResource ForegroundMutedBrush}"
+                                    Foreground="{DynamicResource ForegroundBrush}"
+                                    ToolTip.Tip="Toggle value (v) / percent (%) stacked bar"
+                                    Click="WaitModeToggle_Click"/>
+                            <TextBlock Text="Wait Profile" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </DataGridTemplateColumn.Header>
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate x:DataType="local:QueryStoreRow">
+                            <local:WaitProfileBarControl Height="14" Margin="2,1"
+                                                         Profile="{Binding WaitProfile}"
+                                                         HighlightCategory="{Binding WaitHighlightCategory}"
+                                                         PercentMode="{Binding WaitPercentMode}"
+                                                         MaxGrandTotalRatio="{Binding WaitMaxGrandTotal}"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
                 <DataGridTextColumn Header="Last Executed (Local)" Binding="{ReflectionBinding LastExecutedLocal}" SortMemberPath="LastExecutedLocal" Width="160"/>
                 <DataGridTemplateColumn Header="Executions" SortMemberPath="ExecsSort" Width="100">
                     <DataGridTemplateColumn.CellTemplate>
@@ -277,5 +319,17 @@
                 </DataGridTemplateColumn>
             </DataGrid.Columns>
         </DataGrid>
+        <!-- Loading overlay -->
+        <Border x:Name="GridLoadingOverlay" IsVisible="False"
+                Background="#80000000" CornerRadius="0"
+                HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8">
+                <ProgressBar IsIndeterminate="True" Width="200" Height="4"/>
+                <TextBlock x:Name="GridLoadingText" Text="Fetching plans..."
+                           FontSize="12" HorizontalAlignment="Center"
+                           Foreground="{DynamicResource ForegroundBrush}"/>
+            </StackPanel>
+        </Border>
+        </Grid>
     </Grid>
 </UserControl>

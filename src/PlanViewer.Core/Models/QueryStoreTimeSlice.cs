@@ -15,4 +15,11 @@ public class QueryStoreTimeSlice
     public double TotalPhysicalReads { get; set; }
     public double TotalMemory { get; set; }
     public long TotalExecutions { get; set; }
+
+    public double AvgCpu => TotalExecutions > 0 ? TotalCpu / TotalExecutions : 0;
+    public double AvgDuration => TotalExecutions > 0 ? TotalDuration / TotalExecutions : 0;
+    public double AvgReads => TotalExecutions > 0 ? TotalReads / TotalExecutions : 0;
+    public double AvgWrites => TotalExecutions > 0 ? TotalWrites / TotalExecutions : 0;
+    public double AvgPhysicalReads => TotalExecutions > 0 ? TotalPhysicalReads / TotalExecutions : 0;
+    public double AvgMemory => TotalExecutions > 0 ? TotalMemory / TotalExecutions : 0;
 }

@@ -97,7 +97,7 @@ public partial class AboutWindow : Window
                 if (_velopackUpdate != null)
                 {
                     UpdateStatusText.Text = "Update available:";
-                    UpdateLink.Text = $"v{_velopackUpdate.TargetFullRelease.Version} — click to download and install";
+                    UpdateLink.Text = $"v{_velopackUpdate.TargetFullRelease.Version} — click to install";
                     UpdateLink.IsVisible = true;
                     CheckUpdateButton.IsEnabled = true;
                     return;

@@ -39,6 +39,11 @@ public partial class QueryStoreGridControl : UserControl
     private string _lastFetchedOrderBy = "cpu";
     private bool _initialOrderByLoaded;
     private bool _suppressRangeChanged;
+    private string? _waitHighlightCategory;
+    private const int AutoSelectTopN = 1; // number of rows auto-selected after each fetch
+    private bool _waitStatsSupported;  // false until version + capture mode confirmed
+    private bool _waitStatsEnabled = true;
+    private bool _waitPercentMode;
 
     public event EventHandler<List<QueryStorePlan>>? PlansSelected;
     public event EventHandler<string>? DatabaseChanged;
@@ -46,12 +51,13 @@ public partial class QueryStoreGridControl : UserControl
     public string Database => _database;
 
     public QueryStoreGridControl(ServerConnection serverConnection, ICredentialService credentialService,
-        string initialDatabase, List<string> databases)
+        string initialDatabase, List<string> databases, bool supportsWaitStats = false)
     {
         _serverConnection = serverConnection;
         _credentialService = credentialService;
         _database = initialDatabase;
         _connectionString = serverConnection.GetConnectionString(credentialService, initialDatabase);
+        _waitStatsSupported = supportsWaitStats;
         _slicerDaysBack = AppSettingsService.Load().QueryStoreSlicerDays;
         InitializeComponent();
         ResultsGrid.ItemsSource = _filteredRows;
@@ -59,7 +65,23 @@ public partial class QueryStoreGridControl : UserControl
         SetupColumnHeaders();
         PopulateDatabaseBox(databases, initialDatabase);
         TimeRangeSlicer.RangeChanged += OnTimeRangeChanged;
-        TimeRangeSlicer.IsExpanded = true;
+
+        WaitStatsProfile.CategoryClicked += OnWaitCategoryClicked;
+        WaitStatsProfile.CategoryDoubleClicked += OnWaitCategoryDoubleClicked;
+        WaitStatsProfile.CollapsedChanged += OnWaitStatsCollapsedChanged;
+
+        if (!_waitStatsSupported)
+        {
+            // Hide wait stats panel and column when server doesn't support it
+            WaitStatsProfile.Collapse();
+            WaitStatsChevronButton.IsVisible = false;
+            WaitStatsSplitter.IsVisible = false;
+            SlicerRow.ColumnDefinitions[2].Width = new GridLength(0);
+            var waitProfileCol = ResultsGrid.Columns
+                .FirstOrDefault(c => c.SortMemberPath == "WaitGrandTotalSort");
+            if (waitProfileCol != null)
+                waitProfileCol.IsVisible = false;
+        }
 
         // Auto-fetch with default settings on connect
         Avalonia.Threading.Dispatcher.UIThread.Post(() =>
@@ -129,9 +151,9 @@ public partial class QueryStoreGridControl : UserControl
 
         try
         {
-            // Load slicer data first — LoadData sets a default 24h selection and
-            // fires RangeChanged which triggers FetchPlansForRangeAsync.
-            await LoadTimeSlicerDataAsync(orderBy, ct);
+            // Load slicer data, preserving the current selection if one exists.
+            // Without this, LoadData defaults to last 24h and the user's range is lost.
+            await LoadTimeSlicerDataAsync(orderBy, ct, _slicerStartUtc, _slicerEndUtc);
         }
         catch (OperationCanceledException)
         {
@@ -161,14 +183,22 @@ public partial class QueryStoreGridControl : UserControl
         FetchButton.IsEnabled = false;
         LoadButton.IsEnabled = false;
         StatusText.Text = "Fetching plans...";
+        GridLoadingOverlay.IsVisible = true;
+        GridLoadingText.Text = "Fetching plans...";
         _rows.Clear();
         _filteredRows.Clear();
+
+        // Start global + ribbon wait stats early (they don't depend on plan results)
+        if (_waitStatsSupported && _waitStatsEnabled && _slicerStartUtc.HasValue && _slicerEndUtc.HasValue)
+            _ = FetchGlobalWaitStatsOnlyAsync(_slicerStartUtc.Value, _slicerEndUtc.Value, ct);
 
         try
         {
             var plans = await QueryStoreService.FetchTopPlansAsync(
-                _connectionString, topN, orderBy, ct: ct,
+                _connectionString, topN, orderBy, filter: filter, ct: ct,
                 startUtc: _slicerStartUtc, endUtc: _slicerEndUtc);
+
+            GridLoadingOverlay.IsVisible = false;
 
             if (plans.Count == 0)
             {
@@ -181,7 +211,11 @@ public partial class QueryStoreGridControl : UserControl
 
             ApplyFilters();
             LoadButton.IsEnabled = true;
-            SelectToggleButton.Content = "Select None";
+            SelectToggleButton.Content = "Select All";
+
+            // Fetch per-plan wait stats after grid is populated (needs plan IDs)
+            if (_waitStatsSupported && _waitStatsEnabled && _slicerStartUtc.HasValue && _slicerEndUtc.HasValue)
+                _ = FetchPerPlanWaitStatsAsync(_slicerStartUtc.Value, _slicerEndUtc.Value, ct);
         }
         catch (OperationCanceledException)
         {
@@ -193,6 +227,7 @@ public partial class QueryStoreGridControl : UserControl
         }
         finally
         {
+            GridLoadingOverlay.IsVisible = false;
             FetchButton.IsEnabled = true;
         }
     }
@@ -328,7 +363,9 @@ public partial class QueryStoreGridControl : UserControl
         SearchValueBox.Text = "";
     }
 
-    private async System.Threading.Tasks.Task LoadTimeSlicerDataAsync(string metric, CancellationToken ct)
+    private async System.Threading.Tasks.Task LoadTimeSlicerDataAsync(
+        string metric, CancellationToken ct,
+        DateTime? preserveStart = null, DateTime? preserveEnd = null)
     {
         try
         {
@@ -336,7 +373,7 @@ public partial class QueryStoreGridControl : UserControl
                 _connectionString, metric, _slicerDaysBack, ct);
             if (ct.IsCancellationRequested) return;
             if (sliceData.Count > 0)
-                TimeRangeSlicer.LoadData(sliceData, metric);
+                TimeRangeSlicer.LoadData(sliceData, metric, preserveStart, preserveEnd);
             else
                 StatusText.Text = "No time-slicer data available.";
         }
@@ -353,6 +390,177 @@ public partial class QueryStoreGridControl : UserControl
         _slicerEndUtc = e.EndUtc;
         if (_suppressRangeChanged) return;
         await FetchPlansForRangeAsync();
+    }
+
+    // ── Wait stats ─────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Fetches global bar + ribbon wait stats (independent of grid plan IDs).
+    /// Shows loading indicator on the wait stats panel.
+    /// </summary>
+    private async System.Threading.Tasks.Task FetchGlobalWaitStatsOnlyAsync(
+        DateTime startUtc, DateTime endUtc, CancellationToken ct)
+    {
+        WaitStatsProfile.SetLoading(true);
+        try
+        {
+            // Global (bar)
+            var globalWaits = await QueryStoreService.FetchGlobalWaitStatsAsync(
+                _connectionString, startUtc, endUtc, ct);
+            if (ct.IsCancellationRequested) { return; }
+            var globalProfile = QueryStoreService.BuildWaitProfile(globalWaits);
+            WaitStatsProfile.SetBarProfile(globalProfile);
+
+            // Global (ribbon) — fetched lazily, data ready for toggle
+            var ribbonData = await QueryStoreService.FetchGlobalWaitStatsRibbonAsync(
+                _connectionString, startUtc, endUtc, ct);
+            if (ct.IsCancellationRequested) { return; }
+            WaitStatsProfile.SetRibbonData(ribbonData);
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception) { }
+        finally
+        {
+            WaitStatsProfile.SetLoading(false);
+        }
+    }
+
+    /// <summary>
+    /// Fetches per-plan wait stats for the plan IDs currently in the grid.
+    /// </summary>
+    private async System.Threading.Tasks.Task FetchPerPlanWaitStatsAsync(
+        DateTime startUtc, DateTime endUtc, CancellationToken ct)
+    {
+        try
+        {
+            var visiblePlanIds = _rows.Select(r => r.PlanId).ToList();
+            var planWaits = await QueryStoreService.FetchPlanWaitStatsAsync(
+                _connectionString, startUtc, endUtc, visiblePlanIds, ct);
+            if (ct.IsCancellationRequested) { return; }
+
+            var byPlan = planWaits
+                .GroupBy(x => x.PlanId)
+                .ToDictionary(g => g.Key, g => g.Select(x => x.Wait).ToList());
+
+            foreach (var row in _rows)
+            {
+                if (byPlan.TryGetValue(row.PlanId, out var waits))
+                    row.WaitProfile = QueryStoreService.BuildWaitProfile(waits);
+                else
+                    row.WaitProfile = null;
+            }
+            UpdateWaitBarMode();
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception) { }
+    }
+
+    /// <summary>
+    /// Full wait stats fetch (global + ribbon + per-plan). Used when re-expanding the wait stats panel.
+    /// </summary>
+    private async System.Threading.Tasks.Task FetchWaitStatsAsync(
+        DateTime startUtc, DateTime endUtc, CancellationToken ct)
+    {
+        await FetchGlobalWaitStatsOnlyAsync(startUtc, endUtc, ct);
+        await FetchPerPlanWaitStatsAsync(startUtc, endUtc, ct);
+    }
+
+    private void OnWaitCategoryClicked(object? sender, string category)
+    {
+        // Toggle highlight: click same category again → clear
+        if (_waitHighlightCategory == category)
+            _waitHighlightCategory = null;
+        else
+            _waitHighlightCategory = category;
+
+        ApplyWaitHighlight();
+    }
+
+    private void OnWaitCategoryDoubleClicked(object? sender, string category)
+    {
+        _waitHighlightCategory = category;
+        ApplyWaitHighlight();
+
+        // Sort grid by this category's wait ratio (descending)
+        var sorted = _filteredRows
+            .OrderByDescending(r =>
+                r.WaitProfile?.Segments
+                    .Where(s => s.Category == category)
+                    .Sum(s => s.WaitRatio) ?? 0)
+            .ToList();
+
+        _filteredRows.Clear();
+        foreach (var row in sorted)
+            _filteredRows.Add(row);
+
+        // Clear column sort indicators since we're using custom sort
+        _sortedColumnTag = null;
+        UpdateSortIndicators(null);
+        ReapplyTopNSelection();
+        UpdateBarRatios();
+    }
+
+    private void ApplyWaitHighlight()
+    {
+        WaitStatsProfile.SetHighlight(_waitHighlightCategory);
+        foreach (var row in _rows)
+            row.WaitHighlightCategory = _waitHighlightCategory;
+    }
+
+    private void OnWaitStatsCollapsedChanged(object? sender, bool collapsed)
+    {
+        _waitStatsEnabled = !collapsed;
+
+        var waitProfileCol = ResultsGrid.Columns
+            .FirstOrDefault(c => c.SortMemberPath == "WaitGrandTotalSort");
+        if (waitProfileCol != null)
+            waitProfileCol.IsVisible = !collapsed;
+
+        if (!collapsed && _waitStatsSupported && _slicerStartUtc.HasValue && _slicerEndUtc.HasValue)
+        {
+            // Re-fetch wait stats when expanding — reuse the shared CTS
+            var ct = _fetchCts?.Token ?? CancellationToken.None;
+            _ = FetchWaitStatsAsync(_slicerStartUtc.Value, _slicerEndUtc.Value, ct);
+        }
+    }
+
+    private void WaitStatsChevron_Click(object? sender, RoutedEventArgs e)
+    {
+        if (WaitStatsProfile.IsCollapsed)
+        {
+            WaitStatsProfile.Expand();
+            WaitStatsChevronButton.Content = "»";
+            SlicerRow.ColumnDefinitions[0].Width = new GridLength(2, GridUnitType.Star);
+            SlicerRow.ColumnDefinitions[2].Width = new GridLength(1, GridUnitType.Star);
+        }
+        else
+        {
+            WaitStatsProfile.Collapse();
+            WaitStatsChevronButton.Content = "«";
+            SlicerRow.ColumnDefinitions[0].Width = new GridLength(1, GridUnitType.Star);
+            SlicerRow.ColumnDefinitions[2].Width = new GridLength(0);
+        }
+    }
+
+    private void WaitModeToggle_Click(object? sender, RoutedEventArgs e)
+    {
+        _waitPercentMode = !_waitPercentMode;
+        if (sender is Button btn)
+            btn.Content = _waitPercentMode ? "%" : "v";
+        UpdateWaitBarMode();
+    }
+
+    private void UpdateWaitBarMode()
+    {
+        var maxGrand = _filteredRows.Count > 0
+            ? _filteredRows.Max(r => r.WaitProfile?.GrandTotalRatio ?? 0)
+            : 1.0;
+        if (maxGrand <= 0) maxGrand = 1.0;
+        foreach (var row in _filteredRows)
+        {
+            row.WaitPercentMode = _waitPercentMode;
+            row.WaitMaxGrandTotal = maxGrand;
+        }
     }
 
     private void SelectToggle_Click(object? sender, RoutedEventArgs e)
@@ -488,21 +696,22 @@ public partial class QueryStoreGridControl : UserControl
         SetColumnFilterButton(cols[3],  "QueryHash",      "Query Hash");
         SetColumnFilterButton(cols[4],  "PlanHash",       "Plan Hash");
         SetColumnFilterButton(cols[5],  "ModuleName",     "Module");
-        SetColumnFilterButton(cols[6],  "LastExecuted",   "Last Executed (Local)");
-        SetColumnFilterButton(cols[7],  "Executions",     "Executions");
-        SetColumnFilterButton(cols[8],  "TotalCpu",       "Total CPU (ms)");
-        SetColumnFilterButton(cols[9],  "AvgCpu",         "Avg CPU (ms)");
-        SetColumnFilterButton(cols[10], "TotalDuration",  "Total Duration (ms)");
-        SetColumnFilterButton(cols[11], "AvgDuration",    "Avg Duration (ms)");
-        SetColumnFilterButton(cols[12], "TotalReads",     "Total Reads");
-        SetColumnFilterButton(cols[13], "AvgReads",       "Avg Reads");
-        SetColumnFilterButton(cols[14], "TotalWrites",    "Total Writes");
-        SetColumnFilterButton(cols[15], "AvgWrites",      "Avg Writes");
-        SetColumnFilterButton(cols[16], "TotalPhysReads", "Total Physical Reads");
-        SetColumnFilterButton(cols[17], "AvgPhysReads",   "Avg Physical Reads");
-        SetColumnFilterButton(cols[18], "TotalMemory",    "Total Memory (MB)");
-        SetColumnFilterButton(cols[19], "AvgMemory",      "Avg Memory (MB)");
-        SetColumnFilterButton(cols[20], "QueryText",      "Query Text");
+        // cols[6] = WaitProfile (no filter button)
+        SetColumnFilterButton(cols[7],  "LastExecuted",   "Last Executed (Local)");
+        SetColumnFilterButton(cols[8],  "Executions",     "Executions");
+        SetColumnFilterButton(cols[9],  "TotalCpu",       "Total CPU (ms)");
+        SetColumnFilterButton(cols[10], "AvgCpu",         "Avg CPU (ms)");
+        SetColumnFilterButton(cols[11], "TotalDuration",  "Total Duration (ms)");
+        SetColumnFilterButton(cols[12], "AvgDuration",    "Avg Duration (ms)");
+        SetColumnFilterButton(cols[13], "TotalReads",     "Total Reads");
+        SetColumnFilterButton(cols[14], "AvgReads",       "Avg Reads");
+        SetColumnFilterButton(cols[15], "TotalWrites",    "Total Writes");
+        SetColumnFilterButton(cols[16], "AvgWrites",      "Avg Writes");
+        SetColumnFilterButton(cols[17], "TotalPhysReads", "Total Physical Reads");
+        SetColumnFilterButton(cols[18], "AvgPhysReads",   "Avg Physical Reads");
+        SetColumnFilterButton(cols[19], "TotalMemory",    "Total Memory (MB)");
+        SetColumnFilterButton(cols[20], "AvgMemory",      "Avg Memory (MB)");
+        SetColumnFilterButton(cols[21], "QueryText",      "Query Text");
     }
 
     private void SetColumnFilterButton(DataGridColumn col, string columnId, string label)
@@ -729,6 +938,13 @@ public partial class QueryStoreGridControl : UserControl
         return tb.Text?.TrimEnd(' ', '▲', '▼') ?? string.Empty;
     }
 
+    private void ReapplyTopNSelection()
+    {
+        if (_filteredRows.Count == 0) return;
+        foreach (var r in _rows) r.IsSelected = false;
+        foreach (var r in _filteredRows.Take(AutoSelectTopN)) r.IsSelected = true;
+    }
+
     private void ApplySortAndFilters()
     {
         IEnumerable<QueryStoreRow> source = _rows.Where(RowMatchesAllFilters);
@@ -744,6 +960,7 @@ public partial class QueryStoreGridControl : UserControl
         foreach (var row in source)
             _filteredRows.Add(row);
 
+        ReapplyTopNSelection();
         UpdateStatusText();
         UpdateBarRatios();
     }
@@ -803,6 +1020,8 @@ public partial class QueryStoreGridControl : UserControl
                 row.SetBar(columnId, ratio, isSorted);
             }
         }
+
+        UpdateWaitBarMode();
     }
 
     private static IComparable GetSortKey(string columnTag, QueryStoreRow r) =>
@@ -829,13 +1048,14 @@ public partial class QueryStoreGridControl : UserControl
             "AvgPhysReadsSort"   => r.AvgPhysReadsSort,
             "TotalMemSort"       => r.TotalMemSort,
             "AvgMemSort"         => r.AvgMemSort,
+            "WaitGrandTotalSort" => r.WaitGrandTotalSort,
             _                    => r.LastExecutedLocal,
         };
 }
 
 public class QueryStoreRow : INotifyPropertyChanged
 {
-    private bool _isSelected = true;
+    private bool _isSelected = false;
 
     // Bar ratios [0..1] per column
     private double _execsRatio;
@@ -866,6 +1086,10 @@ public class QueryStoreRow : INotifyPropertyChanged
     private bool _isSorted_AvgPhysReads;
     private bool _isSorted_TotalMemory;
     private bool _isSorted_AvgMemory;
+
+    // Wait stats
+    private WaitProfile? _waitProfile;
+    private string? _waitHighlightCategory;
 
     public QueryStoreRow(QueryStorePlan plan)
     {
@@ -930,6 +1154,37 @@ public class QueryStoreRow : INotifyPropertyChanged
             case "AvgMemory":      AvgMemRatio = ratio;         IsSortedColumn_AvgMemory = isSorted;      break;
         }
     }
+
+    // ── Wait profile ───────────────────────────────────────────────────────
+
+    public WaitProfile? WaitProfile
+    {
+        get => _waitProfile;
+        set { _waitProfile = value; OnPropertyChanged(); }
+    }
+
+    public string? WaitHighlightCategory
+    {
+        get => _waitHighlightCategory;
+        set { _waitHighlightCategory = value; OnPropertyChanged(); }
+    }
+
+    private bool _waitPercentMode;
+    private double _waitMaxGrandTotal = 1.0;
+
+    public bool WaitPercentMode
+    {
+        get => _waitPercentMode;
+        set { _waitPercentMode = value; OnPropertyChanged(); }
+    }
+
+    public double WaitMaxGrandTotal
+    {
+        get => _waitMaxGrandTotal;
+        set { _waitMaxGrandTotal = value; OnPropertyChanged(); }
+    }
+
+    public double WaitGrandTotalSort => _waitProfile?.GrandTotalRatio ?? 0;
 
     public long QueryId => Plan.QueryId;
     public long PlanId => Plan.PlanId;

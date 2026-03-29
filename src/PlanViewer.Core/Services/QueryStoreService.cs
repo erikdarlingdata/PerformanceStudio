@@ -52,37 +52,37 @@ FROM sys.database_query_store_options;";
         var key = orderBy.ToLowerInvariant();
 
         // ROW_NUMBER order: pick the "best" plan per query_id.
-        // References pre-aggregated columns from plan_agg CTE.
+        // References pre-aggregated columns from #plan_stats temp table.
         // avg- variants still rank by total CPU (most impactful plan).
         var orderClause = key switch
         {
-            "cpu"              => "pa.total_cpu_us",
-            "duration"         => "pa.total_duration_us",
-            "reads"            => "pa.total_reads",
-            "writes"           => "pa.total_writes",
-            "physical-reads"   => "pa.total_physical_reads",
-            "memory"           => "pa.total_memory_pages",
-            "executions"       => "pa.total_executions",
-            _ => "pa.total_cpu_us"
+            "cpu"              => "ps.total_cpu_us",
+            "duration"         => "ps.total_duration_us",
+            "reads"            => "ps.total_reads",
+            "writes"           => "ps.total_writes",
+            "physical-reads"   => "ps.total_physical_reads",
+            "memory"           => "ps.total_memory_pages",
+            "executions"       => "ps.total_executions",
+            _ => "ps.total_cpu_us"
         };
 
         // Final ORDER BY — either a total or avg column from ranked CTE.
         var outerOrder = key switch
         {
-            "cpu"              => "r.total_cpu_us",
-            "duration"         => "r.total_duration_us",
-            "reads"            => "r.total_reads",
-            "writes"           => "r.total_writes",
-            "physical-reads"   => "r.total_physical_reads",
-            "memory"           => "r.total_memory_pages",
-            "executions"       => "r.total_executions",
-            "avg-cpu"          => "r.avg_cpu_us",
-            "avg-duration"     => "r.avg_duration_us",
-            "avg-reads"        => "r.avg_reads",
-            "avg-writes"       => "r.avg_writes",
-            "avg-physical-reads" => "r.avg_physical_reads",
-            "avg-memory"       => "r.avg_memory_pages",
-            _ => "r.total_cpu_us"
+            "cpu"                => "total_cpu_us",
+            "duration"           => "total_duration_us",
+            "reads"              => "total_reads",
+            "writes"             => "total_writes",
+            "physical-reads"     => "total_physical_reads",
+            "memory"             => "total_memory_pages",
+            "executions"         => "total_executions",
+            "avg-cpu"            => "avg_cpu_us",
+            "avg-duration"       => "avg_duration_us",
+            "avg-reads"          => "avg_reads",
+            "avg-writes"         => "avg_writes",
+            "avg-physical-reads" => "avg_physical_reads",
+            "avg-memory"         => "avg_memory_pages",
+            _ => "total_cpu_us"
         };
 
         // Build optional WHERE clauses from filter (parameterized for safety).
@@ -96,7 +96,7 @@ FROM sys.database_query_store_options;";
         }
         if (filter?.PlanId != null)
         {
-            filterClauses.Add("AND r.plan_id = @filterPlanId");
+            filterClauses.Add("AND tp.plan_id = @filterPlanId");
             parameters.Add(new SqlParameter("@filterPlanId", filter.PlanId.Value));
         }
         if (!string.IsNullOrWhiteSpace(filter?.QueryHash))
@@ -129,79 +129,122 @@ FROM sys.database_query_store_options;";
             ? "\n" + string.Join("\n", filterClauses)
             : "";
 
-        // Time-range filter: prefer explicit start/end over hoursBack
-        string timeWhereClause;
+        // Time-range filter: always filter on interval start_time (indexed).
+        // The hoursBack fallback also uses interval start_time instead of
+        // rs.last_execution_time to avoid scanning all of runtime_stats.
+        string intervalWhereClause;
         if (startUtc.HasValue && endUtc.HasValue)
         {
-            timeWhereClause = "WHERE rsi.start_time >= @rangeStart AND rsi.end_time < @rangeEnd";
+            intervalWhereClause = "WHERE rsi.start_time >= @rangeStart AND rsi.start_time < @rangeEnd";
             parameters.Add(new SqlParameter("@rangeStart", startUtc.Value));
             parameters.Add(new SqlParameter("@rangeEnd", endUtc.Value));
         }
         else
         {
-            timeWhereClause = "WHERE rs.last_execution_time >= DATEADD(HOUR, -@hoursBack, GETUTCDATE())";
+            intervalWhereClause = "WHERE rsi.start_time >= DATEADD(HOUR, -@hoursBack, GETUTCDATE())";
             parameters.Add(new SqlParameter("@hoursBack", hoursBack));
         }
 
-        // 1. plan_agg: aggregate runtime_stats by plan_id only (cheapest grouping,
-        //    avoids joining query_text for the entire dataset).
-        // 2. ranked: join the small aggregated result to plan to get query_id,
-        //    ROW_NUMBER to pick best plan per query.
-        // 3. Final SELECT: TOP N, then join query_text + plan XML only for winners.
-        //    Filter clauses applied here where q/p are available.
+        // Multi-phase approach modeled on sp_QuickieStore (see GitHub issue #143):
+        //
+        // Phase 1: Materialize matching interval IDs into #intervals (tiny table,
+        //          clustered PK). All subsequent phases reference this via EXISTS
+        //          semi-join instead of re-evaluating the time predicate.
+        //
+        // Phase 2: Aggregate runtime_stats by plan_id into #plan_stats (clustered
+        //          PK on plan_id). Uses EXISTS against #intervals — no direct join
+        //          to the interval table, letting the optimizer use a semi-join.
+        //
+        // Phase 3: Rank plans per query_id, pick best per query, materialize TOP N
+        //          into #top_plans. Still no nvarchar(max) columns.
+        //
+        // Phase 4: Final SELECT — join only the TOP N winners to query_text, plan
+        //          XML, and query metadata. Uses OUTER APPLY + TRY_CONVERT for
+        //          safe plan XML retrieval.
+        //
+        // OPTION (RECOMPILE) on aggregation phases prevents parameter sniffing on
+        // date range parameters producing bad plans for different time windows.
         var sql = $@"
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 
-WITH plan_agg AS (
-    SELECT
-        rs.plan_id,
-        SUM(rs.avg_cpu_time * rs.count_executions) AS total_cpu_us,
-        SUM(rs.avg_duration * rs.count_executions) AS total_duration_us,
-        SUM(rs.avg_logical_io_reads * rs.count_executions) AS total_reads,
-        SUM(rs.avg_logical_io_writes * rs.count_executions) AS total_writes,
-        SUM(rs.avg_physical_io_reads * rs.count_executions) AS total_physical_reads,
-        SUM(rs.avg_query_max_used_memory * rs.count_executions) AS total_memory_pages,
-        SUM(rs.count_executions) AS total_executions,
-        MAX(rs.last_execution_time) AS last_execution_time
-    FROM sys.query_store_runtime_stats rs
-    JOIN sys.query_store_runtime_stats_interval rsi on rs.runtime_stats_interval_id=rsi.runtime_stats_interval_id
-    {timeWhereClause}
-    GROUP BY rs.plan_id
-),
-ranked AS (
+/* Phase 1: Pre-filter matching interval IDs */
+DROP TABLE IF EXISTS #intervals;
+CREATE TABLE #intervals (
+    runtime_stats_interval_id bigint NOT NULL PRIMARY KEY CLUSTERED
+);
+INSERT INTO #intervals (runtime_stats_interval_id)
+SELECT rsi.runtime_stats_interval_id
+FROM sys.query_store_runtime_stats_interval AS rsi
+{intervalWhereClause}
+OPTION (RECOMPILE);
+
+/* Phase 2: Aggregate runtime stats by plan_id */
+DROP TABLE IF EXISTS #plan_stats;
+CREATE TABLE #plan_stats (
+    plan_id bigint NOT NULL PRIMARY KEY CLUSTERED,
+    total_cpu_us float NOT NULL,
+    total_duration_us float NOT NULL,
+    total_reads float NOT NULL,
+    total_writes float NOT NULL,
+    total_physical_reads float NOT NULL,
+    total_memory_pages float NOT NULL,
+    total_executions bigint NOT NULL,
+    last_execution_time datetimeoffset NOT NULL
+);
+INSERT INTO #plan_stats
+SELECT
+    rs.plan_id,
+    SUM(rs.avg_cpu_time * rs.count_executions),
+    SUM(rs.avg_duration * rs.count_executions),
+    SUM(rs.avg_logical_io_reads * rs.count_executions),
+    SUM(rs.avg_logical_io_writes * rs.count_executions),
+    SUM(rs.avg_physical_io_reads * rs.count_executions),
+    SUM(rs.avg_query_max_used_memory * rs.count_executions),
+    SUM(rs.count_executions),
+    MAX(rs.last_execution_time)
+FROM sys.query_store_runtime_stats AS rs
+WHERE EXISTS
+(
+    SELECT 1
+    FROM #intervals AS i
+    WHERE i.runtime_stats_interval_id = rs.runtime_stats_interval_id
+)
+GROUP BY rs.plan_id
+OPTION (RECOMPILE);
+
+/* Phase 3: Rank best plan per query, materialize TOP N */
+DROP TABLE IF EXISTS #top_plans;
+WITH ranked AS (
     SELECT
         p.query_id,
-        pa.plan_id,
-        pa.total_cpu_us,
-        pa.total_duration_us,
-        pa.total_reads,
-        pa.total_writes,
-        pa.total_physical_reads,
-        pa.total_memory_pages,
-        pa.total_executions,
-        pa.last_execution_time,
-        CASE WHEN pa.total_executions > 0
-             THEN pa.total_cpu_us / pa.total_executions ELSE 0 END AS avg_cpu_us,
-        CASE WHEN pa.total_executions > 0
-             THEN pa.total_duration_us / pa.total_executions ELSE 0 END AS avg_duration_us,
-        CASE WHEN pa.total_executions > 0
-             THEN pa.total_reads / pa.total_executions ELSE 0 END AS avg_reads,
-        CASE WHEN pa.total_executions > 0
-             THEN pa.total_writes / pa.total_executions ELSE 0 END AS avg_writes,
-        CASE WHEN pa.total_executions > 0
-             THEN pa.total_physical_reads / pa.total_executions ELSE 0 END AS avg_physical_reads,
-        CASE WHEN pa.total_executions > 0
-             THEN pa.total_memory_pages / pa.total_executions ELSE 0 END AS avg_memory_pages,
+        ps.plan_id,
+        ps.total_cpu_us,
+        ps.total_duration_us,
+        ps.total_reads,
+        ps.total_writes,
+        ps.total_physical_reads,
+        ps.total_memory_pages,
+        ps.total_executions,
+        ps.last_execution_time,
+        CASE WHEN ps.total_executions > 0
+             THEN ps.total_cpu_us / ps.total_executions ELSE 0 END AS avg_cpu_us,
+        CASE WHEN ps.total_executions > 0
+             THEN ps.total_duration_us / ps.total_executions ELSE 0 END AS avg_duration_us,
+        CASE WHEN ps.total_executions > 0
+             THEN ps.total_reads / ps.total_executions ELSE 0 END AS avg_reads,
+        CASE WHEN ps.total_executions > 0
+             THEN ps.total_writes / ps.total_executions ELSE 0 END AS avg_writes,
+        CASE WHEN ps.total_executions > 0
+             THEN ps.total_physical_reads / ps.total_executions ELSE 0 END AS avg_physical_reads,
+        CASE WHEN ps.total_executions > 0
+             THEN ps.total_memory_pages / ps.total_executions ELSE 0 END AS avg_memory_pages,
         ROW_NUMBER() OVER (PARTITION BY p.query_id ORDER BY {orderClause} DESC) AS rn
-    FROM plan_agg pa
-    JOIN sys.query_store_plan p ON pa.plan_id = p.plan_id
-    WHERE p.query_plan IS NOT NULL
+    FROM #plan_stats AS ps
+    JOIN sys.query_store_plan AS p ON ps.plan_id = p.plan_id
 )
 SELECT TOP ({topN})
     r.query_id,
     r.plan_id,
-    qt.query_sql_text,
-    CAST(p.query_plan AS nvarchar(max)) AS query_plan,
     r.avg_cpu_us,
     r.avg_duration_us,
     r.avg_reads,
@@ -209,13 +252,38 @@ SELECT TOP ({topN})
     r.avg_physical_reads,
     r.avg_memory_pages,
     r.total_executions,
-    CAST(r.total_cpu_us AS bigint),
-    CAST(r.total_duration_us AS bigint),
-    CAST(r.total_reads AS bigint),
-    CAST(r.total_writes AS bigint),
-    CAST(r.total_physical_reads AS bigint),
-    CAST(r.total_memory_pages AS bigint),
-    r.last_execution_time,
+    CAST(r.total_cpu_us AS bigint) AS total_cpu_us,
+    CAST(r.total_duration_us AS bigint) AS total_duration_us,
+    CAST(r.total_reads AS bigint) AS total_reads,
+    CAST(r.total_writes AS bigint) AS total_writes,
+    CAST(r.total_physical_reads AS bigint) AS total_physical_reads,
+    CAST(r.total_memory_pages AS bigint) AS total_memory_pages,
+    r.last_execution_time
+INTO #top_plans
+FROM ranked AS r
+WHERE 1 = 1 {rnClause}
+ORDER BY {outerOrder} DESC;
+
+/* Phase 4: Hydrate winners with text, plan XML, and metadata */
+SELECT
+    tp.query_id,
+    tp.plan_id,
+    qt.query_sql_text,
+    TRY_CONVERT(nvarchar(max), p.query_plan) AS query_plan,
+    tp.avg_cpu_us,
+    tp.avg_duration_us,
+    tp.avg_reads,
+    tp.avg_writes,
+    tp.avg_physical_reads,
+    tp.avg_memory_pages,
+    tp.total_executions,
+    tp.total_cpu_us,
+    tp.total_duration_us,
+    tp.total_reads,
+    tp.total_writes,
+    tp.total_physical_reads,
+    tp.total_memory_pages,
+    tp.last_execution_time,
     CONVERT(varchar(18), q.query_hash, 1),
     CONVERT(varchar(18), p.query_plan_hash, 1),
     CASE
@@ -223,13 +291,12 @@ SELECT TOP ({topN})
         THEN OBJECT_SCHEMA_NAME(q.object_id) + N'.' + OBJECT_NAME(q.object_id)
         ELSE N''
     END
-FROM ranked r
-JOIN sys.query_store_plan p ON r.plan_id = p.plan_id
-JOIN sys.query_store_query q ON p.query_id = q.query_id
-JOIN sys.query_store_query_text qt ON q.query_text_id = qt.query_text_id
-WHERE 1 = 1 {rnClause}{filterSql}
-ORDER BY {outerOrder} DESC
-OPTION (LOOP JOIN);";
+FROM #top_plans AS tp
+JOIN sys.query_store_plan AS p ON tp.plan_id = p.plan_id
+JOIN sys.query_store_query AS q ON p.query_id = q.query_id
+JOIN sys.query_store_query_text AS qt ON q.query_text_id = qt.query_text_id
+WHERE 1 = 1{filterSql}
+ORDER BY {outerOrder} DESC;";
 
         var plans = new List<QueryStorePlan>();
 
@@ -423,5 +490,247 @@ ORDER BY bucket_hour DESC;";
         // Return in chronological order
         rows.Reverse();
         return rows;
+    }
+
+    // ── Wait stats ─────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Checks whether Query Store wait stats capture is enabled for the connected database.
+    /// Returns false on SQL Server 2016 (where the option doesn't exist) or when capture is OFF.
+    /// </summary>
+    public static async Task<bool> IsWaitStatsCaptureEnabledAsync(
+        string connectionString, CancellationToken ct = default)
+    {
+        const string sql = @"
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+SELECT CASE
+    WHEN EXISTS (
+        SELECT 1 FROM sys.database_query_store_options
+        WHERE wait_stats_capture_mode_desc = 'ON'
+    ) THEN 1 ELSE 0 END;";
+
+        try
+        {
+            await using var conn = new SqlConnection(connectionString);
+            await conn.OpenAsync(ct);
+            await using var cmd = new SqlCommand(sql, conn) { CommandTimeout = 10 };
+            var result = await cmd.ExecuteScalarAsync(ct);
+            return result is int i && i == 1;
+        }
+        catch
+        {
+            // Column doesn't exist on SQL 2016, or query store not enabled
+            return false;
+        }
+    }
+
+    // Excluded: 11 = Idle, 18 = User Wait
+    private const string WaitCategoryExclusion = "AND ws.wait_category NOT IN (11, 18)";
+
+    /// <summary>
+    /// Global wait stats aggregated across all plans for a time range, grouped by category.
+    /// WaitRatio = SUM(total_query_wait_time_ms) / interval_duration_ms.
+    /// </summary>
+    public static async Task<List<WaitCategoryTotal>> FetchGlobalWaitStatsAsync(
+        string connectionString, DateTime startUtc, DateTime endUtc,
+        CancellationToken ct = default)
+    {
+        const string sql = @"
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+SELECT
+    ws.wait_category,
+    ws.wait_category_desc,
+    1.0 * SUM(ws.total_query_wait_time_ms)
+        / (1000.0 * DATEDIFF(SECOND, @start, @end)) AS wait_ratio
+FROM sys.query_store_wait_stats ws
+JOIN sys.query_store_runtime_stats_interval rsi
+    ON ws.runtime_stats_interval_id = rsi.runtime_stats_interval_id
+WHERE rsi.start_time >= @start AND rsi.start_time < @end
+AND   ws.execution_type = 0
+" + WaitCategoryExclusion + @"
+GROUP BY ws.wait_category, ws.wait_category_desc
+ORDER BY wait_ratio DESC;";
+
+        var rows = new List<WaitCategoryTotal>();
+        await using var conn = new SqlConnection(connectionString);
+        await conn.OpenAsync(ct);
+        await using var cmd = new SqlCommand(sql, conn) { CommandTimeout = 120 };
+        cmd.Parameters.Add(new SqlParameter("@start", startUtc));
+        cmd.Parameters.Add(new SqlParameter("@end", endUtc));
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            rows.Add(new WaitCategoryTotal
+            {
+                WaitCategory = reader.GetInt16(0),
+                WaitCategoryDesc = reader.GetString(1),
+                WaitRatio = (double)reader.GetDecimal(2),
+            });
+        }
+        return rows;
+    }
+
+    /// <summary>
+    /// Per-plan wait stats aggregated for a time range, grouped by plan_id + category.
+    /// WaitRatio = SUM(total_query_wait_time_ms) / SUM(avg_duration * count_executions).
+    /// This differs from the global/hourly WTR (which divides by wall-clock interval) because
+    /// at plan level we measure what fraction of actual execution time was spent waiting.
+    /// When <paramref name="planIds"/> is provided, only those plan IDs are queried (via temp table).
+    /// </summary>
+    public static async Task<List<(long PlanId, WaitCategoryTotal Wait)>> FetchPlanWaitStatsAsync(
+        string connectionString, DateTime startUtc, DateTime endUtc,
+        IEnumerable<long>? planIds = null,
+        CancellationToken ct = default)
+    {
+        var rows = new List<(long, WaitCategoryTotal)>();
+        await using var conn = new SqlConnection(connectionString);
+        await conn.OpenAsync(ct);
+
+        // When plan IDs are supplied, load them into a temp table for an efficient JOIN filter.
+        var planIdFilter = "";
+        if (planIds != null)
+        {
+            var ids = planIds.Distinct().ToList();
+            if (ids.Count == 0)
+                return rows;
+
+            const string createTmp = @"
+CREATE TABLE #plan_ids (plan_id bigint NOT NULL PRIMARY KEY);";
+            await using (var createCmd = new SqlCommand(createTmp, conn))
+                await createCmd.ExecuteNonQueryAsync(ct);
+
+            // Bulk-insert in batches of 1000 using VALUES rows
+            for (int i = 0; i < ids.Count; i += 1000)
+            {
+                var batch = ids.Skip(i).Take(1000);
+                var valuesSql = "INSERT INTO #plan_ids (plan_id) VALUES " +
+                    string.Join(",", batch.Select(id => $"({id})")) + ";";
+                await using var insertCmd = new SqlCommand(valuesSql, conn);
+                await insertCmd.ExecuteNonQueryAsync(ct);
+            }
+
+            planIdFilter = "\nAND   EXISTS (SELECT 1 FROM #plan_ids pid WHERE pid.plan_id = ws.plan_id)";
+        }
+
+        var sql = @"
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+SELECT
+    ws.plan_id,
+    ws.wait_category,
+    ws.wait_category_desc,
+    1.0 * SUM(ws.total_query_wait_time_ms)
+        / NULLIF(SUM(rs.avg_duration*rs.count_executions),0) AS wait_ratio
+FROM sys.query_store_wait_stats ws
+JOIN sys.query_store_runtime_stats_interval rsi
+    ON ws.runtime_stats_interval_id = rsi.runtime_stats_interval_id
+JOIN sys.query_store_runtime_stats rs ON rs.runtime_stats_interval_id = rsi.runtime_stats_interval_id and rs.plan_id=ws.plan_id
+WHERE rsi.start_time >= @start AND rsi.start_time < @end
+AND   ws.execution_type = 0
+" + WaitCategoryExclusion + planIdFilter + @"
+GROUP BY ws.plan_id, ws.wait_category, ws.wait_category_desc
+ORDER BY ws.plan_id, wait_ratio DESC;";
+
+        await using var cmd = new SqlCommand(sql, conn) { CommandTimeout = 120 };
+        cmd.Parameters.Add(new SqlParameter("@start", startUtc));
+        cmd.Parameters.Add(new SqlParameter("@end", endUtc));
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            rows.Add((reader.GetInt64(0), new WaitCategoryTotal
+            {
+                WaitCategory = reader.GetInt16(1),
+                WaitCategoryDesc = reader.GetString(2),
+                WaitRatio = reader.GetDouble(3),
+            }));
+        }
+        return rows;
+    }
+
+    /// <summary>
+    /// Hourly wait stats for the ribbon chart, grouped by hour + category.
+    /// WaitRatio = SUM(total_query_wait_time_ms) / 3_600_000 (one hour in ms).
+    /// </summary>
+    public static async Task<List<WaitCategoryTimeSlice>> FetchGlobalWaitStatsRibbonAsync(
+        string connectionString, DateTime startUtc, DateTime endUtc,
+        CancellationToken ct = default)
+    {
+        const string sql = @"
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+SELECT
+    DATEADD(HOUR, DATEDIFF(HOUR, 0, rsi.start_time), 0) AS bucket_hour,
+    ws.wait_category,
+    ws.wait_category_desc,
+    1.0 * SUM(ws.total_query_wait_time_ms) / (3600.0 * 1000.0) AS wait_ratio
+FROM sys.query_store_wait_stats ws
+JOIN sys.query_store_runtime_stats_interval rsi
+    ON ws.runtime_stats_interval_id = rsi.runtime_stats_interval_id
+WHERE rsi.start_time >= @start AND rsi.start_time < @end
+AND   ws.execution_type = 0
+" + WaitCategoryExclusion + @"
+GROUP BY DATEADD(HOUR, DATEDIFF(HOUR, 0, rsi.start_time), 0),
+         ws.wait_category, ws.wait_category_desc
+ORDER BY bucket_hour, wait_ratio DESC;";
+
+        var rows = new List<WaitCategoryTimeSlice>();
+        await using var conn = new SqlConnection(connectionString);
+        await conn.OpenAsync(ct);
+        await using var cmd = new SqlCommand(sql, conn) { CommandTimeout = 120 };
+        cmd.Parameters.Add(new SqlParameter("@start", startUtc));
+        cmd.Parameters.Add(new SqlParameter("@end", endUtc));
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            var bucketHour = reader.GetDateTime(0);
+            rows.Add(new WaitCategoryTimeSlice
+            {
+                IntervalStartUtc = DateTime.SpecifyKind(bucketHour, DateTimeKind.Utc),
+                WaitCategory = reader.GetInt16(1),
+                WaitCategoryDesc = reader.GetString(2),
+                WaitRatio = (double)reader.GetDecimal(3),
+            });
+        }
+        return rows;
+    }
+
+    /// <summary>
+    /// Builds a WaitProfile from raw category totals.
+    /// Top 3 categories are kept; everything else is consolidated into "Others".
+    /// </summary>
+    public static WaitProfile BuildWaitProfile(IEnumerable<WaitCategoryTotal> waits)
+    {
+        var sorted = waits.OrderByDescending(w => w.WaitRatio).ToList();
+        var grand = sorted.Sum(w => w.WaitRatio);
+        if (grand <= 0) return new WaitProfile();
+
+        var profile = new WaitProfile { GrandTotalRatio = grand };
+        double othersRatio = 0;
+        for (int i = 0; i < sorted.Count; i++)
+        {
+            if (i < 3)
+            {
+                profile.Segments.Add(new WaitProfileSegment
+                {
+                    Category = sorted[i].WaitCategoryDesc,
+                    WaitRatio = sorted[i].WaitRatio,
+                    Ratio = sorted[i].WaitRatio / grand,
+                    IsNamed = true,
+                });
+            }
+            else
+            {
+                othersRatio += sorted[i].WaitRatio;
+            }
+        }
+        if (othersRatio > 0)
+        {
+            profile.Segments.Add(new WaitProfileSegment
+            {
+                Category = "Others",
+                WaitRatio = othersRatio,
+                Ratio = othersRatio / grand,
+                IsNamed = false,
+            });
+        }
+        return profile;
     }
 }

@@ -1,0 +1,46 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="using:PlanViewer.App.Controls"
+             x:Class="PlanViewer.App.Controls.WaitStatsProfileControl">
+    <Grid RowDefinitions="Auto,*">
+        <!-- Header row: left controls + right-aligned legend button -->
+        <Grid Grid.Row="0" ColumnDefinitions="Auto,Auto,*,Auto" Margin="4,2">
+            <Button x:Name="ToggleChartButton" Grid.Column="0" Content="&#x25A4;"
+                    Width="22" Height="22" Padding="0"
+                    FontSize="12" Background="Transparent" BorderThickness="0"
+                    Foreground="{DynamicResource ForegroundBrush}"
+                    ToolTip.Tip="Toggle bar / ribbon chart"
+                    Click="ToggleChart_Click"/>
+            <TextBlock x:Name="TitleText" Grid.Column="1" Text="Wait Stats"
+                       FontSize="11" FontWeight="SemiBold"
+                       Foreground="{DynamicResource SlicerToggleBrush}"
+                       VerticalAlignment="Center" Margin="6,0,0,0"/>
+            <!-- spacer -->
+            <Button x:Name="LegendButton" Grid.Column="3" Content="Legend"
+                    Height="20" Padding="8,0"
+                    FontSize="10"
+                    Background="Transparent" BorderThickness="1"
+                    BorderBrush="{DynamicResource ForegroundMutedBrush}"
+                    Foreground="{DynamicResource ForegroundBrush}"
+                    ToolTip.Tip="Show color legend"
+                    VerticalAlignment="Center"
+                    Click="Legend_Click"/>
+        </Grid>
+        <!-- Content area -->
+        <Grid Grid.Row="1" x:Name="ContentArea" MinHeight="24">
+            <local:WaitProfileBarControl x:Name="GlobalBar" PercentMode="True" IsVisible="False"/>
+            <local:WaitStatsRibbonControl x:Name="GlobalRibbon"/>
+            <!-- Loading overlay -->
+            <Border x:Name="WaitLoadingOverlay" IsVisible="False"
+                    Background="#80000000" CornerRadius="0"
+                    HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="6">
+                    <ProgressBar IsIndeterminate="True" Width="140" Height="3"/>
+                    <TextBlock Text="Loading wait stats..."
+                               FontSize="11" HorizontalAlignment="Center"
+                               Foreground="{DynamicResource ForegroundBrush}"/>
+                </StackPanel>
+            </Border>
+        </Grid>
+    </Grid>
+</UserControl>
