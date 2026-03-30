@@ -38,11 +38,10 @@ public class QueryStoreHistoryRow
     public string AvgRowcountDisplay => AvgRowcount.ToString("N2");
     public string TotalDurationMsDisplay => TotalDurationMs.ToString("N2");
     public string TotalCpuMsDisplay => TotalCpuMs.ToString("N2");
-    public string TotalLogicalReadsDisplay => TotalLogicalReads.ToString("N2");
-    public string TotalLogicalWritesDisplay => TotalLogicalWrites.ToString("N2");
-    public string TotalPhysicalReadsDisplay => TotalPhysicalReads.ToString("N2");
+    public string TotalLogicalReadsDisplay => TotalLogicalReads.ToString("N0");
+    public string TotalLogicalWritesDisplay => TotalLogicalWrites.ToString("N0");
+    public string TotalPhysicalReadsDisplay => TotalPhysicalReads.ToString("N0");
     public string TotalMemoryMbDisplay => TotalMemoryMb.ToString("N2");
-
 	public string IntervalStartLocal => TimeDisplayHelper.FormatForDisplay(IntervalStartUtc);
     public string LastExecutionLocal => LastExecutionUtc.HasValue ? TimeDisplayHelper.FormatForDisplay(LastExecutionUtc.Value) : "";
 }
