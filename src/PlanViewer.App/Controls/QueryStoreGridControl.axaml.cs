@@ -587,12 +587,19 @@ public partial class QueryStoreGridControl : UserControl
     private async void ViewHistory_Click(object? sender, RoutedEventArgs e)
     {
         if (ResultsGrid.SelectedItem is not QueryStoreRow row) return;
+        if (string.IsNullOrEmpty(row.QueryHash)) return;
+
+        var metricTag = QueryStoreHistoryWindow.MapOrderByToMetricTag(_lastFetchedOrderBy);
 
         var window = new QueryStoreHistoryWindow(
             _connectionString,
-            row.QueryId,
+            row.QueryHash,
             row.FullQueryText,
-            _database);
+            _database,
+            initialMetricTag: metricTag,
+            slicerStartUtc: _slicerStartUtc,
+            slicerEndUtc: _slicerEndUtc,
+            slicerDaysBack: _slicerDaysBack);
 
         var topLevel = Avalonia.Controls.TopLevel.GetTopLevel(this);
         if (topLevel is Window parentWindow)
