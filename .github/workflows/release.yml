@@ -7,6 +7,8 @@ on:
 
 permissions:
   contents: write
+  id-token: write
+  actions: read
 
 jobs:
   release:
@@ -64,6 +66,48 @@ jobs:
           dotnet publish src/PlanViewer.App/PlanViewer.App.csproj -c Release -r osx-x64 --self-contained -o publish/osx-x64
           dotnet publish src/PlanViewer.App/PlanViewer.App.csproj -c Release -r osx-arm64 --self-contained -o publish/osx-arm64
 
+      # ── SignPath code signing (Windows only, skipped if secret not configured) ──
+      - name: Check if signing is configured
+        if: steps.check.outputs.EXISTS == 'false'
+        id: signing
+        shell: bash
+        run: |
+          if [ -n "${{ secrets.SIGNPATH_API_TOKEN }}" ]; then
+            echo "ENABLED=true" >> $GITHUB_OUTPUT
+          else
+            echo "ENABLED=false" >> $GITHUB_OUTPUT
+            echo "::warning::SIGNPATH_API_TOKEN not configured — releasing unsigned binaries"
+          fi
+
+      - name: Upload Windows build for signing
+        if: steps.check.outputs.EXISTS == 'false' && steps.signing.outputs.ENABLED == 'true'
+        id: upload-unsigned
+        uses: actions/upload-artifact@v4
+        with:
+          name: App-unsigned
+          path: publish/win-x64/
+
+      - name: Sign Windows build
+        if: steps.check.outputs.EXISTS == 'false' && steps.signing.outputs.ENABLED == 'true'
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
+          organization-id: '7969f8b6-d946-4a74-9bac-a55856d8b8e0'
+          project-slug: 'PerformanceStudio'
+          signing-policy-slug: 'test-signing'
+          artifact-configuration-slug: 'App'
+          github-artifact-id: '${{ steps.upload-unsigned.outputs.artifact-id }}'
+          wait-for-completion: true
+          output-artifact-directory: 'signed/win-x64'
+
+      - name: Replace unsigned Windows build with signed
+        if: steps.check.outputs.EXISTS == 'false' && steps.signing.outputs.ENABLED == 'true'
+        shell: pwsh
+        run: |
+          Remove-Item -Recurse -Force publish/win-x64
+          Copy-Item -Recurse signed/win-x64 publish/win-x64
+
+      # ── Velopack (uses signed Windows binaries) ───────────────────────
       - name: Create Velopack release (Windows)
         if: steps.check.outputs.EXISTS == 'false'
         shell: pwsh
@@ -77,9 +121,10 @@ jobs:
           # Download previous release for delta generation
           vpk download github --repoUrl https://github.com/${{ github.repository }} --channel win -o releases/velopack --token $env:GH_TOKEN
 
-          # Pack Windows release
+          # Pack Windows release (now signed)
           vpk pack -u PerformanceStudio -v $env:VERSION -p publish/win-x64 -e PlanViewer.App.exe -o releases/velopack --channel win
 
+      # ── Package and upload ────────────────────────────────────────────
       - name: Package and upload
         if: steps.check.outputs.EXISTS == 'false'
         shell: pwsh
@@ -89,7 +134,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path releases
 
-          # Package Windows and Linux as flat zips
+          # Package Windows (signed) and Linux as flat zips
           foreach ($rid in @('win-x64', 'linux-x64')) {
             if (Test-Path 'README.md') { Copy-Item 'README.md' "publish/$rid/" }
             if (Test-Path 'LICENSE') { Copy-Item 'LICENSE' "publish/$rid/" }
