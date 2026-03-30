@@ -23,8 +23,8 @@ public class QueryStoreHistoryRow
     public double TotalLogicalReads { get; set; }
     public double TotalLogicalWrites { get; set; }
     public double TotalPhysicalReads { get; set; }
-
-    public int MinDop { get; set; }
+    public double TotalMemoryMb { get; set; }
+	public int MinDop { get; set; }
     public int MaxDop { get; set; }
     public DateTime? LastExecutionUtc { get; set; }
 
@@ -41,7 +41,8 @@ public class QueryStoreHistoryRow
     public string TotalLogicalReadsDisplay => TotalLogicalReads.ToString("N2");
     public string TotalLogicalWritesDisplay => TotalLogicalWrites.ToString("N2");
     public string TotalPhysicalReadsDisplay => TotalPhysicalReads.ToString("N2");
+    public string TotalMemoryMbDisplay => TotalMemoryMb.ToString("N2");
 
-    public string IntervalStartLocal => TimeDisplayHelper.FormatForDisplay(IntervalStartUtc);
+	public string IntervalStartLocal => TimeDisplayHelper.FormatForDisplay(IntervalStartUtc);
     public string LastExecutionLocal => LastExecutionUtc.HasValue ? TimeDisplayHelper.FormatForDisplay(LastExecutionUtc.Value) : "";
 }

@@ -59,6 +59,7 @@
                         <ComboBoxItem Content="Total Reads" Tag="TotalLogicalReads"/>
                         <ComboBoxItem Content="Total Writes" Tag="TotalLogicalWrites"/>
                         <ComboBoxItem Content="Total Physical Reads" Tag="TotalPhysicalReads"/>
+                        <ComboBoxItem Content="Total Memory (MB)" Tag="TotalMemoryMb"/>
                         <ComboBoxItem Content="Executions" Tag="CountExecutions"/>
                     </ComboBox>
                     <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
@@ -142,6 +143,7 @@
                 <DataGridTextColumn Header="Total Reads" Binding="{ReflectionBinding TotalLogicalReadsDisplay}" Width="100"/>
                 <DataGridTextColumn Header="Total Writes" Binding="{ReflectionBinding TotalLogicalWritesDisplay}" Width="100"/>
                 <DataGridTextColumn Header="Total Phys Reads" Binding="{ReflectionBinding TotalPhysicalReadsDisplay}" Width="120"/>
+                <DataGridTextColumn Header="Total Memory (MB)" Binding="{ReflectionBinding TotalMemoryMbDisplay}" Width="120"/>
                 <DataGridTextColumn Header="Min DOP" Binding="{ReflectionBinding MinDop}" Width="70"/>
                 <DataGridTextColumn Header="Max DOP" Binding="{ReflectionBinding MaxDop}" Width="70"/>
                 <DataGridTextColumn Header="Last Execution" Binding="{ReflectionBinding LastExecutionLocal}" Width="140"/>

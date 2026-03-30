@@ -84,7 +84,7 @@ public partial class QueryStoreHistoryWindow : Window
         ["avg-writes"]       = "AvgLogicalWrites",
         ["physical-reads"]   = "TotalPhysicalReads",
         ["avg-physical-reads"] = "AvgPhysicalReads",
-        ["memory"]           = "TotalCpuMs",
+        ["memory"]           = "TotalMemoryMb",
         ["avg-memory"]       = "AvgMemoryMb",
         ["executions"]       = "CountExecutions",
     };
@@ -877,7 +877,8 @@ public partial class QueryStoreHistoryWindow : Window
         "TotalLogicalReads"  => row.TotalLogicalReads,
         "TotalLogicalWrites" => row.TotalLogicalWrites,
         "TotalPhysicalReads" => row.TotalPhysicalReads,
-        "CountExecutions"    => row.CountExecutions,
+        "TotalMemoryMb"      => row.TotalMemoryMb,
+		"CountExecutions"    => row.CountExecutions,
         _                    => row.AvgCpuMs,
     };
 

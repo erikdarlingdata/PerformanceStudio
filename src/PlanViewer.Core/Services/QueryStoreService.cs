@@ -608,7 +608,8 @@ SELECT
     SUM(rs.avg_physical_io_reads * rs.count_executions),
     MIN(rs.min_dop),
     MAX(rs.max_dop),
-    MAX(rs.last_execution_time)
+    MAX(rs.last_execution_time),
+    SUM(rs.avg_query_max_used_memory * rs.count_executions)
 FROM sys.query_store_runtime_stats rs
 JOIN sys.query_store_runtime_stats_interval rsi
     ON rs.runtime_stats_interval_id = rsi.runtime_stats_interval_id
@@ -652,7 +653,8 @@ ORDER BY rsi.start_time, p.query_plan_hash;";
                 MinDop = (int)reader.GetInt64(15),
                 MaxDop = (int)reader.GetInt64(16),
                 LastExecutionUtc = reader.IsDBNull(17) ? null : ((DateTimeOffset)reader.GetValue(17)).UtcDateTime,
-            });
+                TotalMemoryMb = reader.GetDouble(18),
+			});
         }
 
         return rows;
