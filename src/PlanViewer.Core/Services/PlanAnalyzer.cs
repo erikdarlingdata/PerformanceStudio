@@ -460,7 +460,7 @@ public static class PlanAnalyzer
 
         // Rule 2: Eager Index Spools — optimizer building temporary indexes on the fly
         if (!cfg.IsRuleDisabled(2) && node.LogicalOp == "Eager Spool" &&
-            node.PhysicalOp.Contains("Spool", StringComparison.OrdinalIgnoreCase))
+            node.PhysicalOp.Contains("Index", StringComparison.OrdinalIgnoreCase))
         {
             var message = "SQL Server is building a temporary index in TempDB at runtime because no suitable permanent index exists. This is expensive — it builds the index from scratch on every execution. Create a permanent index on the underlying table to eliminate this operator entirely.";
             if (!string.IsNullOrEmpty(node.SuggestedIndex))
