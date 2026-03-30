@@ -480,7 +480,7 @@ public partial class QueryStoreHistoryWindow : Window
             _avgLine.Text = $"avg: {avg:N0}";
             _avgLine.LabelFontColor = ScottPlot.Color.FromHex("#9DA5B4");
             _avgLine.LabelFontSize = 11;
-            _avgLine.LabelBackgroundColor = ScottPlot.Color.FromHex("#333333").WithAlpha(270);
+            _avgLine.LabelBackgroundColor = ScottPlot.Color.FromHex("#333333").WithAlpha(170);
             _avgLine.LabelOppositeAxis = false;
             _avgLine.LabelRotation = 0;
             _avgLine.LabelAlignment = Alignment.LowerLeft;
