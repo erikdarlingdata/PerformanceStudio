@@ -2870,7 +2870,34 @@ public partial class PlanViewerControl : UserControl
         if (e.KeyModifiers.HasFlag(KeyModifiers.Control))
         {
             e.Handled = true;
-            SetZoom(_zoomLevel + (e.Delta.Y > 0 ? ZoomStep : -ZoomStep));
+
+            var newZoom = Math.Max(MinZoom, Math.Min(MaxZoom,
+                _zoomLevel + (e.Delta.Y > 0 ? ZoomStep : -ZoomStep)));
+
+            if (Math.Abs(newZoom - _zoomLevel) < 0.001)
+                return;
+
+            // Mouse position relative to the ScrollViewer viewport
+            var mouseInView = e.GetPosition(PlanScrollViewer);
+
+            // Content point under the mouse at the current zoom level
+            var contentX = (PlanScrollViewer.Offset.X + mouseInView.X) / _zoomLevel;
+            var contentY = (PlanScrollViewer.Offset.Y + mouseInView.Y) / _zoomLevel;
+
+            // Apply the new zoom
+            _zoomLevel = newZoom;
+            _zoomTransform.ScaleX = _zoomLevel;
+            _zoomTransform.ScaleY = _zoomLevel;
+            ZoomLevelText.Text = $"{(int)(_zoomLevel * 100)}%";
+
+            // Adjust offset so the same content point stays under the mouse
+            var newOffsetX = Math.Max(0, contentX * _zoomLevel - mouseInView.X);
+            var newOffsetY = Math.Max(0, contentY * _zoomLevel - mouseInView.Y);
+
+            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            {
+                PlanScrollViewer.Offset = new Vector(newOffsetX, newOffsetY);
+            });
         }
     }
 

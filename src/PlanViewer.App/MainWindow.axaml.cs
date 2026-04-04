@@ -637,10 +637,17 @@ public partial class MainWindow : Window
         buttonPanel.Children.Add(copyBtn);
         buttonPanel.Children.Add(closeBtn);
 
+        var scaleTransform = new ScaleTransform(1, 1);
+        var layoutTransform = new LayoutTransformControl
+        {
+            LayoutTransform = scaleTransform,
+            Child = scrollViewer
+        };
+
         var panel = new DockPanel { Margin = new Avalonia.Thickness(12) };
         DockPanel.SetDock(buttonPanel, Dock.Bottom);
         panel.Children.Add(buttonPanel);
-        panel.Children.Add(scrollViewer);
+        panel.Children.Add(layoutTransform);
 
         var window = new Window
         {
@@ -654,6 +661,19 @@ public partial class MainWindow : Window
             Foreground = new SolidColorBrush(Color.Parse("#E4E6EB")),
             Content = panel
         };
+
+        double adviceZoom = 1.0;
+        window.AddHandler(InputElement.PointerWheelChangedEvent, (_, args) =>
+        {
+            if (args.KeyModifiers.HasFlag(KeyModifiers.Control))
+            {
+                args.Handled = true;
+                adviceZoom += args.Delta.Y > 0 ? 0.1 : -0.1;
+                adviceZoom = Math.Max(0.5, Math.Min(3.0, adviceZoom));
+                scaleTransform.ScaleX = adviceZoom;
+                scaleTransform.ScaleY = adviceZoom;
+            }
+        }, RoutingStrategies.Tunnel);
 
         copyBtn.Click += async (_, _) =>
         {
