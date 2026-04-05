@@ -1093,11 +1093,16 @@ public partial class QuerySessionControl : UserControl
 
     private AnalysisResult? GetCurrentAnalysis()
     {
+        return GetCurrentAnalysisWithViewer().Analysis;
+    }
+
+    private (AnalysisResult? Analysis, PlanViewerControl? Viewer) GetCurrentAnalysisWithViewer()
+    {
         // Find the currently selected plan tab's PlanViewerControl
         if (SubTabControl.SelectedItem is TabItem tab && tab.Content is PlanViewerControl viewer
             && viewer.CurrentPlan != null)
         {
-            return ResultMapper.Map(viewer.CurrentPlan, "query editor", _serverMetadata);
+            return (ResultMapper.Map(viewer.CurrentPlan, "query editor", _serverMetadata), viewer);
         }
 
         // Fallback: find the most recent plan tab
@@ -1106,20 +1111,20 @@ public partial class QuerySessionControl : UserControl
             if (SubTabControl.Items[i] is TabItem planTab && planTab.Content is PlanViewerControl v
                 && v.CurrentPlan != null)
             {
-                return ResultMapper.Map(v.CurrentPlan, "query editor");
+                return (ResultMapper.Map(v.CurrentPlan, "query editor"), v);
             }
         }
 
-        return null;
+        return (null, null);
     }
 
     private void HumanAdvice_Click(object? sender, RoutedEventArgs e)
     {
-        var analysis = GetCurrentAnalysis();
+        var (analysis, viewer) = GetCurrentAnalysisWithViewer();
         if (analysis == null) { SetStatus("No plan to analyze", autoClear: false); return; }
 
         var text = TextFormatter.Format(analysis);
-        ShowAdviceWindow("Advice for Humans", text, analysis);
+        ShowAdviceWindow("Advice for Humans", text, analysis, viewer);
     }
 
     private void RobotAdvice_Click(object? sender, RoutedEventArgs e)
@@ -1131,9 +1136,12 @@ public partial class QuerySessionControl : UserControl
         ShowAdviceWindow("Advice for Robots", json);
     }
 
-    private void ShowAdviceWindow(string title, string content, AnalysisResult? analysis = null)
+    private void ShowAdviceWindow(string title, string content, AnalysisResult? analysis = null, PlanViewerControl? sourceViewer = null)
     {
-        var styledContent = AdviceContentBuilder.Build(content, analysis);
+        Action<int>? onNodeClick = sourceViewer != null
+            ? nodeId => sourceViewer.NavigateToNode(nodeId)
+            : null;
+        var styledContent = AdviceContentBuilder.Build(content, analysis, onNodeClick);
 
         var scrollViewer = new ScrollViewer
         {
@@ -1174,10 +1182,17 @@ public partial class QuerySessionControl : UserControl
         buttonPanel.Children.Add(copyBtn);
         buttonPanel.Children.Add(closeBtn);
 
+        var scaleTransform = new ScaleTransform(1, 1);
+        var layoutTransform = new LayoutTransformControl
+        {
+            LayoutTransform = scaleTransform,
+            Child = scrollViewer
+        };
+
         var panel = new DockPanel { Margin = new Avalonia.Thickness(12) };
         DockPanel.SetDock(buttonPanel, Dock.Bottom);
         panel.Children.Add(buttonPanel);
-        panel.Children.Add(scrollViewer);
+        panel.Children.Add(layoutTransform);
 
         var window = new Window
         {
@@ -1191,6 +1206,19 @@ public partial class QuerySessionControl : UserControl
             Foreground = new SolidColorBrush(Color.Parse("#E4E6EB")),
             Content = panel
         };
+
+        double adviceZoom = 1.0;
+        window.AddHandler(Avalonia.Input.InputElement.PointerWheelChangedEvent, (_, args) =>
+        {
+            if (args.KeyModifiers.HasFlag(KeyModifiers.Control))
+            {
+                args.Handled = true;
+                adviceZoom += args.Delta.Y > 0 ? 0.1 : -0.1;
+                adviceZoom = Math.Max(0.5, Math.Min(3.0, adviceZoom));
+                scaleTransform.ScaleX = adviceZoom;
+                scaleTransform.ScaleY = adviceZoom;
+            }
+        }, Avalonia.Interactivity.RoutingStrategies.Tunnel);
 
         copyBtn.Click += async (_, _) =>
         {

@@ -172,6 +172,61 @@ public partial class PlanViewerControl : UserControl
     public event EventHandler? RobotAdviceRequested;
     public event EventHandler? CopyReproRequested;
 
+    /// <summary>
+    /// Navigates to a specific plan node by ID: selects it, zooms to show it,
+    /// and scrolls to center it in the viewport.
+    /// </summary>
+    public void NavigateToNode(int nodeId)
+    {
+        // Find the Border for this node
+        Border? targetBorder = null;
+        PlanNode? targetNode = null;
+        foreach (var (border, node) in _nodeBorderMap)
+        {
+            if (node.NodeId == nodeId)
+            {
+                targetBorder = border;
+                targetNode = node;
+                break;
+            }
+        }
+
+        if (targetBorder == null || targetNode == null)
+            return;
+
+        // Activate the parent window so the plan viewer becomes visible
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel is Window parentWindow)
+            parentWindow.Activate();
+
+        // Select the node (highlights it and shows properties)
+        SelectNode(targetBorder, targetNode);
+
+        // Ensure zoom level makes the node comfortably visible
+        var viewWidth = PlanScrollViewer.Bounds.Width;
+        var viewHeight = PlanScrollViewer.Bounds.Height;
+        if (viewWidth <= 0 || viewHeight <= 0)
+            return;
+
+        // If the node is too small at the current zoom, zoom in so it's ~1/3 of the viewport
+        var nodeW = PlanLayoutEngine.NodeWidth;
+        var nodeH = PlanLayoutEngine.GetNodeHeight(targetNode);
+        var minVisibleZoom = Math.Min(viewWidth / (nodeW * 4), viewHeight / (nodeH * 4));
+        if (_zoomLevel < minVisibleZoom)
+            SetZoom(Math.Min(minVisibleZoom, 1.0));
+
+        // Scroll to center the node in the viewport
+        var centerX = (targetNode.X + nodeW / 2) * _zoomLevel - viewWidth / 2;
+        var centerY = (targetNode.Y + nodeH / 2) * _zoomLevel - viewHeight / 2;
+        centerX = Math.Max(0, centerX);
+        centerY = Math.Max(0, centerY);
+
+        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            PlanScrollViewer.Offset = new Vector(centerX, centerY);
+        });
+    }
+
     public void LoadPlan(string planXml, string label, string? queryText = null)
     {
         _label = label;
@@ -2870,7 +2925,34 @@ public partial class PlanViewerControl : UserControl
         if (e.KeyModifiers.HasFlag(KeyModifiers.Control))
         {
             e.Handled = true;
-            SetZoom(_zoomLevel + (e.Delta.Y > 0 ? ZoomStep : -ZoomStep));
+
+            var newZoom = Math.Max(MinZoom, Math.Min(MaxZoom,
+                _zoomLevel + (e.Delta.Y > 0 ? ZoomStep : -ZoomStep)));
+
+            if (Math.Abs(newZoom - _zoomLevel) < 0.001)
+                return;
+
+            // Mouse position relative to the ScrollViewer viewport
+            var mouseInView = e.GetPosition(PlanScrollViewer);
+
+            // Content point under the mouse at the current zoom level
+            var contentX = (PlanScrollViewer.Offset.X + mouseInView.X) / _zoomLevel;
+            var contentY = (PlanScrollViewer.Offset.Y + mouseInView.Y) / _zoomLevel;
+
+            // Apply the new zoom
+            _zoomLevel = newZoom;
+            _zoomTransform.ScaleX = _zoomLevel;
+            _zoomTransform.ScaleY = _zoomLevel;
+            ZoomLevelText.Text = $"{(int)(_zoomLevel * 100)}%";
+
+            // Adjust offset so the same content point stays under the mouse
+            var newOffsetX = Math.Max(0, contentX * _zoomLevel - mouseInView.X);
+            var newOffsetY = Math.Max(0, contentY * _zoomLevel - mouseInView.Y);
+
+            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            {
+                PlanScrollViewer.Offset = new Vector(newOffsetX, newOffsetY);
+            });
         }
     }
 
