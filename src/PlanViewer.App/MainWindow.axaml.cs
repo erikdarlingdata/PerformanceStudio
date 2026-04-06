@@ -530,6 +530,16 @@ public partial class MainWindow : Window
         viewer.HumanAdviceRequested += (_, _) => showHumanAdvice();
         viewer.RobotAdviceRequested += (_, _) => showRobotAdvice();
         viewer.CopyReproRequested += async (_, _) => await copyRepro();
+        viewer.OpenInEditorRequested += (_, queryText) =>
+        {
+            _queryCounter++;
+            var session = new QuerySessionControl(_credentialService, _connectionStore);
+            session.QueryEditor.Text = queryText;
+            var tab = CreateTab($"Query {_queryCounter}", session);
+            MainTabControl.Items.Add(tab);
+            MainTabControl.SelectedItem = tab;
+            UpdateEmptyOverlay();
+        };
 
         var getActualPlanBtn = new Button
         {

@@ -590,6 +590,13 @@ public partial class QuerySessionControl : UserControl
         return $"[{name}]";
     }
 
+    private void OnOpenInEditorRequested(object? sender, string queryText)
+    {
+        QueryEditor.Text = queryText;
+        SubTabControl.SelectedIndex = 0; // Switch to the editor tab
+        QueryEditor.Focus();
+    }
+
     private void OnKeyDown(object? sender, KeyEventArgs e)
     {
         // F5 or Ctrl+E → Execute (actual plan)
@@ -1067,6 +1074,7 @@ public partial class QuerySessionControl : UserControl
             SetStatus($"{planType} plan captured ({sw.Elapsed.TotalSeconds:F1}s)");
             var viewer = new PlanViewerControl();
             viewer.Metadata = _serverMetadata;
+            viewer.OpenInEditorRequested += OnOpenInEditorRequested;
             viewer.LoadPlan(planXml, tabLabel, queryText);
             loadingTab.Content = viewer;
             HumanAdviceButton.IsEnabled = true;
@@ -1148,6 +1156,7 @@ public partial class QuerySessionControl : UserControl
 
         var viewer = new PlanViewerControl();
         viewer.Metadata = _serverMetadata;
+        viewer.OpenInEditorRequested += OnOpenInEditorRequested;
         viewer.LoadPlan(planXml, label, queryText);
 
         // Build tab header with close button and right-click rename
@@ -1836,6 +1845,7 @@ public partial class QuerySessionControl : UserControl
             SetStatus($"Actual plan captured ({sw.Elapsed.TotalSeconds:F1}s)");
             var actualViewer = new PlanViewerControl();
             actualViewer.Metadata = _serverMetadata;
+            actualViewer.OpenInEditorRequested += OnOpenInEditorRequested;
             actualViewer.LoadPlan(actualPlanXml, tabLabel, queryText);
             loadingTab.Content = actualViewer;
         }

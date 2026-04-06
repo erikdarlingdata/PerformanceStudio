@@ -171,6 +171,7 @@ public partial class PlanViewerControl : UserControl
     public event EventHandler? HumanAdviceRequested;
     public event EventHandler? RobotAdviceRequested;
     public event EventHandler? CopyReproRequested;
+    public event EventHandler<string>? OpenInEditorRequested;
 
     /// <summary>
     /// Navigates to a specific plan node by ID: selects it, zooms to show it,
@@ -3267,6 +3268,15 @@ public partial class PlanViewerControl : UserControl
         var topLevel = TopLevel.GetTopLevel(this);
         if (topLevel?.Clipboard != null)
             await topLevel.Clipboard.SetTextAsync(text);
+    }
+
+    private void OpenInEditor_Click(object? sender, RoutedEventArgs e)
+    {
+        if (StatementsGrid.SelectedItem is not StatementRow row) return;
+        var text = row.Statement.StatementText;
+        if (string.IsNullOrEmpty(text)) return;
+
+        OpenInEditorRequested?.Invoke(this, text);
     }
 
     private static void CollectNodeWarnings(PlanNode node, List<PlanWarning> warnings)
