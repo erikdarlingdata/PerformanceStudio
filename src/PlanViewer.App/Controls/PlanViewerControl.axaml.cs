@@ -16,7 +16,11 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
 using Avalonia.Platform.Storage;
 using AvaloniaEdit.TextMate;
+using Microsoft.Data.SqlClient;
+using PlanViewer.App.Dialogs;
+using PlanViewer.Core.Interfaces;
 using PlanViewer.App.Helpers;
+using PlanViewer.App.Services;
 using PlanViewer.App.Mcp;
 using PlanViewer.Core.Models;
 using PlanViewer.Core.Output;
@@ -172,6 +176,33 @@ public partial class PlanViewerControl : UserControl
     /// Connection string for schema lookups. Set when the plan was loaded from a connected session.
     /// </summary>
     public string? ConnectionString { get; set; }
+
+    // Connection state for plans that connect via the toolbar
+    private ServerConnection? _planConnection;
+    private ICredentialService? _planCredentialService;
+    private ConnectionStore? _planConnectionStore;
+    private string? _planSelectedDatabase;
+
+    /// <summary>
+    /// Provide credential service and connection store so the plan viewer can show a connection dialog.
+    /// </summary>
+    public void SetConnectionServices(ICredentialService credentialService, ConnectionStore connectionStore)
+    {
+        _planCredentialService = credentialService;
+        _planConnectionStore = connectionStore;
+    }
+
+    /// <summary>
+    /// Update the connection UI to reflect an active connection (used when connection is inherited).
+    /// </summary>
+    public void SetConnectionStatus(string serverName, string? database)
+    {
+        PlanServerLabel.Text = serverName;
+        PlanServerLabel.Foreground = Brushes.LimeGreen;
+        PlanConnectButton.Content = "Reconnect";
+        if (database != null)
+            _planSelectedDatabase = database;
+    }
 
     // Events for MainWindow to wire up advice/repro actions
     public event EventHandler? HumanAdviceRequested;
@@ -3344,6 +3375,72 @@ public partial class PlanViewerControl : UserControl
             "ForegroundMutedBrush" => TooltipFgBrush,
             _ => Brushes.White
         };
+    }
+
+    #endregion
+
+    #region Plan Viewer Connection
+
+    private async void PlanConnect_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_planCredentialService == null || _planConnectionStore == null) return;
+
+        var dialog = new ConnectionDialog(_planCredentialService, _planConnectionStore);
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel is not Window parentWindow) return;
+
+        var result = await dialog.ShowDialog<bool?>(parentWindow);
+        if (result != true || dialog.ResultConnection == null) return;
+
+        _planConnection = dialog.ResultConnection;
+        _planSelectedDatabase = dialog.ResultDatabase;
+        ConnectionString = _planConnection.GetConnectionString(_planCredentialService, _planSelectedDatabase);
+
+        PlanServerLabel.Text = _planConnection.ServerName;
+        PlanServerLabel.Foreground = Brushes.LimeGreen;
+        PlanConnectButton.Content = "Reconnect";
+
+        // Populate database dropdown
+        try
+        {
+            var connStr = _planConnection.GetConnectionString(_planCredentialService, "master");
+            await using var conn = new SqlConnection(connStr);
+            await conn.OpenAsync();
+
+            var databases = new List<string>();
+            using var cmd = new SqlCommand(
+                "SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED; SELECT name FROM sys.databases WHERE state_desc = 'ONLINE' ORDER BY name", conn);
+            using var reader = await cmd.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+                databases.Add(reader.GetString(0));
+
+            PlanDatabaseBox.ItemsSource = databases;
+            PlanDatabaseBox.IsEnabled = true;
+
+            if (_planSelectedDatabase != null)
+            {
+                for (int i = 0; i < PlanDatabaseBox.Items.Count; i++)
+                {
+                    if (PlanDatabaseBox.Items[i]?.ToString() == _planSelectedDatabase)
+                    {
+                        PlanDatabaseBox.SelectedIndex = i;
+                        break;
+                    }
+                }
+            }
+        }
+        catch
+        {
+            PlanDatabaseBox.IsEnabled = false;
+        }
+    }
+
+    private void PlanDatabase_SelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (_planConnection == null || _planCredentialService == null || PlanDatabaseBox.SelectedItem == null) return;
+
+        _planSelectedDatabase = PlanDatabaseBox.SelectedItem.ToString();
+        ConnectionString = _planConnection.GetConnectionString(_planCredentialService, _planSelectedDatabase);
     }
 
     #endregion

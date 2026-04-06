@@ -1075,6 +1075,9 @@ public partial class QuerySessionControl : UserControl
             var viewer = new PlanViewerControl();
             viewer.Metadata = _serverMetadata;
             viewer.ConnectionString = _connectionString;
+            viewer.SetConnectionServices(_credentialService, _connectionStore);
+            if (_serverConnection != null)
+                viewer.SetConnectionStatus(_serverConnection.ServerName, _selectedDatabase);
             viewer.OpenInEditorRequested += OnOpenInEditorRequested;
             viewer.LoadPlan(planXml, tabLabel, queryText);
             loadingTab.Content = viewer;
@@ -1158,6 +1161,9 @@ public partial class QuerySessionControl : UserControl
         var viewer = new PlanViewerControl();
         viewer.Metadata = _serverMetadata;
         viewer.ConnectionString = _connectionString;
+        viewer.SetConnectionServices(_credentialService, _connectionStore);
+        if (_serverConnection != null)
+            viewer.SetConnectionStatus(_serverConnection.ServerName, _selectedDatabase);
         viewer.OpenInEditorRequested += OnOpenInEditorRequested;
         viewer.LoadPlan(planXml, label, queryText);
 
@@ -1848,6 +1854,9 @@ public partial class QuerySessionControl : UserControl
             var actualViewer = new PlanViewerControl();
             actualViewer.Metadata = _serverMetadata;
             actualViewer.ConnectionString = _connectionString;
+            actualViewer.SetConnectionServices(_credentialService, _connectionStore);
+            if (_serverConnection != null)
+                actualViewer.SetConnectionStatus(_serverConnection.ServerName, _selectedDatabase);
             actualViewer.OpenInEditorRequested += OnOpenInEditorRequested;
             actualViewer.LoadPlan(actualPlanXml, tabLabel, queryText);
             loadingTab.Content = actualViewer;
