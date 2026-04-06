@@ -1,0 +1,26 @@
+@inherits LayoutComponentBase
+
+<header>
+    <div class="header-content">
+        <img src="darling-data-logo.png" alt="Erik Darling Data" class="header-logo" />
+        <span class="header-divider"></span>
+        <span class="header-title">Performance Studio</span>
+    </div>
+</header>
+
+<main>
+    <ErrorBoundary>
+        <ChildContent>
+            @Body
+        </ChildContent>
+        <ErrorContent>
+            <p class="error-message">Something went wrong. Please refresh the page and try again.</p>
+        </ErrorContent>
+    </ErrorBoundary>
+</main>
+
+<footer>
+    <a href="https://www.erikdarling.com" target="_blank" rel="noopener">erikdarling.com</a>
+    <span class="footer-sep">&middot;</span>
+    <a href="https://github.com/erikdarlingdata/PerformanceStudio" target="_blank" rel="noopener">GitHub</a>
+</footer>

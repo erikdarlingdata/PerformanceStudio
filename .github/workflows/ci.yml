@@ -18,11 +18,15 @@ jobs:
         with:
           dotnet-version: 8.0.x
 
+      - name: Install WASM workload
+        run: dotnet workload install wasm-tools
+
       - name: Restore dependencies
         run: |
           dotnet restore src/PlanViewer.Core/PlanViewer.Core.csproj
           dotnet restore src/PlanViewer.App/PlanViewer.App.csproj
           dotnet restore src/PlanViewer.Cli/PlanViewer.Cli.csproj
+          dotnet restore src/PlanViewer.Web/PlanViewer.Web.csproj
           dotnet restore tests/PlanViewer.Core.Tests/PlanViewer.Core.Tests.csproj
 
       - name: Build all projects
@@ -30,6 +34,7 @@ jobs:
           dotnet build src/PlanViewer.Core/PlanViewer.Core.csproj -c Release --no-restore
           dotnet build src/PlanViewer.App/PlanViewer.App.csproj -c Release --no-restore
           dotnet build src/PlanViewer.Cli/PlanViewer.Cli.csproj -c Release --no-restore
+          dotnet build src/PlanViewer.Web/PlanViewer.Web.csproj -c Release --no-restore
           dotnet build tests/PlanViewer.Core.Tests/PlanViewer.Core.Tests.csproj -c Release --no-restore
 
       - name: Run tests
