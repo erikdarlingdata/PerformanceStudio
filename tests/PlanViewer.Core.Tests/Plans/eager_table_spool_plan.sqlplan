@@ -1,0 +1,1283 @@
+<ShowPlanXML xmlns="http://schemas.microsoft.com/sqlserver/2004/07/showplan" Version="1.2" Build="12.0.2000.8">
+  <BatchSequence>
+    <Batch>
+      <Statements>
+        <StmtSimple StatementText="DECLARE @hkey BIGINT = -1 ,&#xD;&#xA;    @bmax BIGINT,&#xD;&#xA;	@cur VARCHAR(20)&#xD;&#xA; &#xD;&#xA; " StatementId="1" StatementCompId="1" StatementType="ASSIGN" RetrievedFromCache="true" />
+        <StmtSimple StatementText="SET NOCOUNT ON&#xD;&#xA;&#xD;&#xA;" StatementId="2" StatementCompId="2" StatementType="SET ON/OFF" RetrievedFromCache="true" />
+        <StmtCond StatementText="WHILE (&#xD;&#xA;SELECT dm.[avg_fragmentation_in_percent]&#xD;&#xA;FROM sys.indexes i&#xD;&#xA;INNER JOIN sys.dm_db_index_physical_stats (DB_ID(), NULL, NULL, NULL, 'LIMITED') dm&#xD;&#xA;ON i.[object_id] = dm.[object_id]&#xD;&#xA;AND i.[index_id] = dm.[index_id]&#xD;&#xA;WHERE OBJECT_NAME(dm.[object_id]) = 'RealBigTest'&#xD;&#xA;AND dm.[alloc_unit_type_desc] = 'IN_ROW_DATA'&#xD;&#xA;AND i.index_id = 1&#xD;&#xA;) &lt; 99.0" StatementId="3" StatementCompId="3" StatementType="COND WITH QUERY" RetrievedFromCache="true" StatementSubTreeCost="0.00989965" StatementEstRows="1" StatementOptmLevel="FULL" QueryHash="0xB33E2AAD6A45F3D8" QueryPlanHash="0xCB2A521335D1651A" StatementOptmEarlyAbortReason="GoodEnoughPlanFound" CardinalityEstimationModelVersion="120">
+          <StatementSetOptions QUOTED_IDENTIFIER="true" ARITHABORT="true" CONCAT_NULL_YIELDS_NULL="true" ANSI_NULLS="true" ANSI_PADDING="true" ANSI_WARNINGS="true" NUMERIC_ROUNDABORT="false" />
+          <Condition>
+            <QueryPlan NonParallelPlanReason="CouldNotGenerateValidParallelPlan" CachedPlanSize="48" CompileTime="7" CompileCPU="7" CompileMemory="1040">
+              <MemoryGrantInfo SerialRequiredMemory="0" SerialDesiredMemory="0" />
+              <OptimizerHardwareDependentProperties EstimatedAvailableMemoryGrant="431413" EstimatedPagesCached="1509945" EstimatedAvailableDegreeOfParallelism="8" />
+              <RelOp NodeId="0" PhysicalOp="Compute Scalar" LogicalOp="Compute Scalar" EstimateRows="1" EstimateIO="0" EstimateCPU="1e-007" AvgRowSize="11" EstimatedTotalSubtreeCost="0.00989965" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                <OutputList>
+                  <ColumnReference Column="Expr1017" />
+                </OutputList>
+                <ComputeScalar>
+                  <DefinedValues>
+                    <DefinedValue>
+                      <ColumnReference Column="Expr1017" />
+                      <ScalarOperator ScalarString="CASE WHEN [Expr1020]&lt;(9.900000000000000e+001) THEN (1) ELSE (0) END">
+                        <IF>
+                          <Condition>
+                            <ScalarOperator>
+                              <Compare CompareOp="LT">
+                                <ScalarOperator>
+                                  <Identifier>
+                                    <ColumnReference Column="Expr1020" />
+                                  </Identifier>
+                                </ScalarOperator>
+                                <ScalarOperator>
+                                  <Const ConstValue="(9.900000000000000e+001)" />
+                                </ScalarOperator>
+                              </Compare>
+                            </ScalarOperator>
+                          </Condition>
+                          <Then>
+                            <ScalarOperator>
+                              <Const ConstValue="(1)" />
+                            </ScalarOperator>
+                          </Then>
+                          <Else>
+                            <ScalarOperator>
+                              <Const ConstValue="(0)" />
+                            </ScalarOperator>
+                          </Else>
+                        </IF>
+                      </ScalarOperator>
+                    </DefinedValue>
+                  </DefinedValues>
+                  <RelOp NodeId="1" PhysicalOp="Nested Loops" LogicalOp="Left Outer Join" EstimateRows="1" EstimateIO="0" EstimateCPU="4.18e-006" AvgRowSize="15" EstimatedTotalSubtreeCost="0.00989955" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                    <OutputList>
+                      <ColumnReference Column="Expr1020" />
+                    </OutputList>
+                    <NestedLoops Optimized="0">
+                      <RelOp NodeId="2" PhysicalOp="Constant Scan" LogicalOp="Constant Scan" EstimateRows="1" EstimateIO="0" EstimateCPU="1.157e-006" AvgRowSize="9" EstimatedTotalSubtreeCost="1.157e-006" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                        <OutputList />
+                        <ConstantScan />
+                      </RelOp>
+                      <RelOp NodeId="3" PhysicalOp="Assert" LogicalOp="Assert" EstimateRows="1" EstimateIO="0" EstimateCPU="4.8e-007" AvgRowSize="15" EstimatedTotalSubtreeCost="0.00989421" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                        <OutputList>
+                          <ColumnReference Column="Expr1020" />
+                        </OutputList>
+                        <Assert StartupExpression="0">
+                          <RelOp NodeId="4" PhysicalOp="Stream Aggregate" LogicalOp="Aggregate" EstimateRows="1" EstimateIO="0" EstimateCPU="1.71453e-006" AvgRowSize="23" EstimatedTotalSubtreeCost="0.00989373" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                            <OutputList>
+                              <ColumnReference Column="Expr1019" />
+                              <ColumnReference Column="Expr1020" />
+                            </OutputList>
+                            <StreamAggregate>
+                              <DefinedValues>
+                                <DefinedValue>
+                                  <ColumnReference Column="Expr1019" />
+                                  <ScalarOperator ScalarString="Count(*)">
+                                    <Aggregate AggType="countstar" Distinct="0" />
+                                  </ScalarOperator>
+                                </DefinedValue>
+                                <DefinedValue>
+                                  <ColumnReference Column="Expr1020" />
+                                  <ScalarOperator ScalarString="ANY(INDEXANALYSIS.[avg_fragmentation_in_percent])">
+                                    <Aggregate Distinct="0" AggType="ANY">
+                                      <ScalarOperator>
+                                        <Identifier>
+                                          <ColumnReference Table="[INDEXANALYSIS]" Column="avg_fragmentation_in_percent" />
+                                        </Identifier>
+                                      </ScalarOperator>
+                                    </Aggregate>
+                                  </ScalarOperator>
+                                </DefinedValue>
+                              </DefinedValues>
+                              <RelOp NodeId="6" PhysicalOp="Nested Loops" LogicalOp="Inner Join" EstimateRows="2.02421" EstimateIO="0" EstimateCPU="4.18e-006" AvgRowSize="15" EstimatedTotalSubtreeCost="0.00989182" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                                <OutputList>
+                                  <ColumnReference Table="[INDEXANALYSIS]" Column="avg_fragmentation_in_percent" />
+                                </OutputList>
+                                <NestedLoops Optimized="0">
+                                  <OuterReferences>
+                                    <ColumnReference Database="[RebuildVsReorg]" Schema="[sys]" Table="[sysidxstats]" Alias="[i]" Column="type" />
+                                    <ColumnReference Table="[INDEXANALYSIS]" Column="object_id" />
+                                  </OuterReferences>
+                                  <RelOp NodeId="8" PhysicalOp="Nested Loops" LogicalOp="Inner Join" EstimateRows="1.22845" EstimateIO="0" EstimateCPU="9.91234e-006" AvgRowSize="20" EstimatedTotalSubtreeCost="0.00660333" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                                    <OutputList>
+                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[sys]" Table="[sysidxstats]" Alias="[i]" Column="type" />
+                                      <ColumnReference Table="[INDEXANALYSIS]" Column="object_id" />
+                                      <ColumnReference Table="[INDEXANALYSIS]" Column="avg_fragmentation_in_percent" />
+                                    </OutputList>
+                                    <NestedLoops Optimized="0">
+                                      <OuterReferences>
+                                        <ColumnReference Table="[INDEXANALYSIS]" Column="object_id" />
+                                      </OuterReferences>
+                                      <RelOp NodeId="9" PhysicalOp="Filter" LogicalOp="Filter" EstimateRows="2.37137" EstimateIO="0" EstimateCPU="0.00118" AvgRowSize="19" EstimatedTotalSubtreeCost="0.00228016" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                                        <OutputList>
+                                          <ColumnReference Table="[INDEXANALYSIS]" Column="object_id" />
+                                          <ColumnReference Table="[INDEXANALYSIS]" Column="avg_fragmentation_in_percent" />
+                                        </OutputList>
+                                        <Filter StartupExpression="0">
+                                          <RelOp NodeId="10" PhysicalOp="Compute Scalar" LogicalOp="Compute Scalar" EstimateRows="1000" EstimateIO="0" EstimateCPU="0.0001" AvgRowSize="217" EstimatedTotalSubtreeCost="0.00110016" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                                            <OutputList>
+                                              <ColumnReference Table="[INDEXANALYSIS]" Column="object_id" />
+                                              <ColumnReference Table="[INDEXANALYSIS]" Column="index_id" />
+                                              <ColumnReference Table="[INDEXANALYSIS]" Column="alloc_unit_type_desc" />
+                                              <ColumnReference Table="[INDEXANALYSIS]" Column="avg_fragmentation_in_percent" />
+                                              <ColumnReference Column="Expr1023" />
+                                            </OutputList>
+                                            <ComputeScalar>
+                                              <DefinedValues>
+                                                <DefinedValue>
+                                                  <ColumnReference Column="Expr1023" />
+                                                  <ScalarOperator ScalarString="object_name(INDEXANALYSIS.[object_id])">
+                                                    <Intrinsic FunctionName="object_name">
+                                                      <ScalarOperator>
+                                                        <Identifier>
+                                                          <ColumnReference Table="[INDEXANALYSIS]" Column="object_id" />
+                                                        </Identifier>
+                                                      </ScalarOperator>
+                                                      <ScalarOperator>
+                                                        <Const ConstValue="" />
+                                                      </ScalarOperator>
+                                                    </Intrinsic>
+                                                  </ScalarOperator>
+                                                </DefinedValue>
+                                              </DefinedValues>
+                                              <RelOp NodeId="11" PhysicalOp="Table-valued function" LogicalOp="Table-valued function" EstimateRows="1000" EstimateIO="0" EstimateCPU="0.00100016" AvgRowSize="87" EstimatedTotalSubtreeCost="0.00100016" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                                                <OutputList>
+                                                  <ColumnReference Table="[INDEXANALYSIS]" Column="object_id" />
+                                                  <ColumnReference Table="[INDEXANALYSIS]" Column="index_id" />
+                                                  <ColumnReference Table="[INDEXANALYSIS]" Column="alloc_unit_type_desc" />
+                                                  <ColumnReference Table="[INDEXANALYSIS]" Column="avg_fragmentation_in_percent" />
+                                                </OutputList>
+                                                <TableValuedFunction>
+                                                  <DefinedValues>
+                                                    <DefinedValue>
+                                                      <ColumnReference Table="[INDEXANALYSIS]" Column="object_id" />
+                                                    </DefinedValue>
+                                                    <DefinedValue>
+                                                      <ColumnReference Table="[INDEXANALYSIS]" Column="index_id" />
+                                                    </DefinedValue>
+                                                    <DefinedValue>
+                                                      <ColumnReference Table="[INDEXANALYSIS]" Column="alloc_unit_type_desc" />
+                                                    </DefinedValue>
+                                                    <DefinedValue>
+                                                      <ColumnReference Table="[INDEXANALYSIS]" Column="avg_fragmentation_in_percent" />
+                                                    </DefinedValue>
+                                                  </DefinedValues>
+                                                  <Object Table="[INDEXANALYSIS]" />
+                                                  <ParameterList>
+                                                    <ScalarOperator ScalarString="db_id()">
+                                                      <Identifier>
+                                                        <ColumnReference Column="ConstExpr1018">
+                                                          <ScalarOperator>
+                                                            <Intrinsic FunctionName="db_id">
+                                                              <ScalarOperator>
+                                                                <Const ConstValue="" />
+                                                              </ScalarOperator>
+                                                            </Intrinsic>
+                                                          </ScalarOperator>
+                                                        </ColumnReference>
+                                                      </Identifier>
+                                                    </ScalarOperator>
+                                                    <ScalarOperator ScalarString="NULL">
+                                                      <Const ConstValue="NULL" />
+                                                    </ScalarOperator>
+                                                    <ScalarOperator ScalarString="NULL">
+                                                      <Const ConstValue="NULL" />
+                                                    </ScalarOperator>
+                                                    <ScalarOperator ScalarString="NULL">
+                                                      <Const ConstValue="NULL" />
+                                                    </ScalarOperator>
+                                                    <ScalarOperator ScalarString="N'LIMITED'">
+                                                      <Const ConstValue="N'LIMITED'" />
+                                                    </ScalarOperator>
+                                                  </ParameterList>
+                                                </TableValuedFunction>
+                                              </RelOp>
+                                            </ComputeScalar>
+                                          </RelOp>
+                                          <Predicate>
+                                            <ScalarOperator ScalarString="[Expr1023]=N'RealBigTest' AND INDEXANALYSIS.[index_id]=(1) AND INDEXANALYSIS.[alloc_unit_type_desc]=N'IN_ROW_DATA'">
+                                              <Logical Operation="AND">
+                                                <ScalarOperator>
+                                                  <Compare CompareOp="EQ">
+                                                    <ScalarOperator>
+                                                      <Identifier>
+                                                        <ColumnReference Column="Expr1023" />
+                                                      </Identifier>
+                                                    </ScalarOperator>
+                                                    <ScalarOperator>
+                                                      <Const ConstValue="N'RealBigTest'" />
+                                                    </ScalarOperator>
+                                                  </Compare>
+                                                </ScalarOperator>
+                                                <ScalarOperator>
+                                                  <Compare CompareOp="EQ">
+                                                    <ScalarOperator>
+                                                      <Identifier>
+                                                        <ColumnReference Table="[INDEXANALYSIS]" Column="index_id" />
+                                                      </Identifier>
+                                                    </ScalarOperator>
+                                                    <ScalarOperator>
+                                                      <Const ConstValue="(1)" />
+                                                    </ScalarOperator>
+                                                  </Compare>
+                                                </ScalarOperator>
+                                                <ScalarOperator>
+                                                  <Compare CompareOp="EQ">
+                                                    <ScalarOperator>
+                                                      <Identifier>
+                                                        <ColumnReference Table="[INDEXANALYSIS]" Column="alloc_unit_type_desc" />
+                                                      </Identifier>
+                                                    </ScalarOperator>
+                                                    <ScalarOperator>
+                                                      <Const ConstValue="N'IN_ROW_DATA'" />
+                                                    </ScalarOperator>
+                                                  </Compare>
+                                                </ScalarOperator>
+                                              </Logical>
+                                            </ScalarOperator>
+                                          </Predicate>
+                                        </Filter>
+                                      </RelOp>
+                                      <RelOp NodeId="21" PhysicalOp="Filter" LogicalOp="Filter" EstimateRows="1" EstimateIO="0" EstimateCPU="1.48e-006" AvgRowSize="9" EstimatedTotalSubtreeCost="0.00431327" Parallel="0" EstimateRebinds="0.831447" EstimateRewinds="0.539927" EstimatedExecutionMode="Row">
+                                        <OutputList>
+                                          <ColumnReference Database="[RebuildVsReorg]" Schema="[sys]" Table="[sysidxstats]" Alias="[i]" Column="type" />
+                                        </OutputList>
+                                        <Filter StartupExpression="0">
+                                          <RelOp NodeId="22" PhysicalOp="Clustered Index Seek" LogicalOp="Clustered Index Seek" EstimateRows="1" EstimateIO="0.003125" EstimateCPU="0.0001581" AvgRowSize="16" EstimatedTotalSubtreeCost="0.00430976" TableCardinality="215" Parallel="0" EstimateRebinds="0.831447" EstimateRewinds="0.539927" EstimatedExecutionMode="Row">
+                                            <OutputList>
+                                              <ColumnReference Database="[RebuildVsReorg]" Schema="[sys]" Table="[sysidxstats]" Alias="[i]" Column="id" />
+                                              <ColumnReference Database="[RebuildVsReorg]" Schema="[sys]" Table="[sysidxstats]" Alias="[i]" Column="type" />
+                                            </OutputList>
+                                            <IndexScan Ordered="1" ScanDirection="FORWARD" ForcedIndex="0" ForceSeek="0" ForceScan="0" NoExpandHint="0" Storage="RowStore">
+                                              <DefinedValues>
+                                                <DefinedValue>
+                                                  <ColumnReference Database="[RebuildVsReorg]" Schema="[sys]" Table="[sysidxstats]" Alias="[i]" Column="id" />
+                                                </DefinedValue>
+                                                <DefinedValue>
+                                                  <ColumnReference Database="[RebuildVsReorg]" Schema="[sys]" Table="[sysidxstats]" Alias="[i]" Column="type" />
+                                                </DefinedValue>
+                                              </DefinedValues>
+                                              <Object Database="[RebuildVsReorg]" Schema="[sys]" Table="[sysidxstats]" Index="[clst]" Alias="[i]" IndexKind="Clustered" Storage="RowStore" />
+                                              <SeekPredicates>
+                                                <SeekPredicateNew>
+                                                  <SeekKeys>
+                                                    <Prefix ScanType="EQ">
+                                                      <RangeColumns>
+                                                        <ColumnReference Database="[RebuildVsReorg]" Schema="[sys]" Table="[sysidxstats]" Alias="[i]" Column="id" />
+                                                        <ColumnReference Database="[RebuildVsReorg]" Schema="[sys]" Table="[sysidxstats]" Alias="[i]" Column="indid" />
+                                                      </RangeColumns>
+                                                      <RangeExpressions>
+                                                        <ScalarOperator ScalarString="INDEXANALYSIS.[object_id]">
+                                                          <Identifier>
+                                                            <ColumnReference Table="[INDEXANALYSIS]" Column="object_id" />
+                                                          </Identifier>
+                                                        </ScalarOperator>
+                                                        <ScalarOperator ScalarString="(1)">
+                                                          <Const ConstValue="(1)" />
+                                                        </ScalarOperator>
+                                                      </RangeExpressions>
+                                                    </Prefix>
+                                                  </SeekKeys>
+                                                </SeekPredicateNew>
+                                              </SeekPredicates>
+                                              <Predicate>
+                                                <ScalarOperator ScalarString="([RebuildVsReorg].[sys].[sysidxstats].[status] as [i].[status]&amp;(1))&lt;&gt;(0)">
+                                                  <Compare CompareOp="NE">
+                                                    <ScalarOperator>
+                                                      <Arithmetic Operation="BIT_AND">
+                                                        <ScalarOperator>
+                                                          <Identifier>
+                                                            <ColumnReference Database="[RebuildVsReorg]" Schema="[sys]" Table="[sysidxstats]" Alias="[i]" Column="status" />
+                                                          </Identifier>
+                                                        </ScalarOperator>
+                                                        <ScalarOperator>
+                                                          <Const ConstValue="(1)" />
+                                                        </ScalarOperator>
+                                                      </Arithmetic>
+                                                    </ScalarOperator>
+                                                    <ScalarOperator>
+                                                      <Const ConstValue="(0)" />
+                                                    </ScalarOperator>
+                                                  </Compare>
+                                                </ScalarOperator>
+                                              </Predicate>
+                                            </IndexScan>
+                                          </RelOp>
+                                          <Predicate>
+                                            <ScalarOperator ScalarString="has_access('CO',[RebuildVsReorg].[sys].[sysidxstats].[id] as [i].[id])=(1)">
+                                              <Compare CompareOp="EQ">
+                                                <ScalarOperator>
+                                                  <Intrinsic FunctionName="has_access">
+                                                    <ScalarOperator>
+                                                      <Const ConstValue="'CO'" />
+                                                    </ScalarOperator>
+                                                    <ScalarOperator>
+                                                      <Identifier>
+                                                        <ColumnReference Database="[RebuildVsReorg]" Schema="[sys]" Table="[sysidxstats]" Alias="[i]" Column="id" />
+                                                      </Identifier>
+                                                    </ScalarOperator>
+                                                    <ScalarOperator>
+                                                      <Const ConstValue="" />
+                                                    </ScalarOperator>
+                                                    <ScalarOperator>
+                                                      <Const ConstValue="" />
+                                                    </ScalarOperator>
+                                                  </Intrinsic>
+                                                </ScalarOperator>
+                                                <ScalarOperator>
+                                                  <Const ConstValue="(1)" />
+                                                </ScalarOperator>
+                                              </Compare>
+                                            </ScalarOperator>
+                                          </Predicate>
+                                        </Filter>
+                                      </RelOp>
+                                    </NestedLoops>
+                                  </RelOp>
+                                  <RelOp NodeId="25" PhysicalOp="Clustered Index Seek" LogicalOp="Clustered Index Seek" EstimateRows="1" EstimateIO="0.003125" EstimateCPU="0.0001581" AvgRowSize="11" EstimatedTotalSubtreeCost="0.0032831" TableCardinality="2265" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                                    <OutputList />
+                                    <IndexScan Ordered="1" ScanDirection="FORWARD" ForcedIndex="0" ForceSeek="0" ForceScan="0" NoExpandHint="0" Storage="RowStore">
+                                      <DefinedValues />
+                                      <Object Database="[RebuildVsReorg]" Schema="[sys]" Table="[sysschobjs]" Index="[clst]" Alias="[obj]" IndexKind="Clustered" Storage="RowStore" />
+                                      <SeekPredicates>
+                                        <SeekPredicateNew>
+                                          <SeekKeys>
+                                            <Prefix ScanType="EQ">
+                                              <RangeColumns>
+                                                <ColumnReference Database="[RebuildVsReorg]" Schema="[sys]" Table="[sysschobjs]" Alias="[obj]" Column="id" />
+                                              </RangeColumns>
+                                              <RangeExpressions>
+                                                <ScalarOperator ScalarString="INDEXANALYSIS.[object_id]">
+                                                  <Identifier>
+                                                    <ColumnReference Table="[INDEXANALYSIS]" Column="object_id" />
+                                                  </Identifier>
+                                                </ScalarOperator>
+                                              </RangeExpressions>
+                                            </Prefix>
+                                          </SeekKeys>
+                                        </SeekPredicateNew>
+                                      </SeekPredicates>
+                                      <Predicate>
+                                        <ScalarOperator ScalarString="[RebuildVsReorg].[sys].[sysidxstats].[type] as [i].[type]&lt;&gt;(0) OR ([RebuildVsReorg].[sys].[sysschobjs].[status2] as [obj].[status2]&amp;(8))=(0)">
+                                          <Logical Operation="OR">
+                                            <ScalarOperator>
+                                              <Compare CompareOp="NE">
+                                                <ScalarOperator>
+                                                  <Identifier>
+                                                    <ColumnReference Database="[RebuildVsReorg]" Schema="[sys]" Table="[sysidxstats]" Alias="[i]" Column="type" />
+                                                  </Identifier>
+                                                </ScalarOperator>
+                                                <ScalarOperator>
+                                                  <Const ConstValue="(0)" />
+                                                </ScalarOperator>
+                                              </Compare>
+                                            </ScalarOperator>
+                                            <ScalarOperator>
+                                              <Compare CompareOp="EQ">
+                                                <ScalarOperator>
+                                                  <Arithmetic Operation="BIT_AND">
+                                                    <ScalarOperator>
+                                                      <Identifier>
+                                                        <ColumnReference Database="[RebuildVsReorg]" Schema="[sys]" Table="[sysschobjs]" Alias="[obj]" Column="status2" />
+                                                      </Identifier>
+                                                    </ScalarOperator>
+                                                    <ScalarOperator>
+                                                      <Const ConstValue="(8)" />
+                                                    </ScalarOperator>
+                                                  </Arithmetic>
+                                                </ScalarOperator>
+                                                <ScalarOperator>
+                                                  <Const ConstValue="(0)" />
+                                                </ScalarOperator>
+                                              </Compare>
+                                            </ScalarOperator>
+                                          </Logical>
+                                        </ScalarOperator>
+                                      </Predicate>
+                                    </IndexScan>
+                                  </RelOp>
+                                </NestedLoops>
+                              </RelOp>
+                            </StreamAggregate>
+                          </RelOp>
+                          <Predicate>
+                            <ScalarOperator ScalarString="CASE WHEN [Expr1019]&gt;(1) THEN (0) ELSE NULL END">
+                              <IF>
+                                <Condition>
+                                  <ScalarOperator>
+                                    <Compare CompareOp="GT">
+                                      <ScalarOperator>
+                                        <Identifier>
+                                          <ColumnReference Column="Expr1019" />
+                                        </Identifier>
+                                      </ScalarOperator>
+                                      <ScalarOperator>
+                                        <Const ConstValue="(1)" />
+                                      </ScalarOperator>
+                                    </Compare>
+                                  </ScalarOperator>
+                                </Condition>
+                                <Then>
+                                  <ScalarOperator>
+                                    <Const ConstValue="(0)" />
+                                  </ScalarOperator>
+                                </Then>
+                                <Else>
+                                  <ScalarOperator>
+                                    <Const ConstValue="NULL" />
+                                  </ScalarOperator>
+                                </Else>
+                              </IF>
+                            </ScalarOperator>
+                          </Predicate>
+                        </Assert>
+                      </RelOp>
+                    </NestedLoops>
+                  </RelOp>
+                </ComputeScalar>
+              </RelOp>
+            </QueryPlan>
+          </Condition>
+          <Then>
+            <Statements>
+              <StmtSimple StatementText="&#xD;&#xA;    &#xD;&#xA;	BEGIN&#xD;&#xA; &#xD;&#xA;        SELECT TOP ( 5000 )&#xD;&#xA;                @bmax = [Sequence]&#xD;&#xA;        FROM    dbo.RealBigTest WITH ( NOLOCK )&#xD;&#xA;        WHERE [Sequence] &gt; @hkey&#xD;&#xA;        ORDER BY Sequence" StatementId="4" StatementCompId="4" StatementType="SELECT" RetrievedFromCache="true" StatementSubTreeCost="0.0216897" StatementEstRows="5000" StatementOptmLevel="TRIVIAL" QueryHash="0xFDD1EFD7E6845E59" QueryPlanHash="0x6EF9DDE027566DA8" CardinalityEstimationModelVersion="120">
+                <StatementSetOptions QUOTED_IDENTIFIER="true" ARITHABORT="true" CONCAT_NULL_YIELDS_NULL="true" ANSI_NULLS="true" ANSI_PADDING="true" ANSI_WARNINGS="true" NUMERIC_ROUNDABORT="false" />
+                <QueryPlan CachedPlanSize="24" CompileTime="0" CompileCPU="0" CompileMemory="192">
+                  <MemoryGrantInfo SerialRequiredMemory="0" SerialDesiredMemory="0" />
+                  <OptimizerHardwareDependentProperties EstimatedAvailableMemoryGrant="431413" EstimatedPagesCached="1509945" EstimatedAvailableDegreeOfParallelism="8" />
+                  <RelOp NodeId="0" PhysicalOp="Top" LogicalOp="Top" EstimateRows="5000" EstimateIO="0" EstimateCPU="0.0005" AvgRowSize="15" EstimatedTotalSubtreeCost="0.0216897" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                    <OutputList>
+                      <ColumnReference Column="Expr1002" />
+                    </OutputList>
+                    <Top RowCount="0" IsPercent="0" WithTies="0">
+                      <TopExpression>
+                        <ScalarOperator ScalarString="(5000)">
+                          <Const ConstValue="(5000)" />
+                        </ScalarOperator>
+                      </TopExpression>
+                      <RelOp NodeId="1" PhysicalOp="Compute Scalar" LogicalOp="Compute Scalar" EstimateRows="5000" EstimateIO="0" EstimateCPU="1.5" AvgRowSize="19" EstimatedTotalSubtreeCost="0.0211897" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                        <OutputList>
+                          <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Column="Sequence" />
+                          <ColumnReference Column="Expr1002" />
+                        </OutputList>
+                        <ComputeScalar>
+                          <DefinedValues>
+                            <DefinedValue>
+                              <ColumnReference Column="Expr1002" />
+                              <ScalarOperator ScalarString="CONVERT_IMPLICIT(bigint,[RebuildVsReorg].[dbo].[RealBigTest].[Sequence],0)">
+                                <Convert DataType="bigint" Style="0" Implicit="1">
+                                  <ScalarOperator>
+                                    <Identifier>
+                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Column="Sequence" />
+                                    </Identifier>
+                                  </ScalarOperator>
+                                </Convert>
+                              </ScalarOperator>
+                            </DefinedValue>
+                          </DefinedValues>
+                          <RelOp NodeId="2" PhysicalOp="Nested Loops" LogicalOp="Inner Join" EstimateRows="5000" EstimateIO="35.7335" EstimateCPU="16.5002" AvgRowSize="11" EstimatedTotalSubtreeCost="0.0206897" TableCardinality="5e+007" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                            <OutputList>
+                              <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Column="Sequence" />
+                            </OutputList>
+                            <NestedLoops Optimized="0">
+                              <OuterReferences>
+                                <ColumnReference Column="Expr1004" />
+                                <ColumnReference Column="Expr1005" />
+                                <ColumnReference Column="Expr1003" />
+                              </OuterReferences>
+                              <RelOp NodeId="3" PhysicalOp="Compute Scalar" LogicalOp="Compute Scalar" EstimateRows="1" EstimateIO="0" EstimateCPU="0" AvgRowSize="19" EstimatedTotalSubtreeCost="0" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                                <OutputList>
+                                  <ColumnReference Column="Expr1004" />
+                                  <ColumnReference Column="Expr1005" />
+                                  <ColumnReference Column="Expr1003" />
+                                </OutputList>
+                                <ComputeScalar>
+                                  <DefinedValues>
+                                    <DefinedValue>
+                                      <ValueVector>
+                                        <ColumnReference Column="Expr1004" />
+                                        <ColumnReference Column="Expr1005" />
+                                        <ColumnReference Column="Expr1003" />
+                                      </ValueVector>
+                                      <ScalarOperator ScalarString="GetRangeWithMismatchedTypes([@hkey],NULL,(6))">
+                                        <Intrinsic FunctionName="GetRangeWithMismatchedTypes">
+                                          <ScalarOperator>
+                                            <Identifier>
+                                              <ColumnReference Column="@hkey" />
+                                            </Identifier>
+                                          </ScalarOperator>
+                                          <ScalarOperator>
+                                            <Const ConstValue="NULL" />
+                                          </ScalarOperator>
+                                          <ScalarOperator>
+                                            <Const ConstValue="(6)" />
+                                          </ScalarOperator>
+                                        </Intrinsic>
+                                      </ScalarOperator>
+                                    </DefinedValue>
+                                  </DefinedValues>
+                                  <RelOp NodeId="4" PhysicalOp="Constant Scan" LogicalOp="Constant Scan" EstimateRows="1" EstimateIO="0" EstimateCPU="0" AvgRowSize="0" EstimatedTotalSubtreeCost="0" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                                    <OutputList />
+                                    <ConstantScan />
+                                  </RelOp>
+                                </ComputeScalar>
+                              </RelOp>
+                              <RelOp NodeId="8" PhysicalOp="Index Seek" LogicalOp="Index Seek" EstimateRows="5000" EstimateIO="35.7335" EstimateCPU="16.5002" AvgRowSize="11" EstimatedTotalSubtreeCost="0.0206897" TableCardinality="5e+007" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                                <OutputList>
+                                  <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Column="Sequence" />
+                                </OutputList>
+                                <IndexScan Ordered="1" ScanDirection="FORWARD" ForcedIndex="0" ForceSeek="0" ForceScan="0" NoExpandHint="0" Storage="RowStore">
+                                  <DefinedValues>
+                                    <DefinedValue>
+                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Column="Sequence" />
+                                    </DefinedValue>
+                                  </DefinedValues>
+                                  <Object Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Index="[IX_RealBigTable_Sequence_ID]" IndexKind="NonClustered" Storage="RowStore" />
+                                  <SeekPredicates>
+                                    <SeekPredicateNew>
+                                      <SeekKeys>
+                                        <StartRange ScanType="GT">
+                                          <RangeColumns>
+                                            <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Column="Sequence" />
+                                          </RangeColumns>
+                                          <RangeExpressions>
+                                            <ScalarOperator ScalarString="[Expr1004]">
+                                              <Identifier>
+                                                <ColumnReference Column="Expr1004" />
+                                              </Identifier>
+                                            </ScalarOperator>
+                                          </RangeExpressions>
+                                        </StartRange>
+                                        <EndRange ScanType="LT">
+                                          <RangeColumns>
+                                            <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Column="Sequence" />
+                                          </RangeColumns>
+                                          <RangeExpressions>
+                                            <ScalarOperator ScalarString="[Expr1005]">
+                                              <Identifier>
+                                                <ColumnReference Column="Expr1005" />
+                                              </Identifier>
+                                            </ScalarOperator>
+                                          </RangeExpressions>
+                                        </EndRange>
+                                      </SeekKeys>
+                                    </SeekPredicateNew>
+                                  </SeekPredicates>
+                                </IndexScan>
+                              </RelOp>
+                            </NestedLoops>
+                          </RelOp>
+                        </ComputeScalar>
+                      </RelOp>
+                    </Top>
+                  </RelOp>
+                </QueryPlan>
+              </StmtSimple>
+              <StmtSimple StatementText=";&#xD;&#xA; &#xD;&#xA;        UPDATE  R&#xD;&#xA;        SET     ID = NEWID()&#xD;&#xA;        FROM    dbo.RealBigTest R&#xD;&#xA;        WHERE   R.[Sequence] &gt; @hkey&#xD;&#xA;                AND R.[Sequence] &lt;= @bmax" StatementId="5" StatementCompId="5" StatementType="UPDATE" RetrievedFromCache="true" StatementSubTreeCost="135408" StatementEstRows="1.23238e+007" StatementOptmLevel="FULL" QueryHash="0x5CB4BE2707F3DF39" QueryPlanHash="0xB6C42020102EB03D" CardinalityEstimationModelVersion="120">
+                <StatementSetOptions QUOTED_IDENTIFIER="true" ARITHABORT="true" CONCAT_NULL_YIELDS_NULL="true" ANSI_NULLS="true" ANSI_PADDING="true" ANSI_WARNINGS="true" NUMERIC_ROUNDABORT="false" />
+                <QueryPlan CachedPlanSize="96" CompileTime="2" CompileCPU="2" CompileMemory="496">
+                  <MemoryGrantInfo SerialRequiredMemory="512" SerialDesiredMemory="83726600" />
+                  <OptimizerHardwareDependentProperties EstimatedAvailableMemoryGrant="431413" EstimatedPagesCached="1509945" EstimatedAvailableDegreeOfParallelism="8" />
+                  <RelOp NodeId="1" PhysicalOp="Index Update" LogicalOp="Update" EstimateRows="1.23238e+007" EstimateIO="267.774" EstimateCPU="12.3238" AvgRowSize="9" EstimatedTotalSubtreeCost="135408" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                    <OutputList />
+                    <Update WithOrderedPrefetch="1" DMLRequestSort="1">
+                      <Object Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Index="[IX_RealBigTable_Sequence_ID]" Alias="[R]" IndexKind="NonClustered" Storage="RowStore" />
+                      <SetPredicate>
+                        <ScalarOperator ScalarString="[ID1008] = [RebuildVsReorg].[dbo].[RealBigTest].[ID] as [R].[ID],[Sequence1009] = [RebuildVsReorg].[dbo].[RealBigTest].[Sequence] as [R].[Sequence]">
+                          <ScalarExpressionList>
+                            <ScalarOperator>
+                              <MultipleAssign>
+                                <Assign>
+                                  <ColumnReference Column="ID1008" />
+                                  <ScalarOperator>
+                                    <Identifier>
+                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="ID" />
+                                    </Identifier>
+                                  </ScalarOperator>
+                                </Assign>
+                                <Assign>
+                                  <ColumnReference Column="Sequence1009" />
+                                  <ScalarOperator>
+                                    <Identifier>
+                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="Sequence" />
+                                    </Identifier>
+                                  </ScalarOperator>
+                                </Assign>
+                              </MultipleAssign>
+                            </ScalarOperator>
+                          </ScalarExpressionList>
+                        </ScalarOperator>
+                      </SetPredicate>
+                      <ActionColumn>
+                        <ColumnReference Column="Act1007" />
+                      </ActionColumn>
+                      <RelOp NodeId="3" PhysicalOp="Filter" LogicalOp="Filter" EstimateRows="1.23238e+007" EstimateIO="0" EstimateCPU="8.87311" AvgRowSize="31" EstimatedTotalSubtreeCost="135128" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                        <OutputList>
+                          <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="ID" />
+                          <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="Sequence" />
+                          <ColumnReference Column="Act1007" />
+                        </OutputList>
+                        <Filter StartupExpression="0">
+                          <RelOp NodeId="4" PhysicalOp="Collapse" LogicalOp="Collapse" EstimateRows="1.84856e+007" EstimateIO="0" EstimateCPU="43.1332" AvgRowSize="31" EstimatedTotalSubtreeCost="135119" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                            <OutputList>
+                              <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="ID" />
+                              <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="Sequence" />
+                              <ColumnReference Column="Act1007" />
+                            </OutputList>
+                            <Collapse>
+                              <GroupBy>
+                                <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="Sequence" />
+                                <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="ID" />
+                              </GroupBy>
+                              <RelOp NodeId="5" PhysicalOp="Sort" LogicalOp="Sort" EstimateRows="2.46475e+007" EstimateIO="1968.54" EstimateCPU="999.661" AvgRowSize="31" EstimatedTotalSubtreeCost="135076" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                                <OutputList>
+                                  <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="ID" />
+                                  <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="Sequence" />
+                                  <ColumnReference Column="Act1007" />
+                                </OutputList>
+                                <MemoryFractions Input="1" Output="1" />
+                                <Sort Distinct="0">
+                                  <OrderBy>
+                                    <OrderByColumn Ascending="1">
+                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="Sequence" />
+                                    </OrderByColumn>
+                                    <OrderByColumn Ascending="1">
+                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="ID" />
+                                    </OrderByColumn>
+                                    <OrderByColumn Ascending="1">
+                                      <ColumnReference Column="Act1007" />
+                                    </OrderByColumn>
+                                  </OrderBy>
+                                  <RelOp NodeId="6" PhysicalOp="Split" LogicalOp="Split" EstimateRows="2.46475e+007" EstimateIO="0" EstimateCPU="18.4856" AvgRowSize="31" EstimatedTotalSubtreeCost="132108" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                                    <OutputList>
+                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="ID" />
+                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="Sequence" />
+                                      <ColumnReference Column="Act1007" />
+                                    </OutputList>
+                                    <Split>
+                                      <DefinedValues>
+                                        <DefinedValue>
+                                          <ColumnReference Column="Act1007" />
+                                        </DefinedValue>
+                                      </DefinedValues>
+                                      <ActionColumn>
+                                        <ColumnReference Column="Act1007" />
+                                      </ActionColumn>
+                                      <RelOp NodeId="7" PhysicalOp="Clustered Index Update" LogicalOp="Update" EstimateRows="1.23238e+007" EstimateIO="7638.83" EstimateCPU="12.3238" AvgRowSize="51" EstimatedTotalSubtreeCost="132089" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                                        <OutputList>
+                                          <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="ID" />
+                                          <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="Sequence" />
+                                          <ColumnReference Column="ID_OLD" />
+                                          <ColumnReference Column="Sequence_OLD" />
+                                          <ColumnReference Column="Act1007" />
+                                        </OutputList>
+                                        <Update WithOrderedPrefetch="1" DMLRequestSort="1">
+                                          <Object Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Index="[PK_RealBigTest]" Alias="[R]" IndexKind="Clustered" Storage="RowStore" />
+                                          <SetPredicate SetPredicateType="Insert">
+                                            <ScalarOperator ScalarString="[RebuildVsReorg].[dbo].[RealBigTest].[ID] as [R].[ID] = RaiseIfNullUpdate([RebuildVsReorg].[dbo].[RealBigTest].[ID] as [R].[ID]),[RebuildVsReorg].[dbo].[RealBigTest].[Dummy] as [R].[Dummy] = RaiseIfNullUpdate([RebuildVsReorg].[dbo].[RealBigTest].[Dummy] as [R].[Dummy]),[RebuildVsReorg].[dbo].[RealBigTest].[Sequence] as [R].[Sequence] = RaiseIfNullUpdate([RebuildVsReorg].[dbo].[RealBigTest].[Sequence] as [R].[Sequence]),[RebuildVsReorg].[dbo].[RealBigTest].[OrderDate] as [R].[OrderDate] = RaiseIfNullUpdate([RebuildVsReorg].[dbo].[RealBigTest].[OrderDate] as [R].[OrderDate]),[RebuildVsReorg].[dbo].[RealBigTest].[ProcessDate] as [R].[ProcessDate] = RaiseIfNullUpdate([RebuildVsReorg].[dbo].[RealBigTest].[ProcessDate] as [R].[ProcessDate]),[RebuildVsReorg].[dbo].[RealBigTest].[ShipDate] as [R].[ShipDate] = RaiseIfNullUpdate([RebuildVsReorg].[dbo].[RealBigTest].[ShipDate] as [R].[ShipDate]),[RebuildVsReorg].[dbo].[RealBigTest].[CustomerID] as [R].[CustomerID] = RaiseIfNullUpdate([RebuildVsReorg].[dbo].[RealBigTest].[CustomerID] as [R].[CustomerID]),[RebuildVsReorg].[dbo].[RealBigTest].[SalesPersonID] as [R].[SalesPersonID] = RaiseIfNullUpdate([RebuildVsReorg].[dbo].[RealBigTest].[SalesPersonID] as [R].[SalesPersonID]),[RebuildVsReorg].[dbo].[RealBigTest].[SalesOrderID] as [R].[SalesOrderID] = RaiseIfNullUpdate([RebuildVsReorg].[dbo].[RealBigTest].[SalesOrderID] as [R].[SalesOrderID]),[RebuildVsReorg].[dbo].[RealBigTest].[PurchaseOrderID] as [R].[PurchaseOrderID] = RaiseIfNullUpdate([RebuildVsReorg].[dbo].[RealBigTest].[PurchaseOrderID] as [R].[PurchaseOrderID]),[RebuildVsReorg].[dbo].[RealBigTest].[OrderSubTotal] as [R].[OrderSubTotal] = RaiseIfNullUpdate([RebuildVsReorg].[dbo].[RealBigTest].[OrderSubTotal] as [R].[OrderSubTotal]),[RebuildVsReorg].[dbo].[RealBigTest].[OrderTax] as [R].[OrderTax] = RaiseIfNullUpdate([RebuildVsReorg].[dbo].[RealBigTest].[OrderTax] as [R].[OrderTax]),[RebuildVsReorg].[dbo].[RealBigTest].[ShippingCost] as [R].[ShippingCost] = RaiseIfNullUpdate([RebuildVsReorg].[dbo].[RealBigTest].[ShippingCost] as [R].[ShippingCost]),[RebuildVsReorg].[dbo].[RealBigTest].[SalesNotes] as [R].[SalesNotes] = [RebuildVsReorg].[dbo].[RealBigTest].[SalesNotes] as [R].[SalesNotes]">
+                                              <ScalarExpressionList>
+                                                <ScalarOperator>
+                                                  <MultipleAssign>
+                                                    <Assign>
+                                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="ID" />
+                                                      <ScalarOperator>
+                                                        <Intrinsic FunctionName="RaiseIfNullUpdate">
+                                                          <ScalarOperator>
+                                                            <Identifier>
+                                                              <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="ID" />
+                                                            </Identifier>
+                                                          </ScalarOperator>
+                                                        </Intrinsic>
+                                                      </ScalarOperator>
+                                                    </Assign>
+                                                    <Assign>
+                                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="Dummy" />
+                                                      <ScalarOperator>
+                                                        <Intrinsic FunctionName="RaiseIfNullUpdate">
+                                                          <ScalarOperator>
+                                                            <Identifier>
+                                                              <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="Dummy" />
+                                                            </Identifier>
+                                                          </ScalarOperator>
+                                                        </Intrinsic>
+                                                      </ScalarOperator>
+                                                    </Assign>
+                                                    <Assign>
+                                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="Sequence" />
+                                                      <ScalarOperator>
+                                                        <Intrinsic FunctionName="RaiseIfNullUpdate">
+                                                          <ScalarOperator>
+                                                            <Identifier>
+                                                              <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="Sequence" />
+                                                            </Identifier>
+                                                          </ScalarOperator>
+                                                        </Intrinsic>
+                                                      </ScalarOperator>
+                                                    </Assign>
+                                                    <Assign>
+                                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="OrderDate" />
+                                                      <ScalarOperator>
+                                                        <Intrinsic FunctionName="RaiseIfNullUpdate">
+                                                          <ScalarOperator>
+                                                            <Identifier>
+                                                              <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="OrderDate" />
+                                                            </Identifier>
+                                                          </ScalarOperator>
+                                                        </Intrinsic>
+                                                      </ScalarOperator>
+                                                    </Assign>
+                                                    <Assign>
+                                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="ProcessDate" />
+                                                      <ScalarOperator>
+                                                        <Intrinsic FunctionName="RaiseIfNullUpdate">
+                                                          <ScalarOperator>
+                                                            <Identifier>
+                                                              <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="ProcessDate" />
+                                                            </Identifier>
+                                                          </ScalarOperator>
+                                                        </Intrinsic>
+                                                      </ScalarOperator>
+                                                    </Assign>
+                                                    <Assign>
+                                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="ShipDate" />
+                                                      <ScalarOperator>
+                                                        <Intrinsic FunctionName="RaiseIfNullUpdate">
+                                                          <ScalarOperator>
+                                                            <Identifier>
+                                                              <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="ShipDate" />
+                                                            </Identifier>
+                                                          </ScalarOperator>
+                                                        </Intrinsic>
+                                                      </ScalarOperator>
+                                                    </Assign>
+                                                    <Assign>
+                                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="CustomerID" />
+                                                      <ScalarOperator>
+                                                        <Intrinsic FunctionName="RaiseIfNullUpdate">
+                                                          <ScalarOperator>
+                                                            <Identifier>
+                                                              <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="CustomerID" />
+                                                            </Identifier>
+                                                          </ScalarOperator>
+                                                        </Intrinsic>
+                                                      </ScalarOperator>
+                                                    </Assign>
+                                                    <Assign>
+                                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="SalesPersonID" />
+                                                      <ScalarOperator>
+                                                        <Intrinsic FunctionName="RaiseIfNullUpdate">
+                                                          <ScalarOperator>
+                                                            <Identifier>
+                                                              <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="SalesPersonID" />
+                                                            </Identifier>
+                                                          </ScalarOperator>
+                                                        </Intrinsic>
+                                                      </ScalarOperator>
+                                                    </Assign>
+                                                    <Assign>
+                                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="SalesOrderID" />
+                                                      <ScalarOperator>
+                                                        <Intrinsic FunctionName="RaiseIfNullUpdate">
+                                                          <ScalarOperator>
+                                                            <Identifier>
+                                                              <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="SalesOrderID" />
+                                                            </Identifier>
+                                                          </ScalarOperator>
+                                                        </Intrinsic>
+                                                      </ScalarOperator>
+                                                    </Assign>
+                                                    <Assign>
+                                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="PurchaseOrderID" />
+                                                      <ScalarOperator>
+                                                        <Intrinsic FunctionName="RaiseIfNullUpdate">
+                                                          <ScalarOperator>
+                                                            <Identifier>
+                                                              <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="PurchaseOrderID" />
+                                                            </Identifier>
+                                                          </ScalarOperator>
+                                                        </Intrinsic>
+                                                      </ScalarOperator>
+                                                    </Assign>
+                                                    <Assign>
+                                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="OrderSubTotal" />
+                                                      <ScalarOperator>
+                                                        <Intrinsic FunctionName="RaiseIfNullUpdate">
+                                                          <ScalarOperator>
+                                                            <Identifier>
+                                                              <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="OrderSubTotal" />
+                                                            </Identifier>
+                                                          </ScalarOperator>
+                                                        </Intrinsic>
+                                                      </ScalarOperator>
+                                                    </Assign>
+                                                    <Assign>
+                                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="OrderTax" />
+                                                      <ScalarOperator>
+                                                        <Intrinsic FunctionName="RaiseIfNullUpdate">
+                                                          <ScalarOperator>
+                                                            <Identifier>
+                                                              <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="OrderTax" />
+                                                            </Identifier>
+                                                          </ScalarOperator>
+                                                        </Intrinsic>
+                                                      </ScalarOperator>
+                                                    </Assign>
+                                                    <Assign>
+                                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="ShippingCost" />
+                                                      <ScalarOperator>
+                                                        <Intrinsic FunctionName="RaiseIfNullUpdate">
+                                                          <ScalarOperator>
+                                                            <Identifier>
+                                                              <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="ShippingCost" />
+                                                            </Identifier>
+                                                          </ScalarOperator>
+                                                        </Intrinsic>
+                                                      </ScalarOperator>
+                                                    </Assign>
+                                                    <Assign>
+                                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="SalesNotes" />
+                                                      <ScalarOperator>
+                                                        <Identifier>
+                                                          <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="SalesNotes" />
+                                                        </Identifier>
+                                                      </ScalarOperator>
+                                                    </Assign>
+                                                  </MultipleAssign>
+                                                </ScalarOperator>
+                                              </ScalarExpressionList>
+                                            </ScalarOperator>
+                                          </SetPredicate>
+                                          <SetPredicate SetPredicateType="Update">
+                                            <ScalarOperator ScalarString="[RebuildVsReorg].[dbo].[RealBigTest].[Dummy] as [R].[Dummy] = RaiseIfNullUpdate([RebuildVsReorg].[dbo].[RealBigTest].[Dummy] as [R].[Dummy]),[RebuildVsReorg].[dbo].[RealBigTest].[Sequence] as [R].[Sequence] = RaiseIfNullUpdate([RebuildVsReorg].[dbo].[RealBigTest].[Sequence] as [R].[Sequence]),[RebuildVsReorg].[dbo].[RealBigTest].[OrderDate] as [R].[OrderDate] = RaiseIfNullUpdate([RebuildVsReorg].[dbo].[RealBigTest].[OrderDate] as [R].[OrderDate]),[RebuildVsReorg].[dbo].[RealBigTest].[ProcessDate] as [R].[ProcessDate] = RaiseIfNullUpdate([RebuildVsReorg].[dbo].[RealBigTest].[ProcessDate] as [R].[ProcessDate]),[RebuildVsReorg].[dbo].[RealBigTest].[ShipDate] as [R].[ShipDate] = RaiseIfNullUpdate([RebuildVsReorg].[dbo].[RealBigTest].[ShipDate] as [R].[ShipDate]),[RebuildVsReorg].[dbo].[RealBigTest].[CustomerID] as [R].[CustomerID] = RaiseIfNullUpdate([RebuildVsReorg].[dbo].[RealBigTest].[CustomerID] as [R].[CustomerID]),[RebuildVsReorg].[dbo].[RealBigTest].[SalesPersonID] as [R].[SalesPersonID] = RaiseIfNullUpdate([RebuildVsReorg].[dbo].[RealBigTest].[SalesPersonID] as [R].[SalesPersonID]),[RebuildVsReorg].[dbo].[RealBigTest].[SalesOrderID] as [R].[SalesOrderID] = RaiseIfNullUpdate([RebuildVsReorg].[dbo].[RealBigTest].[SalesOrderID] as [R].[SalesOrderID]),[RebuildVsReorg].[dbo].[RealBigTest].[PurchaseOrderID] as [R].[PurchaseOrderID] = RaiseIfNullUpdate([RebuildVsReorg].[dbo].[RealBigTest].[PurchaseOrderID] as [R].[PurchaseOrderID]),[RebuildVsReorg].[dbo].[RealBigTest].[OrderSubTotal] as [R].[OrderSubTotal] = RaiseIfNullUpdate([RebuildVsReorg].[dbo].[RealBigTest].[OrderSubTotal] as [R].[OrderSubTotal]),[RebuildVsReorg].[dbo].[RealBigTest].[OrderTax] as [R].[OrderTax] = RaiseIfNullUpdate([RebuildVsReorg].[dbo].[RealBigTest].[OrderTax] as [R].[OrderTax]),[RebuildVsReorg].[dbo].[RealBigTest].[ShippingCost] as [R].[ShippingCost] = RaiseIfNullUpdate([RebuildVsReorg].[dbo].[RealBigTest].[ShippingCost] as [R].[ShippingCost]),[RebuildVsReorg].[dbo].[RealBigTest].[SalesNotes] as [R].[SalesNotes] = [RebuildVsReorg].[dbo].[RealBigTest].[SalesNotes] as [R].[SalesNotes]">
+                                              <ScalarExpressionList>
+                                                <ScalarOperator>
+                                                  <MultipleAssign>
+                                                    <Assign>
+                                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="Dummy" />
+                                                      <ScalarOperator>
+                                                        <Intrinsic FunctionName="RaiseIfNullUpdate">
+                                                          <ScalarOperator>
+                                                            <Identifier>
+                                                              <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="Dummy" />
+                                                            </Identifier>
+                                                          </ScalarOperator>
+                                                        </Intrinsic>
+                                                      </ScalarOperator>
+                                                    </Assign>
+                                                    <Assign>
+                                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="Sequence" />
+                                                      <ScalarOperator>
+                                                        <Intrinsic FunctionName="RaiseIfNullUpdate">
+                                                          <ScalarOperator>
+                                                            <Identifier>
+                                                              <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="Sequence" />
+                                                            </Identifier>
+                                                          </ScalarOperator>
+                                                        </Intrinsic>
+                                                      </ScalarOperator>
+                                                    </Assign>
+                                                    <Assign>
+                                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="OrderDate" />
+                                                      <ScalarOperator>
+                                                        <Intrinsic FunctionName="RaiseIfNullUpdate">
+                                                          <ScalarOperator>
+                                                            <Identifier>
+                                                              <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="OrderDate" />
+                                                            </Identifier>
+                                                          </ScalarOperator>
+                                                        </Intrinsic>
+                                                      </ScalarOperator>
+                                                    </Assign>
+                                                    <Assign>
+                                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="ProcessDate" />
+                                                      <ScalarOperator>
+                                                        <Intrinsic FunctionName="RaiseIfNullUpdate">
+                                                          <ScalarOperator>
+                                                            <Identifier>
+                                                              <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="ProcessDate" />
+                                                            </Identifier>
+                                                          </ScalarOperator>
+                                                        </Intrinsic>
+                                                      </ScalarOperator>
+                                                    </Assign>
+                                                    <Assign>
+                                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="ShipDate" />
+                                                      <ScalarOperator>
+                                                        <Intrinsic FunctionName="RaiseIfNullUpdate">
+                                                          <ScalarOperator>
+                                                            <Identifier>
+                                                              <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="ShipDate" />
+                                                            </Identifier>
+                                                          </ScalarOperator>
+                                                        </Intrinsic>
+                                                      </ScalarOperator>
+                                                    </Assign>
+                                                    <Assign>
+                                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="CustomerID" />
+                                                      <ScalarOperator>
+                                                        <Intrinsic FunctionName="RaiseIfNullUpdate">
+                                                          <ScalarOperator>
+                                                            <Identifier>
+                                                              <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="CustomerID" />
+                                                            </Identifier>
+                                                          </ScalarOperator>
+                                                        </Intrinsic>
+                                                      </ScalarOperator>
+                                                    </Assign>
+                                                    <Assign>
+                                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="SalesPersonID" />
+                                                      <ScalarOperator>
+                                                        <Intrinsic FunctionName="RaiseIfNullUpdate">
+                                                          <ScalarOperator>
+                                                            <Identifier>
+                                                              <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="SalesPersonID" />
+                                                            </Identifier>
+                                                          </ScalarOperator>
+                                                        </Intrinsic>
+                                                      </ScalarOperator>
+                                                    </Assign>
+                                                    <Assign>
+                                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="SalesOrderID" />
+                                                      <ScalarOperator>
+                                                        <Intrinsic FunctionName="RaiseIfNullUpdate">
+                                                          <ScalarOperator>
+                                                            <Identifier>
+                                                              <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="SalesOrderID" />
+                                                            </Identifier>
+                                                          </ScalarOperator>
+                                                        </Intrinsic>
+                                                      </ScalarOperator>
+                                                    </Assign>
+                                                    <Assign>
+                                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="PurchaseOrderID" />
+                                                      <ScalarOperator>
+                                                        <Intrinsic FunctionName="RaiseIfNullUpdate">
+                                                          <ScalarOperator>
+                                                            <Identifier>
+                                                              <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="PurchaseOrderID" />
+                                                            </Identifier>
+                                                          </ScalarOperator>
+                                                        </Intrinsic>
+                                                      </ScalarOperator>
+                                                    </Assign>
+                                                    <Assign>
+                                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="OrderSubTotal" />
+                                                      <ScalarOperator>
+                                                        <Intrinsic FunctionName="RaiseIfNullUpdate">
+                                                          <ScalarOperator>
+                                                            <Identifier>
+                                                              <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="OrderSubTotal" />
+                                                            </Identifier>
+                                                          </ScalarOperator>
+                                                        </Intrinsic>
+                                                      </ScalarOperator>
+                                                    </Assign>
+                                                    <Assign>
+                                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="OrderTax" />
+                                                      <ScalarOperator>
+                                                        <Intrinsic FunctionName="RaiseIfNullUpdate">
+                                                          <ScalarOperator>
+                                                            <Identifier>
+                                                              <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="OrderTax" />
+                                                            </Identifier>
+                                                          </ScalarOperator>
+                                                        </Intrinsic>
+                                                      </ScalarOperator>
+                                                    </Assign>
+                                                    <Assign>
+                                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="ShippingCost" />
+                                                      <ScalarOperator>
+                                                        <Intrinsic FunctionName="RaiseIfNullUpdate">
+                                                          <ScalarOperator>
+                                                            <Identifier>
+                                                              <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="ShippingCost" />
+                                                            </Identifier>
+                                                          </ScalarOperator>
+                                                        </Intrinsic>
+                                                      </ScalarOperator>
+                                                    </Assign>
+                                                    <Assign>
+                                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="SalesNotes" />
+                                                      <ScalarOperator>
+                                                        <Identifier>
+                                                          <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="SalesNotes" />
+                                                        </Identifier>
+                                                      </ScalarOperator>
+                                                    </Assign>
+                                                  </MultipleAssign>
+                                                </ScalarOperator>
+                                              </ScalarExpressionList>
+                                            </ScalarOperator>
+                                          </SetPredicate>
+                                          <ActionColumn>
+                                            <ColumnReference Column="Act1007" />
+                                          </ActionColumn>
+                                          <RelOp NodeId="9" PhysicalOp="Table Spool" LogicalOp="Eager Spool" EstimateRows="1.23238e+007" EstimateIO="91993" EstimateCPU="4.43665" AvgRowSize="4134" EstimatedTotalSubtreeCost="124438" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                                            <OutputList>
+                                              <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="ID" />
+                                              <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="Sequence" />
+                                              <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="OrderDate" />
+                                              <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="ProcessDate" />
+                                              <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="ShipDate" />
+                                              <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="CustomerID" />
+                                              <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="SalesPersonID" />
+                                              <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="SalesOrderID" />
+                                              <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="PurchaseOrderID" />
+                                              <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="OrderSubTotal" />
+                                              <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="OrderTax" />
+                                              <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="ShippingCost" />
+                                              <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="SalesNotes" />
+                                              <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="Dummy" />
+                                              <ColumnReference Column="Act1007" />
+                                            </OutputList>
+                                            <Spool>
+                                              <RelOp NodeId="10" PhysicalOp="Collapse" LogicalOp="Collapse" EstimateRows="1.23238e+007" EstimateIO="0" EstimateCPU="28.7554" AvgRowSize="4134" EstimatedTotalSubtreeCost="32440.4" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                                                <OutputList>
+                                                  <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="ID" />
+                                                  <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="Sequence" />
+                                                  <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="OrderDate" />
+                                                  <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="ProcessDate" />
+                                                  <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="ShipDate" />
+                                                  <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="CustomerID" />
+                                                  <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="SalesPersonID" />
+                                                  <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="SalesOrderID" />
+                                                  <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="PurchaseOrderID" />
+                                                  <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="OrderSubTotal" />
+                                                  <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="OrderTax" />
+                                                  <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="ShippingCost" />
+                                                  <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="SalesNotes" />
+                                                  <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="Dummy" />
+                                                  <ColumnReference Column="Act1007" />
+                                                </OutputList>
+                                                <Collapse>
+                                                  <GroupBy>
+                                                    <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="ID" />
+                                                  </GroupBy>
+                                                  <RelOp NodeId="11" PhysicalOp="Sort" LogicalOp="Sort" EstimateRows="1.64317e+007" EstimateIO="23130.2" EstimateCPU="77.7903" AvgRowSize="4134" EstimatedTotalSubtreeCost="31748" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                                                    <OutputList>
+                                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="ID" />
+                                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="Sequence" />
+                                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="OrderDate" />
+                                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="ProcessDate" />
+                                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="ShipDate" />
+                                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="CustomerID" />
+                                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="SalesPersonID" />
+                                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="SalesOrderID" />
+                                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="PurchaseOrderID" />
+                                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="OrderSubTotal" />
+                                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="OrderTax" />
+                                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="ShippingCost" />
+                                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="SalesNotes" />
+                                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="Dummy" />
+                                                      <ColumnReference Column="Act1007" />
+                                                    </OutputList>
+                                                    <MemoryFractions Input="1" Output="1" />
+                                                    <Sort Distinct="0">
+                                                      <OrderBy>
+                                                        <OrderByColumn Ascending="1">
+                                                          <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="ID" />
+                                                        </OrderByColumn>
+                                                        <OrderByColumn Ascending="1">
+                                                          <ColumnReference Column="Act1007" />
+                                                        </OrderByColumn>
+                                                      </OrderBy>
+                                                      <RelOp NodeId="12" PhysicalOp="Split" LogicalOp="Split" EstimateRows="1.64317e+007" EstimateIO="0" EstimateCPU="12.3238" AvgRowSize="4134" EstimatedTotalSubtreeCost="3723.47" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                                                        <OutputList>
+                                                          <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="ID" />
+                                                          <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="Sequence" />
+                                                          <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="OrderDate" />
+                                                          <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="ProcessDate" />
+                                                          <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="ShipDate" />
+                                                          <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="CustomerID" />
+                                                          <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="SalesPersonID" />
+                                                          <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="SalesOrderID" />
+                                                          <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="PurchaseOrderID" />
+                                                          <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="OrderSubTotal" />
+                                                          <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="OrderTax" />
+                                                          <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="ShippingCost" />
+                                                          <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="SalesNotes" />
+                                                          <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="Dummy" />
+                                                          <ColumnReference Column="Act1007" />
+                                                        </OutputList>
+                                                        <Split>
+                                                          <DefinedValues>
+                                                            <DefinedValue>
+                                                              <ColumnReference Column="Act1007" />
+                                                            </DefinedValue>
+                                                          </DefinedValues>
+                                                          <ActionColumn>
+                                                            <ColumnReference Column="Act1007" />
+                                                          </ActionColumn>
+                                                          <RelOp NodeId="13" PhysicalOp="Compute Scalar" LogicalOp="Compute Scalar" EstimateRows="8.21584e+006" EstimateIO="0" EstimateCPU="0.821584" AvgRowSize="4146" EstimatedTotalSubtreeCost="3711.15" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                                                            <OutputList>
+                                                              <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="ID" />
+                                                              <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="Sequence" />
+                                                              <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="OrderDate" />
+                                                              <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="ProcessDate" />
+                                                              <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="ShipDate" />
+                                                              <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="CustomerID" />
+                                                              <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="SalesPersonID" />
+                                                              <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="SalesOrderID" />
+                                                              <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="PurchaseOrderID" />
+                                                              <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="OrderSubTotal" />
+                                                              <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="OrderTax" />
+                                                              <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="ShippingCost" />
+                                                              <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="SalesNotes" />
+                                                              <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="Dummy" />
+                                                              <ColumnReference Column="Expr1001" />
+                                                            </OutputList>
+                                                            <ComputeScalar>
+                                                              <DefinedValues>
+                                                                <DefinedValue>
+                                                                  <ColumnReference Column="Expr1001" />
+                                                                  <ScalarOperator ScalarString="newid()">
+                                                                    <Intrinsic FunctionName="newid" />
+                                                                  </ScalarOperator>
+                                                                </DefinedValue>
+                                                              </DefinedValues>
+                                                              <RelOp NodeId="14" PhysicalOp="Clustered Index Scan" LogicalOp="Clustered Index Scan" EstimateRows="8.21584e+006" EstimateIO="3397.67" EstimateCPU="6.87502" AvgRowSize="4130" EstimatedTotalSubtreeCost="3404.55" TableCardinality="5e+007" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                                                                <OutputList>
+                                                                  <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="ID" />
+                                                                  <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="Sequence" />
+                                                                  <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="OrderDate" />
+                                                                  <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="ProcessDate" />
+                                                                  <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="ShipDate" />
+                                                                  <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="CustomerID" />
+                                                                  <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="SalesPersonID" />
+                                                                  <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="SalesOrderID" />
+                                                                  <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="PurchaseOrderID" />
+                                                                  <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="OrderSubTotal" />
+                                                                  <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="OrderTax" />
+                                                                  <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="ShippingCost" />
+                                                                  <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="SalesNotes" />
+                                                                  <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="Dummy" />
+                                                                </OutputList>
+                                                                <IndexScan Ordered="1" ForcedIndex="0" ForceScan="0" NoExpandHint="0" Storage="RowStore">
+                                                                  <DefinedValues>
+                                                                    <DefinedValue>
+                                                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="ID" />
+                                                                    </DefinedValue>
+                                                                    <DefinedValue>
+                                                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="Sequence" />
+                                                                    </DefinedValue>
+                                                                    <DefinedValue>
+                                                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="OrderDate" />
+                                                                    </DefinedValue>
+                                                                    <DefinedValue>
+                                                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="ProcessDate" />
+                                                                    </DefinedValue>
+                                                                    <DefinedValue>
+                                                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="ShipDate" />
+                                                                    </DefinedValue>
+                                                                    <DefinedValue>
+                                                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="CustomerID" />
+                                                                    </DefinedValue>
+                                                                    <DefinedValue>
+                                                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="SalesPersonID" />
+                                                                    </DefinedValue>
+                                                                    <DefinedValue>
+                                                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="SalesOrderID" />
+                                                                    </DefinedValue>
+                                                                    <DefinedValue>
+                                                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="PurchaseOrderID" />
+                                                                    </DefinedValue>
+                                                                    <DefinedValue>
+                                                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="OrderSubTotal" />
+                                                                    </DefinedValue>
+                                                                    <DefinedValue>
+                                                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="OrderTax" />
+                                                                    </DefinedValue>
+                                                                    <DefinedValue>
+                                                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="ShippingCost" />
+                                                                    </DefinedValue>
+                                                                    <DefinedValue>
+                                                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="SalesNotes" />
+                                                                    </DefinedValue>
+                                                                    <DefinedValue>
+                                                                      <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="Dummy" />
+                                                                    </DefinedValue>
+                                                                  </DefinedValues>
+                                                                  <Object Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Index="[PK_RealBigTest]" Alias="[R]" IndexKind="Clustered" Storage="RowStore" />
+                                                                  <Predicate>
+                                                                    <ScalarOperator ScalarString="[RebuildVsReorg].[dbo].[RealBigTest].[Sequence] as [R].[Sequence]&gt;[@hkey] AND [RebuildVsReorg].[dbo].[RealBigTest].[Sequence] as [R].[Sequence]&lt;=[@bmax]">
+                                                                      <Logical Operation="AND">
+                                                                        <ScalarOperator>
+                                                                          <Compare CompareOp="GT">
+                                                                            <ScalarOperator>
+                                                                              <Identifier>
+                                                                                <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="Sequence" />
+                                                                              </Identifier>
+                                                                            </ScalarOperator>
+                                                                            <ScalarOperator>
+                                                                              <Identifier>
+                                                                                <ColumnReference Column="@hkey" />
+                                                                              </Identifier>
+                                                                            </ScalarOperator>
+                                                                          </Compare>
+                                                                        </ScalarOperator>
+                                                                        <ScalarOperator>
+                                                                          <Compare CompareOp="LE">
+                                                                            <ScalarOperator>
+                                                                              <Identifier>
+                                                                                <ColumnReference Database="[RebuildVsReorg]" Schema="[dbo]" Table="[RealBigTest]" Alias="[R]" Column="Sequence" />
+                                                                              </Identifier>
+                                                                            </ScalarOperator>
+                                                                            <ScalarOperator>
+                                                                              <Identifier>
+                                                                                <ColumnReference Column="@bmax" />
+                                                                              </Identifier>
+                                                                            </ScalarOperator>
+                                                                          </Compare>
+                                                                        </ScalarOperator>
+                                                                      </Logical>
+                                                                    </ScalarOperator>
+                                                                  </Predicate>
+                                                                </IndexScan>
+                                                              </RelOp>
+                                                            </ComputeScalar>
+                                                          </RelOp>
+                                                        </Split>
+                                                      </RelOp>
+                                                    </Sort>
+                                                  </RelOp>
+                                                </Collapse>
+                                              </RelOp>
+                                            </Spool>
+                                          </RelOp>
+                                        </Update>
+                                      </RelOp>
+                                    </Split>
+                                  </RelOp>
+                                </Sort>
+                              </RelOp>
+                            </Collapse>
+                          </RelOp>
+                          <Predicate>
+                            <ScalarOperator ScalarString="[Act1007]&lt;&gt;(1)">
+                              <Compare CompareOp="NE">
+                                <ScalarOperator>
+                                  <Identifier>
+                                    <ColumnReference Column="Act1007" />
+                                  </Identifier>
+                                </ScalarOperator>
+                                <ScalarOperator>
+                                  <Const ConstValue="(1)" />
+                                </ScalarOperator>
+                              </Compare>
+                            </ScalarOperator>
+                          </Predicate>
+                        </Filter>
+                      </RelOp>
+                    </Update>
+                  </RelOp>
+                </QueryPlan>
+              </StmtSimple>
+              <StmtSimple StatementText="&#xD;&#xA;                &#xD;&#xA;        SET @hkey = @bmax&#xD;&#xA; &#xD;&#xA;" StatementId="6" StatementCompId="6" StatementType="ASSIGN" RetrievedFromCache="true" />
+              <StmtSimple StatementText="SELECT  @cur = REPLACE(CONVERT(VARCHAR, CAST(@bmax AS MONEY), 1), '.00', '')" StatementId="7" StatementCompId="7" StatementType="ASSIGN" RetrievedFromCache="true" />
+              <StmtSimple StatementText=" --Print out current place in loop, converted to money for commas.&#xD;&#xA;RAISERROR ('Current key: %s', 0, 1, @cur) WITH NOWAIT                   --Reading long numbers is hard without formatting&#xD;&#xA;" StatementId="8" StatementCompId="8" StatementType="RAISERROR" RetrievedFromCache="true" />
+            </Statements>
+          </Then>
+        </StmtCond>
+      </Statements>
+    </Batch>
+  </BatchSequence>
+</ShowPlanXML>

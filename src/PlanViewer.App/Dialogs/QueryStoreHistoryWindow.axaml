@@ -9,26 +9,43 @@
         Icon="avares://PlanViewer.App/EDD.ico"
         Background="{DynamicResource BackgroundBrush}">
 
-    <Grid Margin="12" RowDefinitions="Auto,Auto,300,*,Auto">
+    <Grid Margin="12" RowDefinitions="Auto,Auto,Auto,300,*,Auto">
 
         <!-- Row 0: Header -->
         <StackPanel Grid.Row="0" Margin="0,0,0,8">
             <TextBlock x:Name="QueryIdentifierText" FontSize="16" FontWeight="Bold"
                        Foreground="{DynamicResource ForegroundBrush}"/>
-            <TextBlock x:Name="SummaryText" FontSize="12" Margin="0,4,0,0"
-                       Foreground="{DynamicResource ForegroundBrush}"
-                       TextTrimming="CharacterEllipsis"/>
         </StackPanel>
 
-        <!-- Row 1: Controls toolbar -->
-        <Border Grid.Row="1" Background="{DynamicResource BackgroundDarkBrush}" Padding="8,6"
+        <!-- Row 1: Query preview area -->
+        <Border Grid.Row="1" Background="{DynamicResource BackgroundDarkBrush}"
+                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="3"
+                Margin="0,0,0,8" MaxHeight="160" MinHeight="40">
+            <Grid ColumnDefinitions="*,Auto">
+                <ScrollViewer Grid.Column="0" HorizontalScrollBarVisibility="Auto"
+                              VerticalScrollBarVisibility="Auto">
+                    <TextBox x:Name="QueryTextBox" IsReadOnly="True"
+                             TextWrapping="Wrap" AcceptsReturn="True"
+                             FontFamily="Cascadia Mono,Consolas,monospace"
+                             FontSize="12" Padding="8,6"
+                             Foreground="{DynamicResource ForegroundBrush}"
+                             Background="Transparent" BorderThickness="0"/>
+                </ScrollViewer>
+                <Button Grid.Column="1" Content="Copy" Click="CopyQuery_Click"
+                        VerticalAlignment="Top" Margin="4,4,4,4"
+                        Padding="10,4" FontSize="11"
+                        Theme="{StaticResource AppButton}"/>
+            </Grid>
+        </Border>
+
+        <!-- Row 2: Controls toolbar -->
+        <Border Grid.Row="2" Background="{DynamicResource BackgroundDarkBrush}" Padding="8,6"
                 BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="3"
                 Margin="0,0,0,8">
-            <StackPanel Orientation="Horizontal" Spacing="12">
-                <StackPanel Spacing="2">
-                    <TextBlock Text="Metric" FontSize="11"
-                               Foreground="{DynamicResource ForegroundBrush}"/>
+            <Grid ColumnDefinitions="Auto,*">
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="12">
                     <ComboBox x:Name="MetricSelector" Width="200" Height="32" FontSize="13"
+                              VerticalAlignment="Center"
                               SelectionChanged="MetricSelector_SelectionChanged">
                         <ComboBoxItem Content="Avg CPU (ms)" Tag="AvgCpuMs" IsSelected="True"/>
                         <ComboBoxItem Content="Avg Duration (ms)" Tag="AvgDurationMs"/>
@@ -42,68 +59,99 @@
                         <ComboBoxItem Content="Total Reads" Tag="TotalLogicalReads"/>
                         <ComboBoxItem Content="Total Writes" Tag="TotalLogicalWrites"/>
                         <ComboBoxItem Content="Total Physical Reads" Tag="TotalPhysicalReads"/>
+                        <ComboBoxItem Content="Total Memory (MB)" Tag="TotalMemoryMb"/>
                         <ComboBoxItem Content="Executions" Tag="CountExecutions"/>
                     </ComboBox>
+                    <StackPanel Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                        <Button x:Name="RangePeriodButton" Content="Range Period" Click="RangePeriod_Click"
+                                Height="28" Padding="16,0" FontSize="12"
+                                Theme="{StaticResource AppButton}"/>
+                        <Button x:Name="FullHistoryButton" Content="Full History" Click="FullHistory_Click"
+                                Height="28" Padding="16,0" FontSize="12"
+                                Theme="{StaticResource AppButton}"/>
+                    </StackPanel>
                 </StackPanel>
-                <StackPanel Spacing="2">
-                    <TextBlock Text="Hours back" FontSize="11"
-                               Foreground="{DynamicResource ForegroundBrush}"/>
-                    <NumericUpDown x:Name="HoursBackBox" Value="24" Minimum="1" Maximum="720"
-                                   Width="120" Height="32" FontSize="13" FormatString="0"
-                                   HorizontalContentAlignment="Center"/>
-                </StackPanel>
-                <StackPanel Spacing="2" VerticalAlignment="Bottom">
-                    <Button x:Name="RefreshButton" Content="Refresh" Click="Refresh_Click"
-                            Height="28" Padding="16,0" FontSize="12"
-                            Theme="{StaticResource AppButton}"/>
-                </StackPanel>
-                <TextBlock x:Name="StatusText" VerticalAlignment="Center"
+                <TextBlock Grid.Column="1" x:Name="StatusText" VerticalAlignment="Center"
+                           HorizontalAlignment="Right"
                            FontSize="12" Foreground="{DynamicResource ForegroundBrush}"/>
-            </StackPanel>
+            </Grid>
         </Border>
 
-        <!-- Row 2: Chart -->
-        <Border Grid.Row="2" Background="{DynamicResource BackgroundDarkBrush}"
-                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="3"
-                Margin="0,0,0,8">
-            <scottplot:AvaPlot x:Name="HistoryChart"/>
-        </Border>
+        <!-- Row 3: Chart with legend overlay -->
+        <Grid Grid.Row="3" Margin="0,0,0,8">
+            <Border Background="{DynamicResource BackgroundDarkBrush}"
+                    BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="3">
+                <scottplot:AvaPlot x:Name="HistoryChart"/>
+            </Border>
+            <!-- Legend toggle button (top-right overlay) -->
+            <Button x:Name="LegendToggleButton" Click="LegendToggle_Click"
+                    HorizontalAlignment="Right" VerticalAlignment="Top"
+                    Margin="0,26,18,10" Padding="8,3" FontSize="11"
+                    Background="#33333333" Foreground="{DynamicResource ForegroundBrush}"
+                    BorderThickness="1" BorderBrush="{DynamicResource BorderBrush}"
+                    CornerRadius="3">
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                    <TextBlock Text="Legend"/>
+                    <TextBlock x:Name="LegendArrow" Text="▼" FontSize="9" VerticalAlignment="Center"/>
+                </StackPanel>
+            </Button>
+            <!-- Collapsible legend panel -->
+            <Border x:Name="LegendPanel" IsVisible="False"
+                    HorizontalAlignment="Right" VerticalAlignment="Top"
+                    Margin="0,52,18,10" MaxHeight="180" MinWidth="140"
+                    Background="{DynamicResource BackgroundDarkBrush}"
+                    BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="3"
+                    Padding="6,4">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel x:Name="LegendItemsPanel" Spacing="3"/>
+                </ScrollViewer>
+            </Border>
+        </Grid>
 
-        <!-- Row 3: DataGrid -->
-        <DataGrid Grid.Row="3" x:Name="HistoryDataGrid"
+        <!-- Row 4: DataGrid -->
+        <DataGrid Grid.Row="4" x:Name="HistoryDataGrid"
                   AutoGenerateColumns="False" IsReadOnly="True"
+                  SelectionMode="Extended"
                   CanUserSortColumns="True" CanUserReorderColumns="True"
                   CanUserResizeColumns="True"
                   GridLinesVisibility="Horizontal" HeadersVisibility="Column"
                   FontSize="11"
                   Background="{DynamicResource BackgroundDarkBrush}"
                   BorderThickness="0"
+                  SelectionChanged="HistoryDataGrid_SelectionChanged"
                   ScrollViewer.HorizontalScrollBarVisibility="Auto">
             <DataGrid.Columns>
-                <DataGridTextColumn Header="Plan ID" Binding="{ReflectionBinding PlanId}" Width="80"/>
+                <DataGridTemplateColumn Header="" Width="6" CanUserResize="False" CanUserSort="False" CanUserReorder="False">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Border x:Name="ColorIndicator" Width="6" CornerRadius="2"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
                 <DataGridTextColumn Header="Plan Hash" Binding="{ReflectionBinding QueryPlanHash}" Width="150"/>
                 <DataGridTextColumn Header="Interval Start" Binding="{ReflectionBinding IntervalStartLocal}" Width="140"/>
                 <DataGridTextColumn Header="Executions" Binding="{ReflectionBinding CountExecutions}" Width="90"/>
-                <DataGridTextColumn Header="Avg Duration (ms)" Binding="{ReflectionBinding AvgDurationMs}" Width="130"/>
-                <DataGridTextColumn Header="Avg CPU (ms)" Binding="{ReflectionBinding AvgCpuMs}" Width="110"/>
-                <DataGridTextColumn Header="Avg Reads" Binding="{ReflectionBinding AvgLogicalReads}" Width="90"/>
-                <DataGridTextColumn Header="Avg Writes" Binding="{ReflectionBinding AvgLogicalWrites}" Width="90"/>
-                <DataGridTextColumn Header="Avg Phys Reads" Binding="{ReflectionBinding AvgPhysicalReads}" Width="110"/>
-                <DataGridTextColumn Header="Avg Memory (MB)" Binding="{ReflectionBinding AvgMemoryMb}" Width="120"/>
-                <DataGridTextColumn Header="Avg Rows" Binding="{ReflectionBinding AvgRowcount}" Width="80"/>
-                <DataGridTextColumn Header="Total Duration (ms)" Binding="{ReflectionBinding TotalDurationMs}" Width="140"/>
-                <DataGridTextColumn Header="Total CPU (ms)" Binding="{ReflectionBinding TotalCpuMs}" Width="120"/>
-                <DataGridTextColumn Header="Total Reads" Binding="{ReflectionBinding TotalLogicalReads}" Width="100"/>
-                <DataGridTextColumn Header="Total Writes" Binding="{ReflectionBinding TotalLogicalWrites}" Width="100"/>
-                <DataGridTextColumn Header="Total Phys Reads" Binding="{ReflectionBinding TotalPhysicalReads}" Width="120"/>
+                <DataGridTextColumn Header="Avg Duration (ms)" Binding="{ReflectionBinding AvgDurationMsDisplay}" Width="130"/>
+                <DataGridTextColumn Header="Avg CPU (ms)" Binding="{ReflectionBinding AvgCpuMsDisplay}" Width="110"/>
+                <DataGridTextColumn Header="Avg Reads" Binding="{ReflectionBinding AvgLogicalReadsDisplay}" Width="90"/>
+                <DataGridTextColumn Header="Avg Writes" Binding="{ReflectionBinding AvgLogicalWritesDisplay}" Width="90"/>
+                <DataGridTextColumn Header="Avg Phys Reads" Binding="{ReflectionBinding AvgPhysicalReadsDisplay}" Width="110"/>
+                <DataGridTextColumn Header="Avg Memory (MB)" Binding="{ReflectionBinding AvgMemoryMbDisplay}" Width="120"/>
+                <DataGridTextColumn Header="Avg Rows" Binding="{ReflectionBinding AvgRowcountDisplay}" Width="80"/>
+                <DataGridTextColumn Header="Total Duration (ms)" Binding="{ReflectionBinding TotalDurationMsDisplay}" Width="140"/>
+                <DataGridTextColumn Header="Total CPU (ms)" Binding="{ReflectionBinding TotalCpuMsDisplay}" Width="120"/>
+                <DataGridTextColumn Header="Total Reads" Binding="{ReflectionBinding TotalLogicalReadsDisplay}" Width="100"/>
+                <DataGridTextColumn Header="Total Writes" Binding="{ReflectionBinding TotalLogicalWritesDisplay}" Width="100"/>
+                <DataGridTextColumn Header="Total Phys Reads" Binding="{ReflectionBinding TotalPhysicalReadsDisplay}" Width="120"/>
+                <DataGridTextColumn Header="Total Memory (MB)" Binding="{ReflectionBinding TotalMemoryMbDisplay}" Width="120"/>
                 <DataGridTextColumn Header="Min DOP" Binding="{ReflectionBinding MinDop}" Width="70"/>
                 <DataGridTextColumn Header="Max DOP" Binding="{ReflectionBinding MaxDop}" Width="70"/>
                 <DataGridTextColumn Header="Last Execution" Binding="{ReflectionBinding LastExecutionLocal}" Width="140"/>
             </DataGrid.Columns>
         </DataGrid>
 
-        <!-- Row 4: Footer -->
-        <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right"
+        <!-- Row 5: Footer -->
+        <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Right"
                     Margin="0,8,0,0">
             <Button Content="Close" Click="Close_Click" Padding="20,6" FontSize="12"
                     Theme="{StaticResource AppButton}"/>

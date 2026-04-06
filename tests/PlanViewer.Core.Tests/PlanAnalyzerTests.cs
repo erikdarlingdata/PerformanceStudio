@@ -33,6 +33,17 @@ public class PlanAnalyzerTests
         Assert.Contains(warnings, w => w.Message.Contains("temporary index in TempDB"));
     }
 
+    [Fact]
+    public void Rule02_EagerIndexSpool_NotFiredForEagerTableSpool()
+    {
+        // Plan with Eager Table Spool (PhysicalOp="Table Spool", LogicalOp="Eager Spool")
+        // should NOT trigger the Eager Index Spool warning
+        var plan = PlanTestHelper.LoadAndAnalyze("eager_table_spool_plan.sqlplan");
+        var warnings = PlanTestHelper.WarningsOfType(plan, "Eager Index Spool");
+
+        Assert.Empty(warnings);
+    }
+
     // ---------------------------------------------------------------
     // Rule 3: Serial Plan
     // ---------------------------------------------------------------

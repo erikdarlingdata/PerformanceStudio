@@ -15,7 +15,12 @@ using Avalonia.Media;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
 using Avalonia.Platform.Storage;
+using AvaloniaEdit.TextMate;
+using Microsoft.Data.SqlClient;
+using PlanViewer.App.Dialogs;
+using PlanViewer.Core.Interfaces;
 using PlanViewer.App.Helpers;
+using PlanViewer.App.Services;
 using PlanViewer.App.Mcp;
 using PlanViewer.Core.Models;
 using PlanViewer.Core.Output;
@@ -167,10 +172,98 @@ public partial class PlanViewerControl : UserControl
         }
     }
 
+    /// <summary>
+    /// Connection string for schema lookups. Set when the plan was loaded from a connected session.
+    /// </summary>
+    public string? ConnectionString { get; set; }
+
+    // Connection state for plans that connect via the toolbar
+    private ServerConnection? _planConnection;
+    private ICredentialService? _planCredentialService;
+    private ConnectionStore? _planConnectionStore;
+    private string? _planSelectedDatabase;
+
+    /// <summary>
+    /// Provide credential service and connection store so the plan viewer can show a connection dialog.
+    /// </summary>
+    public void SetConnectionServices(ICredentialService credentialService, ConnectionStore connectionStore)
+    {
+        _planCredentialService = credentialService;
+        _planConnectionStore = connectionStore;
+    }
+
+    /// <summary>
+    /// Update the connection UI to reflect an active connection (used when connection is inherited).
+    /// </summary>
+    public void SetConnectionStatus(string serverName, string? database)
+    {
+        PlanServerLabel.Text = serverName;
+        PlanServerLabel.Foreground = Brushes.LimeGreen;
+        PlanConnectButton.Content = "Reconnect";
+        if (database != null)
+            _planSelectedDatabase = database;
+    }
+
     // Events for MainWindow to wire up advice/repro actions
     public event EventHandler? HumanAdviceRequested;
     public event EventHandler? RobotAdviceRequested;
     public event EventHandler? CopyReproRequested;
+    public event EventHandler<string>? OpenInEditorRequested;
+
+    /// <summary>
+    /// Navigates to a specific plan node by ID: selects it, zooms to show it,
+    /// and scrolls to center it in the viewport.
+    /// </summary>
+    public void NavigateToNode(int nodeId)
+    {
+        // Find the Border for this node
+        Border? targetBorder = null;
+        PlanNode? targetNode = null;
+        foreach (var (border, node) in _nodeBorderMap)
+        {
+            if (node.NodeId == nodeId)
+            {
+                targetBorder = border;
+                targetNode = node;
+                break;
+            }
+        }
+
+        if (targetBorder == null || targetNode == null)
+            return;
+
+        // Activate the parent window so the plan viewer becomes visible
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel is Window parentWindow)
+            parentWindow.Activate();
+
+        // Select the node (highlights it and shows properties)
+        SelectNode(targetBorder, targetNode);
+
+        // Ensure zoom level makes the node comfortably visible
+        var viewWidth = PlanScrollViewer.Bounds.Width;
+        var viewHeight = PlanScrollViewer.Bounds.Height;
+        if (viewWidth <= 0 || viewHeight <= 0)
+            return;
+
+        // If the node is too small at the current zoom, zoom in so it's ~1/3 of the viewport
+        var nodeW = PlanLayoutEngine.NodeWidth;
+        var nodeH = PlanLayoutEngine.GetNodeHeight(targetNode);
+        var minVisibleZoom = Math.Min(viewWidth / (nodeW * 4), viewHeight / (nodeH * 4));
+        if (_zoomLevel < minVisibleZoom)
+            SetZoom(Math.Min(minVisibleZoom, 1.0));
+
+        // Scroll to center the node in the viewport
+        var centerX = (targetNode.X + nodeW / 2) * _zoomLevel - viewWidth / 2;
+        var centerY = (targetNode.Y + nodeH / 2) * _zoomLevel - viewHeight / 2;
+        centerX = Math.Max(0, centerX);
+        centerY = Math.Max(0, centerY);
+
+        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            PlanScrollViewer.Offset = new Vector(centerX, centerY);
+        });
+    }
 
     public void LoadPlan(string planXml, string label, string? queryText = null)
     {
@@ -428,6 +521,27 @@ public partial class PlanViewerControl : UserControl
                 VerticalAlignment = VerticalAlignment.Center
             });
             iconRow.Children.Add(parBadge);
+        }
+
+        // Nonclustered index count badge (modification operators maintaining multiple NC indexes)
+        if (node.NonClusteredIndexCount > 0)
+        {
+            var ncBadge = new Border
+            {
+                Background = new SolidColorBrush(Color.FromRgb(0x6C, 0x75, 0x7D)),
+                CornerRadius = new CornerRadius(4),
+                Padding = new Thickness(4, 1),
+                Margin = new Thickness(4, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+                Child = new TextBlock
+                {
+                    Text = $"+{node.NonClusteredIndexCount} NC",
+                    FontSize = 10,
+                    FontWeight = FontWeight.SemiBold,
+                    Foreground = Brushes.White
+                }
+            };
+            iconRow.Children.Add(ncBadge);
         }
 
         stack.Children.Add(iconRow);
@@ -764,6 +878,9 @@ public partial class PlanViewerControl : UserControl
             menu.Items.Add(copySeekItem);
         }
 
+        // Schema lookup items (Show Indexes, Show Table Definition)
+        AddSchemaMenuItems(menu, node);
+
         return menu;
     }
 
@@ -906,7 +1023,7 @@ public partial class PlanViewerControl : UserControl
             || node.SortDistinct || node.StartupExpression
             || node.NLOptimized || node.WithOrderedPrefetch || node.WithUnorderedPrefetch
             || node.WithTies || node.Remoting || node.LocalParallelism
-            || node.SpoolStack || node.DMLRequestSort
+            || node.SpoolStack || node.DMLRequestSort || node.NonClusteredIndexCount > 0
             || !string.IsNullOrEmpty(node.OffsetExpression) || node.TopRows > 0
             || !string.IsNullOrEmpty(node.ConstantScanValues)
             || !string.IsNullOrEmpty(node.UdxUsedColumns);
@@ -955,6 +1072,12 @@ public partial class PlanViewerControl : UserControl
                 AddPropertyRow("Primary Node Id", $"{node.PrimaryNodeId}");
             if (node.DMLRequestSort)
                 AddPropertyRow("DML Request Sort", "True");
+            if (node.NonClusteredIndexCount > 0)
+            {
+                AddPropertyRow("NC Indexes Maintained", $"{node.NonClusteredIndexCount}");
+                foreach (var ixName in node.NonClusteredIndexNames)
+                    AddPropertyRow("", ixName, isCode: true);
+            }
             if (!string.IsNullOrEmpty(node.ActionColumn))
                 AddPropertyRow("Action Column", node.ActionColumn, isCode: true);
             if (!string.IsNullOrEmpty(node.SegmentColumn))
@@ -1970,6 +2093,10 @@ public partial class PlanViewerControl : UserControl
                 AddTooltipRow(stack, "Scan Direction", node.ScanDirection);
         }
 
+        // NC index maintenance count
+        if (node.NonClusteredIndexCount > 0)
+            AddTooltipRow(stack, "NC Indexes Maintained", string.Join(", ", node.NonClusteredIndexNames));
+
         // Operator details (key items only in tooltip)
         var hasTooltipDetails = !string.IsNullOrEmpty(node.OrderBy)
             || !string.IsNullOrEmpty(node.TopExpression)
@@ -2865,12 +2992,40 @@ public partial class PlanViewerControl : UserControl
         ZoomLevelText.Text = $"{(int)(_zoomLevel * 100)}%";
     }
 
+    /// <summary>
+    /// Sets the zoom level and adjusts the scroll offset so that the content point
+    /// under <paramref name="viewportAnchor"/> stays fixed in the viewport.
+    /// </summary>
+    private void SetZoomAtPoint(double level, Point viewportAnchor)
+    {
+        var newZoom = Math.Max(MinZoom, Math.Min(MaxZoom, level));
+        if (Math.Abs(newZoom - _zoomLevel) < 0.001)
+            return;
+
+        // Content point under the anchor at the current zoom level
+        var contentX = (PlanScrollViewer.Offset.X + viewportAnchor.X) / _zoomLevel;
+        var contentY = (PlanScrollViewer.Offset.Y + viewportAnchor.Y) / _zoomLevel;
+
+        // Apply the new zoom
+        SetZoom(newZoom);
+
+        // Adjust offset so the same content point stays under the anchor
+        var newOffsetX = Math.Max(0, contentX * _zoomLevel - viewportAnchor.X);
+        var newOffsetY = Math.Max(0, contentY * _zoomLevel - viewportAnchor.Y);
+
+        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            PlanScrollViewer.Offset = new Vector(newOffsetX, newOffsetY);
+        });
+    }
+
     private void PlanScrollViewer_PointerWheelChanged(object? sender, PointerWheelEventArgs e)
     {
         if (e.KeyModifiers.HasFlag(KeyModifiers.Control))
         {
             e.Handled = true;
-            SetZoom(_zoomLevel + (e.Delta.Y > 0 ? ZoomStep : -ZoomStep));
+            var newLevel = _zoomLevel + (e.Delta.Y > 0 ? ZoomStep : -ZoomStep);
+            SetZoomAtPoint(newLevel, e.GetPosition(PlanScrollViewer));
         }
     }
 
@@ -3155,6 +3310,15 @@ public partial class PlanViewerControl : UserControl
             await topLevel.Clipboard.SetTextAsync(text);
     }
 
+    private void OpenInEditor_Click(object? sender, RoutedEventArgs e)
+    {
+        if (StatementsGrid.SelectedItem is not StatementRow row) return;
+        var text = row.Statement.StatementText;
+        if (string.IsNullOrEmpty(text)) return;
+
+        OpenInEditorRequested?.Invoke(this, text);
+    }
+
     private static void CollectNodeWarnings(PlanNode node, List<PlanWarning> warnings)
     {
         warnings.AddRange(node.Warnings);
@@ -3211,6 +3375,405 @@ public partial class PlanViewerControl : UserControl
             "ForegroundMutedBrush" => TooltipFgBrush,
             _ => Brushes.White
         };
+    }
+
+    #endregion
+
+    #region Plan Viewer Connection
+
+    private async void PlanConnect_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_planCredentialService == null || _planConnectionStore == null) return;
+
+        var dialog = new ConnectionDialog(_planCredentialService, _planConnectionStore);
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel is not Window parentWindow) return;
+
+        var result = await dialog.ShowDialog<bool?>(parentWindow);
+        if (result != true || dialog.ResultConnection == null) return;
+
+        _planConnection = dialog.ResultConnection;
+        _planSelectedDatabase = dialog.ResultDatabase;
+        ConnectionString = _planConnection.GetConnectionString(_planCredentialService, _planSelectedDatabase);
+
+        PlanServerLabel.Text = _planConnection.ServerName;
+        PlanServerLabel.Foreground = Brushes.LimeGreen;
+        PlanConnectButton.Content = "Reconnect";
+
+        // Populate database dropdown
+        try
+        {
+            var connStr = _planConnection.GetConnectionString(_planCredentialService, "master");
+            await using var conn = new SqlConnection(connStr);
+            await conn.OpenAsync();
+
+            var databases = new List<string>();
+            using var cmd = new SqlCommand(
+                "SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED; SELECT name FROM sys.databases WHERE state_desc = 'ONLINE' ORDER BY name", conn);
+            using var reader = await cmd.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+                databases.Add(reader.GetString(0));
+
+            PlanDatabaseBox.ItemsSource = databases;
+            PlanDatabaseBox.IsEnabled = true;
+
+            if (_planSelectedDatabase != null)
+            {
+                for (int i = 0; i < PlanDatabaseBox.Items.Count; i++)
+                {
+                    if (PlanDatabaseBox.Items[i]?.ToString() == _planSelectedDatabase)
+                    {
+                        PlanDatabaseBox.SelectedIndex = i;
+                        break;
+                    }
+                }
+            }
+        }
+        catch
+        {
+            PlanDatabaseBox.IsEnabled = false;
+        }
+    }
+
+    private void PlanDatabase_SelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (_planConnection == null || _planCredentialService == null || PlanDatabaseBox.SelectedItem == null) return;
+
+        _planSelectedDatabase = PlanDatabaseBox.SelectedItem.ToString();
+        ConnectionString = _planConnection.GetConnectionString(_planCredentialService, _planSelectedDatabase);
+    }
+
+    #endregion
+
+    #region Schema Lookup
+
+    private static bool IsTempObject(string objectName)
+    {
+        // #temp tables, ##global temp, @table variables, internal worktables
+        return objectName.Contains('#') || objectName.Contains('@')
+            || objectName.Contains("worktable", StringComparison.OrdinalIgnoreCase)
+            || objectName.Contains("worksort", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsDataAccessOperator(PlanNode node)
+    {
+        var op = node.PhysicalOp;
+        if (string.IsNullOrEmpty(op)) return false;
+
+        // Modification operators and data access operators reference objects
+        return op.Contains("Scan", StringComparison.OrdinalIgnoreCase)
+            || op.Contains("Seek", StringComparison.OrdinalIgnoreCase)
+            || op.Contains("Lookup", StringComparison.OrdinalIgnoreCase)
+            || op.Contains("Insert", StringComparison.OrdinalIgnoreCase)
+            || op.Contains("Update", StringComparison.OrdinalIgnoreCase)
+            || op.Contains("Delete", StringComparison.OrdinalIgnoreCase)
+            || op.Contains("Spool", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void AddSchemaMenuItems(ContextMenu menu, PlanNode node)
+    {
+        if (string.IsNullOrEmpty(node.ObjectName) || IsTempObject(node.ObjectName))
+            return;
+        if (!IsDataAccessOperator(node))
+            return;
+
+        var objectName = node.ObjectName;
+
+        menu.Items.Add(new Separator());
+
+        var showIndexes = new MenuItem { Header = $"Show Indexes — {objectName}" };
+        showIndexes.Click += async (_, _) => await FetchAndShowSchemaAsync("Indexes", objectName,
+            async cs => FormatIndexes(objectName, await SchemaQueryService.FetchIndexesAsync(cs, objectName)));
+        menu.Items.Add(showIndexes);
+
+        var showTableDef = new MenuItem { Header = $"Show Table Definition — {objectName}" };
+        showTableDef.Click += async (_, _) => await FetchAndShowSchemaAsync("Table", objectName,
+            async cs =>
+            {
+                var columns = await SchemaQueryService.FetchColumnsAsync(cs, objectName);
+                var indexes = await SchemaQueryService.FetchIndexesAsync(cs, objectName);
+                return FormatColumns(objectName, columns, indexes);
+            });
+        menu.Items.Add(showTableDef);
+
+        // Disable schema items when no connection
+        menu.Opening += (_, _) =>
+        {
+            var enabled = ConnectionString != null;
+            showIndexes.IsEnabled = enabled;
+            showTableDef.IsEnabled = enabled;
+        };
+    }
+
+    private async System.Threading.Tasks.Task FetchAndShowSchemaAsync(
+        string kind, string objectName, Func<string, System.Threading.Tasks.Task<string>> fetch)
+    {
+        if (ConnectionString == null) return;
+
+        try
+        {
+            var content = await fetch(ConnectionString);
+            ShowSchemaResult($"{kind} — {objectName}", content);
+        }
+        catch (Exception ex)
+        {
+            ShowSchemaResult($"Error — {objectName}", $"-- Error: {ex.Message}");
+        }
+    }
+
+    private void ShowSchemaResult(string title, string content)
+    {
+        var editor = new AvaloniaEdit.TextEditor
+        {
+            Text = content,
+            IsReadOnly = true,
+            FontFamily = new FontFamily("Consolas, Menlo, monospace"),
+            FontSize = 13,
+            ShowLineNumbers = true,
+            Background = FindBrushResource("BackgroundBrush"),
+            Foreground = FindBrushResource("ForegroundBrush"),
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            Padding = new Thickness(4)
+        };
+
+        // SQL syntax highlighting
+        var registryOptions = new TextMateSharp.Grammars.RegistryOptions(TextMateSharp.Grammars.ThemeName.DarkPlus);
+        var tm = editor.InstallTextMate(registryOptions);
+        tm.SetGrammar(registryOptions.GetScopeByLanguageId("sql"));
+
+        // Context menu
+        var copyItem = new MenuItem { Header = "Copy" };
+        copyItem.Click += async (_, _) =>
+        {
+            var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+            if (clipboard == null) return;
+            var sel = editor.TextArea.Selection;
+            if (!sel.IsEmpty)
+                await clipboard.SetTextAsync(sel.GetText());
+        };
+        var copyAllItem = new MenuItem { Header = "Copy All" };
+        copyAllItem.Click += async (_, _) =>
+        {
+            var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+            if (clipboard == null) return;
+            await clipboard.SetTextAsync(editor.Text);
+        };
+        var selectAllItem = new MenuItem { Header = "Select All" };
+        selectAllItem.Click += (_, _) => editor.SelectAll();
+        editor.TextArea.ContextMenu = new ContextMenu
+        {
+            Items = { copyItem, copyAllItem, new Separator(), selectAllItem }
+        };
+
+        // Show in a popup window
+        var window = new Window
+        {
+            Title = $"Performance Studio — {title}",
+            Width = 700,
+            Height = 500,
+            MinWidth = 400,
+            MinHeight = 200,
+            Background = FindBrushResource("BackgroundBrush"),
+            Foreground = FindBrushResource("ForegroundBrush"),
+            Content = editor
+        };
+
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel is Window parentWindow)
+        {
+            window.Icon = parentWindow.Icon;
+            window.Show(parentWindow);
+        }
+        else
+        {
+            window.Show();
+        }
+    }
+
+    // --- Formatters (same logic as QuerySessionControl) ---
+
+    private static string FormatIndexes(string objectName, IReadOnlyList<IndexInfo> indexes)
+    {
+        if (indexes.Count == 0)
+            return $"-- No indexes found on {objectName}";
+
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine($"-- Indexes on {objectName}");
+        sb.AppendLine($"-- {indexes.Count} index(es), {indexes[0].RowCount:N0} rows");
+        sb.AppendLine();
+
+        foreach (var ix in indexes)
+        {
+            if (ix.IsDisabled)
+                sb.AppendLine("-- ** DISABLED **");
+
+            sb.AppendLine($"-- {ix.SizeMB:N1} MB | Seeks: {ix.UserSeeks:N0} | Scans: {ix.UserScans:N0} | Lookups: {ix.UserLookups:N0} | Updates: {ix.UserUpdates:N0}");
+
+            var withOptions = BuildWithOptions(ix);
+            var onPartition = ix.PartitionScheme != null && ix.PartitionColumn != null
+                ? $"ON [{ix.PartitionScheme}]([{ix.PartitionColumn}])"
+                : null;
+
+            if (ix.IsPrimaryKey)
+            {
+                var clustered = IsClusteredType(ix) ? "CLUSTERED" : "NONCLUSTERED";
+                sb.AppendLine($"ALTER TABLE {objectName}");
+                sb.AppendLine($"ADD CONSTRAINT [{ix.IndexName}]");
+                sb.Append($"    PRIMARY KEY {clustered} ({ix.KeyColumns})");
+                if (withOptions.Count > 0)
+                {
+                    sb.AppendLine();
+                    sb.Append($"    WITH ({string.Join(", ", withOptions)})");
+                }
+                if (onPartition != null)
+                {
+                    sb.AppendLine();
+                    sb.Append($"    {onPartition}");
+                }
+                sb.AppendLine(";");
+            }
+            else if (IsColumnstore(ix))
+            {
+                var clustered = ix.IndexType.Contains("NONCLUSTERED", StringComparison.OrdinalIgnoreCase)
+                    ? "NONCLUSTERED " : "CLUSTERED ";
+                sb.Append($"CREATE {clustered}COLUMNSTORE INDEX [{ix.IndexName}]");
+                sb.AppendLine($" ON {objectName}");
+                if (ix.IndexType.Contains("NONCLUSTERED", StringComparison.OrdinalIgnoreCase)
+                    && !string.IsNullOrEmpty(ix.KeyColumns))
+                    sb.AppendLine($"({ix.KeyColumns})");
+                var csOptions = BuildColumnstoreWithOptions(ix);
+                if (csOptions.Count > 0)
+                    sb.AppendLine($"WITH ({string.Join(", ", csOptions)})");
+                if (onPartition != null)
+                    sb.AppendLine(onPartition);
+                TrimTrailingNewline(sb);
+                sb.AppendLine(";");
+            }
+            else
+            {
+                var unique = ix.IsUnique ? "UNIQUE " : "";
+                var clustered = IsClusteredType(ix) ? "CLUSTERED " : "NONCLUSTERED ";
+                sb.Append($"CREATE {unique}{clustered}INDEX [{ix.IndexName}]");
+                sb.AppendLine($" ON {objectName}");
+                sb.AppendLine($"({ix.KeyColumns})");
+                if (!string.IsNullOrEmpty(ix.IncludeColumns))
+                    sb.AppendLine($"INCLUDE ({ix.IncludeColumns})");
+                if (!string.IsNullOrEmpty(ix.FilterDefinition))
+                    sb.AppendLine($"WHERE {ix.FilterDefinition}");
+                if (withOptions.Count > 0)
+                    sb.AppendLine($"WITH ({string.Join(", ", withOptions)})");
+                if (onPartition != null)
+                    sb.AppendLine(onPartition);
+                TrimTrailingNewline(sb);
+                sb.AppendLine(";");
+            }
+
+            sb.AppendLine();
+        }
+
+        return sb.ToString();
+    }
+
+    private static string FormatColumns(string objectName, IReadOnlyList<ColumnInfo> columns, IReadOnlyList<IndexInfo> indexes)
+    {
+        if (columns.Count == 0)
+            return $"-- No columns found for {objectName}";
+
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine($"CREATE TABLE {objectName}");
+        sb.AppendLine("(");
+
+        var pkIndex = indexes.FirstOrDefault(ix => ix.IsPrimaryKey);
+
+        for (int i = 0; i < columns.Count; i++)
+        {
+            var col = columns[i];
+            var isLast = i == columns.Count - 1;
+
+            sb.Append($"    [{col.ColumnName}] ");
+
+            if (col.IsComputed && col.ComputedDefinition != null)
+            {
+                sb.Append($"AS {col.ComputedDefinition}");
+            }
+            else
+            {
+                sb.Append(col.DataType);
+                if (col.IsIdentity)
+                    sb.Append($" IDENTITY({col.IdentitySeed}, {col.IdentityIncrement})");
+                sb.Append(col.IsNullable ? " NULL" : " NOT NULL");
+                if (col.DefaultValue != null)
+                    sb.Append($" DEFAULT {col.DefaultValue}");
+            }
+
+            sb.AppendLine(!isLast || pkIndex != null ? "," : "");
+        }
+
+        if (pkIndex != null)
+        {
+            var clustered = IsClusteredType(pkIndex) ? "CLUSTERED " : "NONCLUSTERED ";
+            sb.AppendLine($"    CONSTRAINT [{pkIndex.IndexName}]");
+            sb.Append($"        PRIMARY KEY {clustered}({pkIndex.KeyColumns})");
+            var pkOptions = BuildWithOptions(pkIndex);
+            if (pkOptions.Count > 0)
+            {
+                sb.AppendLine();
+                sb.Append($"        WITH ({string.Join(", ", pkOptions)})");
+            }
+            sb.AppendLine();
+        }
+
+        sb.Append(")");
+
+        var clusteredIx = indexes.FirstOrDefault(ix => IsClusteredType(ix) && !IsColumnstore(ix));
+        if (clusteredIx?.PartitionScheme != null && clusteredIx.PartitionColumn != null)
+        {
+            sb.AppendLine();
+            sb.Append($"ON [{clusteredIx.PartitionScheme}]([{clusteredIx.PartitionColumn}])");
+        }
+
+        sb.AppendLine(";");
+        return sb.ToString();
+    }
+
+    private static bool IsClusteredType(IndexInfo ix) =>
+        ix.IndexType.Contains("CLUSTERED", StringComparison.OrdinalIgnoreCase)
+        && !ix.IndexType.Contains("NONCLUSTERED", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsColumnstore(IndexInfo ix) =>
+        ix.IndexType.Contains("COLUMNSTORE", StringComparison.OrdinalIgnoreCase);
+
+    private static List<string> BuildWithOptions(IndexInfo ix)
+    {
+        var options = new List<string>();
+        if (ix.FillFactor > 0 && ix.FillFactor != 100)
+            options.Add($"FILLFACTOR = {ix.FillFactor}");
+        if (ix.IsPadded)
+            options.Add("PAD_INDEX = ON");
+        if (!ix.AllowRowLocks)
+            options.Add("ALLOW_ROW_LOCKS = OFF");
+        if (!ix.AllowPageLocks)
+            options.Add("ALLOW_PAGE_LOCKS = OFF");
+        if (!string.Equals(ix.DataCompression, "NONE", StringComparison.OrdinalIgnoreCase))
+            options.Add($"DATA_COMPRESSION = {ix.DataCompression}");
+        return options;
+    }
+
+    private static List<string> BuildColumnstoreWithOptions(IndexInfo ix)
+    {
+        var options = new List<string>();
+        if (ix.FillFactor > 0 && ix.FillFactor != 100)
+            options.Add($"FILLFACTOR = {ix.FillFactor}");
+        if (ix.IsPadded)
+            options.Add("PAD_INDEX = ON");
+        return options;
+    }
+
+    private static void TrimTrailingNewline(System.Text.StringBuilder sb)
+    {
+        if (sb.Length > 0 && sb[sb.Length - 1] == '\n') sb.Length--;
+        if (sb.Length > 0 && sb[sb.Length - 1] == '\r') sb.Length--;
     }
 
     #endregion

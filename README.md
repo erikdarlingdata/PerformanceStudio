@@ -1,5 +1,21 @@
 # Performance Studio
 
+<p align="center">
+  <a href="https://github.com/erikdarlingdata/PerformanceStudio/stargazers"><img src="https://img.shields.io/github/stars/erikdarlingdata/PerformanceStudio?style=for-the-badge&logo=github&color=gold&logoColor=black" alt="GitHub Stars"></a>
+  <a href="https://github.com/erikdarlingdata/PerformanceStudio/network/members"><img src="https://img.shields.io/github/forks/erikdarlingdata/PerformanceStudio?style=for-the-badge&logo=github" alt="GitHub Forks"></a>
+  <a href="https://github.com/erikdarlingdata/PerformanceStudio/blob/main/LICENSE"><img src="https://img.shields.io/github/license/erikdarlingdata/PerformanceStudio?style=for-the-badge" alt="License: MIT"></a>
+  <a href="https://github.com/erikdarlingdata/PerformanceStudio/releases/latest"><img src="https://img.shields.io/github/v/release/erikdarlingdata/PerformanceStudio?style=for-the-badge" alt="Latest Release"></a>
+  <a href="https://github.com/erikdarlingdata/PerformanceStudio/issues"><img src="https://img.shields.io/github/issues/erikdarlingdata/PerformanceStudio?style=for-the-badge" alt="Open Issues"></a>
+  <a href="https://github.com/erikdarlingdata/PerformanceStudio/commits/main"><img src="https://img.shields.io/github/last-commit/erikdarlingdata/PerformanceStudio?style=for-the-badge" alt="Last Commit"></a>
+  <a href="https://github.com/erikdarlingdata/PerformanceStudio/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/erikdarlingdata/PerformanceStudio/ci.yml?style=for-the-badge&label=CI" alt="CI"></a>
+</p>
+<p align="center">
+  <a href="https://x.com/erikdarlingdata"><img src="https://img.shields.io/badge/Follow_%40ErikDarlingData-black?style=for-the-badge&logo=x&logoColor=white" alt="Follow @ErikDarlingData on X"></a>
+  <a href="https://www.youtube.com/@ErikDarlingData"><img src="https://img.shields.io/badge/YouTube-Subscribe-red?style=for-the-badge&logo=youtube&logoColor=white" alt="YouTube Subscribe"></a>
+  <a href="https://www.linkedin.com/in/erik-darling-data/"><img src="https://img.shields.io/badge/LinkedIn-Connect-0077B5?style=for-the-badge&logo=linkedin&logoColor=white" alt="LinkedIn Connect"></a>
+  <a href="https://erikdarling.com"><img src="https://img.shields.io/badge/Blog-erikdarling.com-FF6B35?style=for-the-badge&logo=wordpress&logoColor=white" alt="Blog"></a>
+</p>
+
 A cross-platform SQL Server execution plan analyzer with built-in MCP server for AI-assisted analysis. Parses `.sqlplan` XML, identifies performance problems, suggests missing indexes, and provides actionable warnings — from the command line or a desktop GUI.
 
 Built for developers and DBAs who want fast, automated plan analysis without clicking through SSMS.
