@@ -1093,11 +1093,16 @@ public partial class QuerySessionControl : UserControl
 
     private AnalysisResult? GetCurrentAnalysis()
     {
+        return GetCurrentAnalysisWithViewer().Analysis;
+    }
+
+    private (AnalysisResult? Analysis, PlanViewerControl? Viewer) GetCurrentAnalysisWithViewer()
+    {
         // Find the currently selected plan tab's PlanViewerControl
         if (SubTabControl.SelectedItem is TabItem tab && tab.Content is PlanViewerControl viewer
             && viewer.CurrentPlan != null)
         {
-            return ResultMapper.Map(viewer.CurrentPlan, "query editor", _serverMetadata);
+            return (ResultMapper.Map(viewer.CurrentPlan, "query editor", _serverMetadata), viewer);
         }
 
         // Fallback: find the most recent plan tab
@@ -1106,20 +1111,20 @@ public partial class QuerySessionControl : UserControl
             if (SubTabControl.Items[i] is TabItem planTab && planTab.Content is PlanViewerControl v
                 && v.CurrentPlan != null)
             {
-                return ResultMapper.Map(v.CurrentPlan, "query editor");
+                return (ResultMapper.Map(v.CurrentPlan, "query editor"), v);
             }
         }
 
-        return null;
+        return (null, null);
     }
 
     private void HumanAdvice_Click(object? sender, RoutedEventArgs e)
     {
-        var analysis = GetCurrentAnalysis();
+        var (analysis, viewer) = GetCurrentAnalysisWithViewer();
         if (analysis == null) { SetStatus("No plan to analyze", autoClear: false); return; }
 
         var text = TextFormatter.Format(analysis);
-        ShowAdviceWindow("Advice for Humans", text, analysis);
+        ShowAdviceWindow("Advice for Humans", text, analysis, viewer);
     }
 
     private void RobotAdvice_Click(object? sender, RoutedEventArgs e)
@@ -1131,82 +1136,9 @@ public partial class QuerySessionControl : UserControl
         ShowAdviceWindow("Advice for Robots", json);
     }
 
-    private void ShowAdviceWindow(string title, string content, AnalysisResult? analysis = null)
+    private void ShowAdviceWindow(string title, string content, AnalysisResult? analysis = null, PlanViewerControl? sourceViewer = null)
     {
-        var styledContent = AdviceContentBuilder.Build(content, analysis);
-
-        var scrollViewer = new ScrollViewer
-        {
-            Content = styledContent,
-            HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
-            VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto
-        };
-
-        var copyBtn = new Button
-        {
-            Content = "Copy to Clipboard",
-            Height = 32,
-            Padding = new Avalonia.Thickness(16, 0),
-            FontSize = 12,
-            HorizontalContentAlignment = HorizontalAlignment.Center,
-            VerticalContentAlignment = VerticalAlignment.Center,
-            Theme = (Avalonia.Styling.ControlTheme)this.FindResource("AppButton")!
-        };
-
-        var closeBtn = new Button
-        {
-            Content = "Close",
-            Height = 32,
-            Padding = new Avalonia.Thickness(16, 0),
-            FontSize = 12,
-            Margin = new Avalonia.Thickness(8, 0, 0, 0),
-            HorizontalContentAlignment = HorizontalAlignment.Center,
-            VerticalContentAlignment = VerticalAlignment.Center,
-            Theme = (Avalonia.Styling.ControlTheme)this.FindResource("AppButton")!
-        };
-
-        var buttonPanel = new StackPanel
-        {
-            Orientation = Avalonia.Layout.Orientation.Horizontal,
-            HorizontalAlignment = HorizontalAlignment.Right,
-            Margin = new Avalonia.Thickness(0, 8, 0, 0)
-        };
-        buttonPanel.Children.Add(copyBtn);
-        buttonPanel.Children.Add(closeBtn);
-
-        var panel = new DockPanel { Margin = new Avalonia.Thickness(12) };
-        DockPanel.SetDock(buttonPanel, Dock.Bottom);
-        panel.Children.Add(buttonPanel);
-        panel.Children.Add(scrollViewer);
-
-        var window = new Window
-        {
-            Title = $"Performance Studio — {title}",
-            Width = 700,
-            Height = 600,
-            MinWidth = 400,
-            MinHeight = 300,
-            Icon = GetParentWindow().Icon,
-            Background = new SolidColorBrush(Color.Parse("#1A1D23")),
-            Foreground = new SolidColorBrush(Color.Parse("#E4E6EB")),
-            Content = panel
-        };
-
-        copyBtn.Click += async (_, _) =>
-        {
-            var clipboard = window.Clipboard;
-            if (clipboard != null)
-            {
-                await clipboard.SetTextAsync(content);
-                copyBtn.Content = "Copied!";
-                await Task.Delay(1500);
-                copyBtn.Content = "Copy to Clipboard";
-            }
-        };
-
-        closeBtn.Click += (_, _) => window.Close();
-
-        window.Show(GetParentWindow());
+        AdviceWindowHelper.Show(GetParentWindow(), title, content, analysis, sourceViewer);
     }
 
     private void AddPlanTab(string planXml, string queryText, bool estimated, string? labelOverride = null)

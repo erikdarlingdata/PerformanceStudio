@@ -458,7 +458,7 @@ public partial class MainWindow : Window
         {
             if (viewer.CurrentPlan == null) return;
             var analysis = ResultMapper.Map(viewer.CurrentPlan, "file", viewer.Metadata);
-            ShowAdviceWindow("Advice for Humans", TextFormatter.Format(analysis), analysis);
+            ShowAdviceWindow("Advice for Humans", TextFormatter.Format(analysis), analysis, viewer);
         };
 
         Action showRobotAdvice = () =>
@@ -594,82 +594,9 @@ public partial class MainWindow : Window
         return panel;
     }
 
-    private void ShowAdviceWindow(string title, string content, AnalysisResult? analysis = null)
+    private void ShowAdviceWindow(string title, string content, AnalysisResult? analysis = null, PlanViewerControl? sourceViewer = null)
     {
-        var styledContent = AdviceContentBuilder.Build(content, analysis);
-
-        var scrollViewer = new ScrollViewer
-        {
-            Content = styledContent,
-            HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
-            VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto
-        };
-
-        var copyBtn = new Button
-        {
-            Content = "Copy to Clipboard",
-            Height = 32,
-            Padding = new Avalonia.Thickness(16, 0),
-            FontSize = 12,
-            HorizontalContentAlignment = HorizontalAlignment.Center,
-            VerticalContentAlignment = VerticalAlignment.Center,
-            Theme = (Avalonia.Styling.ControlTheme)this.FindResource("AppButton")!
-        };
-
-        var closeBtn = new Button
-        {
-            Content = "Close",
-            Height = 32,
-            Padding = new Avalonia.Thickness(16, 0),
-            FontSize = 12,
-            Margin = new Avalonia.Thickness(8, 0, 0, 0),
-            HorizontalContentAlignment = HorizontalAlignment.Center,
-            VerticalContentAlignment = VerticalAlignment.Center,
-            Theme = (Avalonia.Styling.ControlTheme)this.FindResource("AppButton")!
-        };
-
-        var buttonPanel = new StackPanel
-        {
-            Orientation = Avalonia.Layout.Orientation.Horizontal,
-            HorizontalAlignment = HorizontalAlignment.Right,
-            Margin = new Avalonia.Thickness(0, 8, 0, 0)
-        };
-        buttonPanel.Children.Add(copyBtn);
-        buttonPanel.Children.Add(closeBtn);
-
-        var panel = new DockPanel { Margin = new Avalonia.Thickness(12) };
-        DockPanel.SetDock(buttonPanel, Dock.Bottom);
-        panel.Children.Add(buttonPanel);
-        panel.Children.Add(scrollViewer);
-
-        var window = new Window
-        {
-            Title = $"Performance Studio — {title}",
-            Width = 700,
-            Height = 600,
-            MinWidth = 400,
-            MinHeight = 300,
-            Icon = this.Icon,
-            Background = new SolidColorBrush(Color.Parse("#1A1D23")),
-            Foreground = new SolidColorBrush(Color.Parse("#E4E6EB")),
-            Content = panel
-        };
-
-        copyBtn.Click += async (_, _) =>
-        {
-            var clipboard = window.Clipboard;
-            if (clipboard != null)
-            {
-                await clipboard.SetTextAsync(content);
-                copyBtn.Content = "Copied!";
-                await Task.Delay(1500);
-                copyBtn.Content = "Copy to Clipboard";
-            }
-        };
-
-        closeBtn.Click += (_, _) => window.Close();
-
-        window.Show(this);
+        AdviceWindowHelper.Show(this, title, content, analysis, sourceViewer);
     }
 
     private List<(string label, PlanViewerControl viewer)> CollectAllPlanTabs()
