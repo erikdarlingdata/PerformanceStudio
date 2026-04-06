@@ -478,7 +478,7 @@ public partial class QueryStoreHistoryWindow : Window
             _avgLine.LineWidth = 2f;
             _avgLine.LinePattern = LinePattern.DenselyDashed;
             _avgLine.Text = $"avg: {avg:N0}";
-            _avgLine.LabelFontColor = ScottPlot.Color.FromHex("#9DA5B4");
+            _avgLine.LabelFontColor = ScottPlot.Color.FromHex("#E4E6EB");
             _avgLine.LabelFontSize = 11;
             _avgLine.LabelBackgroundColor = ScottPlot.Color.FromHex("#333333").WithAlpha(170);
             _avgLine.LabelOppositeAxis = false;
@@ -516,7 +516,7 @@ public partial class QueryStoreHistoryWindow : Window
 
         if (span.TotalHours <= 48)
         {
-            HistoryChart.Plot.Axes.Bottom.TickLabelStyle.ForeColor = ScottPlot.Color.FromHex("#9DA5B4");
+            HistoryChart.Plot.Axes.Bottom.TickLabelStyle.ForeColor = ScottPlot.Color.FromHex("#E4E6EB");
             HistoryChart.Plot.Axes.Bottom.TickGenerator = new ScottPlot.TickGenerators.DateTimeAutomatic
             {
                 LabelFormatter = dt => dt.ToString("HH:mm\nMM/dd")
@@ -886,7 +886,7 @@ public partial class QueryStoreHistoryWindow : Window
     {
         var fig = ScottPlot.Color.FromHex("#22252b");
         var data = ScottPlot.Color.FromHex("#111217");
-        var text = ScottPlot.Color.FromHex("#9DA5B4");
+        var text = ScottPlot.Color.FromHex("#E4E6EB");
         var grid = ScottPlot.Colors.White.WithAlpha(40);
 
         HistoryChart.Plot.FigureBackground.Color = fig;

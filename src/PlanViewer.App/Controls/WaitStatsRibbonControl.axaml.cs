@@ -95,7 +95,7 @@ public partial class WaitStatsRibbonControl : UserControl
         orderedCats.Add("Others");
 
         // ── Vertical dashed lines at day boundaries (00:00) ────────────────
-        var dashBrush = TryFindBrush("SlicerLabelBrush", new SolidColorBrush(Color.Parse("#99E4E6EB")));
+        var dashBrush = TryFindBrush("SlicerLabelBrush", new SolidColorBrush(Color.Parse("#E4E6EB")));
         for (int i = 0; i < n; i++)
         {
             if (allHours[i].Hour == 0)

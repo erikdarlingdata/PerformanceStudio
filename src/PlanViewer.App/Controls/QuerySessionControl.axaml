@@ -72,7 +72,7 @@
                 </StackPanel>
                 <TextBlock x:Name="StatusText" DockPanel.Dock="Right"
                            HorizontalAlignment="Right" VerticalAlignment="Center"
-                           FontSize="11" Foreground="{DynamicResource ForegroundMutedBrush}"
+                           FontSize="11" Foreground="{DynamicResource ForegroundBrush}"
                            TextTrimming="CharacterEllipsis"/>
             </DockPanel>
         </Border>
