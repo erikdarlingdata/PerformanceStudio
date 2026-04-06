@@ -1074,6 +1074,7 @@ public partial class QuerySessionControl : UserControl
             SetStatus($"{planType} plan captured ({sw.Elapsed.TotalSeconds:F1}s)");
             var viewer = new PlanViewerControl();
             viewer.Metadata = _serverMetadata;
+            viewer.ConnectionString = _connectionString;
             viewer.OpenInEditorRequested += OnOpenInEditorRequested;
             viewer.LoadPlan(planXml, tabLabel, queryText);
             loadingTab.Content = viewer;
@@ -1156,6 +1157,7 @@ public partial class QuerySessionControl : UserControl
 
         var viewer = new PlanViewerControl();
         viewer.Metadata = _serverMetadata;
+        viewer.ConnectionString = _connectionString;
         viewer.OpenInEditorRequested += OnOpenInEditorRequested;
         viewer.LoadPlan(planXml, label, queryText);
 
@@ -1845,6 +1847,7 @@ public partial class QuerySessionControl : UserControl
             SetStatus($"Actual plan captured ({sw.Elapsed.TotalSeconds:F1}s)");
             var actualViewer = new PlanViewerControl();
             actualViewer.Metadata = _serverMetadata;
+            actualViewer.ConnectionString = _connectionString;
             actualViewer.OpenInEditorRequested += OnOpenInEditorRequested;
             actualViewer.LoadPlan(actualPlanXml, tabLabel, queryText);
             loadingTab.Content = actualViewer;
