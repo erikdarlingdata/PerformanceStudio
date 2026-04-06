@@ -691,6 +691,22 @@ public static class ShowPlanParser
                 node.TableReferenceId = (int)ParseDouble(objEl.Attribute("TableReferenceId")?.Value);
             }
 
+            // Nonclustered indexes maintained by modification operators (Update/SimpleUpdate)
+            var opName = physicalOpEl.Name.LocalName;
+            if (opName is "Update" or "SimpleUpdate" or "CreateIndex")
+            {
+                var ncObjects = ScopedDescendants(physicalOpEl, Ns + "Object")
+                    .Where(o => string.Equals(o.Attribute("IndexKind")?.Value, "NonClustered", StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+                node.NonClusteredIndexCount = ncObjects.Count;
+                foreach (var ncObj in ncObjects)
+                {
+                    var ixName = ncObj.Attribute("Index")?.Value?.Replace("[", "").Replace("]", "");
+                    if (!string.IsNullOrEmpty(ixName))
+                        node.NonClusteredIndexNames.Add(ixName);
+                }
+            }
+
             // Hash keys for hash match operators
             var hashKeysProbeEl = physicalOpEl.Element(Ns + "HashKeysProbe");
             if (hashKeysProbeEl != null)

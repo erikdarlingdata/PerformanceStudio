@@ -338,6 +338,10 @@ public class PlanNode
     public int NoMatchingIndexCount { get; set; }
     public int PartialMatchingIndexCount { get; set; }
 
+    // Modification operator: nonclustered indexes maintained
+    public int NonClusteredIndexCount { get; set; }
+    public List<string> NonClusteredIndexNames { get; set; } = new();
+
     // ConstantScan Values (parsed rows as displayable string)
     public string? ConstantScanValues { get; set; }
 
