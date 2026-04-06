@@ -14,6 +14,20 @@
                 BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
             <DockPanel>
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
+                    <Button x:Name="PlanConnectButton" Content="Connect" Click="PlanConnect_Click"
+                            Height="28" Padding="10,0" FontSize="12"
+                            Theme="{StaticResource AppButton}"
+                            ToolTip.Tip="Connect to a SQL Server for schema lookups"/>
+                    <TextBlock x:Name="PlanServerLabel" Text=""
+                               VerticalAlignment="Center" FontSize="12"
+                               Foreground="{DynamicResource ForegroundBrush}" Margin="6,0,0,0"/>
+                    <TextBlock Text="|" VerticalAlignment="Center"
+                               Foreground="{DynamicResource ForegroundBrush}" Margin="6,0"/>
+                    <ComboBox x:Name="PlanDatabaseBox" Width="180" Height="28" FontSize="12"
+                              IsEnabled="False" PlaceholderText="Database"
+                              SelectionChanged="PlanDatabase_SelectionChanged"/>
+                    <TextBlock Text="|" VerticalAlignment="Center"
+                               Foreground="{DynamicResource ForegroundBrush}" Margin="6,0"/>
                     <Button Content="+" Click="ZoomIn_Click" Width="28" Height="28" Padding="0" FontSize="16"
                             FontWeight="Bold" ToolTip.Tip="Zoom In"
                             Theme="{StaticResource AppButton}"/>

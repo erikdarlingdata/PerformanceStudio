@@ -361,6 +361,7 @@ public partial class MainWindow : Window
                 return;
 
             var viewer = new PlanViewerControl();
+            viewer.SetConnectionServices(_credentialService, _connectionStore);
             viewer.LoadPlan(xml, fileName);
             viewer.SourceFilePath = filePath;
 
@@ -399,6 +400,7 @@ public partial class MainWindow : Window
             return;
 
         var viewer = new PlanViewerControl();
+        viewer.SetConnectionServices(_credentialService, _connectionStore);
         viewer.LoadPlan(xml, "Pasted Plan");
 
         var content = CreatePlanTabContent(viewer);
