@@ -50,6 +50,7 @@ public sealed class ColumnInfo
 public static class SchemaQueryService
 {
     private const string IndexQuery = @"
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 SELECT
     i.name AS index_name,
     i.type_desc AS index_type,
@@ -108,6 +109,7 @@ WHERE i.object_id = OBJECT_ID(@objectName)
 ORDER BY i.index_id;";
 
     private const string ColumnQuery = @"
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 SELECT
     c.column_id AS ordinal_position,
     c.name AS column_name,
@@ -139,6 +141,7 @@ WHERE c.object_id = OBJECT_ID(@objectName)
 ORDER BY c.column_id;";
 
     private const string ObjectDefinitionQuery = @"
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 SELECT OBJECT_DEFINITION(OBJECT_ID(@objectName));";
 
     public static async Task<IReadOnlyList<IndexInfo>> FetchIndexesAsync(
