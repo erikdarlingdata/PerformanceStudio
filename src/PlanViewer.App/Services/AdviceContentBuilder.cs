@@ -70,6 +70,7 @@ internal static class AdviceContentBuilder
     private static readonly Regex NodeRefRegex = new(@"(?<=\(?)\bNode\s+(\d+)\b(?=\)?)", RegexOptions.Compiled);
 
     private static readonly SolidColorBrush LinkBrush = new(Color.Parse("#4FC3F7"));
+    private static readonly Avalonia.Input.Cursor HandCursor = new(Avalonia.Input.StandardCursorType.Hand);
 
     public static StackPanel Build(string content)
     {
@@ -663,7 +664,7 @@ internal static class AdviceContentBuilder
                     {
                         stb.Cursor = run.TextDecorations == Avalonia.Media.TextDecorations.Underline
                             && run.Foreground == LinkBrush
-                            ? new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.Hand)
+                            ? HandCursor
                             : Avalonia.Input.Cursor.Default;
                         return;
                     }
