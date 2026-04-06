@@ -228,6 +228,7 @@
                         <DataGrid.ContextMenu>
                             <ContextMenu>
                                 <MenuItem Header="Copy Query Text" Click="CopyStatementText_Click"/>
+                                <MenuItem Header="Open in Query Editor" Click="OpenInEditor_Click"/>
                             </ContextMenu>
                         </DataGrid.ContextMenu>
                     </DataGrid>
