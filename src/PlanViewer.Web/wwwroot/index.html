@@ -44,6 +44,15 @@
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
         }
+        function getBaseUrl() {
+            return window.location.origin + window.location.pathname;
+        }
+        function getQueryParam(name) {
+            return new URLSearchParams(window.location.search).get(name) || '';
+        }
+        function copyToClipboard(text) {
+            navigator.clipboard.writeText(text).catch(() => {});
+        }
     </script>
 </body>
 </html>
