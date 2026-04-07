@@ -51,7 +51,7 @@
 html, body {
     background: var(--bg);
     color: var(--text);
-    font-family: 'Armata', 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+    font-family: 'Montserrat', 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
     font-size: 14px;
     line-height: 1.5;
 }
@@ -83,9 +83,32 @@ header {
 }
 
 .header-title {
+    font-family: 'Montserrat', sans-serif;
     font-size: 1rem;
+    font-weight: 600;
+    color: #ffffff;
+    letter-spacing: 0.3px;
+}
+
+.header-nav {
+    display: flex;
+    gap: 1.5rem;
+    margin-left: auto;
+}
+
+.header-nav a {
     color: #e0e0e0;
-    letter-spacing: 0.5px;
+    text-decoration: none;
+    font-size: 1rem;
+    font-weight: 500;
+    padding: 0.3rem 0.6rem;
+    border-radius: 4px;
+    transition: color 0.15s, background 0.15s;
+}
+
+.header-nav a:hover {
+    color: #ffffff;
+    background: rgba(255, 255, 255, 0.1);
 }
 
 /* === Footer === */
@@ -94,7 +117,8 @@ footer {
     padding: 1.5rem 2rem;
     border-top: 1px solid var(--border);
     margin-top: 2rem;
-    font-size: 0.8rem;
+    font-size: 1.1rem;
+    font-weight: 500;
     color: var(--text-muted);
 }
 
@@ -136,12 +160,14 @@ main {
     font-size: 1.5rem;
     color: var(--text);
     margin-bottom: 0.25rem;
-    font-weight: 400;
+    font-weight: 700;
 }
 
 .privacy {
-    color: var(--text-muted);
-    font-size: 0.9rem;
+    color: var(--text);
+    font-family: 'Montserrat', sans-serif;
+    font-size: 1.05rem;
+    font-weight: 600;
     margin-bottom: 1.5rem;
 }
 
@@ -838,7 +864,7 @@ textarea::placeholder {
     min-height: 200px;
     color: var(--text-muted);
     font-size: 1.1rem;
-    font-family: 'Armata', sans-serif;
+    font-family: 'Montserrat', sans-serif;
 }
 
 /* === Blazor Error UI === */
