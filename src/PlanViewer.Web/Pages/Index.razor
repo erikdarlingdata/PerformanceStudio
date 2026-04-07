@@ -1,4 +1,5 @@
 @page "/"
+@inject IJSRuntime JS
 
 @if (result == null)
 {
@@ -46,6 +47,7 @@ else
 
     <div class="toolbar">
         <button class="back-btn" @onclick="Reset">New Plan</button>
+        <button class="back-btn" @onclick="ExportHtml">Export HTML</button>
         <span class="toolbar-source">@sourceLabel</span>
         <span class="toolbar-plan-type @(result.Summary.HasActualStats ? "actual" : "estimated")">
             @(result.Summary.HasActualStats ? "Actual Plan" : "Estimated Plan")
@@ -1685,6 +1687,16 @@ else
         planXml = "";
         activeStatement = 0;
         selectedNode = null;
+    }
+
+    private async Task ExportHtml()
+    {
+        if (result == null || textOutput == null) return;
+        var html = HtmlExporter.Export(result, textOutput);
+        var fileName = (sourceLabel ?? "plan") + ".html";
+        if (fileName.EndsWith(".sqlplan.html", StringComparison.OrdinalIgnoreCase))
+            fileName = fileName[..^".sqlplan.html".Length] + ".html";
+        await JS.InvokeVoidAsync("downloadFile", fileName, html);
     }
 
     private RenderFragment RenderPlanNodes(PlanNode node, bool isRoot) => builder =>

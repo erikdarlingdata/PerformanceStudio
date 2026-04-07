@@ -31,6 +31,7 @@
     <Compile Include="..\PlanViewer.Core\Output\AnalysisResult.cs" Link="Core\Output\AnalysisResult.cs" />
     <Compile Include="..\PlanViewer.Core\Output\ResultMapper.cs" Link="Core\Output\ResultMapper.cs" />
     <Compile Include="..\PlanViewer.Core\Output\TextFormatter.cs" Link="Core\Output\TextFormatter.cs" />
+    <Compile Include="..\PlanViewer.Core\Output\HtmlExporter.cs" Link="Core\Output\HtmlExporter.cs" />
   </ItemGroup>
 
 </Project>
