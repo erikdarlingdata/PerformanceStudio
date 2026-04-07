@@ -80,6 +80,39 @@ public static class PlanTestHelper
         return null;
     }
 
+    /// <summary>
+    /// Loads a plan from .internal/examples (private plans not committed to git).
+    /// Returns null if the file doesn't exist so tests can skip gracefully.
+    /// </summary>
+    public static ParsedPlan? LoadFromInternal(string planFileName)
+    {
+        // Walk up from bin/Debug/net8.0 to find the repo root
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir != null && !Directory.Exists(Path.Combine(dir.FullName, ".internal")))
+            dir = dir.Parent;
+        if (dir == null) return null;
+
+        var path = Path.Combine(dir.FullName, ".internal", "examples", planFileName);
+        if (!File.Exists(path)) return null;
+
+        var xml = File.ReadAllText(path);
+        xml = xml.Replace("encoding=\"utf-16\"", "encoding=\"utf-8\"");
+        var plan = ShowPlanParser.Parse(xml);
+        PlanAnalyzer.Analyze(plan);
+        return plan;
+    }
+
+    /// <summary>
+    /// Gets all node-level warnings for a single statement.
+    /// </summary>
+    public static List<PlanWarning> AllNodeWarnings(PlanStatement stmt)
+    {
+        var warnings = new List<PlanWarning>();
+        if (stmt.RootNode != null)
+            CollectNodeWarnings(stmt.RootNode, warnings);
+        return warnings;
+    }
+
     private static void CollectNodeWarnings(PlanNode node, List<PlanWarning> warnings)
     {
         warnings.AddRange(node.Warnings);

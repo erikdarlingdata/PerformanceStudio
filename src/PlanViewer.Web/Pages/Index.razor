@@ -59,16 +59,24 @@ else
     @if (result.Statements.Count > 1)
     {
         <div class="statement-tabs">
-            @for (int si = 0; si < result.Statements.Count; si++)
+            @foreach (var entry in SortedStatementIndexes)
             {
-                var idx = si;
+                var idx = entry;
                 var isActive = idx == activeStatement;
+                var s = result.Statements[idx];
                 <button class="stmt-tab @(isActive ? "active" : "")" @onclick="() => SelectStatement(idx)">
                     Statement @(idx + 1)
-                    <span class="stmt-tab-cost">@result.Statements[idx].EstimatedCost.ToString("N2")</span>
-                    @if (result.Statements[idx].Warnings.Count > 0)
+                    @if (s.QueryTime != null)
                     {
-                        <span class="stmt-tab-warns">@result.Statements[idx].Warnings.Count</span>
+                        <span class="stmt-tab-time">@FormatMs(s.QueryTime.ElapsedTimeMs)</span>
+                    }
+                    else
+                    {
+                        <span class="stmt-tab-cost">@s.EstimatedCost.ToString("N2")</span>
+                    }
+                    @if (s.Warnings.Count > 0)
+                    {
+                        <span class="stmt-tab-warns">@s.Warnings.Count</span>
                     }
                 </button>
             }
@@ -240,7 +248,17 @@ else
     @if (GetAllWarnings(ActiveStmt!).Count > 0)
     {
         <div class="warnings-strip">
-            <h4>Warnings <span class="warn-count-badge">@GetAllWarnings(ActiveStmt!).Count</span></h4>
+            <h4>Warnings
+                @{
+                    var allWarns = GetAllWarnings(ActiveStmt!);
+                    var critCount = allWarns.Count(w => w.Severity == "Critical");
+                    var warnCount = allWarns.Count(w => w.Severity == "Warning");
+                    var infoCount = allWarns.Count(w => w.Severity == "Info");
+                }
+                @if (critCount > 0) { <span class="warn-count-badge critical">@critCount</span> }
+                @if (warnCount > 0) { <span class="warn-count-badge warning">@warnCount</span> }
+                @if (infoCount > 0) { <span class="warn-count-badge info">@infoCount</span> }
+            </h4>
             <div class="warnings-list">
                 @foreach (var w in GetAllWarnings(ActiveStmt!))
                 {
@@ -1928,6 +1946,19 @@ else
     }
 
     private bool IsRootNode => selectedNode != null && ActiveStmtPlan?.RootNode == selectedNode;
+
+    // Sort statement tabs: actual plans by elapsed time (desc), estimated by cost (desc)
+    private IEnumerable<int> SortedStatementIndexes
+    {
+        get
+        {
+            if (result == null) return Enumerable.Empty<int>();
+            var indexes = Enumerable.Range(0, result.Statements.Count);
+            if (result.Summary.HasActualStats)
+                return indexes.OrderByDescending(i => result.Statements[i].QueryTime?.ElapsedTimeMs ?? 0);
+            return indexes.OrderByDescending(i => result.Statements[i].EstimatedCost);
+        }
+    }
 
     private static string GetOperatorLabel(PlanNode node)
     {

@@ -72,7 +72,7 @@ header {
 }
 
 .header-logo {
-    height: 28px;
+    height: 40px;
     width: auto;
 }
 
@@ -317,10 +317,15 @@ textarea::placeholder {
     color: var(--text);
 }
 
-.stmt-tab-cost {
+.stmt-tab-cost, .stmt-tab-time {
     color: var(--text-muted);
     margin-left: 0.25rem;
     font-size: 0.75rem;
+}
+
+.stmt-tab-time {
+    color: var(--text-secondary);
+    font-weight: 500;
 }
 
 .stmt-tab-warns {
@@ -340,6 +345,11 @@ textarea::placeholder {
     grid-template-columns: repeat(4, 1fr);
     gap: 0.75rem;
     margin-bottom: 0.75rem;
+}
+
+/* Wait stats card gets extra width when present */
+.insight-card.waits.has-items {
+    grid-column: span 2;
 }
 
 .insight-card {
@@ -514,7 +524,7 @@ textarea::placeholder {
 }
 
 .wait-type {
-    min-width: 120px;
+    min-width: 180px;
     font-family: 'Cascadia Code', 'Consolas', monospace;
     font-size: 0.7rem;
 }
@@ -561,12 +571,16 @@ textarea::placeholder {
 }
 
 .warn-count-badge {
-    background: var(--critical);
     color: #fff;
     font-size: 0.65rem;
     padding: 0.05rem 0.4rem;
     border-radius: 8px;
+    background: var(--critical);
 }
+
+.warn-count-badge.critical { background: var(--critical); }
+.warn-count-badge.warning { background: var(--warning-color); }
+.warn-count-badge.info { background: var(--accent); }
 
 .warnings-list {
     padding: 0.5rem 0.75rem;

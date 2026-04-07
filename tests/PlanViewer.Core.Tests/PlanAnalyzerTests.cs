@@ -778,4 +778,70 @@ public class PlanAnalyzerTests
         Assert.Contains("No Join Predicate", text);
         Assert.Contains("often misleading", text);
     }
+
+    // ---------------------------------------------------------------
+    // Issue #178: Warning improvement verification (test1.sqlplan)
+    // ---------------------------------------------------------------
+
+    [Fact]
+    public void Issue178_5_SerialPlanSuppressedOnTrivialStatement()
+    {
+        // Statement 1 is a trivial variable assignment (cost ~0.000001) — no Serial Plan warning
+        // Uses private test plan from .internal (not committed to git)
+        var plan = PlanTestHelper.LoadFromInternal("test1.sqlplan");
+        if (plan == null) return; // Skip if plan not available
+        var stmt1 = plan.Batches.SelectMany(b => b.Statements).First();
+
+        Assert.True(stmt1.StatementSubTreeCost < 0.01, "Statement 1 should be trivial cost");
+        Assert.DoesNotContain(stmt1.PlanWarnings, w => w.WarningType == "Serial Plan");
+    }
+
+    [Fact]
+    public void Issue178_9_JoinOrNotTriggeredByMergeInterval()
+    {
+        // Statement 8 has a Merge Interval inside a NOT IN anti-semi join — not a genuine OR expansion
+        var plan = PlanTestHelper.LoadFromInternal("test1.sqlplan");
+        if (plan == null) return;
+        var stmt8 = plan.Batches.SelectMany(b => b.Statements).ElementAt(7);
+        var allNodeWarnings = PlanTestHelper.AllNodeWarnings(stmt8);
+
+        Assert.DoesNotContain(allNodeWarnings, w => w.WarningType == "Join OR Clause");
+    }
+
+    [Fact]
+    public void Issue178_12_RowGoal1to1Suppressed()
+    {
+        // Row Goal "1 to 1 (1x reduction)" should not fire — requires >= 2x reduction
+        var plan = PlanTestHelper.LoadFromInternal("test1.sqlplan");
+        if (plan == null) return;
+        var allWarnings = PlanTestHelper.AllWarnings(plan);
+
+        Assert.DoesNotContain(allWarnings, w =>
+            w.WarningType == "Row Goal" && w.Message.Contains("1x reduction"));
+    }
+
+    [Fact]
+    public void Issue178_6_LocalVariableSuppressedOnTrivialStatement()
+    {
+        // Statement 1 is a trivial variable assignment (cost ~0.000001) — no Local Variables warning
+        var plan = PlanTestHelper.LoadFromInternal("test1.sqlplan");
+        if (plan == null) return;
+        var stmt1 = plan.Batches.SelectMany(b => b.Statements).First();
+
+        Assert.True(stmt1.StatementSubTreeCost < 0.01);
+        Assert.DoesNotContain(stmt1.PlanWarnings, w => w.WarningType == "Local Variables");
+    }
+
+    [Fact]
+    public void Issue178_7_FilterSuppressedOnTrivialChildIO()
+    {
+        // Statement 5 has a Filter with 19 reads and 0-1ms child — should be suppressed
+        var plan = PlanTestHelper.LoadFromInternal("test1.sqlplan");
+        if (plan == null) return;
+        var stmt5 = plan.Batches.SelectMany(b => b.Statements).ElementAt(4);
+        var filterWarnings = PlanTestHelper.AllNodeWarnings(stmt5)
+            .Where(w => w.WarningType == "Filter Operator").ToList();
+
+        Assert.Empty(filterWarnings);
+    }
 }
