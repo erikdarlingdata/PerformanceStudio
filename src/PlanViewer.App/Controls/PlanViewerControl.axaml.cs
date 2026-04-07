@@ -2376,7 +2376,7 @@ public partial class PlanViewerControl : UserControl
             AddParamCell(grid, rowIndex, 0, param.Name, "#E4E6EB", FontWeight.SemiBold);
 
             // Data type
-            AddParamCell(grid, rowIndex, 1, param.DataType, "#B0B6C0");
+            AddParamCell(grid, rowIndex, 1, param.DataType, "#E4E6EB");
 
             // Compiled value
             if (compiledCol >= 0)
@@ -3372,7 +3372,7 @@ public partial class PlanViewerControl : UserControl
             "BackgroundLightBrush" => new SolidColorBrush(Color.FromRgb(0x23, 0x26, 0x2E)),
             "BorderBrush" => new SolidColorBrush(Color.FromRgb(0x3A, 0x3D, 0x45)),
             "ForegroundBrush" => new SolidColorBrush(Color.FromRgb(0xE4, 0xE6, 0xEB)),
-            "ForegroundMutedBrush" => TooltipFgBrush,
+            "ForegroundMutedBrush" => new SolidColorBrush(Color.FromRgb(0xE4, 0xE6, 0xEB)),
             _ => Brushes.White
         };
     }

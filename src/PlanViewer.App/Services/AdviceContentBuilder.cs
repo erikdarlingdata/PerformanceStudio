@@ -20,10 +20,10 @@ internal static class AdviceContentBuilder
     private static readonly SolidColorBrush CriticalBrush = new(Color.Parse("#E57373"));
     private static readonly SolidColorBrush WarningBrush = new(Color.Parse("#FFB347"));
     private static readonly SolidColorBrush InfoBrush = new(Color.Parse("#6BB5FF"));
-    private static readonly SolidColorBrush LabelBrush = new(Color.Parse("#9B9EC0"));
+    private static readonly SolidColorBrush LabelBrush = new(Color.Parse("#E4E6EB"));
     private static readonly SolidColorBrush ValueBrush = new(Color.Parse("#E4E6EB"));
     private static readonly SolidColorBrush CodeBrush = new(Color.Parse("#7BCF7B"));
-    private static readonly SolidColorBrush MutedBrush = new(Color.Parse("#8B8FA0"));
+    private static readonly SolidColorBrush MutedBrush = new(Color.Parse("#E4E6EB"));
     private static readonly SolidColorBrush OperatorBrush = new(Color.Parse("#C792EA"));
     private static readonly SolidColorBrush SqlKeywordBrush = new(Color.Parse("#569CD6"));
     private static readonly SolidColorBrush SeparatorBrush = new(Color.Parse("#2A2D35"));

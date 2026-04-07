@@ -31,7 +31,7 @@ public partial class TimeRangeSlicerControl : UserControl
     // Cached brushes and objects to avoid allocations on every Redraw
     private static readonly SolidColorBrush FallbackChartFillBrush   = new(Color.Parse("#332EAEF1"));
     private static readonly SolidColorBrush FallbackChartLineBrush   = new(Color.Parse("#2EAEF1"));
-    private static readonly SolidColorBrush FallbackLabelBrush       = new(Color.Parse("#99E4E6EB"));
+    private static readonly SolidColorBrush FallbackLabelBrush       = new(Color.Parse("#E4E6EB"));
     private static readonly SolidColorBrush FallbackDayLineBrush     = new(Color.Parse("#55E4E6EB"));
     private static readonly SolidColorBrush FallbackForegroundBrush  = new(Color.Parse("#E4E6EB"));
     private static readonly SolidColorBrush FallbackOverlayBrush     = new(Color.Parse("#99000000"));
