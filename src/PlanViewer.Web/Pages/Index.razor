@@ -59,9 +59,9 @@ else
     @if (result.Statements.Count > 1)
     {
         <div class="statement-tabs">
-            @for (int si = 0; si < result.Statements.Count; si++)
+            @foreach (var entry in SortedStatementIndexes)
             {
-                var idx = si;
+                var idx = entry;
                 var isActive = idx == activeStatement;
                 var s = result.Statements[idx];
                 <button class="stmt-tab @(isActive ? "active" : "")" @onclick="() => SelectStatement(idx)">
@@ -1946,6 +1946,19 @@ else
     }
 
     private bool IsRootNode => selectedNode != null && ActiveStmtPlan?.RootNode == selectedNode;
+
+    // Sort statement tabs: actual plans by elapsed time (desc), estimated by cost (desc)
+    private IEnumerable<int> SortedStatementIndexes
+    {
+        get
+        {
+            if (result == null) return Enumerable.Empty<int>();
+            var indexes = Enumerable.Range(0, result.Statements.Count);
+            if (result.Summary.HasActualStats)
+                return indexes.OrderByDescending(i => result.Statements[i].QueryTime?.ElapsedTimeMs ?? 0);
+            return indexes.OrderByDescending(i => result.Statements[i].EstimatedCost);
+        }
+    }
 
     private static string GetOperatorLabel(PlanNode node)
     {
