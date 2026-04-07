@@ -168,7 +168,23 @@ main {
     font-family: 'Montserrat', sans-serif;
     font-size: 1.05rem;
     font-weight: 600;
+    margin-bottom: 0.4rem;
+}
+
+.powered-by {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
     margin-bottom: 1.5rem;
+}
+
+.powered-by a {
+    color: var(--accent);
+    text-decoration: none;
+    font-weight: 600;
+}
+
+.powered-by a:hover {
+    text-decoration: underline;
 }
 
 /* === Input Area === */
