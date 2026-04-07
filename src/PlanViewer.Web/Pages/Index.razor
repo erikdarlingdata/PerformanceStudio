@@ -1,0 +1,628 @@
+@page "/"
+
+@if (result == null)
+{
+    <div class="landing">
+        <div class="landing-content">
+            <h2>Execution Plan Analysis</h2>
+            <p class="privacy">Paste or upload a .sqlplan file. Your plan XML never leaves your browser.</p>
+
+            @if (errorMessage != null)
+            {
+                <div class="error-message">@errorMessage</div>
+            }
+
+            <div class="input-area">
+                <div class="input-tabs">
+                    <button class="tab @(activeTab == "paste" ? "active" : "")" @onclick='() => activeTab = "paste"'>Paste XML</button>
+                    <button class="tab @(activeTab == "upload" ? "active" : "")" @onclick='() => activeTab = "upload"'>Upload File</button>
+                </div>
+
+                @if (activeTab == "paste")
+                {
+                    <textarea @bind="planXml" placeholder="Paste .sqlplan XML here..." rows="14"></textarea>
+                    <button class="analyze-btn" @onclick="AnalyzePasted" disabled="@isAnalyzing">
+                        @(isAnalyzing ? "Analyzing..." : "Analyze")
+                    </button>
+                }
+                else
+                {
+                    <div class="upload-area">
+                        <InputFile OnChange="OnFileSelected" accept=".sqlplan,.xml" />
+                        <p class="upload-hint">Accepts .sqlplan and .xml files up to 10 MB</p>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+}
+else
+{
+    @if (errorMessage != null)
+    {
+        <div class="error-message">@errorMessage</div>
+    }
+
+    <div class="toolbar">
+        <button class="back-btn" @onclick="Reset">New Plan</button>
+        <span class="toolbar-source">@sourceLabel</span>
+        <span class="toolbar-plan-type @(result.Summary.HasActualStats ? "actual" : "estimated")">
+            @(result.Summary.HasActualStats ? "Actual Plan" : "Estimated Plan")
+        </span>
+        @if (result.SqlServerBuild != null)
+        {
+            <span class="toolbar-version">@result.SqlServerBuild</span>
+        }
+    </div>
+
+    @* Statement selector for multi-statement plans *@
+    @if (result.Statements.Count > 1)
+    {
+        <div class="statement-tabs">
+            @for (int si = 0; si < result.Statements.Count; si++)
+            {
+                var idx = si;
+                var isActive = idx == activeStatement;
+                <button class="stmt-tab @(isActive ? "active" : "")" @onclick="() => activeStatement = idx">
+                    Statement @(idx + 1)
+                    <span class="stmt-tab-cost">@result.Statements[idx].EstimatedCost.ToString("N2")</span>
+                    @if (result.Statements[idx].Warnings.Count > 0)
+                    {
+                        <span class="stmt-tab-warns">@result.Statements[idx].Warnings.Count</span>
+                    }
+                </button>
+            }
+        </div>
+    }
+
+    @* Insights panel — horizontal cards matching desktop layout *@
+    <div class="insights-panel">
+
+        @* Runtime Summary *@
+        <div class="insight-card runtime">
+            <h4>Runtime</h4>
+            <div class="insight-body">
+                <div class="insight-row">
+                    <span class="insight-label">Cost</span>
+                    <span class="insight-value">@ActiveStmt!.EstimatedCost.ToString("N2")</span>
+                </div>
+                @if (ActiveStmt!.QueryTime != null)
+                {
+                    <div class="insight-row">
+                        <span class="insight-label">Elapsed</span>
+                        <span class="insight-value">@ActiveStmt!.QueryTime.ElapsedTimeMs.ToString("N0") ms</span>
+                    </div>
+                    <div class="insight-row">
+                        <span class="insight-label">CPU</span>
+                        <span class="insight-value">@ActiveStmt!.QueryTime.CpuTimeMs.ToString("N0") ms</span>
+                    </div>
+                }
+                @if (ActiveStmt!.DegreeOfParallelism > 0)
+                {
+                    <div class="insight-row">
+                        <span class="insight-label">DOP</span>
+                        <span class="insight-value">@ActiveStmt!.DegreeOfParallelism</span>
+                    </div>
+                }
+                @if (ActiveStmt!.NonParallelReason != null)
+                {
+                    <div class="insight-row">
+                        <span class="insight-label">Serial</span>
+                        <span class="insight-value">@ActiveStmt!.NonParallelReason</span>
+                    </div>
+                }
+                @if (ActiveStmt!.MemoryGrant != null && ActiveStmt!.MemoryGrant.GrantedKB > 0)
+                {
+                    var pctUsed = (double)ActiveStmt!.MemoryGrant.MaxUsedKB / ActiveStmt!.MemoryGrant.GrantedKB * 100;
+                    var effClass = pctUsed >= 80 ? "eff-good" : pctUsed >= 60 ? "eff-ok" : pctUsed >= 40 ? "eff-warn" : "eff-bad";
+                    <div class="insight-row">
+                        <span class="insight-label">Memory</span>
+                        <span class="insight-value">@FormatKB(ActiveStmt!.MemoryGrant.GrantedKB) granted</span>
+                    </div>
+                    <div class="insight-row">
+                        <span class="insight-label">Used</span>
+                        <span class="insight-value @effClass">@FormatKB(ActiveStmt!.MemoryGrant.MaxUsedKB) (@pctUsed.ToString("N0")%)</span>
+                    </div>
+                }
+                @if (ActiveStmt!.OptimizationLevel != null)
+                {
+                    <div class="insight-row">
+                        <span class="insight-label">Optimization</span>
+                        <span class="insight-value">@ActiveStmt!.OptimizationLevel</span>
+                    </div>
+                }
+                @if (ActiveStmt!.CardinalityEstimationModel > 0)
+                {
+                    <div class="insight-row">
+                        <span class="insight-label">CE Model</span>
+                        <span class="insight-value">@ActiveStmt!.CardinalityEstimationModel</span>
+                    </div>
+                }
+            </div>
+        </div>
+
+        @* Missing Indexes *@
+        <div class="insight-card indexes @(ActiveStmt!.MissingIndexes.Count > 0 ? "has-items" : "")">
+            <h4>Missing Indexes <span class="insight-count">@ActiveStmt!.MissingIndexes.Count</span></h4>
+            <div class="insight-body">
+                @if (ActiveStmt!.MissingIndexes.Count > 0)
+                {
+                    @foreach (var mi in ActiveStmt!.MissingIndexes)
+                    {
+                        <div class="mi-item">
+                            <div class="mi-table-name">@mi.Table</div>
+                            <div class="mi-impact-row">Impact: <span class="mi-impact-val">@mi.Impact.ToString("F0")%</span></div>
+                            <pre class="mi-create">@mi.CreateStatement</pre>
+                        </div>
+                    }
+                }
+                else
+                {
+                    <div class="insight-empty">No missing index suggestions</div>
+                }
+            </div>
+        </div>
+
+        @* Parameters *@
+        <div class="insight-card params @(ActiveStmt!.Parameters.Count > 0 ? "has-items" : "")">
+            <h4>Parameters <span class="insight-count">@ActiveStmt!.Parameters.Count</span></h4>
+            <div class="insight-body">
+                @if (ActiveStmt!.Parameters.Count > 0)
+                {
+                    <table class="params-table">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Type</th>
+                                <th>Compiled</th>
+                                @if (ActiveStmt!.Parameters.Any(p => p.RuntimeValue != null))
+                                {
+                                    <th>Runtime</th>
+                                }
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var p in ActiveStmt!.Parameters)
+                            {
+                                <tr class="@(p.SniffingIssue ? "sniffing-row" : "")">
+                                    <td class="param-name-cell">@p.Name</td>
+                                    <td class="param-type-cell">@p.DataType</td>
+                                    <td>@(p.CompiledValue ?? "?")</td>
+                                    @if (ActiveStmt!.Parameters.Any(pp => pp.RuntimeValue != null))
+                                    {
+                                        <td class="@(p.SniffingIssue ? "sniffing-val" : "")">@(p.RuntimeValue ?? "")</td>
+                                    }
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+                else
+                {
+                    <div class="insight-empty">No parameters</div>
+                }
+            </div>
+        </div>
+
+        @* Wait Stats *@
+        <div class="insight-card waits @(ActiveStmt!.WaitStats.Count > 0 ? "has-items" : "")">
+            <h4>Wait Stats
+                @if (ActiveStmt!.WaitStats.Count > 0)
+                {
+                    <span class="insight-count">@ActiveStmt!.WaitStats.Sum(w => w.WaitTimeMs).ToString("N0") ms</span>
+                }
+            </h4>
+            <div class="insight-body">
+                @if (ActiveStmt!.WaitStats.Count > 0)
+                {
+                    var maxWait = ActiveStmt!.WaitStats.Max(w => w.WaitTimeMs);
+                    @foreach (var w in ActiveStmt!.WaitStats.OrderByDescending(w => w.WaitTimeMs))
+                    {
+                        var barPct = maxWait > 0 ? (double)w.WaitTimeMs / maxWait * 100 : 0;
+                        <div class="wait-row">
+                            <span class="wait-type">@w.WaitType</span>
+                            <div class="wait-bar-container">
+                                <div class="wait-bar" style="width: @barPct.ToString("F0")%"></div>
+                            </div>
+                            <span class="wait-ms">@w.WaitTimeMs.ToString("N0") ms</span>
+                        </div>
+                    }
+                }
+                else
+                {
+                    <div class="insight-empty">@(result.Summary.HasActualStats ? "No waits recorded" : "Estimated plan — no wait stats")</div>
+                }
+            </div>
+        </div>
+    </div>
+
+    @* Warnings strip *@
+    @if (GetAllWarnings(ActiveStmt!).Count > 0)
+    {
+        <div class="warnings-strip">
+            <h4>Warnings <span class="warn-count-badge">@GetAllWarnings(ActiveStmt!).Count</span></h4>
+            <div class="warnings-list">
+                @foreach (var w in GetAllWarnings(ActiveStmt!))
+                {
+                    <div class="warning @w.Severity.ToLower()">
+                        <span class="severity">@w.Severity</span>
+                        @if (w.Operator != null)
+                        {
+                            <span class="warning-op">@w.Operator</span>
+                        }
+                        <span class="warning-type">@w.Type</span>
+                        <span class="warning-msg">@w.Message</span>
+                    </div>
+                }
+            </div>
+        </div>
+    }
+
+    @* Statement text *@
+    <details class="stmt-text-section">
+        <summary>Query Text</summary>
+        <pre class="statement-text">@ActiveStmt!.StatementText</pre>
+    </details>
+
+    @* Plan tree *@
+    @if (ActiveStmtPlan?.RootNode != null)
+    {
+        var extents = PlanLayoutEngine.GetExtents(ActiveStmtPlan!.RootNode);
+        <div class="plan-tree-container">
+            <div class="plan-tree" style="width: @(extents.width)px; height: @(extents.height)px; position: relative;">
+                <svg class="plan-connectors" style="width: @(extents.width)px; height: @(extents.height)px;">
+                    @RenderConnectors(ActiveStmtPlan!.RootNode)
+                </svg>
+                @RenderPlanNodes(ActiveStmtPlan!.RootNode, true)
+            </div>
+        </div>
+    }
+
+    @* Full text output *@
+    <details class="text-output">
+        <summary>Full Text Analysis</summary>
+        <pre>@textOutput</pre>
+    </details>
+}
+
+@code {
+    private string activeTab = "paste";
+    private string planXml = "";
+    private string? errorMessage;
+    private bool isAnalyzing;
+    private AnalysisResult? result;
+    private ParsedPlan? parsedPlan;
+    private string? textOutput;
+    private string? sourceLabel;
+    private int activeStatement = 0;
+
+    private StatementResult? ActiveStmt => result?.Statements.ElementAtOrDefault(activeStatement);
+    private PlanStatement? ActiveStmtPlan => parsedPlan?.Batches.SelectMany(b => b.Statements).ElementAtOrDefault(activeStatement);
+
+    private async Task AnalyzePasted()
+    {
+        if (string.IsNullOrWhiteSpace(planXml))
+        {
+            errorMessage = "Paste plan XML first.";
+            return;
+        }
+
+        await RunAnalysis(planXml, "pasted plan");
+    }
+
+    private async Task OnFileSelected(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file.Size > 10 * 1024 * 1024)
+        {
+            errorMessage = $"File too large ({file.Size / (1024 * 1024)} MB). Maximum is 10 MB.";
+            return;
+        }
+
+        try
+        {
+            using var stream = file.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
+            using var reader = new StreamReader(stream, detectEncodingFromByteOrderMarks: true);
+            var xml = await reader.ReadToEndAsync();
+            await RunAnalysis(xml, file.Name);
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Failed to read file: {ex.Message}";
+        }
+    }
+
+    private async Task RunAnalysis(string xml, string source)
+    {
+        errorMessage = null;
+        isAnalyzing = true;
+        activeStatement = 0;
+        StateHasChanged();
+        await Task.Yield();
+
+        try
+        {
+            xml = xml.Replace("encoding=\"utf-16\"", "encoding=\"utf-8\"");
+
+            parsedPlan = ShowPlanParser.Parse(xml);
+
+            if (parsedPlan.ParseError != null)
+            {
+                errorMessage = $"Parse error: {parsedPlan.ParseError}";
+                isAnalyzing = false;
+                return;
+            }
+
+            PlanAnalyzer.Analyze(parsedPlan);
+
+            foreach (var batch in parsedPlan.Batches)
+            {
+                foreach (var stmt in batch.Statements)
+                {
+                    PlanLayoutEngine.Layout(stmt);
+                }
+            }
+
+            result = ResultMapper.Map(parsedPlan, source);
+            textOutput = TextFormatter.Format(result);
+            sourceLabel = source;
+        }
+        catch (System.Xml.XmlException ex)
+        {
+            errorMessage = $"Invalid XML: {ex.Message}";
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Analysis failed: {ex.Message}";
+        }
+        finally
+        {
+            isAnalyzing = false;
+        }
+    }
+
+    private void Reset()
+    {
+        result = null;
+        parsedPlan = null;
+        textOutput = null;
+        errorMessage = null;
+        planXml = "";
+        activeStatement = 0;
+    }
+
+    private RenderFragment RenderPlanNodes(PlanNode node, bool isRoot) => builder =>
+    {
+        var height = PlanLayoutEngine.GetNodeHeight(node);
+        var costClass = node.CostPercent >= 25 ? " expensive" : "";
+        var warningClass = node.HasWarnings ? " has-warnings" : "";
+        var parallelClass = node.Parallel ? " parallel" : "";
+
+        builder.OpenElement(0, "div");
+        builder.AddAttribute(1, "class", $"plan-node{costClass}{warningClass}{parallelClass}");
+        builder.AddAttribute(2, "style",
+            $"left: {node.X}px; top: {node.Y}px; width: {PlanLayoutEngine.NodeWidth}px; height: {height}px;");
+
+        var tooltip = BuildTooltip(node);
+        builder.AddAttribute(3, "title", tooltip);
+
+        // Icon row
+        builder.OpenElement(4, "div");
+        builder.AddAttribute(5, "class", "node-icon-row");
+
+        builder.OpenElement(6, "img");
+        builder.AddAttribute(7, "src", $"icons/{node.IconName}.png");
+        builder.AddAttribute(8, "class", "node-icon");
+        builder.AddAttribute(9, "alt", node.PhysicalOp);
+        builder.CloseElement();
+
+        if (node.HasWarnings)
+        {
+            builder.OpenElement(10, "span");
+            builder.AddAttribute(11, "class", "badge-warn");
+            builder.AddContent(12, "\u26a0");
+            builder.CloseElement();
+        }
+        if (node.Parallel)
+        {
+            builder.OpenElement(13, "span");
+            builder.AddAttribute(14, "class", "badge-parallel");
+            builder.AddContent(15, "\u21c6");
+            builder.CloseElement();
+        }
+
+        builder.CloseElement(); // node-icon-row
+
+        // Operator name
+        var opLabel = node.PhysicalOp;
+        if (node.PhysicalOp == "Parallelism" && !string.IsNullOrEmpty(node.LogicalOp)
+            && node.LogicalOp != "Parallelism")
+        {
+            opLabel = $"Parallelism ({node.LogicalOp})";
+        }
+
+        builder.OpenElement(16, "div");
+        builder.AddAttribute(17, "class", "node-op");
+        builder.AddContent(18, opLabel);
+        builder.CloseElement();
+
+        // Cost %
+        var costColorClass = !node.HasActualStats && node.CostPercent >= 50 ? " cost-high"
+            : !node.HasActualStats && node.CostPercent >= 25 ? " cost-med"
+            : "";
+        builder.OpenElement(19, "div");
+        builder.AddAttribute(20, "class", $"node-cost{costColorClass}");
+        builder.AddContent(21, $"Cost: {node.CostPercent}%");
+        builder.CloseElement();
+
+        // Actual plan stats
+        if (node.HasActualStats)
+        {
+            var ownElapsedMs = GetOwnElapsedMs(node);
+            var ownCpuMs = GetOwnCpuMs(node);
+            var ownElapsedSec = ownElapsedMs / 1000.0;
+            var ownCpuSec = ownCpuMs / 1000.0;
+
+            var elClass = ownElapsedSec >= 1.0 ? " time-high" : ownElapsedSec >= 0.1 ? " time-med" : "";
+            builder.OpenElement(22, "div");
+            builder.AddAttribute(23, "class", $"node-time{elClass}");
+            builder.AddContent(24, $"{ownElapsedSec:F3}s");
+            builder.CloseElement();
+
+            var cpuClass = ownCpuSec >= 1.0 ? " time-high" : ownCpuSec >= 0.1 ? " time-med" : "";
+            builder.OpenElement(25, "div");
+            builder.AddAttribute(26, "class", $"node-cpu{cpuClass}");
+            builder.AddContent(27, $"CPU: {ownCpuSec:F3}s");
+            builder.CloseElement();
+
+            var estRows = node.EstimateRows;
+            var ratio = estRows > 0 ? node.ActualRows / estRows : (node.ActualRows > 0 ? double.MaxValue : 1.0);
+            var rowClass = (ratio < 0.1 || ratio > 10.0) ? " rows-skewed" : "";
+            var accuracy = estRows > 0 ? $" ({ratio * 100:F0}%)" : "";
+            builder.OpenElement(28, "div");
+            builder.AddAttribute(29, "class", $"node-rows{rowClass}");
+            builder.AddContent(30, $"{node.ActualRows:N0} of {estRows:N0}{accuracy}");
+            builder.CloseElement();
+        }
+        else
+        {
+            builder.OpenElement(31, "div");
+            builder.AddAttribute(32, "class", "node-rows");
+            builder.AddContent(33, $"{node.EstimateRows:N0} est. rows");
+            builder.CloseElement();
+        }
+
+        if (!string.IsNullOrEmpty(node.ObjectName))
+        {
+            builder.OpenElement(34, "div");
+            builder.AddAttribute(35, "class", "node-object");
+            builder.AddContent(36, node.FullObjectName ?? node.ObjectName);
+            builder.CloseElement();
+        }
+
+        builder.CloseElement(); // plan-node
+
+        foreach (var child in node.Children)
+            builder.AddContent(37, RenderPlanNodes(child, false));
+    };
+
+    private RenderFragment RenderConnectors(PlanNode node) => builder =>
+    {
+        foreach (var child in node.Children)
+        {
+            var rows = child.HasActualStats ? child.ActualRows : (long)child.EstimateRows;
+            var thickness = rows > 100000 ? 4.0 : rows > 10000 ? 2.5 : 1.5;
+
+            var x1 = node.X + PlanLayoutEngine.NodeWidth;
+            var y1 = node.Y + PlanLayoutEngine.GetNodeHeight(node) / 2;
+            var x2 = child.X;
+            var y2 = child.Y + PlanLayoutEngine.GetNodeHeight(child) / 2;
+
+            builder.OpenElement(0, "line");
+            builder.AddAttribute(1, "x1", x1.ToString("F1"));
+            builder.AddAttribute(2, "y1", y1.ToString("F1"));
+            builder.AddAttribute(3, "x2", x2.ToString("F1"));
+            builder.AddAttribute(4, "y2", y2.ToString("F1"));
+            builder.AddAttribute(5, "class", "connector");
+            builder.AddAttribute(6, "style", $"stroke-width: {thickness:F1}");
+            builder.CloseElement();
+
+            builder.AddContent(7, RenderConnectors(child));
+        }
+    };
+
+    private static string BuildTooltip(PlanNode node)
+    {
+        var parts = new List<string>();
+        parts.Add($"{node.PhysicalOp} (Node {node.NodeId})");
+
+        if (!string.IsNullOrEmpty(node.LogicalOp) && node.LogicalOp != node.PhysicalOp)
+            parts.Add($"Logical: {node.LogicalOp}");
+
+        if (node.HasActualStats)
+        {
+            parts.Add($"Actual rows: {node.ActualRows:N0}");
+            parts.Add($"Estimated rows: {node.EstimateRows:N0}");
+            if (node.ActualLogicalReads > 0) parts.Add($"Logical reads: {node.ActualLogicalReads:N0}");
+            if (node.ActualPhysicalReads > 0) parts.Add($"Physical reads: {node.ActualPhysicalReads:N0}");
+        }
+        else
+        {
+            parts.Add($"Estimated rows: {node.EstimateRows:N0}");
+        }
+
+        parts.Add($"Estimated cost: {node.EstimatedOperatorCost:N4}");
+        parts.Add($"Subtree cost: {node.EstimatedTotalSubtreeCost:N4}");
+
+        if (!string.IsNullOrEmpty(node.ObjectName)) parts.Add($"Object: {node.FullObjectName ?? node.ObjectName}");
+        if (!string.IsNullOrEmpty(node.IndexName)) parts.Add($"Index: {node.IndexName}");
+        if (!string.IsNullOrEmpty(node.SeekPredicates)) parts.Add($"Seek: {node.SeekPredicates}");
+        if (!string.IsNullOrEmpty(node.Predicate)) parts.Add($"Predicate: {node.Predicate}");
+        if (!string.IsNullOrEmpty(node.OrderBy)) parts.Add($"Order by: {node.OrderBy}");
+        if (!string.IsNullOrEmpty(node.OutputColumns)) parts.Add($"Output: {node.OutputColumns}");
+
+        foreach (var w in node.Warnings)
+            parts.Add($"[{w.Severity}] {w.WarningType}: {w.Message}");
+
+        return string.Join("\n", parts);
+    }
+
+    private static long GetOwnElapsedMs(PlanNode node)
+    {
+        if (!node.HasActualStats) return 0;
+        var mode = node.ActualExecutionMode ?? node.ExecutionMode;
+        if (mode == "Batch") return node.ActualElapsedMs;
+        long childSum = 0;
+        foreach (var child in node.Children)
+        {
+            if (child.PhysicalOp == "Parallelism" && child.Children.Count > 0)
+                childSum += child.Children.Where(c => c.HasActualStats).Select(c => c.ActualElapsedMs).DefaultIfEmpty(0).Max();
+            else if (child.HasActualStats) childSum += child.ActualElapsedMs;
+            else childSum += GetOwnElapsedMs(child);
+        }
+        return Math.Max(0, node.ActualElapsedMs - childSum);
+    }
+
+    private static long GetOwnCpuMs(PlanNode node)
+    {
+        if (!node.HasActualStats || node.ActualCPUMs == 0) return 0;
+        var mode = node.ActualExecutionMode ?? node.ExecutionMode;
+        if (mode == "Batch") return node.ActualCPUMs;
+        long childSum = 0;
+        foreach (var child in node.Children)
+        {
+            if (child.HasActualStats && child.ActualCPUMs > 0) childSum += child.ActualCPUMs;
+            else childSum += GetOwnCpuMs(child);
+        }
+        return Math.Max(0, node.ActualCPUMs - childSum);
+    }
+
+    private static List<WarningResult> GetAllWarnings(StatementResult stmt)
+    {
+        var warnings = new List<WarningResult>(stmt.Warnings);
+        if (stmt.OperatorTree != null)
+            CollectNodeWarningsRecursive(stmt.OperatorTree, warnings);
+        return warnings;
+    }
+
+    private static List<WarningResult> CollectNodeWarnings(OperatorResult node)
+    {
+        var warnings = new List<WarningResult>();
+        CollectNodeWarningsRecursive(node, warnings);
+        return warnings;
+    }
+
+    private static void CollectNodeWarningsRecursive(OperatorResult node, List<WarningResult> warnings)
+    {
+        warnings.AddRange(node.Warnings);
+        foreach (var child in node.Children)
+            CollectNodeWarningsRecursive(child, warnings);
+    }
+
+    private static string FormatKB(long kb)
+    {
+        if (kb < 1024) return $"{kb:N0} KB";
+        if (kb < 1024 * 1024) return $"{kb / 1024.0:N1} MB";
+        return $"{kb / (1024.0 * 1024.0):N2} GB";
+    }
+}
