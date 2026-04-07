@@ -124,7 +124,9 @@ public static class PlanAnalyzer
     private static void AnalyzeStatement(PlanStatement stmt, AnalyzerConfig cfg)
     {
         // Rule 3: Serial plan with reason
-        if (!cfg.IsRuleDisabled(3) && !string.IsNullOrEmpty(stmt.NonParallelPlanReason))
+        // Skip trivial statements (e.g., variable assignments, constant scans) — not worth warning about
+        if (!cfg.IsRuleDisabled(3) && !string.IsNullOrEmpty(stmt.NonParallelPlanReason)
+            && stmt.StatementSubTreeCost >= 0.01)
         {
             var reason = stmt.NonParallelPlanReason switch
             {
@@ -938,12 +940,17 @@ public static class PlanAnalyzer
             node.EstimateRowsWithoutRowGoal > node.EstimateRows)
         {
             var reduction = node.EstimateRowsWithoutRowGoal / node.EstimateRows;
-            node.Warnings.Add(new PlanWarning
+            // Require at least a 2x reduction to be worth mentioning — "1 to 1" or
+            // tiny floating-point differences that display identically are noise
+            if (reduction >= 2.0)
             {
-                WarningType = "Row Goal",
-                Message = $"Row goal active: estimate reduced from {node.EstimateRowsWithoutRowGoal:N0} to {node.EstimateRows:N0} ({reduction:N0}x reduction) due to TOP, EXISTS, IN, or FAST hint. The optimizer chose this plan shape expecting to stop reading early. If the query reads all rows anyway, the plan choice may be suboptimal.",
-                Severity = PlanWarningSeverity.Info
-            });
+                node.Warnings.Add(new PlanWarning
+                {
+                    WarningType = "Row Goal",
+                    Message = $"Row goal active: estimate reduced from {node.EstimateRowsWithoutRowGoal:N0} to {node.EstimateRows:N0} ({reduction:N0}x reduction) due to TOP, EXISTS, IN, or FAST hint. The optimizer chose this plan shape expecting to stop reading early. If the query reads all rows anyway, the plan choice may be suboptimal.",
+                    Severity = PlanWarningSeverity.Info
+                });
+            }
         }
 
         // Rule 28: Row Count Spool — NOT IN with nullable column
@@ -1175,6 +1182,13 @@ public static class PlanAnalyzer
         // Walk up to Nested Loops
         parent = parent.Parent;
         if (parent == null || parent.PhysicalOp != "Nested Loops")
+            return false;
+
+        // If this Nested Loops is inside an Anti/Semi Join, this is a NOT IN/IN
+        // subquery pattern (Merge Interval optimizing range lookups), not an OR expansion
+        var nlParent = parent.Parent;
+        if (nlParent != null && nlParent.LogicalOp != null &&
+            nlParent.LogicalOp.Contains("Semi"))
             return false;
 
         return true;
