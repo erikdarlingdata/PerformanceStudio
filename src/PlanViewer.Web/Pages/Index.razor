@@ -63,12 +63,20 @@ else
             {
                 var idx = si;
                 var isActive = idx == activeStatement;
+                var s = result.Statements[idx];
                 <button class="stmt-tab @(isActive ? "active" : "")" @onclick="() => SelectStatement(idx)">
                     Statement @(idx + 1)
-                    <span class="stmt-tab-cost">@result.Statements[idx].EstimatedCost.ToString("N2")</span>
-                    @if (result.Statements[idx].Warnings.Count > 0)
+                    @if (s.QueryTime != null)
                     {
-                        <span class="stmt-tab-warns">@result.Statements[idx].Warnings.Count</span>
+                        <span class="stmt-tab-time">@FormatMs(s.QueryTime.ElapsedTimeMs)</span>
+                    }
+                    else
+                    {
+                        <span class="stmt-tab-cost">@s.EstimatedCost.ToString("N2")</span>
+                    }
+                    @if (s.Warnings.Count > 0)
+                    {
+                        <span class="stmt-tab-warns">@s.Warnings.Count</span>
                     }
                 </button>
             }
@@ -240,7 +248,17 @@ else
     @if (GetAllWarnings(ActiveStmt!).Count > 0)
     {
         <div class="warnings-strip">
-            <h4>Warnings <span class="warn-count-badge">@GetAllWarnings(ActiveStmt!).Count</span></h4>
+            <h4>Warnings
+                @{
+                    var allWarns = GetAllWarnings(ActiveStmt!);
+                    var critCount = allWarns.Count(w => w.Severity == "Critical");
+                    var warnCount = allWarns.Count(w => w.Severity == "Warning");
+                    var infoCount = allWarns.Count(w => w.Severity == "Info");
+                }
+                @if (critCount > 0) { <span class="warn-count-badge critical">@critCount</span> }
+                @if (warnCount > 0) { <span class="warn-count-badge warning">@warnCount</span> }
+                @if (infoCount > 0) { <span class="warn-count-badge info">@infoCount</span> }
+            </h4>
             <div class="warnings-list">
                 @foreach (var w in GetAllWarnings(ActiveStmt!))
                 {
