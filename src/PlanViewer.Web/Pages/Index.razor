@@ -47,6 +47,7 @@ else
     <div class="toolbar">
         <button class="back-btn" @onclick="Reset">New Plan</button>
         <button class="back-btn" @onclick="ExportHtml">Export HTML</button>
+        <button class="share-btn" @onclick="ShowShareDialog" disabled="@isSharing">Share</button>
         <span class="toolbar-source">@sourceLabel</span>
         <span class="toolbar-plan-type @(result.Summary.HasActualStats ? "actual" : "estimated")">
             @(result.Summary.HasActualStats ? "Actual Plan" : "Estimated Plan")
@@ -55,7 +56,59 @@ else
         {
             <span class="toolbar-version">@result.SqlServerBuild</span>
         }
+        @if (shareUrl != null)
+        {
+            <span class="share-url"><a href="@shareUrl" target="_blank">@shareUrl</a></span>
+        }
+        @if (deleteToken != null)
+        {
+            <button class="delete-share-btn" @onclick="DeleteSharedPlan" disabled="@isDeleting">
+                @(isDeleting ? "Deleting..." : "Delete Share")
+            </button>
+        }
     </div>
+
+    @if (sharePhase == 1)
+    {
+        <div class="modal-overlay" @onclick="HideShareDialog">
+            <div class="modal" @onclick:stopPropagation="true">
+                <h3>Share Plan Analysis</h3>
+                <p>Your plan analysis will be uploaded and stored on a server. Anyone with the link can view the full analysis, including query text, operator details, and warnings.</p>
+                <div class="ttl-picker">
+                    <label>Expire after:</label>
+                    <select @bind="shareTtlDays">
+                        <option value="1">1 day</option>
+                        <option value="7">7 days</option>
+                        <option value="30">30 days</option>
+                        <option value="90">90 days</option>
+                        <option value="180">6 months</option>
+                        <option value="365">1 year</option>
+                    </select>
+                </div>
+                <div class="modal-actions">
+                    <button class="back-btn" @onclick="HideShareDialog">Cancel</button>
+                    <button class="analyze-btn" @onclick="AdvanceSharePhase">Continue</button>
+                </div>
+            </div>
+        </div>
+    }
+
+    @if (sharePhase == 2)
+    {
+        <div class="modal-overlay" @onclick="HideShareDialog">
+            <div class="modal" @onclick:stopPropagation="true">
+                <h3>Confirm Share</h3>
+                <p>You are about to share your plan analysis publicly for <strong>@FormatTtl(shareTtlDays)</strong>.</p>
+                <p>This cannot be undone after you leave this page. Are you sure?</p>
+                <div class="modal-actions">
+                    <button class="back-btn" @onclick="() => sharePhase = 1">Back</button>
+                    <button class="analyze-btn" @onclick="SharePlan" disabled="@isSharing">
+                        @(isSharing ? "Sharing..." : "Yes, Share")
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
 
     @* Statement selector for multi-statement plans *@
     @if (result.Statements.Count > 1)
@@ -1581,6 +1634,8 @@ else
 }
 
 @code {
+    private const string ShareApiBase = "http://87.99.137.152:8080";
+
     private string activeTab = "paste";
     private string planXml = "";
     private string? errorMessage;
@@ -1590,6 +1645,13 @@ else
     private string? textOutput;
     private string? sourceLabel;
     private int activeStatement = 0;
+    private int sharePhase; // 0=hidden, 1=consent, 2=confirm
+    private bool isSharing;
+    private bool isDeleting;
+    private string? shareUrl;
+    private string? shareId;
+    private string? deleteToken;
+    private int shareTtlDays = 7;
     private PlanNode? selectedNode;
 
     private StatementResult? ActiveStmt => result?.Statements.ElementAtOrDefault(activeStatement);
@@ -1686,6 +1748,10 @@ else
         planXml = "";
         activeStatement = 0;
         selectedNode = null;
+        shareUrl = null;
+        shareId = null;
+        deleteToken = null;
+        sharePhase = 0;
     }
 
     private async Task ExportHtml()
@@ -1696,6 +1762,148 @@ else
         if (fileName.EndsWith(".sqlplan.html", StringComparison.OrdinalIgnoreCase))
             fileName = fileName[..^".sqlplan.html".Length] + ".html";
         await JS.InvokeVoidAsync("downloadFile", fileName, html);
+    }
+
+    private void ShowShareDialog()
+    {
+        sharePhase = 1;
+        shareTtlDays = 7;
+    }
+
+    private void HideShareDialog() => sharePhase = 0;
+    private void AdvanceSharePhase() => sharePhase = 2;
+
+    private async Task SharePlan()
+    {
+        if (result == null || textOutput == null) return;
+        isSharing = true;
+        sharePhase = 0;
+        errorMessage = null;
+        StateHasChanged();
+
+        try
+        {
+            using var http = new HttpClient();
+            var payload = System.Text.Json.JsonSerializer.Serialize(new
+            {
+                result = result,
+                text = textOutput,
+                ttl_days = shareTtlDays
+            });
+            var content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json");
+            var response = await http.PostAsync($"{ShareApiBase}/api/share", content);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                errorMessage = $"Share failed: server returned {(int)response.StatusCode}";
+                return;
+            }
+
+            var json = await response.Content.ReadAsStringAsync();
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            shareId = doc.RootElement.GetProperty("id").GetString();
+            deleteToken = doc.RootElement.GetProperty("delete_token").GetString();
+            var baseUrl = await JS.InvokeAsync<string>("getBaseUrl");
+            shareUrl = $"{baseUrl}?share={shareId}";
+            await JS.InvokeVoidAsync("copyToClipboard", shareUrl);
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Share failed: {ex.Message}";
+        }
+        finally
+        {
+            isSharing = false;
+        }
+    }
+
+    private async Task DeleteSharedPlan()
+    {
+        if (shareId == null || deleteToken == null) return;
+        isDeleting = true;
+        StateHasChanged();
+
+        try
+        {
+            using var http = new HttpClient();
+            var response = await http.DeleteAsync($"{ShareApiBase}/api/plans/{shareId}?token={deleteToken}");
+            if (response.IsSuccessStatusCode)
+            {
+                shareUrl = null;
+                shareId = null;
+                deleteToken = null;
+                errorMessage = null;
+            }
+            else
+            {
+                errorMessage = "Failed to delete shared plan.";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Delete failed: {ex.Message}";
+        }
+        finally
+        {
+            isDeleting = false;
+        }
+    }
+
+    private static string FormatTtl(int days) => days switch
+    {
+        1 => "1 day",
+        < 30 => $"{days} days",
+        30 => "1 month",
+        90 => "3 months",
+        180 => "6 months",
+        365 => "1 year",
+        _ => $"{days} days"
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        var uri = await JS.InvokeAsync<string>("getQueryParam", "share");
+        if (!string.IsNullOrEmpty(uri))
+        {
+            await LoadSharedPlan(uri);
+        }
+    }
+
+    private async Task LoadSharedPlan(string id)
+    {
+        isAnalyzing = true;
+        StateHasChanged();
+
+        try
+        {
+            using var http = new HttpClient();
+            var response = await http.GetAsync($"{ShareApiBase}/api/plans/{id}");
+            if (!response.IsSuccessStatusCode)
+            {
+                errorMessage = response.StatusCode == System.Net.HttpStatusCode.NotFound
+                    ? "This shared plan has expired or does not exist."
+                    : $"Failed to load shared plan: {(int)response.StatusCode}";
+                isAnalyzing = false;
+                return;
+            }
+
+            var json = await response.Content.ReadAsStringAsync();
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            result = System.Text.Json.JsonSerializer.Deserialize<AnalysisResult>(
+                root.GetProperty("result").GetRawText());
+            textOutput = root.GetProperty("text").GetString();
+            sourceLabel = "shared plan";
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Failed to load shared plan: {ex.Message}";
+        }
+        finally
+        {
+            isAnalyzing = false;
+        }
     }
 
     private RenderFragment RenderPlanNodes(PlanNode node, bool isRoot) => builder =>

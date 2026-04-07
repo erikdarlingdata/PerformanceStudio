@@ -284,6 +284,129 @@ textarea::placeholder {
     color: var(--accent);
 }
 
+.share-btn {
+    padding: 0.3rem 0.75rem;
+    background: var(--accent);
+    color: #fff;
+    border: 1px solid var(--accent);
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.8rem;
+}
+
+.share-btn:hover:not(:disabled) {
+    background: var(--accent-hover);
+}
+
+.share-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+.share-url {
+    font-size: 0.8rem;
+    margin-left: auto;
+}
+
+.share-url a {
+    color: var(--accent);
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.share-url a:hover {
+    text-decoration: underline;
+}
+
+/* Share consent modal */
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.modal {
+    background: var(--bg);
+    border-radius: 8px;
+    padding: 1.5rem;
+    max-width: 480px;
+    width: 90%;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2);
+}
+
+.modal h3 {
+    font-size: 1.1rem;
+    margin-bottom: 0.75rem;
+}
+
+.modal p {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.5rem;
+    line-height: 1.5;
+}
+
+.modal-actions {
+    display: flex;
+    gap: 0.75rem;
+    justify-content: flex-end;
+    margin-top: 1rem;
+}
+
+.modal-actions button {
+    padding: 0.6rem 1.5rem;
+    font-size: 0.9rem;
+}
+
+.ttl-picker {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+    font-size: 0.9rem;
+}
+
+.ttl-picker label {
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+.ttl-picker select {
+    padding: 0.3rem 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-family: inherit;
+    font-size: 0.85rem;
+    background: var(--bg);
+    color: var(--text);
+}
+
+.delete-share-btn {
+    padding: 0.3rem 0.75rem;
+    background: none;
+    color: var(--critical);
+    border: 1px solid var(--critical);
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.8rem;
+}
+
+.delete-share-btn:hover:not(:disabled) {
+    background: var(--critical);
+    color: #fff;
+}
+
+.delete-share-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
 .toolbar-source {
     font-size: 0.85rem;
     color: var(--text);
