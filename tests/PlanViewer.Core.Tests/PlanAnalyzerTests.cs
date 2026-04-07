@@ -173,14 +173,15 @@ public class PlanAnalyzerTests
     // ---------------------------------------------------------------
 
     [Fact]
-    public void Rule09a_ExcessiveMemoryGrant_DetectedInLazySpoolPlan()
+    public void Rule09a_ExcessiveMemoryGrant_SmallGrantSuppressed()
     {
+        // lazy_spool_plan has a 1 MB grant — well under the 1 GB threshold.
+        // The XML MemoryGrantWarning should be suppressed (not worth surfacing).
         var plan = PlanTestHelper.LoadAndAnalyze("lazy_spool_plan.sqlplan");
-        // The parser may surface this as a plan-level warning from XML
         var allWarnings = PlanTestHelper.AllWarnings(plan);
 
-        Assert.Contains(allWarnings, w =>
-            w.WarningType.Contains("Memory Grant") || w.WarningType == "Excessive Memory Grant");
+        Assert.DoesNotContain(allWarnings, w =>
+            w.WarningType == "Memory Grant");
     }
 
     // ---------------------------------------------------------------
