@@ -141,14 +141,16 @@ public static class PlanAnalyzer
                 _ => stmt.NonParallelPlanReason
             };
 
-            // Only warn (not info) when the user explicitly forced serial execution
-            var isExplicit = stmt.NonParallelPlanReason is "MaxDOPSetToOne" or "QueryHintNoParallelSet";
+            // Warn when the user forced serial or something in the query blocks parallelism.
+            // Info only for passive reasons (cost below threshold, edition limitation).
+            var isActionable = stmt.NonParallelPlanReason is "MaxDOPSetToOne"
+                or "QueryHintNoParallelSet" or "CouldNotGenerateValidParallelPlan";
 
             stmt.PlanWarnings.Add(new PlanWarning
             {
                 WarningType = "Serial Plan",
                 Message = $"Query running serially: {reason}.",
-                Severity = isExplicit ? PlanWarningSeverity.Warning : PlanWarningSeverity.Info
+                Severity = isActionable ? PlanWarningSeverity.Warning : PlanWarningSeverity.Info
             });
         }
 
