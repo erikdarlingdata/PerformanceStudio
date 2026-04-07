@@ -236,7 +236,8 @@ public static class PlanAnalyzer
         // Rule 20: Local variables without RECOMPILE
         // Parameters with no CompiledValue are likely local variables — the optimizer
         // cannot sniff their values and uses density-based ("unknown") estimates.
-        if (!cfg.IsRuleDisabled(20) && stmt.Parameters.Count > 0)
+        // Skip trivial statements (simple variable assignments) where estimate quality doesn't matter.
+        if (!cfg.IsRuleDisabled(20) && stmt.Parameters.Count > 0 && stmt.StatementSubTreeCost >= 0.01)
         {
             var unsnifffedParams = stmt.Parameters
                 .Where(p => string.IsNullOrEmpty(p.CompiledValue))
@@ -443,21 +444,42 @@ public static class PlanAnalyzer
     {
         // Rule 1: Filter operators — rows survived the tree just to be discarded
         // Quantify the impact by summing child subtree cost (reads, CPU, time).
-        if (!cfg.IsRuleDisabled(1) && node.PhysicalOp == "Filter" && !string.IsNullOrEmpty(node.Predicate))
+        // Suppress when the filter's child subtree is trivial (low I/O, fast, cheap).
+        if (!cfg.IsRuleDisabled(1) && node.PhysicalOp == "Filter" && !string.IsNullOrEmpty(node.Predicate)
+            && node.Children.Count > 0)
         {
-            var impact = QuantifyFilterImpact(node);
-            var predicate = Truncate(node.Predicate, 200);
-            var message = "Filter operator discarding rows late in the plan.";
-            if (!string.IsNullOrEmpty(impact))
-                message += $"\n{impact}";
-            message += $"\nPredicate: {predicate}";
-
-            node.Warnings.Add(new PlanWarning
+            // Gate: skip trivial filters based on actual stats or estimated cost
+            bool isTrivial;
+            if (node.HasActualStats)
             {
-                WarningType = "Filter Operator",
-                Message = message,
-                Severity = PlanWarningSeverity.Warning
-            });
+                long childReads = 0;
+                foreach (var child in node.Children)
+                    childReads += SumSubtreeReads(child);
+                var childElapsed = node.Children.Max(c => c.ActualElapsedMs);
+                isTrivial = childReads < 128 && childElapsed < 10;
+            }
+            else
+            {
+                var childCost = node.Children.Sum(c => c.EstimatedTotalSubtreeCost);
+                isTrivial = childCost < 1.0;
+            }
+
+            if (!isTrivial)
+            {
+                var impact = QuantifyFilterImpact(node);
+                var predicate = Truncate(node.Predicate, 200);
+                var message = "Filter operator discarding rows late in the plan.";
+                if (!string.IsNullOrEmpty(impact))
+                    message += $"\n{impact}";
+                message += $"\nPredicate: {predicate}";
+
+                node.Warnings.Add(new PlanWarning
+                {
+                    WarningType = "Filter Operator",
+                    Message = message,
+                    Severity = PlanWarningSeverity.Warning
+                });
+            }
         }
 
         // Rule 2: Eager Index Spools — optimizer building temporary indexes on the fly

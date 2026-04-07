@@ -819,4 +819,29 @@ public class PlanAnalyzerTests
         Assert.DoesNotContain(allWarnings, w =>
             w.WarningType == "Row Goal" && w.Message.Contains("1x reduction"));
     }
+
+    [Fact]
+    public void Issue178_6_LocalVariableSuppressedOnTrivialStatement()
+    {
+        // Statement 1 is a trivial variable assignment (cost ~0.000001) — no Local Variables warning
+        var plan = PlanTestHelper.LoadFromInternal("test1.sqlplan");
+        if (plan == null) return;
+        var stmt1 = plan.Batches.SelectMany(b => b.Statements).First();
+
+        Assert.True(stmt1.StatementSubTreeCost < 0.01);
+        Assert.DoesNotContain(stmt1.PlanWarnings, w => w.WarningType == "Local Variables");
+    }
+
+    [Fact]
+    public void Issue178_7_FilterSuppressedOnTrivialChildIO()
+    {
+        // Statement 5 has a Filter with 19 reads and 0-1ms child — should be suppressed
+        var plan = PlanTestHelper.LoadFromInternal("test1.sqlplan");
+        if (plan == null) return;
+        var stmt5 = plan.Batches.SelectMany(b => b.Statements).ElementAt(4);
+        var filterWarnings = PlanTestHelper.AllNodeWarnings(stmt5)
+            .Where(w => w.WarningType == "Filter Operator").ToList();
+
+        Assert.Empty(filterWarnings);
+    }
 }
