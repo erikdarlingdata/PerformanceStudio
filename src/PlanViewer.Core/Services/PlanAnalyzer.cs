@@ -124,9 +124,12 @@ public static class PlanAnalyzer
     private static void AnalyzeStatement(PlanStatement stmt, AnalyzerConfig cfg)
     {
         // Rule 3: Serial plan with reason
-        // Skip trivial statements (e.g., variable assignments, constant scans) — not worth warning about
+        // Skip: trivial cost (< 0.01), TRIVIAL optimization (can't go parallel anyway),
+        // and 0ms actual elapsed time (not worth flagging).
         if (!cfg.IsRuleDisabled(3) && !string.IsNullOrEmpty(stmt.NonParallelPlanReason)
-            && stmt.StatementSubTreeCost >= 0.01)
+            && stmt.StatementSubTreeCost >= 0.01
+            && stmt.StatementOptmLevel != "TRIVIAL"
+            && !(stmt.QueryTimeStats != null && stmt.QueryTimeStats.ElapsedTimeMs == 0))
         {
             var reason = stmt.NonParallelPlanReason switch
             {
@@ -138,11 +141,14 @@ public static class PlanAnalyzer
                 _ => stmt.NonParallelPlanReason
             };
 
+            // Only warn (not info) when the user explicitly forced serial execution
+            var isExplicit = stmt.NonParallelPlanReason is "MaxDOPSetToOne" or "QueryHintNoParallelSet";
+
             stmt.PlanWarnings.Add(new PlanWarning
             {
                 WarningType = "Serial Plan",
                 Message = $"Query running serially: {reason}.",
-                Severity = PlanWarningSeverity.Warning
+                Severity = isExplicit ? PlanWarningSeverity.Warning : PlanWarningSeverity.Info
             });
         }
 

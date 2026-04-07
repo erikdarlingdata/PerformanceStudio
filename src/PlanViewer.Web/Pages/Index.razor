@@ -74,9 +74,9 @@ else
                     {
                         <span class="stmt-tab-cost">@s.EstimatedCost.ToString("N2")</span>
                     }
-                    @if (s.Warnings.Count > 0)
+                    @if (GetAllWarnings(s).Count > 0)
                     {
-                        <span class="stmt-tab-warns">@s.Warnings.Count</span>
+                        <span class="stmt-tab-warns">@GetAllWarnings(s).Count</span>
                     }
                 </button>
             }

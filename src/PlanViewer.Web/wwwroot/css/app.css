@@ -373,7 +373,8 @@ textarea::placeholder {
     margin-bottom: 0.75rem;
 }
 
-/* Wait stats card gets extra width when present */
+/* Give params and waits cards extra width when populated */
+.insight-card.params.has-items,
 .insight-card.waits.has-items {
     grid-column: span 2;
 }
