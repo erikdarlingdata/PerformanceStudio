@@ -14,7 +14,7 @@
         <TextBlock Grid.Row="0" Text="Performance Studio" FontWeight="Bold" FontSize="20"
                    Foreground="{DynamicResource ForegroundBrush}" Margin="0,0,0,4"/>
         <TextBlock Grid.Row="1" x:Name="VersionText" Text="Version 0.3.0" FontSize="12"
-                   Foreground="{DynamicResource ForegroundMutedBrush}" Margin="0,0,0,4"/>
+                   Foreground="{DynamicResource ForegroundBrush}" Margin="0,0,0,4"/>
         <TextBlock Grid.Row="1" x:Name="SubtitleText"
                    Text="SQL Server Execution Plan Analyzer" FontSize="12"
                    Foreground="{DynamicResource ForegroundBrush}" Margin="0,16,0,20"/>
@@ -24,7 +24,7 @@
             <TextBlock Text="Copyright (c) 2026 Erik Darling, Darling Data LLC" FontSize="12"
                        Foreground="{DynamicResource ForegroundBrush}"/>
             <TextBlock Text="Licensed under the MIT License" FontSize="12"
-                       Foreground="{DynamicResource ForegroundMutedBrush}"/>
+                       Foreground="{DynamicResource ForegroundBrush}"/>
         </StackPanel>
 
         <!-- Links -->
@@ -72,13 +72,13 @@
                          VerticalContentAlignment="Center"/>
             </StackPanel>
             <TextBlock Text="Restart the application after changing MCP settings."
-                       FontSize="11" Foreground="{DynamicResource ForegroundMutedBrush}"
+                       FontSize="11" Foreground="{DynamicResource ForegroundBrush}"
                        Margin="0,4,0,0"/>
             <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
                 <Button x:Name="CopyMcpCommandButton" Content="Copy MCP Command"
                         Click="CopyMcpCommand_Click" Padding="10,4" FontSize="12"/>
                 <TextBlock x:Name="McpCopyStatus" FontSize="11" VerticalAlignment="Center"
-                           Foreground="{DynamicResource ForegroundMutedBrush}"/>
+                           Foreground="{DynamicResource ForegroundBrush}"/>
             </StackPanel>
         </StackPanel>
 

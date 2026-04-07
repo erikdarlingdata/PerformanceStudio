@@ -967,7 +967,7 @@ public partial class QuerySessionControl : UserControl
         {
             Text = $"Capturing {planType.ToLower()} plan...",
             FontSize = 14,
-            Foreground = new SolidColorBrush(Color.Parse("#B0B6C0")),
+            Foreground = new SolidColorBrush(Color.Parse("#E4E6EB")),
             HorizontalAlignment = HorizontalAlignment.Center
         };
 
@@ -1761,7 +1761,7 @@ public partial class QuerySessionControl : UserControl
         {
             Text = "Capturing actual plan...",
             FontSize = 14,
-            Foreground = new SolidColorBrush(Color.Parse("#B0B6C0")),
+            Foreground = new SolidColorBrush(Color.Parse("#E4E6EB")),
             HorizontalAlignment = HorizontalAlignment.Center
         };
 
