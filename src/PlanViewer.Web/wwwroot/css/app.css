@@ -689,7 +689,7 @@ textarea::placeholder {
     justify-content: center;
     align-items: center;
     text-align: center;
-    cursor: default;
+    cursor: pointer;
     transition: box-shadow 0.15s;
 }
 
@@ -854,5 +854,225 @@ textarea::placeholder {
 @media (max-width: 600px) {
     .insights-panel {
         grid-template-columns: 1fr;
+    }
+}
+
+/* === Selected Node === */
+.plan-node.selected {
+    box-shadow: 0 0 0 2px var(--accent);
+    border-color: var(--accent);
+    background: #f0f8ff;
+}
+
+/* === Properties Panel === */
+.properties-panel {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 380px;
+    z-index: 100;
+    background: var(--bg);
+    border-left: 2px solid var(--accent);
+    display: flex;
+    flex-direction: column;
+    box-shadow: -4px 0 12px rgba(0, 0, 0, 0.08);
+    animation: slide-in 0.15s ease-out;
+}
+
+@keyframes slide-in {
+    from { transform: translateX(100%); }
+    to { transform: translateX(0); }
+}
+
+/* Push main content when panel is open */
+main:has(.properties-panel) {
+    padding-right: 390px;
+    max-width: none;
+}
+
+.prop-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1rem;
+    background: var(--bg-surface);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+}
+
+.prop-header-info {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    min-width: 0;
+}
+
+.prop-header-icon {
+    width: 32px;
+    height: 32px;
+    flex-shrink: 0;
+}
+
+.prop-header-op {
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: var(--text);
+    line-height: 1.3;
+}
+
+.prop-header-sub {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+.prop-close {
+    background: none;
+    border: none;
+    font-size: 1.4rem;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 0 0.25rem;
+    line-height: 1;
+    flex-shrink: 0;
+}
+
+.prop-close:hover {
+    color: var(--text);
+}
+
+.prop-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0.5rem 0;
+}
+
+/* Sections */
+.prop-section {
+    border-bottom: 1px solid var(--border);
+}
+
+.prop-section summary {
+    padding: 0.4rem 1rem;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--accent);
+    cursor: pointer;
+    user-select: none;
+    background: var(--bg);
+}
+
+.prop-section summary:hover {
+    background: var(--bg-surface);
+}
+
+.prop-section[open] summary {
+    border-bottom: 1px solid var(--border);
+}
+
+/* Property grid */
+.prop-grid {
+    padding: 0.35rem 1rem;
+}
+
+.prop-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 0.2rem 0;
+    gap: 0.75rem;
+    font-size: 0.78rem;
+}
+
+.prop-row.full {
+    flex-direction: column;
+    gap: 0.15rem;
+}
+
+.prop-row.indent {
+    padding-left: 1rem;
+}
+
+.prop-label {
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
+.prop-value {
+    text-align: right;
+    color: var(--text);
+    font-weight: 500;
+    word-break: break-word;
+    min-width: 0;
+}
+
+.prop-row.full .prop-value {
+    text-align: left;
+}
+
+.prop-value.code {
+    font-family: 'Cascadia Code', 'Consolas', monospace;
+    font-size: 0.72rem;
+    font-weight: 400;
+    text-align: left;
+    background: var(--bg-surface);
+    padding: 0.15rem 0.4rem;
+    border-radius: 3px;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+.prop-value.flag {
+    color: var(--accent);
+    font-weight: 600;
+}
+
+.prop-value.flag.warn {
+    color: var(--orange-red);
+}
+
+/* Warnings in panel */
+.prop-warn-count {
+    font-size: 0.65rem;
+    background: var(--critical);
+    color: #fff;
+    padding: 0.05rem 0.4rem;
+    border-radius: 8px;
+    font-weight: 600;
+}
+
+.prop-warning {
+    padding: 0.3rem 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.78rem;
+}
+
+.prop-warning:last-child {
+    border-bottom: none;
+}
+
+.prop-warning-type {
+    font-weight: 600;
+    color: var(--orange);
+    display: block;
+    font-size: 0.75rem;
+}
+
+.prop-warning-msg {
+    color: var(--text-secondary);
+    display: block;
+    font-size: 0.72rem;
+    margin-top: 0.1rem;
+}
+
+/* Properties panel responsive */
+@media (max-width: 700px) {
+    .properties-panel {
+        width: 100%;
+    }
+    main:has(.properties-panel) {
+        padding-right: 0;
     }
 }
