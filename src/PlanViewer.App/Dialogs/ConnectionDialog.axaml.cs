@@ -34,8 +34,12 @@ public partial class ConnectionDialog : Window
     private void PopulateSavedServers()
     {
         _savedConnections = _connectionStore.Load();
-        var serverNames = _savedConnections.Select(s => s.ServerName).Distinct().ToList();
-        ServerNameBox.ItemsSource = serverNames;
+        var serverNames = _savedConnections
+            .OrderByDescending(s => s.LastConnected)
+            .Select(s => s.ServerName)
+            .Distinct()
+            .ToList();
+        ServerList.ItemsSource = serverNames;
 
         // Pre-fill the most recently used connection
         var mostRecent = _savedConnections
@@ -84,11 +88,13 @@ public partial class ConnectionDialog : Window
         }
     }
 
-    // When the user picks a saved server from the autocomplete dropdown
-    private void ServerName_SelectionChanged(object? sender, SelectionChangedEventArgs e)
+    private void ServerList_SelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
-        var serverName = ServerNameBox.SelectedItem?.ToString();
+        var serverName = ServerList.SelectedItem?.ToString();
         if (string.IsNullOrEmpty(serverName)) return;
+
+        ServerNameBox.Text = serverName;
+        ServerDropdown.IsOpen = false;
 
         var saved = _savedConnections.FirstOrDefault(s =>
             s.ServerName.Equals(serverName, StringComparison.OrdinalIgnoreCase));
@@ -188,6 +194,12 @@ public partial class ConnectionDialog : Window
         ResultConnection = connection;
         ResultDatabase = DatabaseBox.SelectedItem?.ToString();
         Close(true);
+    }
+
+    private void DropdownButton_Click(object? sender, RoutedEventArgs e)
+    {
+        ServerDropdown.MinWidth = ServerNameGrid.Bounds.Width;
+        ServerDropdown.IsOpen = !ServerDropdown.IsOpen;
     }
 
     private void Cancel_Click(object? sender, RoutedEventArgs e)

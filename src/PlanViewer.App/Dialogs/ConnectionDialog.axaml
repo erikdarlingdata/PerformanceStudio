@@ -13,11 +13,33 @@
         <!-- Server Name -->
         <TextBlock Grid.Row="0" Text="Server name" Foreground="{DynamicResource ForegroundBrush}"
                    FontSize="12" Margin="0,0,0,4"/>
-        <AutoCompleteBox Grid.Row="1" x:Name="ServerNameBox"
-                         Watermark="e.g. sql2022 or server.database.windows.net"
-                         FontSize="13" Height="32" Margin="0,0,0,12"
-                         FilterMode="ContainsOrdinal"
-                         SelectionChanged="ServerName_SelectionChanged"/>
+        <Grid Grid.Row="1" x:Name="ServerNameGrid" ColumnDefinitions="*,Auto" Margin="0,0,0,12" ColumnSpacing="0">
+            <TextBox x:Name="ServerNameBox"
+                     Watermark="e.g. sql2022 or server.database.windows.net"
+                     FontSize="13" Height="32"/>
+            <Button Grid.Column="1" Click="DropdownButton_Click"
+                    Height="32" Width="32" Padding="0"
+                    Background="Black" CornerRadius="0,4,4,0"
+                    BorderBrush="White" BorderThickness="1">
+                <Path Data="M 0,0 L 4,4 L 8,0"
+                      Stroke="{DynamicResource ForegroundBrush}"
+                      StrokeThickness="1.5"
+                      VerticalAlignment="Center"
+                      HorizontalAlignment="Center"/>
+            </Button>
+            <Popup x:Name="ServerDropdown"
+                   PlacementTarget="{Binding #ServerNameGrid}"
+                   Placement="BottomEdgeAlignedLeft"
+                   IsLightDismissEnabled="True"
+                   MaxHeight="200">
+                <Border Background="{DynamicResource BackgroundBrush}"
+                        BorderBrush="#555" BorderThickness="1" CornerRadius="4">
+                    <ListBox x:Name="ServerList"
+                             SelectionChanged="ServerList_SelectionChanged"
+                             FontSize="13"/>
+                </Border>
+            </Popup>
+        </Grid>
 
         <!-- Authentication -->
         <TextBlock Grid.Row="2" Text="Authentication" Foreground="{DynamicResource ForegroundBrush}"
