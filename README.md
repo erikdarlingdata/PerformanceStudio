@@ -503,7 +503,7 @@ Rules can be disabled or have their severity overridden via a `.planview.json` c
 
 <table>
   <tr>
-    <td><a href="https://signpath.io"><img src="https://about.signpath.io/wp-content/uploads/2024/01/signpath_logo_blue.svg" alt="SignPath" width="40"></a></td>
+    <td><a href="https://signpath.io"><img src="docs/signpath_logo.svg" alt="SignPath" width="40"></a></td>
     <td>Free code signing on Windows provided by <a href="https://signpath.io">SignPath.io</a>, certificate by <a href="https://signpath.org">SignPath Foundation</a></td>
   </tr>
 </table>
