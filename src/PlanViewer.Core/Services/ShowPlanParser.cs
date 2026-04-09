@@ -38,8 +38,9 @@ public static class ShowPlanParser
         foreach (var batchEl in batches)
         {
             var batch = new PlanBatch();
-            var statementsEl = batchEl.Element(Ns + "Statements");
-            if (statementsEl != null)
+            // A Batch can contain multiple <Statements> elements (e.g., DECLARE + SELECT).
+            // Use Elements() to iterate all of them, not just the first.
+            foreach (var statementsEl in batchEl.Elements(Ns + "Statements"))
             {
                 foreach (var stmtEl in statementsEl.Elements())
                 {
