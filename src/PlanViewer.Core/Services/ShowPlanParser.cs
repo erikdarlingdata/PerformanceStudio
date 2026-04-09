@@ -206,7 +206,27 @@ public static class ShowPlanParser
             }
         }
 
-        if (queryPlanEl == null) return stmt;
+        if (queryPlanEl == null)
+        {
+            // Statements with no QueryPlan (e.g., DECLARE/ASSIGN) still get a synthetic
+            // root node so they appear in the statement tab list.
+            var stmtType = stmt.StatementType.Length > 0
+                ? stmt.StatementType.ToUpperInvariant()
+                : "STATEMENT";
+            stmt.RootNode = new PlanNode
+            {
+                NodeId = -1,
+                PhysicalOp = stmtType,
+                LogicalOp = stmtType,
+                IconName = stmtType switch
+                {
+                    "ASSIGN" => "assign",
+                    "DECLARE" => "declare",
+                    _ => "language_construct_catch_all"
+                }
+            };
+            return stmt;
+        }
 
         ParseStmtAttributes(stmt, stmtEl);
         ParseQueryPlanElements(stmt, stmtEl, queryPlanEl);
