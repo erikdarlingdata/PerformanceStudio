@@ -62,7 +62,9 @@ public static class PlanAnalyzer
         [24] = "Top Above Scan", [25] = "Ineffective Parallelism", [26] = "Row Goal",
         [27] = "Optimize For Unknown", [28] = "NOT IN with Nullable Column",
         [29] = "Implicit Conversion", [30] = "Wide Index Suggestion",
-        [31] = "Parallel Wait Bottleneck"
+        [31] = "Parallel Wait Bottleneck",
+        [32] = "Scan Cardinality Misestimate",
+        [33] = "Estimated Plan CE Guess"
     };
 
     // Reverse lookup: WarningType → rule number
@@ -841,6 +843,59 @@ public static class PlanAnalyzer
             });
         }
 
+        // Rule 32: Cardinality misestimate on expensive scan — likely preventing index usage
+        // When a scan dominates the plan AND the estimate is vastly higher than actual rows,
+        // the optimizer chose a scan because it thought it needed most of the table.
+        // With accurate estimates, it would likely seek instead.
+        if (!cfg.IsRuleDisabled(32) && node.HasActualStats && IsRowstoreScan(node)
+            && node.EstimateRows > 0 && node.ActualRows >= 0 && node.ActualRowsRead > 0)
+        {
+            var impact = BuildScanImpactDetails(node, stmt);
+            var overestimateRatio = node.EstimateRows / Math.Max(1.0, node.ActualRows);
+            var selectivity = (double)node.ActualRows / node.ActualRowsRead;
+
+            // Fire when: scan is >= 50% of plan, estimate is >= 10x actual, and < 10% selectivity
+            if ((impact.CostPct >= 50 || impact.ElapsedPct >= 50)
+                && overestimateRatio >= 10.0
+                && selectivity < 0.10)
+            {
+                node.Warnings.Add(new PlanWarning
+                {
+                    WarningType = "Scan Cardinality Misestimate",
+                    Message = $"Estimated {node.EstimateRows:N0} rows but only {node.ActualRows:N0} returned ({selectivity * 100:N3}% of {node.ActualRowsRead:N0} rows read). " +
+                              $"The {overestimateRatio:N0}x overestimate likely caused the optimizer to choose a scan instead of a seek. " +
+                              $"An index on the predicate columns could dramatically reduce I/O.",
+                    Severity = PlanWarningSeverity.Critical
+                });
+            }
+        }
+
+        // Rule 33: Estimated plan CE guess detection — scans with telltale default selectivity
+        // When the optimizer uses a local variable or can't sniff, it falls back to density-based
+        // guesses: 30% (equality), 10% (inequality), 9% (LIKE/between), ~16.43% (sqrt(30%)),
+        // 1% (multi-inequality). On large tables, these guesses can hide the need for an index.
+        if (!cfg.IsRuleDisabled(33) && !node.HasActualStats && IsRowstoreScan(node)
+            && node.TableCardinality >= 100_000 && node.EstimateRows > 0
+            && !string.IsNullOrEmpty(node.Predicate))
+        {
+            var impact = BuildScanImpactDetails(node, stmt);
+            if (impact.CostPct >= 50)
+            {
+                var guessDesc = DetectCeGuess(node.EstimateRows, node.TableCardinality);
+                if (guessDesc != null)
+                {
+                    node.Warnings.Add(new PlanWarning
+                    {
+                        WarningType = "Estimated Plan CE Guess",
+                        Message = $"Estimated {node.EstimateRows:N0} rows from {node.TableCardinality:N0} row table — {guessDesc}. " +
+                                  $"The optimizer may be using a default guess instead of accurate statistics. " +
+                                  $"If actual selectivity is much lower, an index on the predicate columns could help significantly.",
+                        Severity = PlanWarningSeverity.Warning
+                    });
+                }
+            }
+        }
+
         // Rule 13: Mismatched data types (GetRangeWithMismatchedTypes / GetRangeThroughConvert)
         if (!cfg.IsRuleDisabled(13) && node.PhysicalOp == "Compute Scalar" && !string.IsNullOrEmpty(node.DefinedValues))
         {
@@ -1524,6 +1579,27 @@ public static class PlanAnalyzer
             return "";
 
         return string.Join("\n", parts.Select(p => "• " + p));
+    }
+
+    /// <summary>
+    /// Detects well-known CE default selectivity guesses by comparing EstimateRows to TableCardinality.
+    /// Returns a description of the guess pattern, or null if no known pattern matches.
+    /// </summary>
+    private static string? DetectCeGuess(double estimateRows, double tableCardinality)
+    {
+        if (tableCardinality <= 0) return null;
+        var selectivity = estimateRows / tableCardinality;
+
+        // Known CE guess selectivities with a 2% tolerance band
+        return selectivity switch
+        {
+            >= 0.29 and <= 0.31 => $"matches the 30% equality guess ({selectivity * 100:N1}%)",
+            >= 0.098 and <= 0.102 => $"matches the 10% inequality guess ({selectivity * 100:N1}%)",
+            >= 0.088 and <= 0.092 => $"matches the 9% LIKE/BETWEEN guess ({selectivity * 100:N1}%)",
+            >= 0.155 and <= 0.175 => $"matches the ~16.4% compound predicate guess ({selectivity * 100:N1}%)",
+            >= 0.009 and <= 0.011 => $"matches the 1% multi-inequality guess ({selectivity * 100:N1}%)",
+            _ => null
+        };
     }
 
     private static long SumSubtreeReads(PlanNode node)
