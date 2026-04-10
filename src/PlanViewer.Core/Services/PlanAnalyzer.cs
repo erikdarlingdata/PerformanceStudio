@@ -548,9 +548,9 @@ public static class PlanAnalyzer
         {
             // Gate: skip trivial filters based on actual stats or estimated cost
             bool isTrivial;
-            long childReads = 0;
             if (node.HasActualStats)
             {
+                long childReads = 0;
                 foreach (var child in node.Children)
                     childReads += SumSubtreeReads(child);
                 var childElapsed = node.Children.Max(c => c.ActualElapsedMs);
@@ -570,14 +570,6 @@ public static class PlanAnalyzer
                 if (!string.IsNullOrEmpty(impact))
                     message += $"\n{impact}";
                 message += $"\nPredicate: {predicate}";
-
-                // Wait stats add context — rows burned CPU/I/O/waits just to be discarded
-                if (childReads >= 1000)
-                {
-                    var waitContext = GetTopWaitContext(stmt.WaitStats);
-                    if (waitContext != null)
-                        message += $"\n{waitContext}";
-                }
 
                 node.Warnings.Add(new PlanWarning
                 {
@@ -655,16 +647,10 @@ public static class PlanAnalyzer
                         var actualDisplay = executions > 1
                             ? $"Actual {node.ActualRows:N0} ({actualPerExec:N0} rows x {executions:N0} executions)"
                             : $"Actual {node.ActualRows:N0}";
-                        var message = $"Estimated {node.EstimateRows:N0} vs {actualDisplay} — {factor:F0}x {direction}. {harm}";
-
-                        var waitContext = GetTopWaitContext(stmt.WaitStats);
-                        if (waitContext != null)
-                            message += $" {waitContext}";
-
                         node.Warnings.Add(new PlanWarning
                         {
                             WarningType = "Row Estimate Mismatch",
-                            Message = message,
+                            Message = $"Estimated {node.EstimateRows:N0} vs {actualDisplay} — {factor:F0}x {direction}. {harm}",
                             Severity = factor >= 100 ? PlanWarningSeverity.Critical : PlanWarningSeverity.Warning
                         });
                     }
@@ -847,10 +833,6 @@ public static class PlanAnalyzer
             if (!string.IsNullOrEmpty(details.Summary))
                 message += $" {details.Summary}";
             message += " Check that you have appropriate indexes.";
-
-            var waitContext = GetTopWaitContext(stmt.WaitStats);
-            if (waitContext != null)
-                message += $" {waitContext}";
 
             // I/O waits specifically confirm the scan is hitting disk — elevate
             if (HasSignificantIoWaits(stmt.WaitStats) && details.CostPct >= 50
@@ -1046,10 +1028,6 @@ public static class PlanAnalyzer
                     details.Add("This may be caused by parameter sniffing — the optimizer chose Nested Loops based on a sniffed value that produced far fewer outer rows.");
                 else
                     details.Add("Consider whether a hash or merge join would be more appropriate for this row count.");
-
-                var waitContext = GetTopWaitContext(stmt.WaitStats);
-                if (waitContext != null)
-                    details.Add(waitContext);
 
                 node.Warnings.Add(new PlanWarning
                 {
@@ -1837,33 +1815,6 @@ public static class PlanAnalyzer
 
         var pct = (double)ioMs / totalMs * 100;
         return ioMs >= 100 && pct >= 20;
-    }
-
-    /// <summary>
-    /// Returns a terse sentence describing the dominant wait type for appending
-    /// to an existing warning message, or null if waits are negligible.
-    /// Surfaces whatever wait type is dominant — PAGEIOLATCH, SOS_SCHEDULER_YIELD,
-    /// CXPACKET, LCK_*, HTBUILD, EXECSYNC, IO_COMPLETION, etc.
-    /// Threshold: top wait >= 100ms and >= 20% of total wait time.
-    /// </summary>
-    private static string? GetTopWaitContext(List<WaitStatInfo> waits)
-    {
-        if (waits.Count == 0)
-            return null;
-
-        var totalMs = waits.Sum(w => w.WaitTimeMs);
-        if (totalMs == 0)
-            return null;
-
-        var top = waits.OrderByDescending(w => w.WaitTimeMs).First();
-        if (top.WaitTimeMs < 100)
-            return null;
-
-        var pct = (double)top.WaitTimeMs / totalMs * 100;
-        if (pct < 20)
-            return null;
-
-        return $"Dominant wait: {top.WaitType} ({top.WaitTimeMs:N0}ms, {pct:N0}% of total wait time).";
     }
 
     private static bool AllocatesResources(PlanNode node)
