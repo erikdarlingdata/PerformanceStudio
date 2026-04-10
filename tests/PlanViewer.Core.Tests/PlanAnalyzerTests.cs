@@ -1,4 +1,5 @@
 using PlanViewer.Core.Models;
+using PlanViewer.Core.Services;
 
 namespace PlanViewer.Core.Tests;
 
@@ -843,5 +844,384 @@ public class PlanAnalyzerTests
             .Where(w => w.WarningType == "Filter Operator").ToList();
 
         Assert.Empty(filterWarnings);
+    }
+
+    // ---------------------------------------------------------------
+    // Wait stats cross-cutting integration
+    // ---------------------------------------------------------------
+
+    private static List<WaitStatInfo> IoWaits(long ms = 2000) => new()
+    {
+        new WaitStatInfo { WaitType = "PAGEIOLATCH_SH", WaitTimeMs = ms, WaitCount = 50 },
+        new WaitStatInfo { WaitType = "ASYNC_NETWORK_IO", WaitTimeMs = 100, WaitCount = 10 }
+    };
+
+    private static List<WaitStatInfo> LockWaits(long ms = 3000) => new()
+    {
+        new WaitStatInfo { WaitType = "LCK_M_S", WaitTimeMs = ms, WaitCount = 200 },
+        new WaitStatInfo { WaitType = "ASYNC_NETWORK_IO", WaitTimeMs = 100, WaitCount = 10 }
+    };
+
+    private static List<WaitStatInfo> CpuWaits(long ms = 4000) => new()
+    {
+        new WaitStatInfo { WaitType = "SOS_SCHEDULER_YIELD", WaitTimeMs = ms, WaitCount = 5000 },
+        new WaitStatInfo { WaitType = "ASYNC_NETWORK_IO", WaitTimeMs = 100, WaitCount = 10 }
+    };
+
+    private static List<WaitStatInfo> CxWaits(long ms = 3000) => new()
+    {
+        new WaitStatInfo { WaitType = "CXPACKET", WaitTimeMs = ms, WaitCount = 400 },
+        new WaitStatInfo { WaitType = "SOS_SCHEDULER_YIELD", WaitTimeMs = 200, WaitCount = 100 }
+    };
+
+    private static List<WaitStatInfo> HashWaits(long ms = 2500) => new()
+    {
+        new WaitStatInfo { WaitType = "HTBUILD", WaitTimeMs = ms, WaitCount = 80 },
+        new WaitStatInfo { WaitType = "SOS_SCHEDULER_YIELD", WaitTimeMs = 200, WaitCount = 100 }
+    };
+
+    private static ParsedPlan BuildSyntheticPlan(PlanStatement stmt)
+    {
+        var plan = new ParsedPlan();
+        plan.Batches.Add(new PlanBatch { Statements = { stmt } });
+        return plan;
+    }
+
+    [Fact]
+    public void WaitStats_Rule01_FilterAppendsIoContext()
+    {
+        // Filter with >1000 child reads + I/O waits → message includes wait context
+        var child = new PlanNode
+        {
+            NodeId = 1, PhysicalOp = "Clustered Index Scan", LogicalOp = "Clustered Index Scan",
+            HasActualStats = true, ActualRows = 100000, ActualLogicalReads = 5000, ActualElapsedMs = 500
+        };
+        var filter = new PlanNode
+        {
+            NodeId = 0, PhysicalOp = "Filter", LogicalOp = "Filter",
+            Predicate = "[col1] > 100",
+            HasActualStats = true, ActualRows = 10, ActualElapsedMs = 500,
+            Children = { child }
+        };
+        child.Parent = filter;
+
+        var stmt = new PlanStatement
+        {
+            RootNode = filter,
+            WaitStats = IoWaits()
+        };
+        var plan = BuildSyntheticPlan(stmt);
+        PlanAnalyzer.Analyze(plan);
+
+        var warnings = PlanTestHelper.AllNodeWarnings(stmt)
+            .Where(w => w.WarningType == "Filter Operator").ToList();
+        Assert.NotEmpty(warnings);
+        Assert.Contains(warnings, w => w.Message.Contains("PAGEIOLATCH_SH"));
+    }
+
+    [Fact]
+    public void WaitStats_Rule01_FilterNoContextWithoutWaits()
+    {
+        // Same filter but no wait stats → no wait context in message
+        var child = new PlanNode
+        {
+            NodeId = 1, PhysicalOp = "Clustered Index Scan", LogicalOp = "Clustered Index Scan",
+            HasActualStats = true, ActualRows = 100000, ActualLogicalReads = 5000, ActualElapsedMs = 500
+        };
+        var filter = new PlanNode
+        {
+            NodeId = 0, PhysicalOp = "Filter", LogicalOp = "Filter",
+            Predicate = "[col1] > 100",
+            HasActualStats = true, ActualRows = 10, ActualElapsedMs = 500,
+            Children = { child }
+        };
+        child.Parent = filter;
+
+        var stmt = new PlanStatement { RootNode = filter };
+        var plan = BuildSyntheticPlan(stmt);
+        PlanAnalyzer.Analyze(plan);
+
+        var warnings = PlanTestHelper.AllNodeWarnings(stmt)
+            .Where(w => w.WarningType == "Filter Operator").ToList();
+        Assert.NotEmpty(warnings);
+        Assert.DoesNotContain(warnings, w => w.Message.Contains("Wait stats"));
+    }
+
+    [Fact]
+    public void WaitStats_Rule05_SpillWithIoWaitsAppendsContext()
+    {
+        // Row mismatch causing a spill + I/O waits → I/O context appended
+        // Sort needs a spill warning so AssessEstimateHarm returns non-null,
+        // and must have a non-root parent (NodeId != -1).
+        var sortNode = new PlanNode
+        {
+            NodeId = 2, PhysicalOp = "Sort", LogicalOp = "Sort",
+            HasActualStats = true,
+            EstimateRows = 100, ActualRows = 100000, ActualExecutions = 1,
+            Warnings = { new PlanWarning
+            {
+                WarningType = "Sort Spill",
+                Message = "Sort spilled",
+                Severity = PlanWarningSeverity.Warning,
+                SpillDetails = new SpillDetail { SpillType = "Sort", WritesToTempDb = 1000 }
+            }}
+        };
+        var selectNode = new PlanNode
+        {
+            NodeId = 1, PhysicalOp = "Compute Scalar", LogicalOp = "Compute Scalar",
+            Children = { sortNode }
+        };
+        sortNode.Parent = selectNode;
+        var root = new PlanNode
+        {
+            NodeId = -1, PhysicalOp = "SELECT", LogicalOp = "SELECT",
+            Children = { selectNode }
+        };
+        selectNode.Parent = root;
+
+        var stmt = new PlanStatement
+        {
+            RootNode = root,
+            WaitStats = IoWaits()
+        };
+        var plan = BuildSyntheticPlan(stmt);
+        PlanAnalyzer.Analyze(plan);
+
+        var warnings = PlanTestHelper.AllNodeWarnings(stmt)
+            .Where(w => w.WarningType == "Row Estimate Mismatch").ToList();
+        Assert.NotEmpty(warnings);
+        Assert.Contains(warnings, w => w.Message.Contains("PAGEIOLATCH_SH"));
+    }
+
+    [Fact]
+    public void WaitStats_Rule11_ScanWithIoWaitsElevatedToCritical()
+    {
+        // Scan at 60% cost + I/O waits → elevated to Critical (normally needs 90%)
+        var scan = new PlanNode
+        {
+            NodeId = 0, PhysicalOp = "Clustered Index Scan", LogicalOp = "Clustered Index Scan",
+            Predicate = "[col1] = @p1",
+            EstimatedTotalSubtreeCost = 6.0
+        };
+        var stmt = new PlanStatement
+        {
+            RootNode = scan,
+            StatementSubTreeCost = 10.0,
+            WaitStats = IoWaits()
+        };
+        var plan = BuildSyntheticPlan(stmt);
+        PlanAnalyzer.Analyze(plan);
+
+        var warnings = PlanTestHelper.AllNodeWarnings(stmt)
+            .Where(w => w.WarningType == "Scan With Predicate").ToList();
+        Assert.NotEmpty(warnings);
+        Assert.Contains(warnings, w => w.Severity == PlanWarningSeverity.Critical);
+        Assert.Contains(warnings, w => w.Message.Contains("PAGEIOLATCH_SH"));
+    }
+
+    [Fact]
+    public void WaitStats_Rule11_ScanWithoutIoWaitsStaysWarning()
+    {
+        // Same scan at 60% cost but no I/O waits → stays Warning
+        var scan = new PlanNode
+        {
+            NodeId = 0, PhysicalOp = "Clustered Index Scan", LogicalOp = "Clustered Index Scan",
+            Predicate = "[col1] = @p1",
+            EstimatedTotalSubtreeCost = 6.0
+        };
+        var stmt = new PlanStatement
+        {
+            RootNode = scan,
+            StatementSubTreeCost = 10.0
+        };
+        var plan = BuildSyntheticPlan(stmt);
+        PlanAnalyzer.Analyze(plan);
+
+        var warnings = PlanTestHelper.AllNodeWarnings(stmt)
+            .Where(w => w.WarningType == "Scan With Predicate").ToList();
+        Assert.NotEmpty(warnings);
+        Assert.All(warnings, w => Assert.Equal(PlanWarningSeverity.Warning, w.Severity));
+    }
+
+    [Fact]
+    public void WaitStats_Rule16_NestedLoopsAppendsLockContext()
+    {
+        // Nested Loops with >100K inner executions + lock waits → lock context appended
+        var outer = new PlanNode
+        {
+            NodeId = 1, PhysicalOp = "Clustered Index Scan", LogicalOp = "Clustered Index Scan",
+            HasActualStats = true, ActualRows = 500000, ActualExecutions = 1, EstimateRows = 500000
+        };
+        var inner = new PlanNode
+        {
+            NodeId = 2, PhysicalOp = "Index Seek", LogicalOp = "Index Seek",
+            HasActualStats = true, ActualRows = 500000, ActualExecutions = 500000
+        };
+        var nl = new PlanNode
+        {
+            NodeId = 0, PhysicalOp = "Nested Loops", LogicalOp = "Inner Join",
+            HasActualStats = true, ActualRows = 500000,
+            Children = { outer, inner }
+        };
+        outer.Parent = nl;
+        inner.Parent = nl;
+
+        var stmt = new PlanStatement
+        {
+            RootNode = nl,
+            WaitStats = LockWaits()
+        };
+        var plan = BuildSyntheticPlan(stmt);
+        PlanAnalyzer.Analyze(plan);
+
+        var warnings = PlanTestHelper.AllNodeWarnings(stmt)
+            .Where(w => w.WarningType == "Nested Loops High Executions").ToList();
+        Assert.NotEmpty(warnings);
+        Assert.Contains(warnings, w => w.Message.Contains("LCK_M_S"));
+    }
+
+    [Fact]
+    public void WaitStats_Rule16_NestedLoopsSurfacesIoWaits()
+    {
+        // Nested Loops with >100K inner executions + I/O waits → I/O context
+        var outer = new PlanNode
+        {
+            NodeId = 1, PhysicalOp = "Clustered Index Scan", LogicalOp = "Clustered Index Scan",
+            HasActualStats = true, ActualRows = 500000, ActualExecutions = 1, EstimateRows = 500000
+        };
+        var inner = new PlanNode
+        {
+            NodeId = 2, PhysicalOp = "Index Seek", LogicalOp = "Index Seek",
+            HasActualStats = true, ActualRows = 500000, ActualExecutions = 500000
+        };
+        var nl = new PlanNode
+        {
+            NodeId = 0, PhysicalOp = "Nested Loops", LogicalOp = "Inner Join",
+            HasActualStats = true, ActualRows = 500000,
+            Children = { outer, inner }
+        };
+        outer.Parent = nl;
+        inner.Parent = nl;
+
+        var stmt = new PlanStatement
+        {
+            RootNode = nl,
+            WaitStats = IoWaits()
+        };
+        var plan = BuildSyntheticPlan(stmt);
+        PlanAnalyzer.Analyze(plan);
+
+        var warnings = PlanTestHelper.AllNodeWarnings(stmt)
+            .Where(w => w.WarningType == "Nested Loops High Executions").ToList();
+        Assert.NotEmpty(warnings);
+        Assert.Contains(warnings, w => w.Message.Contains("PAGEIOLATCH_SH"));
+    }
+
+    [Fact]
+    public void WaitStats_SosSchedulerYield_SurfacedOnScan()
+    {
+        // SOS_SCHEDULER_YIELD as dominant wait on a scan → surfaces in message
+        var scan = new PlanNode
+        {
+            NodeId = 0, PhysicalOp = "Clustered Index Scan", LogicalOp = "Clustered Index Scan",
+            Predicate = "[col1] = @p1",
+            EstimatedTotalSubtreeCost = 6.0
+        };
+        var stmt = new PlanStatement
+        {
+            RootNode = scan,
+            StatementSubTreeCost = 10.0,
+            WaitStats = CpuWaits()
+        };
+        var plan = BuildSyntheticPlan(stmt);
+        PlanAnalyzer.Analyze(plan);
+
+        var warnings = PlanTestHelper.AllNodeWarnings(stmt)
+            .Where(w => w.WarningType == "Scan With Predicate").ToList();
+        Assert.NotEmpty(warnings);
+        Assert.Contains(warnings, w => w.Message.Contains("SOS_SCHEDULER_YIELD"));
+        // CPU waits are not I/O — should NOT elevate severity (stays Warning at 60% cost)
+        Assert.All(warnings, w => Assert.Equal(PlanWarningSeverity.Warning, w.Severity));
+    }
+
+    [Fact]
+    public void WaitStats_CxPacket_SurfacedOnNestedLoops()
+    {
+        // CXPACKET as dominant wait on Nested Loops → surfaces in message
+        var outer = new PlanNode
+        {
+            NodeId = 1, PhysicalOp = "Clustered Index Scan", LogicalOp = "Clustered Index Scan",
+            HasActualStats = true, ActualRows = 500000, ActualExecutions = 1, EstimateRows = 500000
+        };
+        var inner = new PlanNode
+        {
+            NodeId = 2, PhysicalOp = "Index Seek", LogicalOp = "Index Seek",
+            HasActualStats = true, ActualRows = 500000, ActualExecutions = 500000
+        };
+        var nl = new PlanNode
+        {
+            NodeId = 0, PhysicalOp = "Nested Loops", LogicalOp = "Inner Join",
+            HasActualStats = true, ActualRows = 500000,
+            Children = { outer, inner }
+        };
+        outer.Parent = nl;
+        inner.Parent = nl;
+
+        var stmt = new PlanStatement
+        {
+            RootNode = nl,
+            WaitStats = CxWaits()
+        };
+        var plan = BuildSyntheticPlan(stmt);
+        PlanAnalyzer.Analyze(plan);
+
+        var warnings = PlanTestHelper.AllNodeWarnings(stmt)
+            .Where(w => w.WarningType == "Nested Loops High Executions").ToList();
+        Assert.NotEmpty(warnings);
+        Assert.Contains(warnings, w => w.Message.Contains("CXPACKET"));
+    }
+
+    [Fact]
+    public void WaitStats_HtBuild_SurfacedOnEstimateMismatch()
+    {
+        // HTBUILD as dominant wait on a hash join with bad estimates → surfaces in message
+        var hashNode = new PlanNode
+        {
+            NodeId = 2, PhysicalOp = "Hash Match", LogicalOp = "Inner Join",
+            HasActualStats = true,
+            EstimateRows = 100, ActualRows = 100000, ActualExecutions = 1,
+            Warnings = { new PlanWarning
+            {
+                WarningType = "Hash Spill",
+                Message = "Hash spilled",
+                Severity = PlanWarningSeverity.Warning,
+                SpillDetails = new SpillDetail { SpillType = "Hash", WritesToTempDb = 500 }
+            }}
+        };
+        var parent = new PlanNode
+        {
+            NodeId = 1, PhysicalOp = "Compute Scalar", LogicalOp = "Compute Scalar",
+            Children = { hashNode }
+        };
+        hashNode.Parent = parent;
+        var root = new PlanNode
+        {
+            NodeId = -1, PhysicalOp = "SELECT", LogicalOp = "SELECT",
+            Children = { parent }
+        };
+        parent.Parent = root;
+
+        var stmt = new PlanStatement
+        {
+            RootNode = root,
+            WaitStats = HashWaits()
+        };
+        var plan = BuildSyntheticPlan(stmt);
+        PlanAnalyzer.Analyze(plan);
+
+        var warnings = PlanTestHelper.AllNodeWarnings(stmt)
+            .Where(w => w.WarningType == "Row Estimate Mismatch").ToList();
+        Assert.NotEmpty(warnings);
+        Assert.Contains(warnings, w => w.Message.Contains("HTBUILD"));
     }
 }

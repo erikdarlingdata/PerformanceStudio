@@ -548,9 +548,9 @@ public static class PlanAnalyzer
         {
             // Gate: skip trivial filters based on actual stats or estimated cost
             bool isTrivial;
+            long childReads = 0;
             if (node.HasActualStats)
             {
-                long childReads = 0;
                 foreach (var child in node.Children)
                     childReads += SumSubtreeReads(child);
                 var childElapsed = node.Children.Max(c => c.ActualElapsedMs);
@@ -570,6 +570,14 @@ public static class PlanAnalyzer
                 if (!string.IsNullOrEmpty(impact))
                     message += $"\n{impact}";
                 message += $"\nPredicate: {predicate}";
+
+                // Wait stats add context — rows burned CPU/I/O/waits just to be discarded
+                if (childReads >= 1000)
+                {
+                    var waitContext = GetTopWaitContext(stmt.WaitStats);
+                    if (waitContext != null)
+                        message += $"\n{waitContext}";
+                }
 
                 node.Warnings.Add(new PlanWarning
                 {
@@ -647,10 +655,16 @@ public static class PlanAnalyzer
                         var actualDisplay = executions > 1
                             ? $"Actual {node.ActualRows:N0} ({actualPerExec:N0} rows x {executions:N0} executions)"
                             : $"Actual {node.ActualRows:N0}";
+                        var message = $"Estimated {node.EstimateRows:N0} vs {actualDisplay} — {factor:F0}x {direction}. {harm}";
+
+                        var waitContext = GetTopWaitContext(stmt.WaitStats);
+                        if (waitContext != null)
+                            message += $" {waitContext}";
+
                         node.Warnings.Add(new PlanWarning
                         {
                             WarningType = "Row Estimate Mismatch",
-                            Message = $"Estimated {node.EstimateRows:N0} vs {actualDisplay} — {factor:F0}x {direction}. {harm}",
+                            Message = message,
                             Severity = factor >= 100 ? PlanWarningSeverity.Critical : PlanWarningSeverity.Warning
                         });
                     }
@@ -833,6 +847,16 @@ public static class PlanAnalyzer
             if (!string.IsNullOrEmpty(details.Summary))
                 message += $" {details.Summary}";
             message += " Check that you have appropriate indexes.";
+
+            var waitContext = GetTopWaitContext(stmt.WaitStats);
+            if (waitContext != null)
+                message += $" {waitContext}";
+
+            // I/O waits specifically confirm the scan is hitting disk — elevate
+            if (HasSignificantIoWaits(stmt.WaitStats) && details.CostPct >= 50
+                && severity != PlanWarningSeverity.Critical)
+                severity = PlanWarningSeverity.Critical;
+
             message += $"\nPredicate: {Truncate(displayPredicate, 200)}";
 
             node.Warnings.Add(new PlanWarning
@@ -1022,6 +1046,10 @@ public static class PlanAnalyzer
                     details.Add("This may be caused by parameter sniffing — the optimizer chose Nested Loops based on a sniffed value that produced far fewer outer rows.");
                 else
                     details.Add("Consider whether a hash or merge join would be more appropriate for this row count.");
+
+                var waitContext = GetTopWaitContext(stmt.WaitStats);
+                if (waitContext != null)
+                    details.Add(waitContext);
 
                 node.Warnings.Add(new PlanWarning
                 {
@@ -1693,22 +1721,115 @@ public static class PlanAnalyzer
         var waitType = top.WaitType.ToUpperInvariant();
         var advice = waitType switch
         {
+            // I/O: reading/writing data pages from disk
             _ when waitType.StartsWith("PAGEIOLATCH") =>
                 $"I/O bound — {topPct:N0}% of wait time is {top.WaitType}. Data is being read from disk rather than memory. Consider adding indexes to reduce I/O, or investigate memory pressure.",
-            _ when waitType.StartsWith("LATCH_") =>
-                $"Latch contention — {topPct:N0}% of wait time is {top.WaitType}.",
-            _ when waitType.StartsWith("LCK_") =>
-                $"Lock contention — {topPct:N0}% of wait time is {top.WaitType}. Other sessions are holding locks that this query needs.",
+            _ when waitType.Contains("IO_COMPLETION") =>
+                $"I/O bound — {topPct:N0}% of wait time is {top.WaitType}. Non-buffer I/O such as sort/hash spills to TempDB or eager writes.",
+
+            // CPU: thread yielding its scheduler quantum
+            _ when waitType == "SOS_SCHEDULER_YIELD" =>
+                $"CPU bound — {topPct:N0}% of wait time is {top.WaitType}. The query is consuming significant CPU. Look for expensive operators (scans, sorts, hash builds) that could be eliminated or reduced.",
+
+            // Parallelism: exchange and synchronization waits
             _ when waitType.StartsWith("CXPACKET") || waitType.StartsWith("CXCONSUMER") =>
                 $"Parallel thread skew — {topPct:N0}% of wait time is {top.WaitType}. Work is unevenly distributed across parallel threads.",
-            _ when waitType.Contains("IO_COMPLETION") =>
-                $"I/O bound — {topPct:N0}% of wait time is {top.WaitType}.",
-            _ when waitType.StartsWith("RESOURCE_SEMAPHORE") =>
-                $"Memory grant wait — {topPct:N0}% of wait time is {top.WaitType}. The query had to wait for a memory grant.",
+            _ when waitType.StartsWith("CXSYNC") =>
+                $"Parallel synchronization — {topPct:N0}% of wait time is {top.WaitType}. Threads are waiting at exchange operators to synchronize parallel execution.",
+
+            // Hash operations
+            _ when waitType.StartsWith("HT") =>
+                $"Hash operation — {topPct:N0}% of wait time is {top.WaitType}. Time spent building, repartitioning, or cleaning up hash tables. Large hash builds may indicate missing indexes or bad row estimates.",
+
+            // Sort/bitmap batch operations
+            _ when waitType == "BPSORT" =>
+                $"Batch sort — {topPct:N0}% of wait time is {top.WaitType}. Time spent in batch-mode sort operations.",
+            _ when waitType == "BMPBUILD" =>
+                $"Bitmap build — {topPct:N0}% of wait time is {top.WaitType}. Time spent building bitmap filters for hash joins.",
+
+            // Memory allocation
+            _ when waitType.Contains("MEMORY_ALLOCATION_EXT") =>
+                $"Memory allocation — {topPct:N0}% of wait time is {top.WaitType}. Frequent memory allocations during query execution.",
+
+            // Latch contention (non-I/O)
+            _ when waitType.StartsWith("PAGELATCH") =>
+                $"Page latch contention — {topPct:N0}% of wait time is {top.WaitType}. In-memory page contention, often on TempDB or hot pages.",
+            _ when waitType.StartsWith("LATCH_") =>
+                $"Latch contention — {topPct:N0}% of wait time is {top.WaitType}.",
+
+            // Lock contention
+            _ when waitType.StartsWith("LCK_") =>
+                $"Lock contention — {topPct:N0}% of wait time is {top.WaitType}. Other sessions are holding locks that this query needs.",
+
+            // Log writes
+            _ when waitType == "LOGBUFFER" =>
+                $"Log write — {topPct:N0}% of wait time is {top.WaitType}. Waiting for transaction log buffer flushes, typically from data modifications.",
+
+            // Network
+            _ when waitType == "ASYNC_NETWORK_IO" =>
+                $"Network bound — {topPct:N0}% of wait time is {top.WaitType}. The client application is not consuming results fast enough.",
+
+            // Physical page cache
+            _ when waitType == "SOS_PHYS_PAGE_CACHE" =>
+                $"Physical page cache — {topPct:N0}% of wait time is {top.WaitType}. Contention on the physical memory page allocator.",
+
             _ => $"Dominant wait is {top.WaitType} ({topPct:N0}% of wait time)."
         };
 
         return advice;
+    }
+
+    /// <summary>
+    /// Returns true if the statement has significant I/O waits (PAGEIOLATCH_*, IO_COMPLETION).
+    /// Used for severity elevation decisions where I/O specifically indicates disk access.
+    /// Thresholds: I/O waits >= 20% of total wait time AND >= 100ms absolute.
+    /// </summary>
+    private static bool HasSignificantIoWaits(List<WaitStatInfo> waits)
+    {
+        if (waits.Count == 0)
+            return false;
+
+        var totalMs = waits.Sum(w => w.WaitTimeMs);
+        if (totalMs == 0)
+            return false;
+
+        long ioMs = 0;
+        foreach (var w in waits)
+        {
+            var wt = w.WaitType.ToUpperInvariant();
+            if (wt.StartsWith("PAGEIOLATCH") || wt.Contains("IO_COMPLETION"))
+                ioMs += w.WaitTimeMs;
+        }
+
+        var pct = (double)ioMs / totalMs * 100;
+        return ioMs >= 100 && pct >= 20;
+    }
+
+    /// <summary>
+    /// Returns a terse sentence describing the dominant wait type for appending
+    /// to an existing warning message, or null if waits are negligible.
+    /// Surfaces whatever wait type is dominant — PAGEIOLATCH, SOS_SCHEDULER_YIELD,
+    /// CXPACKET, LCK_*, HTBUILD, EXECSYNC, IO_COMPLETION, etc.
+    /// Threshold: top wait >= 100ms and >= 20% of total wait time.
+    /// </summary>
+    private static string? GetTopWaitContext(List<WaitStatInfo> waits)
+    {
+        if (waits.Count == 0)
+            return null;
+
+        var totalMs = waits.Sum(w => w.WaitTimeMs);
+        if (totalMs == 0)
+            return null;
+
+        var top = waits.OrderByDescending(w => w.WaitTimeMs).First();
+        if (top.WaitTimeMs < 100)
+            return null;
+
+        var pct = (double)top.WaitTimeMs / totalMs * 100;
+        if (pct < 20)
+            return null;
+
+        return $"Dominant wait: {top.WaitType} ({top.WaitTimeMs:N0}ms, {pct:N0}% of total wait time).";
     }
 
     private static bool AllocatesResources(PlanNode node)
