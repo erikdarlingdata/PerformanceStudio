@@ -1126,6 +1126,41 @@ internal static class AdviceContentBuilder
             items.Add(($"Memory grant: {grantedMB:F1} MB ({usedPct:F0}% used)", memBrush));
         }
 
+        // Wait profile classification
+        if (stmt.WaitStats.Count > 0)
+        {
+            var totalMs = stmt.WaitStats.Sum(w => w.WaitTimeMs);
+            if (totalMs > 0)
+            {
+                long ioMs = 0, cpuMs = 0, parallelMs = 0, lockMs = 0;
+                foreach (var w in stmt.WaitStats)
+                {
+                    var wt = w.WaitType.ToUpperInvariant();
+                    if (wt.StartsWith("PAGEIOLATCH") || wt.Contains("IO_COMPLETION"))
+                        ioMs += w.WaitTimeMs;
+                    else if (wt == "SOS_SCHEDULER_YIELD")
+                        cpuMs += w.WaitTimeMs;
+                    else if (wt.StartsWith("CX"))
+                        parallelMs += w.WaitTimeMs;
+                    else if (wt.StartsWith("LCK_"))
+                        lockMs += w.WaitTimeMs;
+                }
+
+                // Pick the dominant category (>= 30% of total)
+                var categories = new List<(string label, long ms)>();
+                if (ioMs * 100 / totalMs >= 30) categories.Add(("I/O", ioMs));
+                if (cpuMs * 100 / totalMs >= 30) categories.Add(("CPU", cpuMs));
+                if (parallelMs * 100 / totalMs >= 30) categories.Add(("parallelism", parallelMs));
+                if (lockMs * 100 / totalMs >= 30) categories.Add(("lock contention", lockMs));
+
+                if (categories.Count > 0)
+                {
+                    var label = string.Join(" + ", categories.Select(c => c.label));
+                    items.Add(($"{label} bound ({totalMs:N0}ms total wait time)", InfoBrush));
+                }
+            }
+        }
+
         // Warning counts by severity
         var criticalCount = stmt.Warnings.Count(w =>
             w.Severity.Equals("Critical", StringComparison.OrdinalIgnoreCase));
