@@ -7,6 +7,7 @@ using Avalonia.Controls.Documents;
 using Avalonia.Layout;
 using Avalonia.Media;
 using PlanViewer.Core.Output;
+using PlanViewer.Core.Services;
 
 namespace PlanViewer.App.Services;
 
@@ -994,6 +995,12 @@ internal static class AdviceContentBuilder
         var waitBrush = GetWaitCategoryBrush(waitName);
         tb.Inlines!.Add(new Run(waitName) { Foreground = waitBrush });
         tb.Inlines.Add(new Run(": " + waitValue) { Foreground = ValueBrush });
+
+        // Inline description label for the wait type
+        var label = PlanAnalyzer.GetWaitLabel(waitName);
+        if (!string.IsNullOrEmpty(label))
+            tb.Inlines.Add(new Run("  " + label) { Foreground = MutedBrush, FontSize = 11 });
+
         wrapper.Children.Add(tb);
 
         // Proportional bar scaled to max wait in group
