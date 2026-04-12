@@ -1098,8 +1098,7 @@ FROM ph WHERE rnum <= 5;
         CONVERT(varchar(18), p.query_plan_hash, 1) AS plan_hash,
         q.query_id,
         ps.plan_id,
-        qt.query_sql_text,
-        TRY_CONVERT(nvarchar(max), p.query_plan) AS plan_xml,
+        q.query_text_id,
         CASE WHEN q.object_id <> 0
              THEN OBJECT_SCHEMA_NAME(q.object_id) + N'.' + OBJECT_NAME(q.object_id)
              ELSE N'' END AS module_name,
@@ -1121,12 +1120,32 @@ FROM ph WHERE rnum <= 5;
                   WHERE phr.query_hash = CONVERT(varchar(18), q.query_hash, 1)
                     AND phr.plan_hash = CONVERT(varchar(18), p.query_plan_hash, 1))
 )
-SELECT query_hash, plan_hash, query_id, plan_id, query_sql_text, plan_xml,
-       module_name, total_cpu_us, total_duration_us, total_reads, total_writes,
-       total_physical_reads, total_memory_pages, total_executions, last_execution_time,
-       CASE WHEN rn_top = 1 THEN 1 ELSE 0 END AS is_top
+SELECT *
+into #ranked_light
 FROM ranked
 WHERE rn_top = 1 OR rn_bottom = 1;
+
+/* Final select: join heavy elements (query_text, plan_xml) only for the top/bottom representatives */
+SELECT 
+r.query_hash, 
+r.plan_hash, 
+r.query_id, 
+r.plan_id, 
+qt.query_sql_text, 
+TRY_CONVERT(nvarchar(max), p.query_plan) AS plan_xml,
+r.module_name, 
+r.total_cpu_us, 
+r.total_duration_us, 
+r.total_reads, 
+r.total_writes,
+r.total_physical_reads, 
+r.total_memory_pages, 
+r.total_executions, 
+r.last_execution_time,
+CASE WHEN r.rn_top = 1 THEN 1 ELSE 0 END AS is_top
+FROM #ranked_light r
+JOIN sys.query_store_query_text qt ON r.query_text_id = qt.query_text_id
+JOIN sys.query_store_plan p ON r.plan_id = p.plan_id;
 
 /* Return intermediate rows (result set 1) */
 SELECT * FROM #plan_hash_rows ORDER BY query_hash, total_executions DESC;
