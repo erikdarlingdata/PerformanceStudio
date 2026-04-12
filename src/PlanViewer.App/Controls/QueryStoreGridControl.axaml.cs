@@ -1,5 +1,4 @@
 using System;
-using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
@@ -302,6 +301,89 @@ public partial class QueryStoreGridControl : UserControl
         SelectToggleButton.Content = "Select All";
         UpdateStatusText();
         UpdateBarRatios();
+
+        // Fetch per-plan wait stats for leaf rows, then consolidate upward
+        if (_waitStatsSupported && _waitStatsEnabled && _slicerStartUtc.HasValue && _slicerEndUtc.HasValue)
+            _ = FetchGroupedWaitStatsAsync(_slicerStartUtc.Value, _slicerEndUtc.Value, ct);
+    }
+
+    /// <summary>
+    /// Fetches per-plan wait stats for all real plan IDs found in the grouped hierarchy,
+    /// assigns them to leaf rows, then consolidates upward to intermediate and root rows.
+    /// </summary>
+    private async System.Threading.Tasks.Task FetchGroupedWaitStatsAsync(
+        DateTime startUtc, DateTime endUtc, CancellationToken ct)
+    {
+        try
+        {
+            // Collect all real plan IDs from rows that have a real PlanId
+            var allPlanIds = _rows
+                .Where(r => r.PlanId > 0)
+                .Select(r => r.PlanId)
+                .Distinct()
+                .ToList();
+
+            if (allPlanIds.Count == 0) return;
+
+            var planWaits = await QueryStoreService.FetchPlanWaitStatsAsync(
+                _connectionString, startUtc, endUtc, allPlanIds, ct);
+            if (ct.IsCancellationRequested) return;
+
+            // Build lookup: plan_id → list of WaitCategoryTotal
+            var byPlan = planWaits
+                .GroupBy(x => x.PlanId)
+                .ToDictionary(g => g.Key, g => g.Select(x => x.Wait).ToList());
+
+            // 1. Assign raw waits + profiles to rows with a real PlanId
+            foreach (var row in _rows)
+            {
+                if (row.PlanId > 0 && byPlan.TryGetValue(row.PlanId, out var waits))
+                {
+                    row.RawWaitCategories = waits;
+                    row.WaitProfile = QueryStoreService.BuildWaitProfile(waits);
+                }
+            }
+
+            // 2. Consolidate upward through the hierarchy
+            foreach (var root in _groupedRootRows)
+                ConsolidateWaitProfileUpward(root);
+
+            UpdateWaitBarMode();
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception) { }
+    }
+
+    /// <summary>
+    /// Recursively consolidates wait profiles from children into their parent.
+    /// For each parent: merges all children's RawWaitCategories by summing WaitRatio
+    /// per category, then builds a new WaitProfile from the merged totals.
+    /// </summary>
+    private static void ConsolidateWaitProfileUpward(QueryStoreRow parent)
+    {
+        if (parent.Children.Count == 0) return;
+
+        // Recurse first so children are consolidated before we merge them
+        foreach (var child in parent.Children)
+            ConsolidateWaitProfileUpward(child);
+
+        // Merge all children's raw wait categories by summing WaitRatio per category
+        var merged = parent.Children
+            .SelectMany(c => c.RawWaitCategories)
+            .GroupBy(w => new { w.WaitCategory, w.WaitCategoryDesc })
+            .Select(g => new WaitCategoryTotal
+            {
+                WaitCategory = g.Key.WaitCategory,
+                WaitCategoryDesc = g.Key.WaitCategoryDesc,
+                WaitRatio = g.Sum(w => w.WaitRatio),
+            })
+            .ToList();
+
+        if (merged.Count > 0)
+        {
+            parent.RawWaitCategories = merged;
+            parent.WaitProfile = QueryStoreService.BuildWaitProfile(merged);
+        }
     }
 
     /// <summary>Maps an orderBy metric string to a Func that extracts the sort value from a QueryStoreRow.</summary>
@@ -810,7 +892,10 @@ public partial class QueryStoreGridControl : UserControl
         DateTime startUtc, DateTime endUtc, CancellationToken ct)
     {
         await FetchGlobalWaitStatsOnlyAsync(startUtc, endUtc, ct);
-        await FetchPerPlanWaitStatsAsync(startUtc, endUtc, ct);
+        if (_groupByMode != QueryStoreGroupBy.None)
+            await FetchGroupedWaitStatsAsync(startUtc, endUtc, ct);
+        else
+            await FetchPerPlanWaitStatsAsync(startUtc, endUtc, ct);
     }
 
     private void OnWaitCategoryClicked(object? sender, string category)
@@ -1497,6 +1582,9 @@ public class QueryStoreRow : INotifyPropertyChanged
     // Wait stats
     private WaitProfile? _waitProfile;
     private string? _waitHighlightCategory;
+
+    /// <summary>Raw wait category totals for this row. Used for upward consolidation in grouped mode.</summary>
+    public List<WaitCategoryTotal> RawWaitCategories { get; set; } = new();
 
     // Hierarchy support
     private bool _isExpanded;
