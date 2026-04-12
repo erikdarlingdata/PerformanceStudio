@@ -943,14 +943,15 @@ ORDER BY bucket_hour, wait_ratio DESC;";
         };
     }
 
-    /// <summary>
-    /// Fetches grouped-by-QueryHash results.
-    /// Step 1: Top X query hashes by metric.
-    /// Step 2: Top 5 plan hashes per query hash with metrics.
-    /// Step 3: Top and bottom QueryId/PlanId per query_hash/plan_hash.
-    /// Returns intermediate (plan_hash level) and leaf (query_id/plan_id level) rows.
-    /// </summary>
-    public static async Task<QueryStoreGroupedResult> FetchGroupedByQueryHashAsync(
+	/// <summary>
+	/// Fetches grouped-by-QueryHash results.
+	/// Step 1: Top X query hashes by metric.
+	/// Step 2: Top 5 plan hashes per query hash with metrics.
+	/// Step 3: Top and bottom QueryId/PlanId per query_hash/plan_hash.
+	/// Final : Fetch Query Text and Plan XML for the identified QueryId/PlanId.
+	/// Returns intermediate (plan_hash level) and leaf (query_id/plan_id level) rows.
+	/// </summary>
+	public static async Task<QueryStoreGroupedResult> FetchGroupedByQueryHashAsync(
         string connectionString, int topN = 25, string orderBy = "cpu",
         QueryStoreFilter? filter = null, CancellationToken ct = default,
         DateTime? startUtc = null, DateTime? endUtc = null)
