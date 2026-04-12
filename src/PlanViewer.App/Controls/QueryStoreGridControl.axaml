@@ -68,6 +68,15 @@
                     </ComboBox>
                 </StackPanel>
                 <StackPanel Spacing="4">
+                    <TextBlock Text="Group by" Foreground="{DynamicResource ForegroundBrush}" FontSize="11"/>
+                    <ComboBox x:Name="GroupByBox" Width="130" Height="36" FontSize="13"
+                              SelectedIndex="0" SelectionChanged="GroupBy_SelectionChanged">
+                        <ComboBoxItem Content="None" Tag="none"/>
+                        <ComboBoxItem Content="Query Hash" Tag="query-hash"/>
+                        <ComboBoxItem Content="Module" Tag="module"/>
+                    </ComboBox>
+                </StackPanel>
+                <StackPanel Spacing="4">
                     <TextBlock Text="Search by" Foreground="{DynamicResource ForegroundBrush}" FontSize="11"/>
                     <ComboBox x:Name="SearchTypeBox" Width="120" Height="36" FontSize="13"
                               SelectedIndex="0">
@@ -141,6 +150,28 @@
                 </ContextMenu>
             </DataGrid.ContextMenu>
             <DataGrid.Columns>
+                <DataGridTemplateColumn Header="" Width="200" IsVisible="False">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate x:DataType="local:QueryStoreRow">
+                            <StackPanel Orientation="Horizontal" Margin="{Binding IndentMargin}">
+                                <Button Content="{Binding ExpandChevron}"
+                                        IsVisible="{Binding HasChildren}"
+                                        Width="24" Height="22" Padding="0"
+                                        FontSize="14" FontWeight="Bold"
+                                        Background="Transparent" BorderThickness="0"
+                                        Foreground="{DynamicResource ForegroundBrush}"
+                                        VerticalAlignment="Center"
+                                        Click="ExpandRow_Click"/>
+                                <TextBlock Text="{Binding GroupDisplayText}"
+                                           VerticalAlignment="Center"
+                                           Margin="4,0,0,0"
+                                           FontWeight="{Binding GroupFontWeight}"
+                                           Foreground="{DynamicResource ForegroundBrush}"
+                                           TextTrimming="CharacterEllipsis"/>
+                            </StackPanel>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
                 <DataGridTemplateColumn Header="" Width="40">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate x:DataType="local:QueryStoreRow">
