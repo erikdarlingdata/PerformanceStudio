@@ -1208,14 +1208,15 @@ SELECT * FROM #plan_hash_rows ORDER BY query_hash, total_executions DESC;
         return result;
     }
 
-    /// <summary>
-    /// Fetches grouped-by-Module results.
-    /// Step 1: Top X modules by metric.
-    /// Step 2: Top 5 query hashes per module with metrics.
-    /// Step 3: Top and bottom QueryId/PlanId per module/query_hash.
-    /// Returns intermediate (query_hash level) and leaf (query_id/plan_id level) rows.
-    /// </summary>
-    public static async Task<QueryStoreGroupedResult> FetchGroupedByModuleAsync(
+	/// <summary>
+	/// Fetches grouped-by-Module results.
+	/// Step 1: Top X modules by metric.
+	/// Step 2: Top 5 query hashes per module with metrics.
+	/// Step 3: Top and bottom QueryId/PlanId per module/query_hash.
+	/// Final Step: Fetch Query Text and Plan XML for the identified QueryId/PlanId.
+	/// Returns intermediate (query_hash level) and leaf (query_id/plan_id level) rows.
+	/// </summary>
+	public static async Task<QueryStoreGroupedResult> FetchGroupedByModuleAsync(
         string connectionString, int topN = 25, string orderBy = "cpu",
         QueryStoreFilter? filter = null, CancellationToken ct = default,
         DateTime? startUtc = null, DateTime? endUtc = null)
@@ -1371,8 +1372,7 @@ FROM qh WHERE rnum <= 5;
         CONVERT(varchar(18), p.query_plan_hash, 1) AS plan_hash,
         q.query_id,
         ps.plan_id,
-        qt.query_sql_text,
-        TRY_CONVERT(nvarchar(max), p.query_plan) AS plan_xml,
+        qt.query_text_id,        
         CAST(ps.total_cpu_us AS bigint) AS total_cpu_us,
         CAST(ps.total_duration_us AS bigint) AS total_duration_us,
         CAST(ps.total_reads AS bigint) AS total_reads,
@@ -1403,12 +1403,32 @@ FROM qh WHERE rnum <= 5;
                        ELSE N'' END
                     AND qhr.query_hash = CONVERT(varchar(18), q.query_hash, 1))
 )
-SELECT module_name, query_hash, plan_hash, query_id, plan_id, query_sql_text, plan_xml,
-       total_cpu_us, total_duration_us, total_reads, total_writes,
-       total_physical_reads, total_memory_pages, total_executions, last_execution_time,
-       CASE WHEN rn_top = 1 THEN 1 ELSE 0 END AS is_top
+SELECT *
+into #ranked_light
 FROM ranked
 WHERE rn_top = 1 OR rn_bottom = 1;
+
+/* Final select: join heavy elements (query_text, plan_xml) only for the top/bottom representatives */
+SELECT 
+    r.module_name, 
+    r.query_hash, 
+    r.plan_hash, 
+    r.query_id, 
+    r.plan_id, 
+    qt.query_sql_text, 
+    TRY_CONVERT(nvarchar(max), p.query_plan) AS plan_xml,
+    r.total_cpu_us, 
+    r.total_duration_us, 
+    r.total_reads, 
+    r.total_writes,
+    r.total_physical_reads, 
+    r.total_memory_pages, 
+    r.total_executions, 
+    r.last_execution_time,
+    CASE WHEN r.rn_top = 1 THEN 1 ELSE 0 END AS is_top
+FROM #ranked_light r
+JOIN sys.query_store_query_text qt ON r.query_text_id = qt.query_text_id
+JOIN sys.query_store_plan p ON r.plan_id = p.plan_id;
 
 /* Return intermediate rows (result set 2) */
 SELECT * FROM #qhash_rows ORDER BY module_name, total_executions DESC;
