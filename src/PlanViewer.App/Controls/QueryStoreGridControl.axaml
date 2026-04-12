@@ -150,17 +150,19 @@
                 </ContextMenu>
             </DataGrid.ContextMenu>
             <DataGrid.Columns>
-                <DataGridTemplateColumn Header="" Width="200" IsVisible="False">
+                <DataGridTemplateColumn Header="" Width="220" IsVisible="False">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate x:DataType="local:QueryStoreRow">
-                            <StackPanel Orientation="Horizontal" Margin="{Binding IndentMargin}">
+                            <StackPanel Orientation="Horizontal" Margin="{Binding IndentMargin}"
+                                        VerticalAlignment="Stretch">
                                 <Button Content="{Binding ExpandChevron}"
                                         IsVisible="{Binding HasChildren}"
-                                        Width="24" Height="22" Padding="0"
-                                        FontSize="14" FontWeight="Bold"
+                                        MinWidth="20" Padding="2,0"
+                                        FontSize="18" FontWeight="Bold"
                                         Background="Transparent" BorderThickness="0"
                                         Foreground="{DynamicResource ForegroundBrush}"
-                                        VerticalAlignment="Center"
+                                        VerticalAlignment="Stretch"
+                                        VerticalContentAlignment="Center"
                                         Click="ExpandRow_Click"/>
                                 <TextBlock Text="{Binding GroupDisplayText}"
                                            VerticalAlignment="Center"

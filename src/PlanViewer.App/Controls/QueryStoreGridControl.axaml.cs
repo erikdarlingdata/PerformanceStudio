@@ -299,12 +299,43 @@ public partial class QueryStoreGridControl : UserControl
 
         LoadButton.IsEnabled = true;
         SelectToggleButton.Content = "Select All";
+
+        // Auto-expand the first root row to the deepest level
+        if (rootRows.Count > 0)
+        {
+            var first = rootRows[0];
+            ExpandRowRecursive(first);
+        }
+
         UpdateStatusText();
         UpdateBarRatios();
 
         // Fetch per-plan wait stats for leaf rows, then consolidate upward
         if (_waitStatsSupported && _waitStatsEnabled && _slicerStartUtc.HasValue && _slicerEndUtc.HasValue)
             _ = FetchGroupedWaitStatsAsync(_slicerStartUtc.Value, _slicerEndUtc.Value, ct);
+    }
+
+    /// <summary>
+    /// Recursively expands a row and all its children, inserting them into _filteredRows.
+    /// </summary>
+    private void ExpandRowRecursive(QueryStoreRow row)
+    {
+        if (!row.HasChildren) return;
+        row.IsExpanded = true;
+
+        var idx = _filteredRows.IndexOf(row);
+        if (idx < 0) return;
+
+        var insertAt = idx + 1;
+        foreach (var child in row.Children)
+        {
+            _filteredRows.Insert(insertAt, child);
+            insertAt++;
+        }
+
+        // Recurse into each child that has children
+        foreach (var child in row.Children)
+            ExpandRowRecursive(child);
     }
 
     /// <summary>
@@ -650,19 +681,65 @@ public partial class QueryStoreGridControl : UserControl
                     cols[i].DisplayIndex = _savedColumnDisplayIndices[i];
                 _savedColumnDisplayIndices = null;
             }
+            // Reset header colors
+            ApplyGroupByHeaderColors();
             return;
         }
 
         // Save original order if not yet saved
         _savedColumnDisplayIndices ??= cols.Select(c => c.DisplayIndex).ToArray();
 
-        // Find the target column to promote
-        // cols[4] = QueryHash, cols[6] = Module (from AXAML definition order)
-        var targetColIndex = _groupByMode == QueryStoreGroupBy.QueryHash ? 4 : 6;
-        var targetCol = cols[targetColIndex];
+        // Column definition indices (AXAML order):
+        //   0=Expand, 1=Checkbox, 2=QueryId, 3=PlanId, 4=QueryHash, 5=PlanHash, 6=Module
+        if (_groupByMode == QueryStoreGroupBy.QueryHash)
+        {
+            // Order: Expand, Checkbox, QueryHash, PlanHash, QueryId, PlanId, ...
+            cols[4].DisplayIndex = 2;  // QueryHash → 2
+            cols[5].DisplayIndex = 3;  // PlanHash → 3
+            cols[2].DisplayIndex = 4;  // QueryId → 4
+            cols[3].DisplayIndex = 5;  // PlanId → 5
+        }
+        else // Module
+        {
+            // Order: Expand, Checkbox, Module, QueryHash, QueryId, PlanId, ...
+            cols[6].DisplayIndex = 2;  // Module → 2
+            cols[4].DisplayIndex = 3;  // QueryHash → 3
+            cols[2].DisplayIndex = 4;  // QueryId → 4
+            cols[3].DisplayIndex = 5;  // PlanId → 5
+        }
 
-        // Move it to DisplayIndex 2 (right after expand[0] and checkbox[1])
-        targetCol.DisplayIndex = 2;
+        // Apply golden header colors for expandable columns
+        ApplyGroupByHeaderColors();
+    }
+
+    /// <summary>
+    /// Applies golden foreground to column headers that represent expandable/collapsible
+    /// grouping levels in the current GroupBy mode, and resets others.
+    /// </summary>
+    private void ApplyGroupByHeaderColors()
+    {
+        // Column definition indices: 4=QueryHash, 5=PlanHash, 6=Module
+        var goldenCols = _groupByMode switch
+        {
+            QueryStoreGroupBy.QueryHash => new HashSet<int> { 4, 5 },   // QueryHash + PlanHash
+            QueryStoreGroupBy.Module    => new HashSet<int> { 6, 4 },   // Module + QueryHash
+            _                           => new HashSet<int>(),
+        };
+
+        var goldenBrush = new SolidColorBrush(Color.FromRgb(0xFF, 0xD7, 0x00)); // Gold
+
+        for (int i = 0; i < ResultsGrid.Columns.Count; i++)
+        {
+            var col = ResultsGrid.Columns[i];
+            if (col.Header is not StackPanel sp) continue;
+            var label = sp.Children.OfType<TextBlock>().LastOrDefault();
+            if (label == null) continue;
+
+            if (goldenCols.Contains(i))
+                label.Foreground = goldenBrush;
+            else
+                label.ClearValue(TextBlock.ForegroundProperty);
+        }
     }
 
     private void ExpandRow_Click(object? sender, RoutedEventArgs e)
@@ -1006,15 +1083,57 @@ public partial class QueryStoreGridControl : UserControl
 
     private void LoadSelected_Click(object? sender, RoutedEventArgs e)
     {
-        var selected = _filteredRows.Where(r => r.IsSelected).Select(r => r.Plan).ToList();
+        List<QueryStorePlan> selected;
+        if (_groupByMode != QueryStoreGroupBy.None)
+        {
+            // In grouped mode, expand selected grouped rows to their leaf plans
+            selected = _filteredRows
+                .Where(r => r.IsSelected)
+                .SelectMany(r => r.HasChildren ? CollectLeafPlans(r) : (r.PlanId > 0 && r.QueryId > 0 ? [r.Plan] : []))
+                .ToList();
+        }
+        else
+        {
+            selected = _filteredRows.Where(r => r.IsSelected).Select(r => r.Plan).ToList();
+        }
         if (selected.Count > 0)
             PlansSelected?.Invoke(this, selected);
     }
 
     private void LoadHighlightedPlan_Click(object? sender, RoutedEventArgs e)
     {
-        if (ResultsGrid.SelectedItem is QueryStoreRow row)
+        if (ResultsGrid.SelectedItem is not QueryStoreRow row) return;
+
+        // In grouped mode, load all descendant leaf plans with real IDs
+        if (_groupByMode != QueryStoreGroupBy.None && row.HasChildren)
+        {
+            var leafPlans = CollectLeafPlans(row);
+            if (leafPlans.Count > 0)
+                PlansSelected?.Invoke(this, leafPlans);
+        }
+        else if (row.PlanId > 0 && row.QueryId > 0)
+        {
             PlansSelected?.Invoke(this, new List<QueryStorePlan> { row.Plan });
+        }
+    }
+
+    /// <summary>
+    /// Recursively collects all leaf-level plans (PlanId > 0 and QueryId > 0) from a grouped row and its descendants.
+    /// </summary>
+    private static List<QueryStorePlan> CollectLeafPlans(QueryStoreRow row)
+    {
+        var plans = new List<QueryStorePlan>();
+        if (row.Children.Count == 0)
+        {
+            if (row.PlanId > 0 && row.QueryId > 0)
+                plans.Add(row.Plan);
+        }
+        else
+        {
+            foreach (var child in row.Children)
+                plans.AddRange(CollectLeafPlans(child));
+        }
+        return plans;
     }
 
     private async void ViewHistory_Click(object? sender, RoutedEventArgs e)
