@@ -473,6 +473,10 @@ public partial class QueryStoreGridControl : UserControl
                     leafChildren = leafChildren.OrderByDescending(r => metricAccessor(r)).ToList();
 
                     var midPlan = GroupedRowToPlan(mid);
+                    // Populate QueryText from the top representative leaf for this plan hash
+                    var topLeafForMid = leaves.FirstOrDefault(l => l.IsTopRepresentative) ?? leaves.FirstOrDefault();
+                    if (topLeafForMid != null && !string.IsNullOrEmpty(topLeafForMid.QueryText))
+                        midPlan.QueryText = topLeafForMid.QueryText;
                     midChildren.Add(new QueryStoreRow(midPlan, 1, mid.QueryPlanHash, leafChildren));
                 }
 
@@ -481,6 +485,13 @@ public partial class QueryStoreGridControl : UserControl
 
                 // Aggregate metrics at QueryHash level
                 var aggPlan = AggregateGroupedRows(intermediateRows, qhKey, intermediateRows.FirstOrDefault()?.ModuleName ?? "");
+                // Populate QueryText from the top representative leaf across all leaves in this query hash group
+                var topLeafForRoot = grouped.LeafRows
+                    .Where(l => l.QueryHash == qhKey && l.IsTopRepresentative && !string.IsNullOrEmpty(l.QueryText))
+                    .FirstOrDefault()
+                    ?? grouped.LeafRows.FirstOrDefault(l => l.QueryHash == qhKey && !string.IsNullOrEmpty(l.QueryText));
+                if (topLeafForRoot != null)
+                    aggPlan.QueryText = topLeafForRoot.QueryText;
                 roots.Add(new QueryStoreRow(aggPlan, 0, qhKey, midChildren));
             }
         }
@@ -516,6 +527,10 @@ public partial class QueryStoreGridControl : UserControl
                     leafChildren = leafChildren.OrderByDescending(r => metricAccessor(r)).ToList();
 
                     var midPlan = GroupedRowToPlan(mid);
+                    // Populate QueryText from the top representative leaf for this query hash
+                    var topLeafForMid = leaves.FirstOrDefault(l => l.IsTopRepresentative) ?? leaves.FirstOrDefault();
+                    if (topLeafForMid != null && !string.IsNullOrEmpty(topLeafForMid.QueryText))
+                        midPlan.QueryText = topLeafForMid.QueryText;
                     midChildren.Add(new QueryStoreRow(midPlan, 1, mid.QueryHash, leafChildren));
                 }
 
@@ -524,6 +539,13 @@ public partial class QueryStoreGridControl : UserControl
 
                 // Aggregate metrics at Module level
                 var aggPlan = AggregateGroupedRows(intermediateRows, "", modKey);
+                // Populate QueryText from the top representative leaf across all leaves in this module group
+                var topLeafForRoot = grouped.LeafRows
+                    .Where(l => l.ModuleName == modKey && l.IsTopRepresentative && !string.IsNullOrEmpty(l.QueryText))
+                    .FirstOrDefault()
+                    ?? grouped.LeafRows.FirstOrDefault(l => l.ModuleName == modKey && !string.IsNullOrEmpty(l.QueryText));
+                if (topLeafForRoot != null)
+                    aggPlan.QueryText = topLeafForRoot.QueryText;
                 roots.Add(new QueryStoreRow(aggPlan, 0, modKey, midChildren));
             }
         }
