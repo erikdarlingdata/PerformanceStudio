@@ -44,6 +44,8 @@ public partial class QueryStoreGridControl : UserControl
     private bool _waitStatsSupported;  // false until version + capture mode confirmed
     private bool _waitStatsEnabled = true;
     private bool _waitPercentMode;
+    private QueryStoreGroupBy _groupByMode = QueryStoreGroupBy.None;
+    private List<QueryStoreRow> _groupedRootRows = new(); // top-level rows for grouped mode
 
     public event EventHandler<List<QueryStorePlan>>? PlansSelected;
     public event EventHandler<string>? DatabaseChanged;
@@ -185,8 +187,10 @@ public partial class QueryStoreGridControl : UserControl
         StatusText.Text = "Fetching plans...";
         GridLoadingOverlay.IsVisible = true;
         GridLoadingText.Text = "Fetching plans...";
+        GridEmptyMessage.IsVisible = false;
         _rows.Clear();
         _filteredRows.Clear();
+        _groupedRootRows.Clear();
 
         // Start global + ribbon wait stats early (they don't depend on plan results)
         if (_waitStatsSupported && _waitStatsEnabled && _slicerStartUtc.HasValue && _slicerEndUtc.HasValue)
@@ -194,28 +198,14 @@ public partial class QueryStoreGridControl : UserControl
 
         try
         {
-            var plans = await QueryStoreService.FetchTopPlansAsync(
-                _connectionString, topN, orderBy, filter: filter, ct: ct,
-                startUtc: _slicerStartUtc, endUtc: _slicerEndUtc);
-
-            GridLoadingOverlay.IsVisible = false;
-
-            if (plans.Count == 0)
+            if (_groupByMode == QueryStoreGroupBy.None)
             {
-                StatusText.Text = "No Query Store data found for the selected range.";
-                return;
+                await FetchFlatPlansAsync(topN, orderBy, filter, ct);
             }
-
-            foreach (var plan in plans)
-                _rows.Add(new QueryStoreRow(plan));
-
-            ApplyFilters();
-            LoadButton.IsEnabled = true;
-            SelectToggleButton.Content = "Select All";
-
-            // Fetch per-plan wait stats after grid is populated (needs plan IDs)
-            if (_waitStatsSupported && _waitStatsEnabled && _slicerStartUtc.HasValue && _slicerEndUtc.HasValue)
-                _ = FetchPerPlanWaitStatsAsync(_slicerStartUtc.Value, _slicerEndUtc.Value, ct);
+            else
+            {
+                await FetchGroupedPlansAsync(topN, orderBy, filter, ct);
+            }
         }
         catch (OperationCanceledException)
         {
@@ -230,6 +220,409 @@ public partial class QueryStoreGridControl : UserControl
             GridLoadingOverlay.IsVisible = false;
             FetchButton.IsEnabled = true;
         }
+    }
+
+    private async System.Threading.Tasks.Task FetchFlatPlansAsync(
+        int topN, string orderBy, QueryStoreFilter? filter, CancellationToken ct)
+    {
+        var plans = await QueryStoreService.FetchTopPlansAsync(
+            _connectionString, topN, orderBy, filter: filter, ct: ct,
+            startUtc: _slicerStartUtc, endUtc: _slicerEndUtc);
+
+        GridLoadingOverlay.IsVisible = false;
+
+        if (plans.Count == 0)
+        {
+            StatusText.Text = "No Query Store data found for the selected range.";
+            return;
+        }
+
+        foreach (var plan in plans)
+            _rows.Add(new QueryStoreRow(plan));
+
+        ApplyFilters();
+        LoadButton.IsEnabled = true;
+        SelectToggleButton.Content = "Select All";
+
+        // Fetch per-plan wait stats after grid is populated (needs plan IDs)
+        if (_waitStatsSupported && _waitStatsEnabled && _slicerStartUtc.HasValue && _slicerEndUtc.HasValue)
+            _ = FetchPerPlanWaitStatsAsync(_slicerStartUtc.Value, _slicerEndUtc.Value, ct);
+    }
+
+    private async System.Threading.Tasks.Task FetchGroupedPlansAsync(
+        int topN, string orderBy, QueryStoreFilter? filter, CancellationToken ct)
+    {
+        QueryStoreGroupedResult grouped;
+        if (_groupByMode == QueryStoreGroupBy.QueryHash)
+        {
+            grouped = await QueryStoreService.FetchGroupedByQueryHashAsync(
+                _connectionString, topN, orderBy, filter, ct,
+                _slicerStartUtc, _slicerEndUtc);
+        }
+        else // Module
+        {
+            grouped = await QueryStoreService.FetchGroupedByModuleAsync(
+                _connectionString, topN, orderBy, filter, ct,
+                _slicerStartUtc, _slicerEndUtc);
+        }
+
+        GridLoadingOverlay.IsVisible = false;
+        GridEmptyMessage.IsVisible = false;
+
+        if (grouped.IntermediateRows.Count == 0)
+        {
+            if (_groupByMode == QueryStoreGroupBy.Module)
+            {
+                GridEmptyMessageText.Text = "No module found in the selected period";
+                GridEmptyMessage.IsVisible = true;
+            }
+            else
+            {
+                StatusText.Text = "No Query Store data found for the selected range.";
+            }
+            return;
+        }
+
+        var rootRows = BuildGroupedRows(grouped);
+
+        // Sort root rows by consolidated metric descending
+        var metricAccessor = GetMetricAccessor(orderBy);
+        rootRows = rootRows.OrderByDescending(r => metricAccessor(r)).ToList();
+        _groupedRootRows = rootRows;
+
+        // Flatten to _rows (all levels) and show only top-level in _filteredRows
+        foreach (var root in rootRows)
+        {
+            _rows.Add(root);
+            foreach (var mid in root.Children)
+            {
+                _rows.Add(mid);
+                foreach (var leaf in mid.Children)
+                    _rows.Add(leaf);
+            }
+        }
+
+        // Show only root-level rows initially (collapsed)
+        _filteredRows.Clear();
+        foreach (var root in rootRows)
+            _filteredRows.Add(root);
+
+        LoadButton.IsEnabled = true;
+        SelectToggleButton.Content = "Select All";
+
+        // Auto-expand the first root row to the deepest level
+        if (rootRows.Count > 0)
+        {
+            var first = rootRows[0];
+            ExpandRowRecursive(first);
+        }
+
+        UpdateStatusText();
+        UpdateBarRatios();
+
+        // Fetch per-plan wait stats for leaf rows, then consolidate upward
+        if (_waitStatsSupported && _waitStatsEnabled && _slicerStartUtc.HasValue && _slicerEndUtc.HasValue)
+            _ = FetchGroupedWaitStatsAsync(_slicerStartUtc.Value, _slicerEndUtc.Value, ct);
+    }
+
+    /// <summary>
+    /// Recursively expands a row and all its children, inserting them into _filteredRows.
+    /// </summary>
+    private void ExpandRowRecursive(QueryStoreRow row)
+    {
+        if (!row.HasChildren) return;
+        row.IsExpanded = true;
+
+        var idx = _filteredRows.IndexOf(row);
+        if (idx < 0) return;
+
+        var insertAt = idx + 1;
+        foreach (var child in row.Children)
+        {
+            _filteredRows.Insert(insertAt, child);
+            insertAt++;
+        }
+
+        // Recurse into each child that has children
+        foreach (var child in row.Children)
+            ExpandRowRecursive(child);
+    }
+
+    /// <summary>
+    /// Fetches per-plan wait stats for all real plan IDs found in the grouped hierarchy,
+    /// assigns them to leaf rows, then consolidates upward to intermediate and root rows.
+    /// </summary>
+    private async System.Threading.Tasks.Task FetchGroupedWaitStatsAsync(
+        DateTime startUtc, DateTime endUtc, CancellationToken ct)
+    {
+        try
+        {
+            // Collect all real plan IDs from rows that have a real PlanId
+            var allPlanIds = _rows
+                .Where(r => r.PlanId > 0)
+                .Select(r => r.PlanId)
+                .Distinct()
+                .ToList();
+
+            if (allPlanIds.Count == 0) return;
+
+            var planWaits = await QueryStoreService.FetchPlanWaitStatsAsync(
+                _connectionString, startUtc, endUtc, allPlanIds, ct);
+            if (ct.IsCancellationRequested) return;
+
+            // Build lookup: plan_id → list of WaitCategoryTotal
+            var byPlan = planWaits
+                .GroupBy(x => x.PlanId)
+                .ToDictionary(g => g.Key, g => g.Select(x => x.Wait).ToList());
+
+            // 1. Assign raw waits + profiles to rows with a real PlanId
+            foreach (var row in _rows)
+            {
+                if (row.PlanId > 0 && byPlan.TryGetValue(row.PlanId, out var waits))
+                {
+                    row.RawWaitCategories = waits;
+                    row.WaitProfile = QueryStoreService.BuildWaitProfile(waits);
+                }
+            }
+
+            // 2. Consolidate upward through the hierarchy
+            foreach (var root in _groupedRootRows)
+                ConsolidateWaitProfileUpward(root);
+
+            UpdateWaitBarMode();
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception) { }
+    }
+
+    /// <summary>
+    /// Recursively consolidates wait profiles from children into their parent.
+    /// For each parent: merges all children's RawWaitCategories by summing WaitRatio
+    /// per category, then builds a new WaitProfile from the merged totals.
+    /// </summary>
+    private static void ConsolidateWaitProfileUpward(QueryStoreRow parent)
+    {
+        if (parent.Children.Count == 0) return;
+
+        // Recurse first so children are consolidated before we merge them
+        foreach (var child in parent.Children)
+            ConsolidateWaitProfileUpward(child);
+
+        // Merge all children's raw wait categories by summing WaitRatio per category
+        var merged = parent.Children
+            .SelectMany(c => c.RawWaitCategories)
+            .GroupBy(w => new { w.WaitCategory, w.WaitCategoryDesc })
+            .Select(g => new WaitCategoryTotal
+            {
+                WaitCategory = g.Key.WaitCategory,
+                WaitCategoryDesc = g.Key.WaitCategoryDesc,
+                WaitRatio = g.Sum(w => w.WaitRatio),
+            })
+            .ToList();
+
+        if (merged.Count > 0)
+        {
+            parent.RawWaitCategories = merged;
+            parent.WaitProfile = QueryStoreService.BuildWaitProfile(merged);
+        }
+    }
+
+    /// <summary>Maps an orderBy metric string to a Func that extracts the sort value from a QueryStoreRow.</summary>
+    private static Func<QueryStoreRow, double> GetMetricAccessor(string orderBy) => orderBy.ToLowerInvariant() switch
+    {
+        "cpu"              => r => r.TotalCpuSort,
+        "avg-cpu"          => r => r.AvgCpuSort,
+        "duration"         => r => r.TotalDurSort,
+        "avg-duration"     => r => r.AvgDurSort,
+        "reads"            => r => r.TotalReadsSort,
+        "avg-reads"        => r => r.AvgReadsSort,
+        "writes"           => r => r.TotalWritesSort,
+        "avg-writes"       => r => r.AvgWritesSort,
+        "physical-reads"   => r => r.TotalPhysReadsSort,
+        "avg-physical-reads" => r => r.AvgPhysReadsSort,
+        "memory"           => r => r.TotalMemSort,
+        "avg-memory"       => r => r.AvgMemSort,
+        "executions"       => r => r.ExecsSort,
+        _                  => r => r.TotalCpuSort,
+    };
+
+    private List<QueryStoreRow> BuildGroupedRows(QueryStoreGroupedResult grouped)
+    {
+        var roots = new List<QueryStoreRow>();
+        var metricAccessor = GetMetricAccessor(_lastFetchedOrderBy);
+
+        if (_groupByMode == QueryStoreGroupBy.QueryHash)
+        {
+            // Level 0: QueryHash groups
+            var queryHashGroups = grouped.IntermediateRows
+                .GroupBy(r => r.QueryHash)
+                .ToList();
+
+            foreach (var qhGroup in queryHashGroups)
+            {
+                var qhKey = qhGroup.Key;
+                var intermediateRows = qhGroup.ToList();
+
+                // Build level-1 children (PlanHash)
+                var midChildren = new List<QueryStoreRow>();
+                foreach (var mid in intermediateRows)
+                {
+                    // Build level-2 children (QueryId/PlanId)
+                    var leafChildren = new List<QueryStoreRow>();
+                    var leaves = grouped.LeafRows
+                        .Where(l => l.QueryHash == mid.QueryHash && l.QueryPlanHash == mid.QueryPlanHash)
+                        .ToList();
+                    foreach (var leaf in leaves)
+                    {
+                        var leafPlan = GroupedRowToPlan(leaf);
+                        leafChildren.Add(new QueryStoreRow(leafPlan, 2,
+                            $"Q:{leaf.QueryId} P:{leaf.PlanId}{(leaf.IsTopRepresentative ? " ★" : "")}", new List<QueryStoreRow>()));
+                    }
+
+                    // Sort leaf children by metric descending
+                    leafChildren = leafChildren.OrderByDescending(r => metricAccessor(r)).ToList();
+
+                    var midPlan = GroupedRowToPlan(mid);
+                    // Populate QueryText from the top representative leaf for this plan hash
+                    var topLeafForMid = leaves.FirstOrDefault(l => l.IsTopRepresentative) ?? leaves.FirstOrDefault();
+                    if (topLeafForMid != null && !string.IsNullOrEmpty(topLeafForMid.QueryText))
+                        midPlan.QueryText = topLeafForMid.QueryText;
+                    midChildren.Add(new QueryStoreRow(midPlan, 1, mid.QueryPlanHash, leafChildren));
+                }
+
+                // Sort mid children by metric descending
+                midChildren = midChildren.OrderByDescending(r => metricAccessor(r)).ToList();
+
+                // Aggregate metrics at QueryHash level
+                var aggPlan = AggregateGroupedRows(intermediateRows, qhKey, intermediateRows.FirstOrDefault()?.ModuleName ?? "");
+                // Populate QueryText from the top representative leaf across all leaves in this query hash group
+                var topLeafForRoot = grouped.LeafRows
+                    .Where(l => l.QueryHash == qhKey && l.IsTopRepresentative && !string.IsNullOrEmpty(l.QueryText))
+                    .FirstOrDefault()
+                    ?? grouped.LeafRows.FirstOrDefault(l => l.QueryHash == qhKey && !string.IsNullOrEmpty(l.QueryText));
+                if (topLeafForRoot != null)
+                    aggPlan.QueryText = topLeafForRoot.QueryText;
+                roots.Add(new QueryStoreRow(aggPlan, 0, qhKey, midChildren));
+            }
+        }
+        else // Module
+        {
+            // Level 0: Module groups
+            var moduleGroups = grouped.IntermediateRows
+                .GroupBy(r => r.ModuleName)
+                .ToList();
+
+            foreach (var modGroup in moduleGroups)
+            {
+                var modKey = modGroup.Key;
+                var intermediateRows = modGroup.ToList();
+
+                // Build level-1 children (QueryHash)
+                var midChildren = new List<QueryStoreRow>();
+                foreach (var mid in intermediateRows)
+                {
+                    // Build level-2 children (QueryId/PlanId)
+                    var leafChildren = new List<QueryStoreRow>();
+                    var leaves = grouped.LeafRows
+                        .Where(l => l.ModuleName == mid.ModuleName && l.QueryHash == mid.QueryHash)
+                        .ToList();
+                    foreach (var leaf in leaves)
+                    {
+                        var leafPlan = GroupedRowToPlan(leaf);
+                        leafChildren.Add(new QueryStoreRow(leafPlan, 2,
+                            $"Q:{leaf.QueryId} P:{leaf.PlanId}{(leaf.IsTopRepresentative ? " ★" : "")}", new List<QueryStoreRow>()));
+                    }
+
+                    // Sort leaf children by metric descending
+                    leafChildren = leafChildren.OrderByDescending(r => metricAccessor(r)).ToList();
+
+                    var midPlan = GroupedRowToPlan(mid);
+                    // Populate QueryText from the top representative leaf for this query hash
+                    var topLeafForMid = leaves.FirstOrDefault(l => l.IsTopRepresentative) ?? leaves.FirstOrDefault();
+                    if (topLeafForMid != null && !string.IsNullOrEmpty(topLeafForMid.QueryText))
+                        midPlan.QueryText = topLeafForMid.QueryText;
+                    midChildren.Add(new QueryStoreRow(midPlan, 1, mid.QueryHash, leafChildren));
+                }
+
+                // Sort mid children by metric descending
+                midChildren = midChildren.OrderByDescending(r => metricAccessor(r)).ToList();
+
+                // Aggregate metrics at Module level
+                var aggPlan = AggregateGroupedRows(intermediateRows, "", modKey);
+                // Populate QueryText from the top representative leaf across all leaves in this module group
+                var topLeafForRoot = grouped.LeafRows
+                    .Where(l => l.ModuleName == modKey && l.IsTopRepresentative && !string.IsNullOrEmpty(l.QueryText))
+                    .FirstOrDefault()
+                    ?? grouped.LeafRows.FirstOrDefault(l => l.ModuleName == modKey && !string.IsNullOrEmpty(l.QueryText));
+                if (topLeafForRoot != null)
+                    aggPlan.QueryText = topLeafForRoot.QueryText;
+                roots.Add(new QueryStoreRow(aggPlan, 0, modKey, midChildren));
+            }
+        }
+
+        return roots;
+    }
+
+    private static QueryStorePlan GroupedRowToPlan(QueryStoreGroupedPlanRow row)
+    {
+        var totalExecs = row.CountExecutions > 0 ? row.CountExecutions : 1;
+        return new QueryStorePlan
+        {
+            QueryId = row.QueryId,
+            PlanId = row.PlanId,
+            QueryHash = row.QueryHash,
+            QueryPlanHash = row.QueryPlanHash,
+            ModuleName = row.ModuleName,
+            QueryText = row.QueryText,
+            PlanXml = row.PlanXml,
+            CountExecutions = row.CountExecutions,
+            TotalCpuTimeUs = row.TotalCpuTimeUs,
+            TotalDurationUs = row.TotalDurationUs,
+            TotalLogicalIoReads = row.TotalLogicalIoReads,
+            TotalLogicalIoWrites = row.TotalLogicalIoWrites,
+            TotalPhysicalIoReads = row.TotalPhysicalIoReads,
+            TotalMemoryGrantPages = row.TotalMemoryGrantPages,
+            AvgCpuTimeUs = (double)row.TotalCpuTimeUs / totalExecs,
+            AvgDurationUs = (double)row.TotalDurationUs / totalExecs,
+            AvgLogicalIoReads = (double)row.TotalLogicalIoReads / totalExecs,
+            AvgLogicalIoWrites = (double)row.TotalLogicalIoWrites / totalExecs,
+            AvgPhysicalIoReads = (double)row.TotalPhysicalIoReads / totalExecs,
+            AvgMemoryGrantPages = (double)row.TotalMemoryGrantPages / totalExecs,
+            LastExecutedUtc = row.LastExecutedUtc,
+        };
+    }
+
+    private static QueryStorePlan AggregateGroupedRows(List<QueryStoreGroupedPlanRow> rows, string queryHash, string moduleName)
+    {
+        var totalExecs = rows.Sum(r => r.CountExecutions);
+        var safeExecs = totalExecs > 0 ? totalExecs : 1;
+        var totalCpu = rows.Sum(r => r.TotalCpuTimeUs);
+        var totalDur = rows.Sum(r => r.TotalDurationUs);
+        var totalReads = rows.Sum(r => r.TotalLogicalIoReads);
+        var totalWrites = rows.Sum(r => r.TotalLogicalIoWrites);
+        var totalPhysReads = rows.Sum(r => r.TotalPhysicalIoReads);
+        var totalMem = rows.Sum(r => r.TotalMemoryGrantPages);
+        var lastExec = rows.Max(r => r.LastExecutedUtc);
+
+        return new QueryStorePlan
+        {
+            QueryHash = queryHash,
+            ModuleName = moduleName,
+            CountExecutions = totalExecs,
+            TotalCpuTimeUs = totalCpu,
+            TotalDurationUs = totalDur,
+            TotalLogicalIoReads = totalReads,
+            TotalLogicalIoWrites = totalWrites,
+            TotalPhysicalIoReads = totalPhysReads,
+            TotalMemoryGrantPages = totalMem,
+            AvgCpuTimeUs = (double)totalCpu / safeExecs,
+            AvgDurationUs = (double)totalDur / safeExecs,
+            AvgLogicalIoReads = (double)totalReads / safeExecs,
+            AvgLogicalIoWrites = (double)totalWrites / safeExecs,
+            AvgPhysicalIoReads = (double)totalPhysReads / safeExecs,
+            AvgMemoryGrantPages = (double)totalMem / safeExecs,
+            LastExecutedUtc = lastExec,
+        };
     }
 
     private QueryStoreFilter? BuildSearchFilter()
@@ -279,6 +672,152 @@ public partial class QueryStoreGridControl : UserControl
         {
             Fetch_Click(sender, e);
             e.Handled = true;
+        }
+    }
+
+    private int[]? _savedColumnDisplayIndices;
+
+    private void GroupBy_SelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (!_initialOrderByLoaded) return;
+        var tag = (GroupByBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "none";
+        var newMode = tag switch
+        {
+            "query-hash" => QueryStoreGroupBy.QueryHash,
+            "module" => QueryStoreGroupBy.Module,
+            _ => QueryStoreGroupBy.None,
+        };
+        if (newMode == _groupByMode) return;
+        _groupByMode = newMode;
+
+        // Show/hide the expand column (first column in the grid)
+        ResultsGrid.Columns[0].IsVisible = _groupByMode != QueryStoreGroupBy.None;
+
+        // Reorder columns: move the group key column right after expand+checkbox
+        ReorderColumnsForGroupBy();
+
+        // Re-fetch with new grouping
+        Fetch_Click(null, new RoutedEventArgs());
+    }
+
+    private void ReorderColumnsForGroupBy()
+    {
+        var cols = ResultsGrid.Columns;
+
+        if (_groupByMode == QueryStoreGroupBy.None)
+        {
+            // Restore original column order
+            if (_savedColumnDisplayIndices != null)
+            {
+                for (int i = 0; i < cols.Count && i < _savedColumnDisplayIndices.Length; i++)
+                    cols[i].DisplayIndex = _savedColumnDisplayIndices[i];
+                _savedColumnDisplayIndices = null;
+            }
+            // Reset header colors
+            ApplyGroupByHeaderColors();
+            return;
+        }
+
+        // Save original order if not yet saved
+        _savedColumnDisplayIndices ??= cols.Select(c => c.DisplayIndex).ToArray();
+
+        // Column definition indices (AXAML order):
+        //   0=Expand, 1=Checkbox, 2=QueryId, 3=PlanId, 4=QueryHash, 5=PlanHash, 6=Module
+        if (_groupByMode == QueryStoreGroupBy.QueryHash)
+        {
+            // Order: Expand, Checkbox, QueryHash, PlanHash, QueryId, PlanId, ...
+            cols[4].DisplayIndex = 2;  // QueryHash → 2
+            cols[5].DisplayIndex = 3;  // PlanHash → 3
+            cols[2].DisplayIndex = 4;  // QueryId → 4
+            cols[3].DisplayIndex = 5;  // PlanId → 5
+        }
+        else // Module
+        {
+            // Order: Expand, Checkbox, Module, QueryHash, QueryId, PlanId, ...
+            cols[6].DisplayIndex = 2;  // Module → 2
+            cols[4].DisplayIndex = 3;  // QueryHash → 3
+            cols[2].DisplayIndex = 4;  // QueryId → 4
+            cols[3].DisplayIndex = 5;  // PlanId → 5
+        }
+
+        // Apply golden header colors for expandable columns
+        ApplyGroupByHeaderColors();
+    }
+
+    /// <summary>
+    /// Applies golden foreground to column headers that represent expandable/collapsible
+    /// grouping levels in the current GroupBy mode, and resets others.
+    /// </summary>
+    private void ApplyGroupByHeaderColors()
+    {
+        // Column definition indices: 4=QueryHash, 5=PlanHash, 6=Module
+        var goldenCols = _groupByMode switch
+        {
+            QueryStoreGroupBy.QueryHash => new HashSet<int> { 4, 5 },   // QueryHash + PlanHash
+            QueryStoreGroupBy.Module    => new HashSet<int> { 6, 4 },   // Module + QueryHash
+            _                           => new HashSet<int>(),
+        };
+
+        var goldenBrush = new SolidColorBrush(Color.FromRgb(0xFF, 0xD7, 0x00)); // Gold
+
+        for (int i = 0; i < ResultsGrid.Columns.Count; i++)
+        {
+            var col = ResultsGrid.Columns[i];
+            if (col.Header is not StackPanel sp) continue;
+            var label = sp.Children.OfType<TextBlock>().LastOrDefault();
+            if (label == null) continue;
+
+            if (goldenCols.Contains(i))
+                label.Foreground = goldenBrush;
+            else
+                label.ClearValue(TextBlock.ForegroundProperty);
+        }
+    }
+
+    private void ExpandRow_Click(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not Button btn) return;
+        if (btn.DataContext is not QueryStoreRow row) return;
+        if (!row.HasChildren) return;
+
+        row.IsExpanded = !row.IsExpanded;
+
+        if (row.IsExpanded)
+        {
+            // Insert children after this row in _filteredRows
+            var idx = _filteredRows.IndexOf(row);
+            if (idx < 0) return;
+            var insertAt = idx + 1;
+            foreach (var child in row.Children)
+            {
+                _filteredRows.Insert(insertAt, child);
+                insertAt++;
+            }
+
+            // Scroll the first child into view so the expansion is visible
+            if (row.Children.Count > 0)
+                ResultsGrid.ScrollIntoView(row.Children[0], null);
+        }
+        else
+        {
+            // Remove children (and their expanded children) recursively
+            CollapseRowChildren(row);
+        }
+
+        UpdateStatusText();
+        UpdateBarRatios();
+    }
+
+    private void CollapseRowChildren(QueryStoreRow parent)
+    {
+        foreach (var child in parent.Children)
+        {
+            if (child.IsExpanded)
+            {
+                child.IsExpanded = false;
+                CollapseRowChildren(child);
+            }
+            _filteredRows.Remove(child);
         }
     }
 
@@ -462,7 +1001,10 @@ public partial class QueryStoreGridControl : UserControl
         DateTime startUtc, DateTime endUtc, CancellationToken ct)
     {
         await FetchGlobalWaitStatsOnlyAsync(startUtc, endUtc, ct);
-        await FetchPerPlanWaitStatsAsync(startUtc, endUtc, ct);
+        if (_groupByMode != QueryStoreGroupBy.None)
+            await FetchGroupedWaitStatsAsync(startUtc, endUtc, ct);
+        else
+            await FetchPerPlanWaitStatsAsync(startUtc, endUtc, ct);
     }
 
     private void OnWaitCategoryClicked(object? sender, string category)
@@ -573,15 +1115,57 @@ public partial class QueryStoreGridControl : UserControl
 
     private void LoadSelected_Click(object? sender, RoutedEventArgs e)
     {
-        var selected = _filteredRows.Where(r => r.IsSelected).Select(r => r.Plan).ToList();
+        List<QueryStorePlan> selected;
+        if (_groupByMode != QueryStoreGroupBy.None)
+        {
+            // In grouped mode, expand selected grouped rows to their leaf plans
+            selected = _filteredRows
+                .Where(r => r.IsSelected)
+                .SelectMany(r => r.HasChildren ? CollectLeafPlans(r) : (r.PlanId > 0 && r.QueryId > 0 ? [r.Plan] : []))
+                .ToList();
+        }
+        else
+        {
+            selected = _filteredRows.Where(r => r.IsSelected).Select(r => r.Plan).ToList();
+        }
         if (selected.Count > 0)
             PlansSelected?.Invoke(this, selected);
     }
 
     private void LoadHighlightedPlan_Click(object? sender, RoutedEventArgs e)
     {
-        if (ResultsGrid.SelectedItem is QueryStoreRow row)
+        if (ResultsGrid.SelectedItem is not QueryStoreRow row) return;
+
+        // In grouped mode, load all descendant leaf plans with real IDs
+        if (_groupByMode != QueryStoreGroupBy.None && row.HasChildren)
+        {
+            var leafPlans = CollectLeafPlans(row);
+            if (leafPlans.Count > 0)
+                PlansSelected?.Invoke(this, leafPlans);
+        }
+        else if (row.PlanId > 0 && row.QueryId > 0)
+        {
             PlansSelected?.Invoke(this, new List<QueryStorePlan> { row.Plan });
+        }
+    }
+
+    /// <summary>
+    /// Recursively collects all leaf-level plans (PlanId > 0 and QueryId > 0) from a grouped row and its descendants.
+    /// </summary>
+    private static List<QueryStorePlan> CollectLeafPlans(QueryStoreRow row)
+    {
+        var plans = new List<QueryStorePlan>();
+        if (row.Children.Count == 0)
+        {
+            if (row.PlanId > 0 && row.QueryId > 0)
+                plans.Add(row.Plan);
+        }
+        else
+        {
+            foreach (var child in row.Children)
+                plans.AddRange(CollectLeafPlans(child));
+        }
+        return plans;
     }
 
     private async void ViewHistory_Click(object? sender, RoutedEventArgs e)
@@ -698,27 +1282,28 @@ public partial class QueryStoreGridControl : UserControl
     private void SetupColumnHeaders()
     {
         var cols = ResultsGrid.Columns;
-        SetColumnFilterButton(cols[1],  "QueryId",        "Query ID");
-        SetColumnFilterButton(cols[2],  "PlanId",         "Plan ID");
-        SetColumnFilterButton(cols[3],  "QueryHash",      "Query Hash");
-        SetColumnFilterButton(cols[4],  "PlanHash",       "Plan Hash");
-        SetColumnFilterButton(cols[5],  "ModuleName",     "Module");
-        // cols[6] = WaitProfile (no filter button)
-        SetColumnFilterButton(cols[7],  "LastExecuted",   "Last Executed (Local)");
-        SetColumnFilterButton(cols[8],  "Executions",     "Executions");
-        SetColumnFilterButton(cols[9],  "TotalCpu",       "Total CPU (ms)");
-        SetColumnFilterButton(cols[10], "AvgCpu",         "Avg CPU (ms)");
-        SetColumnFilterButton(cols[11], "TotalDuration",  "Total Duration (ms)");
-        SetColumnFilterButton(cols[12], "AvgDuration",    "Avg Duration (ms)");
-        SetColumnFilterButton(cols[13], "TotalReads",     "Total Reads");
-        SetColumnFilterButton(cols[14], "AvgReads",       "Avg Reads");
-        SetColumnFilterButton(cols[15], "TotalWrites",    "Total Writes");
-        SetColumnFilterButton(cols[16], "AvgWrites",      "Avg Writes");
-        SetColumnFilterButton(cols[17], "TotalPhysReads", "Total Physical Reads");
-        SetColumnFilterButton(cols[18], "AvgPhysReads",   "Avg Physical Reads");
-        SetColumnFilterButton(cols[19], "TotalMemory",    "Total Memory (MB)");
-        SetColumnFilterButton(cols[20], "AvgMemory",      "Avg Memory (MB)");
-        SetColumnFilterButton(cols[21], "QueryText",      "Query Text");
+        // cols[0] = Expand column, cols[1] = Checkbox
+        SetColumnFilterButton(cols[2],  "QueryId",        "Query ID");
+        SetColumnFilterButton(cols[3],  "PlanId",         "Plan ID");
+        SetColumnFilterButton(cols[4],  "QueryHash",      "Query Hash");
+        SetColumnFilterButton(cols[5],  "PlanHash",       "Plan Hash");
+        SetColumnFilterButton(cols[6],  "ModuleName",     "Module");
+        // cols[7] = WaitProfile (no filter button)
+        SetColumnFilterButton(cols[8],  "LastExecuted",   "Last Executed (Local)");
+        SetColumnFilterButton(cols[9],  "Executions",     "Executions");
+        SetColumnFilterButton(cols[10], "TotalCpu",       "Total CPU (ms)");
+        SetColumnFilterButton(cols[11], "AvgCpu",         "Avg CPU (ms)");
+        SetColumnFilterButton(cols[12], "TotalDuration",  "Total Duration (ms)");
+        SetColumnFilterButton(cols[13], "AvgDuration",    "Avg Duration (ms)");
+        SetColumnFilterButton(cols[14], "TotalReads",     "Total Reads");
+        SetColumnFilterButton(cols[15], "AvgReads",       "Avg Reads");
+        SetColumnFilterButton(cols[16], "TotalWrites",    "Total Writes");
+        SetColumnFilterButton(cols[17], "AvgWrites",      "Avg Writes");
+        SetColumnFilterButton(cols[18], "TotalPhysReads", "Total Physical Reads");
+        SetColumnFilterButton(cols[19], "AvgPhysReads",   "Avg Physical Reads");
+        SetColumnFilterButton(cols[20], "TotalMemory",    "Total Memory (MB)");
+        SetColumnFilterButton(cols[21], "AvgMemory",      "Avg Memory (MB)");
+        SetColumnFilterButton(cols[22], "QueryText",      "Query Text");
     }
 
     private void SetColumnFilterButton(DataGridColumn col, string columnId, string label)
@@ -884,9 +1469,20 @@ public partial class QueryStoreGridControl : UserControl
     private void UpdateStatusText()
     {
         if (_rows.Count == 0) return;
-        StatusText.Text = _filteredRows.Count == _rows.Count
-            ? $"{_rows.Count} plans"
-            : $"{_filteredRows.Count} / {_rows.Count} plans (filtered)";
+        if (_groupByMode != QueryStoreGroupBy.None)
+        {
+            var rootCount = _groupedRootRows.Count;
+            var visibleRoots = _filteredRows.Count(r => r.IndentLevel == 0);
+            StatusText.Text = visibleRoots == rootCount
+                ? $"{rootCount} groups ({_rows.Count} total rows)"
+                : $"{visibleRoots} / {rootCount} groups (filtered)";
+        }
+        else
+        {
+            StatusText.Text = _filteredRows.Count == _rows.Count
+                ? $"{_rows.Count} plans"
+                : $"{_filteredRows.Count} / {_rows.Count} plans (filtered)";
+        }
     }
 
     private void ResultsGrid_Sorting(object? sender, DataGridColumnEventArgs e)
@@ -954,6 +1550,12 @@ public partial class QueryStoreGridControl : UserControl
 
     private void ApplySortAndFilters()
     {
+        if (_groupByMode != QueryStoreGroupBy.None)
+        {
+            ApplySortAndFiltersGrouped();
+            return;
+        }
+
         IEnumerable<QueryStoreRow> source = _rows.Where(RowMatchesAllFilters);
 
         if (_sortedColumnTag != null)
@@ -970,6 +1572,40 @@ public partial class QueryStoreGridControl : UserControl
         ReapplyTopNSelection();
         UpdateStatusText();
         UpdateBarRatios();
+    }
+
+    private void ApplySortAndFiltersGrouped()
+    {
+        // In grouped mode, sort/filter only root rows and rebuild the visible list
+        IEnumerable<QueryStoreRow> source = _groupedRootRows.Where(RowMatchesAllFilters);
+
+        if (_sortedColumnTag != null)
+        {
+            source = _sortAscending
+                ? source.OrderBy(r => GetSortKey(_sortedColumnTag, r))
+                : source.OrderByDescending(r => GetSortKey(_sortedColumnTag, r));
+        }
+
+        _filteredRows.Clear();
+        foreach (var root in source)
+        {
+            _filteredRows.Add(root);
+            if (root.IsExpanded)
+                AddExpandedChildren(root);
+        }
+
+        UpdateStatusText();
+        UpdateBarRatios();
+    }
+
+    private void AddExpandedChildren(QueryStoreRow parent)
+    {
+        foreach (var child in parent.Children)
+        {
+            _filteredRows.Add(child);
+            if (child.IsExpanded)
+                AddExpandedChildren(child);
+        }
     }
 
     // ── Bar chart ratio computation ────────────────────────────────────────
@@ -1098,12 +1734,63 @@ public class QueryStoreRow : INotifyPropertyChanged
     private WaitProfile? _waitProfile;
     private string? _waitHighlightCategory;
 
+    /// <summary>Raw wait category totals for this row. Used for upward consolidation in grouped mode.</summary>
+    public List<WaitCategoryTotal> RawWaitCategories { get; set; } = new();
+
+    // Hierarchy support
+    private bool _isExpanded;
+    private int _indentLevel;
+
+    /// <summary>Standard constructor for flat (ungrouped) rows.</summary>
     public QueryStoreRow(QueryStorePlan plan)
     {
         Plan = plan;
     }
 
+    /// <summary>Constructor for grouped parent/intermediate rows (aggregated, no single plan).</summary>
+    public QueryStoreRow(QueryStorePlan syntheticPlan, int indentLevel, string groupLabel, List<QueryStoreRow> children)
+    {
+        Plan = syntheticPlan;
+        _indentLevel = indentLevel;
+        GroupLabel = groupLabel;
+        Children = children;
+    }
+
     public QueryStorePlan Plan { get; }
+
+    // ── Hierarchy properties ───────────────────────────────────────────────
+
+    /// <summary>Indentation level: 0 = top group, 1 = intermediate, 2 = leaf.</summary>
+    public int IndentLevel
+    {
+        get => _indentLevel;
+        set { _indentLevel = value; OnPropertyChanged(); }
+    }
+
+    /// <summary>Label shown for grouped rows (e.g. "0x1A2B3C" or "dbo.MyProc").</summary>
+    public string GroupLabel { get; set; } = "";
+
+    /// <summary>Direct children of this group row.</summary>
+    public List<QueryStoreRow> Children { get; set; } = new();
+
+    public bool HasChildren => Children.Count > 0;
+
+    public bool IsExpanded
+    {
+        get => _isExpanded;
+        set { _isExpanded = value; OnPropertyChanged(); OnPropertyChanged(nameof(ExpandChevron)); }
+    }
+
+    public string ExpandChevron => HasChildren ? (IsExpanded ? "▾" : "▸") : "";
+
+    /// <summary>Left margin that increases with indent level to visually show hierarchy.</summary>
+    public Avalonia.Thickness IndentMargin => new(IndentLevel * 20, 0, 0, 0);
+
+    /// <summary>Text shown next to the chevron: the group label for parent rows, or QueryId/PlanId for leaves.</summary>
+    public string GroupDisplayText => !string.IsNullOrEmpty(GroupLabel) ? GroupLabel : "";
+
+    /// <summary>Bold for top-level groups, normal for children.</summary>
+    public Avalonia.Media.FontWeight GroupFontWeight => IndentLevel == 0 ? Avalonia.Media.FontWeight.Bold : Avalonia.Media.FontWeight.Normal;
 
     public bool IsSelected
     {
