@@ -187,6 +187,7 @@ public partial class QueryStoreGridControl : UserControl
         StatusText.Text = "Fetching plans...";
         GridLoadingOverlay.IsVisible = true;
         GridLoadingText.Text = "Fetching plans...";
+        GridEmptyMessage.IsVisible = false;
         _rows.Clear();
         _filteredRows.Clear();
         _groupedRootRows.Clear();
@@ -266,10 +267,19 @@ public partial class QueryStoreGridControl : UserControl
         }
 
         GridLoadingOverlay.IsVisible = false;
+        GridEmptyMessage.IsVisible = false;
 
         if (grouped.IntermediateRows.Count == 0)
         {
-            StatusText.Text = "No Query Store data found for the selected range.";
+            if (_groupByMode == QueryStoreGroupBy.Module)
+            {
+                GridEmptyMessageText.Text = "No module found in the selected period";
+                GridEmptyMessage.IsVisible = true;
+            }
+            else
+            {
+                StatusText.Text = "No Query Store data found for the selected range.";
+            }
             return;
         }
 

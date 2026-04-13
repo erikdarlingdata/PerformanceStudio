@@ -363,6 +363,16 @@
                            Foreground="{DynamicResource ForegroundBrush}"/>
             </StackPanel>
         </Border>
+        <!-- Empty-state overlay (Module groupby with no module data) -->
+        <Border x:Name="GridEmptyMessage" IsVisible="False"
+                HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                IsHitTestVisible="False">
+            <TextBlock x:Name="GridEmptyMessageText"
+                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                       FontSize="20" FontWeight="SemiBold"
+                       Foreground="{DynamicResource ForegroundMutedBrush}"
+                       TextAlignment="Center"/>
+        </Border>
         </Grid>
     </Grid>
 </UserControl>
