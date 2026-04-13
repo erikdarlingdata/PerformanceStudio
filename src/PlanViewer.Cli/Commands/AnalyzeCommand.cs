@@ -207,6 +207,7 @@ public static class AnalyzeCommand
 
         var plan = ShowPlanParser.Parse(planXml);
         PlanAnalyzer.Analyze(plan, analyzerConfig);
+        BenefitScorer.Score(plan);
 
         if (plan.Batches.Count == 0)
         {
@@ -400,6 +401,7 @@ public static class AnalyzeCommand
                 // Parse, analyze, map result
                 var plan = ShowPlanParser.Parse(planXml);
                 PlanAnalyzer.Analyze(plan, analyzerConfig);
+                BenefitScorer.Score(plan);
                 var result = ResultMapper.Map(plan, $"{name}.sql");
 
                 if (warningsOnly)

@@ -25,6 +25,7 @@
     <Compile Include="..\PlanViewer.Core\Models\ServerMetadata.cs" Link="Core\Models\ServerMetadata.cs" />
     <Compile Include="..\PlanViewer.Core\Services\ShowPlanParser.cs" Link="Core\Services\ShowPlanParser.cs" />
     <Compile Include="..\PlanViewer.Core\Services\PlanAnalyzer.cs" Link="Core\Services\PlanAnalyzer.cs" />
+    <Compile Include="..\PlanViewer.Core\Services\BenefitScorer.cs" Link="Core\Services\BenefitScorer.cs" />
     <Compile Include="..\PlanViewer.Core\Services\PlanIconMapper.cs" Link="Core\Services\PlanIconMapper.cs" />
     <Compile Include="..\PlanViewer.Core\Services\PlanLayoutEngine.cs" Link="Core\Services\PlanLayoutEngine.cs" />
     <Compile Include="..\PlanViewer.Core\Services\TimeDisplayHelper.cs" Link="Core\Services\TimeDisplayHelper.cs" />

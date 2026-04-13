@@ -275,6 +275,7 @@ public partial class PlanViewerControl : UserControl
 
         _currentPlan = ShowPlanParser.Parse(planXml);
         PlanAnalyzer.Analyze(_currentPlan, ConfigLoader.Load());
+        BenefitScorer.Score(_currentPlan);
 
         var allStatements = _currentPlan.Batches
             .SelectMany(b => b.Statements)
@@ -1725,14 +1726,21 @@ public partial class PlanViewerControl : UserControl
             if (s.PlanWarnings.Count > 0)
             {
                 var planWarningsPanel = new StackPanel();
-                foreach (var w in s.PlanWarnings)
+                var sortedPlanWarnings = s.PlanWarnings
+                    .OrderByDescending(w => w.MaxBenefitPercent ?? -1)
+                    .ThenByDescending(w => w.Severity)
+                    .ThenBy(w => w.WarningType);
+                foreach (var w in sortedPlanWarnings)
                 {
                     var warnColor = w.Severity == PlanWarningSeverity.Critical ? "#E57373"
                         : w.Severity == PlanWarningSeverity.Warning ? "#FFB347" : "#6BB5FF";
                     var warnPanel = new StackPanel { Margin = new Thickness(10, 2, 10, 2) };
+                    var planWarnHeader = w.MaxBenefitPercent.HasValue
+                        ? $"\u26A0 {w.WarningType} \u2014 up to {w.MaxBenefitPercent:N0}% benefit"
+                        : $"\u26A0 {w.WarningType}";
                     warnPanel.Children.Add(new TextBlock
                     {
-                        Text = $"\u26A0 {w.WarningType}",
+                        Text = planWarnHeader,
                         FontWeight = FontWeight.SemiBold,
                         FontSize = 11,
                         Foreground = new SolidColorBrush(Color.Parse(warnColor))
@@ -1788,14 +1796,21 @@ public partial class PlanViewerControl : UserControl
         if (node.HasWarnings)
         {
             var warningsPanel = new StackPanel();
-            foreach (var w in node.Warnings)
+            var sortedNodeWarnings = node.Warnings
+                .OrderByDescending(w => w.MaxBenefitPercent ?? -1)
+                .ThenByDescending(w => w.Severity)
+                .ThenBy(w => w.WarningType);
+            foreach (var w in sortedNodeWarnings)
             {
                 var warnColor = w.Severity == PlanWarningSeverity.Critical ? "#E57373"
                     : w.Severity == PlanWarningSeverity.Warning ? "#FFB347" : "#6BB5FF";
                 var warnPanel = new StackPanel { Margin = new Thickness(10, 2, 10, 2) };
+                var nodeWarnHeader = w.MaxBenefitPercent.HasValue
+                    ? $"\u26A0 {w.WarningType} \u2014 up to {w.MaxBenefitPercent:N0}% benefit"
+                    : $"\u26A0 {w.WarningType}";
                 warnPanel.Children.Add(new TextBlock
                 {
-                    Text = $"\u26A0 {w.WarningType}",
+                    Text = nodeWarnHeader,
                     FontWeight = FontWeight.SemiBold,
                     FontSize = 11,
                     Foreground = new SolidColorBrush(Color.Parse(warnColor))
@@ -2140,18 +2155,21 @@ public partial class PlanViewerControl : UserControl
 
             if (allWarnings != null)
             {
-                // Root node: show distinct warning type names only
+                // Root node: show distinct warning type names only, sorted by max benefit
                 var distinct = warnings
                     .GroupBy(w => w.WarningType)
-                    .Select(g => (Type: g.Key, MaxSeverity: g.Max(w => w.Severity), Count: g.Count()))
-                    .OrderByDescending(g => g.MaxSeverity)
+                    .Select(g => (Type: g.Key, MaxSeverity: g.Max(w => w.Severity), Count: g.Count(),
+                                  MaxBenefit: g.Max(w => w.MaxBenefitPercent ?? -1)))
+                    .OrderByDescending(g => g.MaxBenefit)
+                    .ThenByDescending(g => g.MaxSeverity)
                     .ThenBy(g => g.Type);
 
-                foreach (var (type, severity, count) in distinct)
+                foreach (var (type, severity, count, maxBenefit) in distinct)
                 {
                     var warnColor = severity == PlanWarningSeverity.Critical ? "#E57373"
                         : severity == PlanWarningSeverity.Warning ? "#FFB347" : "#6BB5FF";
-                    var label = count > 1 ? $"\u26A0 {type} ({count})" : $"\u26A0 {type}";
+                    var benefitSuffix = maxBenefit >= 0 ? $" \u2014 up to {maxBenefit:N0}%" : "";
+                    var label = count > 1 ? $"\u26A0 {type} ({count}){benefitSuffix}" : $"\u26A0 {type}{benefitSuffix}";
                     stack.Children.Add(new TextBlock
                     {
                         Text = label,

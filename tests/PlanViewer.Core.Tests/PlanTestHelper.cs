@@ -24,6 +24,7 @@ public static class PlanTestHelper
         xml = xml.Replace("encoding=\"utf-16\"", "encoding=\"utf-8\"");
         var plan = ShowPlanParser.Parse(xml);
         PlanAnalyzer.Analyze(plan);
+        BenefitScorer.Score(plan);
         return plan;
     }
 
@@ -99,6 +100,7 @@ public static class PlanTestHelper
         xml = xml.Replace("encoding=\"utf-16\"", "encoding=\"utf-8\"");
         var plan = ShowPlanParser.Parse(xml);
         PlanAnalyzer.Analyze(plan);
+        BenefitScorer.Score(plan);
         return plan;
     }
 
