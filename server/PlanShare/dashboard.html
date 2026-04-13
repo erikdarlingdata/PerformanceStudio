@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Darling Data - GitHub Stats</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="icon" type="image/png" href="favicon.png" />
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: #0d1117; color: #e6edf3;
+        }
+        .site-header {
+            padding: 0.6rem 2rem;
+            background: #161b22;
+            border-bottom: 3px solid #58a6ff;
+        }
+        .header-content {
+            display: flex; align-items: center; gap: 1rem;
+            max-width: 1400px; margin: 0 auto;
+        }
+        .header-logo { height: 40px; width: auto; }
+        .header-divider { width: 1px; height: 20px; background: #555; }
+        .header-title {
+            font-family: 'Montserrat', sans-serif; font-size: 1rem;
+            font-weight: 600; color: #ffffff; letter-spacing: 0.3px;
+        }
+        .header-nav { display: flex; gap: 1.5rem; margin-left: auto; }
+        .header-nav a {
+            color: #e0e0e0; text-decoration: none; font-size: 1rem;
+            font-weight: 500; padding: 0.3rem 0.6rem; border-radius: 4px; transition: all 0.15s;
+        }
+        .header-nav a:hover { color: #ffffff; background: rgba(255, 255, 255, 0.1); }
+        .main-content { padding: 20px; max-width: 1400px; margin: 0 auto; }
+        h1 { font-size: 1.8em; margin-bottom: 4px; }
+        .subtitle { color: #8b949e; margin-bottom: 24px; }
+        .repo-tabs { display: flex; gap: 8px; margin-bottom: 24px; flex-wrap: wrap; }
+        .repo-tab {
+            padding: 8px 16px; border: 1px solid #30363d; border-radius: 6px;
+            background: #161b22; color: #8b949e; cursor: pointer; font-size: 0.9em; transition: all 0.15s;
+        }
+        .repo-tab:hover { border-color: #58a6ff; color: #e6edf3; }
+        .repo-tab.active { background: #1f6feb; border-color: #1f6feb; color: #fff; }
+        .stats-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 24px; }
+        .stat-card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; text-align: center; }
+        .stat-value { font-size: 1.8em; font-weight: 700; color: #58a6ff; }
+        .stat-label { font-size: 0.8em; color: #8b949e; margin-top: 4px; }
+        .stat-delta { font-size: 0.75em; margin-top: 2px; }
+        .delta-up { color: #3fb950; }
+        .delta-down { color: #f85149; }
+        .delta-flat { color: #8b949e; }
+        .charts-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(500px, 1fr)); gap: 16px; margin-bottom: 24px; }
+        .chart-card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; }
+        .chart-card h3 { font-size: 0.95em; color: #8b949e; margin-bottom: 12px; }
+        .chart-container { position: relative; height: 280px; }
+        .releases-table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
+        .releases-table th, .releases-table td { padding: 8px 12px; text-align: left; border-bottom: 1px solid #21262d; }
+        .releases-table th { color: #8b949e; font-weight: 600; font-size: 0.85em; text-transform: uppercase; }
+        .releases-table tr:hover { background: #1c2028; }
+        .releases-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+        .tag { color: #58a6ff; }
+        .prerelease { font-size: 0.7em; background: #341a00; color: #d29922; padding: 2px 6px; border-radius: 10px; margin-left: 6px; }
+        footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid #21262d; color: #484f58; font-size: 0.8em; text-align: center; padding-bottom: 20px; }
+        footer a { color: #58a6ff; text-decoration: none; }
+        @media (max-width: 768px) {
+            .site-header { padding: 0.6rem 1rem; }
+            .header-title { display: none; }
+            .header-divider { display: none; }
+            .header-nav { gap: 0.5rem; }
+            .header-nav a { font-size: 0.85rem; padding: 0.2rem 0.4rem; }
+            .charts-grid { grid-template-columns: 1fr; }
+            .stats-row { grid-template-columns: repeat(2, 1fr); }
+        }
+    </style>
+</head>
+<body>
+    <header class="site-header">
+        <div class="header-content">
+            <a href="https://www.erikdarling.com" target="_blank" rel="noopener"><img src="darling-data-logo.jpg" alt="Darling Data" class="header-logo" /></a>
+            <span class="header-divider"></span>
+            <span class="header-title">GitHub Stats</span>
+            <nav class="header-nav">
+                <a href="https://erikdarling.com/blog/" target="_blank" rel="noopener">Blog</a>
+                <a href="https://training.erikdarling.com/sqlconsulting" target="_blank" rel="noopener">Consulting</a>
+                <a href="https://training.erikdarling.com/catalog" target="_blank" rel="noopener">Training</a>
+                <a href="https://training.erikdarling.com/sql-monitoring" target="_blank" rel="noopener">Monitoring</a>
+                <a href="https://erikdarling.com/request-a-call/" target="_blank" rel="noopener">Request a Call</a>
+            </nav>
+        </div>
+    </header>
+    <div class="main-content">
+        <h1>Darling Data</h1>
+        <p class="subtitle">GitHub repository statistics</p>
+        <div class="repo-tabs" id="repoTabs"></div>
+        <div class="stats-row" id="statsRow"></div>
+        <div id="githubSection">
+            <div class="charts-grid" id="chartsGrid">
+                <div class="chart-card"><h3>Stars Over Time</h3><div class="chart-container"><canvas id="starsChart"></canvas></div></div>
+                <div class="chart-card"><h3>Daily Traffic (14-day window)</h3><div class="chart-container"><canvas id="trafficChart"></canvas></div></div>
+                <div class="chart-card"><h3>Cumulative Downloads</h3><div class="chart-container"><canvas id="downloadsChart"></canvas></div></div>
+                <div class="chart-card"><h3>Daily Clones (14-day window)</h3><div class="chart-container"><canvas id="clonesChart"></canvas></div></div>
+            </div>
+            <div class="chart-card" id="releasesCard" style="margin-bottom: 24px;">
+                <h3>Downloads by Release</h3>
+                <div style="overflow-x: auto;">
+                    <table class="releases-table" id="releasesTable">
+                        <thead><tr><th>Release</th><th>Date</th><th class="num">Downloads</th></tr></thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        <div id="planSection" style="display: none;">
+            <div class="charts-grid">
+                <div class="chart-card"><h3>Daily Page Views &amp; Unique Visitors (30 days)</h3><div class="chart-container"><canvas id="pvChart"></canvas></div></div>
+                <div class="chart-card"><h3>Daily Plan Shares (30 days)</h3><div class="chart-container"><canvas id="sharesChart"></canvas></div></div>
+            </div>
+            <div class="chart-card" id="referrersCard" style="margin-bottom: 24px;">
+                <h3>Top Referrers (30 days)</h3>
+                <div style="overflow-x: auto;">
+                    <table class="releases-table" id="referrersTable">
+                        <thead><tr><th>Referrer</th><th class="num">Visits</th></tr></thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        <footer>
+            Updated daily. Traffic data limited to 14 days by GitHub.
+            <br>Repos: <a href="https://github.com/erikdarlingdata/PerformanceMonitor">PerformanceMonitor</a>
+            &middot; <a href="https://github.com/erikdarlingdata/PerformanceStudio">PerformanceStudio</a>
+            &middot; <a href="https://github.com/erikdarlingdata/DarlingData">DarlingData</a>
+            &middot; <a href="https://plans.erikdarling.com">Plan Analyzer</a>
+        </footer>
+    </div>
+    <script>
+    const REPO_DISPLAY = {
+        PerformanceMonitor: { short: "PM", color: "#58a6ff" },
+        PerformanceStudio: { short: "PS", color: "#3fb950" },
+        DarlingData: { short: "DD", color: "#d2a8ff" },
+    };
+    const PLAN_TAB = { short: "PA", color: "#f0883e" };
+    const chartDefaults = {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { labels: { color: "#8b949e", boxWidth: 12 } } },
+        scales: {
+            x: { ticks: { color: "#484f58" }, grid: { color: "#21262d" } },
+            y: { ticks: { color: "#484f58" }, grid: { color: "#21262d" }, beginAtZero: true },
+        },
+    };
+    let current = null, history = [], activeRepo = "PerformanceMonitor", charts = {};
+    let planStats = null;
+
+    async function load() {
+        const [cResp, hResp] = await Promise.all([fetch("data/current.json"), fetch("data/history.json")]);
+        current = await cResp.json();
+        history = await hResp.json();
+        buildTabs(); update();
+    }
+    function buildTabs() {
+        const c = document.getElementById("repoTabs"); c.innerHTML = "";
+        for (const [repo, meta] of Object.entries(REPO_DISPLAY)) {
+            const t = document.createElement("div");
+            t.className = "repo-tab" + (repo === activeRepo ? " active" : "");
+            t.textContent = meta.short + " - " + repo;
+            t.onclick = () => { activeRepo = repo; buildTabs(); update(); };
+            c.appendChild(t);
+        }
+        // Plan Analyzer tab
+        const pt = document.createElement("div");
+        pt.className = "repo-tab" + (activeRepo === "_plans" ? " active" : "");
+        pt.textContent = "PA - Plan Analyzer";
+        pt.onclick = () => { activeRepo = "_plans"; buildTabs(); update(); };
+        c.appendChild(pt);
+    }
+    function fmt(n) { return n == null ? "-" : n.toLocaleString(); }
+    function update() {
+        if (activeRepo === "_plans") {
+            document.getElementById("githubSection").style.display = "none";
+            document.getElementById("planSection").style.display = "";
+            loadPlanStats();
+        } else {
+            document.getElementById("githubSection").style.display = "";
+            document.getElementById("planSection").style.display = "none";
+            updateGitHub();
+        }
+    }
+    function updateGitHub() {
+        const repo = current.repos[activeRepo] || {};
+        const prev = history.length >= 2 ? (history[history.length - 2][activeRepo] || {}) : {};
+        function delta(cur, old) {
+            if (cur == null || old == null) return "";
+            const d = cur - old;
+            if (d > 0) return "<span class='delta-up'>+" + fmt(d) + "</span>";
+            if (d < 0) return "<span class='delta-down'>" + fmt(d) + "</span>";
+            return "<span class='delta-flat'>-</span>";
+        }
+        const cards = [
+            { label: "Stars", value: repo.stars, prev: prev.stars },
+            { label: "Forks", value: repo.forks, prev: prev.forks },
+            { label: "Visitors (14d)", value: repo.visitors_14d, prev: prev.visitors },
+            { label: "Views (14d)", value: repo.views_14d, prev: prev.views },
+            { label: "Cloners (14d)", value: repo.cloners_14d, prev: prev.cloners },
+            { label: "Clones (14d)", value: repo.clones_14d, prev: prev.clones },
+            { label: "Total Downloads", value: repo.total_downloads, prev: prev.downloads },
+            { label: "Open Issues", value: repo.open_issues, prev: prev.open_issues },
+        ];
+        const row = document.getElementById("statsRow");
+        row.innerHTML = cards.map(function(c) {
+            return "<div class='stat-card'><div class='stat-value'>" + fmt(c.value) +
+                "</div><div class='stat-label'>" + c.label +
+                "</div><div class='stat-delta'>" + delta(c.value, c.prev) + "</div></div>";
+        }).join("");
+        updateCharts(); updateReleases(repo);
+    }
+    async function loadPlanStats() {
+        try {
+            const resp = await fetch("/api/stats");
+            planStats = await resp.json();
+        } catch (e) {
+            planStats = null;
+        }
+        updatePlanView();
+    }
+    function updatePlanView() {
+        var row = document.getElementById("statsRow");
+        if (!planStats) {
+            row.innerHTML = "<div class='stat-card'><div class='stat-value'>-</div><div class='stat-label'>No data yet</div></div>";
+            return;
+        }
+        var t = planStats.traffic;
+        var s = planStats.sharing;
+        var cards = [
+            { label: "Views Today", value: t.today.views },
+            { label: "Visitors Today", value: t.today.visitors },
+            { label: "Views (7d)", value: t.last_7d.views },
+            { label: "Visitors (7d)", value: t.last_7d.visitors },
+            { label: "Views (30d)", value: t.last_30d.views },
+            { label: "Visitors (30d)", value: t.last_30d.visitors },
+            { label: "Plans Shared", value: s.total_shared },
+            { label: "Active Plans", value: s.active_plans },
+        ];
+        row.innerHTML = cards.map(function(c) {
+            return "<div class='stat-card'><div class='stat-value' style='color:" + PLAN_TAB.color + "'>" + fmt(c.value) +
+                "</div><div class='stat-label'>" + c.label + "</div></div>";
+        }).join("");
+        updatePlanCharts();
+        updateReferrers();
+    }
+    function updatePlanCharts() {
+        if (!planStats) return;
+        var daily = planStats.traffic.daily;
+        var days = daily.map(function(d) { return d.day; });
+        var views = daily.map(function(d) { return d.views; });
+        var visitors = daily.map(function(d) { return d.visitors; });
+        updateChart("pvChart", "bar", {
+            labels: days,
+            datasets: [
+                { label: "Page Views", data: views, backgroundColor: PLAN_TAB.color + "80", borderColor: PLAN_TAB.color, borderWidth: 1 },
+                { label: "Unique Visitors", data: visitors, backgroundColor: "#58a6ff80", borderColor: "#58a6ff", borderWidth: 1 },
+            ],
+        });
+        var sharesDaily = planStats.sharing.daily;
+        updateChart("sharesChart", "bar", {
+            labels: sharesDaily.map(function(d) { return d.day; }),
+            datasets: [{ label: "Plans Shared", data: sharesDaily.map(function(d) { return d.count; }),
+                backgroundColor: "#3fb95080", borderColor: "#3fb950", borderWidth: 1 }],
+        });
+    }
+    function updateReferrers() {
+        var tbody = document.querySelector("#referrersTable tbody");
+        if (!planStats || !planStats.traffic.top_referrers.length) {
+            tbody.innerHTML = "<tr><td colspan='2' style='color:#484f58'>No referrer data yet</td></tr>";
+            return;
+        }
+        tbody.innerHTML = planStats.traffic.top_referrers.map(function(r) {
+            return "<tr><td>" + r.referrer + "</td><td class='num'>" + fmt(r.count) + "</td></tr>";
+        }).join("");
+    }
+    function updateCharts() {
+        updateChart("starsChart", "line", {
+            datasets: Object.entries(REPO_DISPLAY).map(function([repo, meta]) {
+                return {
+                    label: meta.short,
+                    data: history.filter(function(h) { return h[repo]; }).map(function(h) { return { x: h.date, y: h[repo].stars }; }),
+                    borderColor: meta.color, backgroundColor: meta.color + "20", tension: 0.3, pointRadius: 2,
+                };
+            }),
+        });
+        var repo = current.repos[activeRepo] || {};
+        var views = (repo.daily_views || []).map(function(v) { return { x: v.timestamp.split("T")[0], y: v.uniques }; });
+        updateChart("trafficChart", "bar", {
+            datasets: [{ label: "Unique Visitors", data: views,
+                backgroundColor: REPO_DISPLAY[activeRepo].color + "80",
+                borderColor: REPO_DISPLAY[activeRepo].color, borderWidth: 1 }],
+        });
+        updateChart("downloadsChart", "line", {
+            datasets: Object.entries(REPO_DISPLAY).map(function([repo, meta]) {
+                return {
+                    label: meta.short,
+                    data: history.filter(function(h) { return h[repo]; }).map(function(h) { return { x: h.date, y: h[repo].downloads }; }),
+                    borderColor: meta.color, backgroundColor: meta.color + "20", tension: 0.3, pointRadius: 2,
+                };
+            }),
+        });
+        var clones = (repo.daily_clones || []).map(function(c) { return { x: c.timestamp.split("T")[0], y: c.uniques }; });
+        updateChart("clonesChart", "bar", {
+            datasets: [{ label: "Unique Cloners", data: clones,
+                backgroundColor: REPO_DISPLAY[activeRepo].color + "80",
+                borderColor: REPO_DISPLAY[activeRepo].color, borderWidth: 1 }],
+        });
+    }
+    function updateChart(id, type, data) {
+        if (charts[id]) charts[id].destroy();
+        charts[id] = new Chart(document.getElementById(id).getContext("2d"), {
+            type: type, data: data,
+            options: Object.assign({}, chartDefaults, {
+                scales: Object.assign({}, chartDefaults.scales, {
+                    x: Object.assign({}, chartDefaults.scales.x, { type: "category" })
+                })
+            }),
+        });
+    }
+    function updateReleases(repo) {
+        var tbody = document.querySelector("#releasesTable tbody");
+        var releases = repo.releases || [];
+        if (!releases.length) { tbody.innerHTML = "<tr><td colspan='3' style='color:#484f58'>No releases</td></tr>"; return; }
+        tbody.innerHTML = releases.map(function(r) {
+            return "<tr><td><span class='tag'>" + r.tag + "</span>" +
+                (r.prerelease ? "<span class='prerelease'>pre</span>" : "") +
+                (r.name && r.name !== r.tag ? "<br><small style='color:#8b949e'>" + r.name + "</small>" : "") +
+                "</td><td>" + (r.published ? r.published.split("T")[0] : "-") +
+                "</td><td class='num'>" + fmt(r.downloads) + "</td></tr>";
+        }).join("");
+    }
+    load();
+    </script>
+</body>
+</html>
