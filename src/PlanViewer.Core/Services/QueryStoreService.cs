@@ -943,15 +943,15 @@ ORDER BY bucket_hour, wait_ratio DESC;";
         };
     }
 
-	/// <summary>
-	/// Fetches grouped-by-QueryHash results.
-	/// Step 1: Top X query hashes by metric.
-	/// Step 2: Top 5 plan hashes per query hash with metrics.
-	/// Step 3: Top and bottom QueryId/PlanId per query_hash/plan_hash.
-	/// Final : Fetch Query Text and Plan XML for the identified QueryId/PlanId.
-	/// Returns intermediate (plan_hash level) and leaf (query_id/plan_id level) rows.
-	/// </summary>
-	public static async Task<QueryStoreGroupedResult> FetchGroupedByQueryHashAsync(
+    /// <summary>
+    /// Fetches grouped-by-QueryHash results.
+    /// Step 1: Top X query hashes by metric.
+    /// Step 2: Top 5 plan hashes per query hash with metrics.
+    /// Step 3: Top and bottom QueryId/PlanId per query_hash/plan_hash.
+    /// Final : Fetch Query Text and Plan XML for the identified QueryId/PlanId.
+    /// Returns intermediate (plan_hash level) and leaf (query_id/plan_id level) rows.
+    /// </summary>
+    public static async Task<QueryStoreGroupedResult> FetchGroupedByQueryHashAsync(
         string connectionString, int topN = 25, string orderBy = "cpu",
         QueryStoreFilter? filter = null, CancellationToken ct = default,
         DateTime? startUtc = null, DateTime? endUtc = null)
@@ -1116,7 +1116,6 @@ FROM ph WHERE rnum <= 5;
     FROM #plan_stats ps
     JOIN sys.query_store_plan p ON ps.plan_id = p.plan_id
     JOIN sys.query_store_query q ON p.query_id = q.query_id
-    JOIN sys.query_store_query_text qt ON q.query_text_id = qt.query_text_id
     WHERE EXISTS (SELECT 1 FROM #plan_hash_rows phr
                   WHERE phr.query_hash = CONVERT(varchar(18), q.query_hash, 1)
                     AND phr.plan_hash = CONVERT(varchar(18), p.query_plan_hash, 1))
@@ -1208,15 +1207,15 @@ SELECT * FROM #plan_hash_rows ORDER BY query_hash, total_executions DESC;
         return result;
     }
 
-	/// <summary>
-	/// Fetches grouped-by-Module results.
-	/// Step 1: Top X modules by metric.
-	/// Step 2: Top 5 query hashes per module with metrics.
-	/// Step 3: Top and bottom QueryId/PlanId per module/query_hash.
-	/// Final Step: Fetch Query Text and Plan XML for the identified QueryId/PlanId.
-	/// Returns intermediate (query_hash level) and leaf (query_id/plan_id level) rows.
-	/// </summary>
-	public static async Task<QueryStoreGroupedResult> FetchGroupedByModuleAsync(
+    /// <summary>
+    /// Fetches grouped-by-Module results.
+    /// Step 1: Top X modules by metric.
+    /// Step 2: Top 5 query hashes per module with metrics.
+    /// Step 3: Top and bottom QueryId/PlanId per module/query_hash.
+    /// Final Step: Fetch Query Text and Plan XML for the identified QueryId/PlanId.
+    /// Returns intermediate (query_hash level) and leaf (query_id/plan_id level) rows.
+    /// </summary>
+    public static async Task<QueryStoreGroupedResult> FetchGroupedByModuleAsync(
         string connectionString, int topN = 25, string orderBy = "cpu",
         QueryStoreFilter? filter = null, CancellationToken ct = default,
         DateTime? startUtc = null, DateTime? endUtc = null)
@@ -1372,7 +1371,7 @@ FROM qh WHERE rnum <= 5;
         CONVERT(varchar(18), p.query_plan_hash, 1) AS plan_hash,
         q.query_id,
         ps.plan_id,
-        qt.query_text_id,        
+        q.query_text_id,
         CAST(ps.total_cpu_us AS bigint) AS total_cpu_us,
         CAST(ps.total_duration_us AS bigint) AS total_duration_us,
         CAST(ps.total_reads AS bigint) AS total_reads,
@@ -1396,7 +1395,6 @@ FROM qh WHERE rnum <= 5;
     FROM #plan_stats ps
     JOIN sys.query_store_plan p ON ps.plan_id = p.plan_id
     JOIN sys.query_store_query q ON p.query_id = q.query_id
-    JOIN sys.query_store_query_text qt ON q.query_text_id = qt.query_text_id
     WHERE EXISTS (SELECT 1 FROM #qhash_rows qhr
                   WHERE qhr.module_name = CASE WHEN q.object_id <> 0
                        THEN OBJECT_SCHEMA_NAME(q.object_id) + N'.' + OBJECT_NAME(q.object_id)
