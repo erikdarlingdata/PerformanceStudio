@@ -185,6 +185,7 @@ pre.mi-create {
 .sev-info { color: var(--info); }
 .warn-op { font-size: 0.75rem; font-weight: 500; color: var(--text-secondary); }
 .warn-type { font-size: 0.75rem; font-weight: 600; }
+.warn-benefit { font-size: 0.7rem; font-weight: 600; color: var(--text-muted); padding: 0.05rem 0.3rem; border-radius: 3px; background: rgba(0,0,0,0.04); }
 .warn-msg { font-size: 0.8rem; color: var(--text); flex-basis: 100%; }
 
 /* Query text */
@@ -428,7 +429,13 @@ pre.query-text, pre.text-output {
         if (infoCount > 0) sb.Append($" <span class=\"warn-badge info\">{infoCount}</span>");
         sb.AppendLine("</h3>");
 
-        foreach (var w in allWarnings)
+        // Sort by benefit descending (nulls last), then severity, then type
+        var sorted = allWarnings
+            .OrderByDescending(w => w.MaxBenefitPercent ?? -1)
+            .ThenBy(w => w.Severity switch { "Critical" => 0, "Warning" => 1, _ => 2 })
+            .ThenBy(w => w.Type);
+
+        foreach (var w in sorted)
         {
             var sevLower = w.Severity.ToLower();
             sb.AppendLine($"<div class=\"warning-item {sevLower}\">");
@@ -436,6 +443,8 @@ pre.query-text, pre.text-output {
             if (w.Operator != null)
                 sb.AppendLine($"<span class=\"warn-op\">{Encode(w.Operator)}</span>");
             sb.AppendLine($"<span class=\"warn-type\">{Encode(w.Type)}</span>");
+            if (w.MaxBenefitPercent.HasValue)
+                sb.AppendLine($"<span class=\"warn-benefit\">up to {w.MaxBenefitPercent:N0}% benefit</span>");
             sb.AppendLine($"<span class=\"warn-msg\">{Encode(w.Message)}</span>");
             sb.AppendLine("</div>");
         }

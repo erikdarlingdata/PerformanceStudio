@@ -208,6 +208,12 @@ public class WarningResult
 
     [JsonPropertyName("node_id")]
     public int? NodeId { get; set; }
+
+    [JsonPropertyName("max_benefit_percent")]
+    public double? MaxBenefitPercent { get; set; }
+
+    [JsonPropertyName("actionable_fix")]
+    public string? ActionableFix { get; set; }
 }
 
 public class MissingIndexResult

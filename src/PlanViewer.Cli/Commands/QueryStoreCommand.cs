@@ -273,6 +273,7 @@ public static class QueryStoreCommand
                 // Parse, analyze, map
                 var plan = ShowPlanParser.Parse(qsPlan.PlanXml);
                 PlanAnalyzer.Analyze(plan, analyzerConfig);
+                BenefitScorer.Score(plan);
                 var result = ResultMapper.Map(plan, $"{label}.sqlplan");
 
                 if (warningsOnly)

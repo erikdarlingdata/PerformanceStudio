@@ -158,7 +158,9 @@ public static class ResultMapper
             {
                 Type = w.WarningType,
                 Severity = w.Severity.ToString(),
-                Message = w.Message
+                Message = w.Message,
+                MaxBenefitPercent = w.MaxBenefitPercent,
+                ActionableFix = w.ActionableFix
             });
         }
 
@@ -259,7 +261,9 @@ public static class ResultMapper
                 Severity = w.Severity.ToString(),
                 Message = w.Message,
                 Operator = $"{node.PhysicalOp} (Node {node.NodeId})",
-                NodeId = node.NodeId
+                NodeId = node.NodeId,
+                MaxBenefitPercent = w.MaxBenefitPercent,
+                ActionableFix = w.ActionableFix
             });
         }
 

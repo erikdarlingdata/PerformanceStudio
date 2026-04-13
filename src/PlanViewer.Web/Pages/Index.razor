@@ -1713,6 +1713,7 @@ else
             }
 
             PlanAnalyzer.Analyze(parsedPlan);
+            BenefitScorer.Score(parsedPlan);
 
             foreach (var batch in parsedPlan.Batches)
             {
