@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 
@@ -30,7 +31,15 @@ using (var conn = new SqliteConnection(connectionString))
             created_at TEXT NOT NULL,
             expires_at TEXT NOT NULL,
             delete_token TEXT NOT NULL
-        )
+        );
+        CREATE TABLE IF NOT EXISTS page_views (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            path TEXT NOT NULL,
+            referrer TEXT,
+            visitor_hash TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_pv_created ON page_views(created_at);
         """;
     cmd.ExecuteNonQuery();
 }
@@ -45,8 +54,9 @@ builder.WebHost.ConfigureKestrel(o => o.Limits.MaxRequestBodySize = 10 * 1024 * 
 var app = builder.Build();
 app.UseCors();
 
-// --- Rate limiter: 10 shares per minute per IP (in-memory) ---
+// --- Rate limiters (in-memory) ---
 var rateLimiter = new RateLimiter(maxRequests: 10, windowSeconds: 60);
+var analyticsRateLimiter = new RateLimiter(maxRequests: 30, windowSeconds: 60);
 
 const int MaxTtlDays = 365;
 
@@ -124,6 +134,186 @@ app.MapGet("/api/plans/{id}", (string id) =>
     return Results.Content(result, "application/json");
 });
 
+// --- Analytics: page view tracking ---
+
+app.MapPost("/api/event", async (HttpContext ctx) =>
+{
+    // Rate limit: 30 events/min per IP (generous — covers page nav + shares)
+    var ip = ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+    if (!analyticsRateLimiter.IsAllowed(ip))
+        return Results.StatusCode(429);
+
+    using var reader = new StreamReader(ctx.Request.Body);
+    var body = await reader.ReadToEndAsync();
+
+    string path = "/";
+    string? referrer = null;
+    try
+    {
+        using var doc = JsonDocument.Parse(body);
+        if (doc.RootElement.TryGetProperty("path", out var p))
+            path = p.GetString() ?? "/";
+        if (doc.RootElement.TryGetProperty("referrer", out var r))
+            referrer = r.GetString();
+    }
+    catch (JsonException)
+    {
+        return Results.BadRequest("Invalid JSON");
+    }
+
+    // Strip referrer to domain only (no full URLs with query params)
+    if (!string.IsNullOrEmpty(referrer) && Uri.TryCreate(referrer, UriKind.Absolute, out var refUri))
+        referrer = refUri.Host;
+
+    // Visitor hash: SHA256(IP + User-Agent + date) — unique per day, no PII stored
+    var ua = ctx.Request.Headers.UserAgent.FirstOrDefault() ?? "";
+    var day = DateTime.UtcNow.ToString("yyyy-MM-dd");
+    var visitorHash = Convert.ToHexString(
+        SHA256.HashData(Encoding.UTF8.GetBytes($"{ip}|{ua}|{day}"))).ToLower()[..16];
+
+    using var conn = new SqliteConnection(connectionString);
+    conn.Open();
+    using var cmd = conn.CreateCommand();
+    cmd.CommandText = "INSERT INTO page_views (path, referrer, visitor_hash, created_at) VALUES (@path, @referrer, @hash, @now)";
+    cmd.Parameters.AddWithValue("@path", path);
+    cmd.Parameters.AddWithValue("@referrer", (object?)referrer ?? DBNull.Value);
+    cmd.Parameters.AddWithValue("@hash", visitorHash);
+    cmd.Parameters.AddWithValue("@now", DateTime.UtcNow.ToString("o"));
+    cmd.ExecuteNonQuery();
+
+    return Results.Ok();
+});
+
+app.MapGet("/api/stats", () =>
+{
+    using var conn = new SqliteConnection(connectionString);
+    conn.Open();
+    var now = DateTime.UtcNow.ToString("o");
+    var cutoff30 = DateTime.UtcNow.AddDays(-30).ToString("o");
+    var cutoff7 = DateTime.UtcNow.AddDays(-7).ToString("o");
+    var today = DateTime.UtcNow.ToString("yyyy-MM-dd");
+
+    // --- Plan sharing stats ---
+    long totalShared;
+    using (var cmd = conn.CreateCommand())
+    {
+        cmd.CommandText = "SELECT COUNT(*) FROM plans";
+        totalShared = (long)cmd.ExecuteScalar()!;
+    }
+
+    long activePlans;
+    using (var cmd = conn.CreateCommand())
+    {
+        cmd.CommandText = "SELECT COUNT(*) FROM plans WHERE expires_at > @now";
+        cmd.Parameters.AddWithValue("@now", now);
+        activePlans = (long)cmd.ExecuteScalar()!;
+    }
+
+    var dailyShares = new List<object>();
+    using (var cmd = conn.CreateCommand())
+    {
+        cmd.CommandText = """
+            SELECT DATE(created_at) as day, COUNT(*) as count
+            FROM plans WHERE created_at > @cutoff
+            GROUP BY DATE(created_at) ORDER BY day
+            """;
+        cmd.Parameters.AddWithValue("@cutoff", cutoff30);
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+            dailyShares.Add(new { day = reader.GetString(0), count = reader.GetInt64(1) });
+    }
+
+    // --- Page view stats ---
+    long viewsToday;
+    using (var cmd = conn.CreateCommand())
+    {
+        cmd.CommandText = "SELECT COUNT(*) FROM page_views WHERE DATE(created_at) = @today";
+        cmd.Parameters.AddWithValue("@today", today);
+        viewsToday = (long)cmd.ExecuteScalar()!;
+    }
+
+    long visitorsToday;
+    using (var cmd = conn.CreateCommand())
+    {
+        cmd.CommandText = "SELECT COUNT(DISTINCT visitor_hash) FROM page_views WHERE DATE(created_at) = @today";
+        cmd.Parameters.AddWithValue("@today", today);
+        visitorsToday = (long)cmd.ExecuteScalar()!;
+    }
+
+    long views7d;
+    using (var cmd = conn.CreateCommand())
+    {
+        cmd.CommandText = "SELECT COUNT(*) FROM page_views WHERE created_at > @cutoff";
+        cmd.Parameters.AddWithValue("@cutoff", cutoff7);
+        views7d = (long)cmd.ExecuteScalar()!;
+    }
+
+    long visitors7d;
+    using (var cmd = conn.CreateCommand())
+    {
+        cmd.CommandText = "SELECT COUNT(DISTINCT visitor_hash) FROM page_views WHERE created_at > @cutoff";
+        cmd.Parameters.AddWithValue("@cutoff", cutoff7);
+        visitors7d = (long)cmd.ExecuteScalar()!;
+    }
+
+    long views30d;
+    using (var cmd = conn.CreateCommand())
+    {
+        cmd.CommandText = "SELECT COUNT(*) FROM page_views WHERE created_at > @cutoff";
+        cmd.Parameters.AddWithValue("@cutoff", cutoff30);
+        views30d = (long)cmd.ExecuteScalar()!;
+    }
+
+    long visitors30d;
+    using (var cmd = conn.CreateCommand())
+    {
+        cmd.CommandText = "SELECT COUNT(DISTINCT visitor_hash) FROM page_views WHERE created_at > @cutoff";
+        cmd.Parameters.AddWithValue("@cutoff", cutoff30);
+        visitors30d = (long)cmd.ExecuteScalar()!;
+    }
+
+    var dailyViews = new List<object>();
+    using (var cmd = conn.CreateCommand())
+    {
+        cmd.CommandText = """
+            SELECT DATE(created_at) as day, COUNT(*) as views, COUNT(DISTINCT visitor_hash) as visitors
+            FROM page_views WHERE created_at > @cutoff
+            GROUP BY DATE(created_at) ORDER BY day
+            """;
+        cmd.Parameters.AddWithValue("@cutoff", cutoff30);
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+            dailyViews.Add(new { day = reader.GetString(0), views = reader.GetInt64(1), visitors = reader.GetInt64(2) });
+    }
+
+    var topReferrers = new List<object>();
+    using (var cmd = conn.CreateCommand())
+    {
+        cmd.CommandText = """
+            SELECT referrer, COUNT(*) as count
+            FROM page_views WHERE created_at > @cutoff AND referrer IS NOT NULL AND referrer != ''
+            GROUP BY referrer ORDER BY count DESC LIMIT 10
+            """;
+        cmd.Parameters.AddWithValue("@cutoff", cutoff30);
+        using var reader = cmd.ExecuteReader();
+        while (reader.Read())
+            topReferrers.Add(new { referrer = reader.GetString(0), count = reader.GetInt64(1) });
+    }
+
+    return Results.Json(new
+    {
+        sharing = new { total_shared = totalShared, active_plans = activePlans, daily = dailyShares },
+        traffic = new
+        {
+            today = new { views = viewsToday, visitors = visitorsToday },
+            last_7d = new { views = views7d, visitors = visitors7d },
+            last_30d = new { views = views30d, visitors = visitors30d },
+            daily = dailyViews,
+            top_referrers = topReferrers
+        }
+    });
+});
+
 app.MapDelete("/api/plans/{id}", (string id, HttpContext ctx) =>
 {
     var token = ctx.Request.Query["token"].FirstOrDefault();
@@ -188,21 +378,33 @@ sealed class CleanupService : BackgroundService
     {
         try
         {
-            var now = DateTime.UtcNow.ToString("o");
             using var conn = new SqliteConnection(_config.ConnectionString);
             conn.Open();
-            using var cmd = conn.CreateCommand();
-            cmd.CommandText = "DELETE FROM plans WHERE expires_at < @now";
-            cmd.Parameters.AddWithValue("@now", now);
-            var deleted = cmd.ExecuteNonQuery();
-            if (deleted > 0)
+
+            // Delete expired plans
+            var now = DateTime.UtcNow.ToString("o");
+            using (var cmd = conn.CreateCommand())
             {
-                _logger.LogInformation("Cleaned up {Count} expired plans", deleted);
+                cmd.CommandText = "DELETE FROM plans WHERE expires_at < @now";
+                cmd.Parameters.AddWithValue("@now", now);
+                var deleted = cmd.ExecuteNonQuery();
+                if (deleted > 0)
+                    _logger.LogInformation("Cleaned up {Count} expired plans", deleted);
+            }
+
+            // Delete page views older than 90 days
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = "DELETE FROM page_views WHERE created_at < @cutoff";
+                cmd.Parameters.AddWithValue("@cutoff", DateTime.UtcNow.AddDays(-90).ToString("o"));
+                var deleted = cmd.ExecuteNonQuery();
+                if (deleted > 0)
+                    _logger.LogInformation("Cleaned up {Count} old page views", deleted);
             }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error during plan cleanup");
+            _logger.LogError(ex, "Error during cleanup");
         }
     }
 }

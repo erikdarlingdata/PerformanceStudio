@@ -33,6 +33,20 @@
 
     <script src="_framework/blazor.webassembly.js"></script>
     <script>
+        // Lightweight analytics — pings PlanShare server, no cookies, no PII
+        (function() {
+            var r = document.referrer || '';
+            // Skip self-referrals
+            if (r && new URL(r).host === location.host) r = '';
+            fetch('https://stats.erikdarling.com/api/event', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({path: location.pathname + location.search, referrer: r}),
+                keepalive: true
+            }).catch(function(){});
+        })();
+    </script>
+    <script>
         function downloadFile(fileName, content) {
             const blob = new Blob([content], { type: 'text/html;charset=utf-8' });
             const url = URL.createObjectURL(blob);
