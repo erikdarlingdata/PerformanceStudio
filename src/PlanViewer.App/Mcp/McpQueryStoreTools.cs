@@ -124,6 +124,7 @@ public sealed class McpQueryStoreTools
                         .Replace("encoding=\"utf-16\"", "encoding=\"utf-8\"");
                     var parsed = ShowPlanParser.Parse(xml);
                     PlanAnalyzer.Analyze(parsed);
+                    BenefitScorer.Score(parsed);
 
                     var allStatements = parsed.Batches.SelectMany(b => b.Statements).ToList();
 

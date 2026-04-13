@@ -151,12 +151,17 @@ public static class TextFormatter
                 writer.WriteLine("Plan warnings:");
                 var hasDetailedMemoryGrant = stmt.Warnings.Any(w =>
                     w.Type == "Excessive Memory Grant" || w.Type == "Large Memory Grant");
-                foreach (var w in stmt.Warnings)
+                var sortedWarnings = stmt.Warnings
+                    .Where(w => !(w.Type == "Memory Grant" && hasDetailedMemoryGrant))
+                    .OrderByDescending(w => w.MaxBenefitPercent ?? -1)
+                    .ThenBy(w => w.Severity switch { "Critical" => 0, "Warning" => 1, _ => 2 })
+                    .ThenBy(w => w.Type);
+                foreach (var w in sortedWarnings)
                 {
-                    // Skip raw XML "Memory Grant" when analyzer provides better context
-                    if (w.Type == "Memory Grant" && hasDetailedMemoryGrant)
-                        continue;
-                    writer.WriteLine($"  [{w.Severity}] {w.Type}: {EscapeNewlines(w.Message)}");
+                    var benefitTag = w.MaxBenefitPercent.HasValue
+                        ? $" (up to {w.MaxBenefitPercent:N0}% benefit)"
+                        : "";
+                    writer.WriteLine($"  [{w.Severity}] {w.Type}{benefitTag}: {EscapeNewlines(w.Message)}");
                 }
             }
 
@@ -272,10 +277,17 @@ public static class TextFormatter
 
     private static void WriteGroupedOperatorWarnings(List<WarningResult> warnings, TextWriter writer)
     {
+        // Sort by benefit descending (nulls last), then severity, then type
+        var sorted = warnings
+            .OrderByDescending(w => w.MaxBenefitPercent ?? -1)
+            .ThenBy(w => w.Severity switch { "Critical" => 0, "Warning" => 1, _ => 2 })
+            .ThenBy(w => w.Type)
+            .ToList();
+
         // Split each message into "data | explanation" at the last sentence boundary
         // that starts with "The " (the harm assessment). Group by shared explanation.
-        var entries = new List<(string Severity, string Operator, string Data, string? Explanation)>();
-        foreach (var w in warnings)
+        var entries = new List<(string Severity, string Operator, string Data, string? Explanation, double? Benefit)>();
+        foreach (var w in sorted)
         {
             var msg = w.Message;
             string data;
@@ -293,14 +305,13 @@ public static class TextFormatter
                 data = msg;
             }
 
-            entries.Add((w.Severity, w.Operator ?? "?", data, explanation));
+            entries.Add((w.Severity, w.Operator ?? "?", data, explanation, w.MaxBenefitPercent));
         }
 
         // Group entries that share the same severity, type, and explanation
-        // Sort criticals before warnings before info
+        // Preserve the pre-sorted order (benefit desc, severity, type)
         var grouped = entries
             .GroupBy(e => (e.Severity, e.Explanation ?? ""))
-            .OrderBy(g => g.Key.Item1 switch { "Critical" => 0, "Warning" => 1, _ => 2 })
             .ToList();
 
         foreach (var group in grouped)
@@ -310,7 +321,10 @@ public static class TextFormatter
             {
                 // Multiple operators with the same explanation — list compactly
                 foreach (var item in items)
-                    writer.WriteLine($"  [{item.Severity}] {item.Operator}: {EscapeNewlines(item.Data)}");
+                {
+                    var benefitTag = item.Benefit.HasValue ? $" (up to {item.Benefit:N0}% benefit)" : "";
+                    writer.WriteLine($"  [{item.Severity}] {item.Operator}{benefitTag}: {EscapeNewlines(item.Data)}");
+                }
                 writer.WriteLine($"  -> {group.Key.Item2}");
             }
             else
@@ -319,7 +333,8 @@ public static class TextFormatter
                 foreach (var item in items)
                 {
                     var full = item.Explanation != null ? $"{item.Data}. {item.Explanation}" : item.Data;
-                    writer.WriteLine($"  [{item.Severity}] {item.Operator}: {EscapeNewlines(full)}");
+                    var benefitTag = item.Benefit.HasValue ? $" (up to {item.Benefit:N0}% benefit)" : "";
+                    writer.WriteLine($"  [{item.Severity}] {item.Operator}{benefitTag}: {EscapeNewlines(full)}");
                 }
             }
         }

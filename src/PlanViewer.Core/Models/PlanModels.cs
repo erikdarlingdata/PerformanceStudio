@@ -373,6 +373,17 @@ public class PlanWarning
     public string Message { get; set; } = "";
     public PlanWarningSeverity Severity { get; set; }
     public SpillDetail? SpillDetails { get; set; }
+
+    /// <summary>
+    /// Maximum percentage of elapsed time that could be saved by addressing this finding.
+    /// null = not quantifiable, 0 = calculated as negligible.
+    /// </summary>
+    public double? MaxBenefitPercent { get; set; }
+
+    /// <summary>
+    /// Short actionable fix suggestion (e.g., "Add INCLUDE (columns) to index").
+    /// </summary>
+    public string? ActionableFix { get; set; }
 }
 
 public enum PlanWarningSeverity { Info, Warning, Critical }

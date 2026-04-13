@@ -833,6 +833,12 @@ public static class PlanAnalyzer
             if (!string.IsNullOrEmpty(details.Summary))
                 message += $" {details.Summary}";
             message += " Check that you have appropriate indexes.";
+
+            // I/O waits specifically confirm the scan is hitting disk — elevate
+            if (HasSignificantIoWaits(stmt.WaitStats) && details.CostPct >= 50
+                && severity != PlanWarningSeverity.Critical)
+                severity = PlanWarningSeverity.Critical;
+
             message += $"\nPredicate: {Truncate(displayPredicate, 200)}";
 
             node.Warnings.Add(new PlanWarning
@@ -1671,9 +1677,36 @@ public static class PlanAnalyzer
     /// - A parent Sort/Hash spilled (downstream estimate caused bad grant)
     /// </summary>
     /// <summary>
-    /// Returns targeted advice based on statement-level wait stats, or null if no waits.
-    /// When the dominant wait type is clear, gives specific guidance instead of generic advice.
+    /// Returns a short label describing what a wait type means (e.g., "I/O — reading from disk").
+    /// Public for use by UI components that annotate wait stats inline.
     /// </summary>
+    public static string GetWaitLabel(string waitType)
+    {
+        var wt = waitType.ToUpperInvariant();
+        return wt switch
+        {
+            _ when wt.StartsWith("PAGEIOLATCH") => "I/O — reading data from disk",
+            _ when wt.Contains("IO_COMPLETION") => "I/O — spills to TempDB or eager writes",
+            _ when wt == "SOS_SCHEDULER_YIELD" => "CPU — scheduler yielding",
+            _ when wt.StartsWith("CXPACKET") || wt.StartsWith("CXCONSUMER") => "parallelism — thread skew",
+            _ when wt.StartsWith("CXSYNC") => "parallelism — exchange synchronization",
+            _ when wt == "HTBUILD" => "hash — building hash table",
+            _ when wt == "HTDELETE" => "hash — cleaning up hash table",
+            _ when wt == "HTREPARTITION" => "hash — repartitioning",
+            _ when wt.StartsWith("HT") => "hash operation",
+            _ when wt == "BPSORT" => "batch sort",
+            _ when wt == "BMPBUILD" => "bitmap filter build",
+            _ when wt.Contains("MEMORY_ALLOCATION_EXT") => "memory allocation",
+            _ when wt.StartsWith("PAGELATCH") => "page latch — in-memory contention",
+            _ when wt.StartsWith("LATCH_") => "latch contention",
+            _ when wt.StartsWith("LCK_") => "lock contention",
+            _ when wt == "LOGBUFFER" => "transaction log writes",
+            _ when wt == "ASYNC_NETWORK_IO" => "network — client not consuming results",
+            _ when wt == "SOS_PHYS_PAGE_CACHE" => "physical page cache contention",
+            _ => ""
+        };
+    }
+
     private static string? GetWaitStatsAdvice(List<WaitStatInfo> waits)
     {
         if (waits.Count == 0)
@@ -1690,25 +1723,98 @@ public static class PlanAnalyzer
         if (topPct < 80)
             return null;
 
-        var waitType = top.WaitType.ToUpperInvariant();
-        var advice = waitType switch
-        {
-            _ when waitType.StartsWith("PAGEIOLATCH") =>
-                $"I/O bound — {topPct:N0}% of wait time is {top.WaitType}. Data is being read from disk rather than memory. Consider adding indexes to reduce I/O, or investigate memory pressure.",
-            _ when waitType.StartsWith("LATCH_") =>
-                $"Latch contention — {topPct:N0}% of wait time is {top.WaitType}.",
-            _ when waitType.StartsWith("LCK_") =>
-                $"Lock contention — {topPct:N0}% of wait time is {top.WaitType}. Other sessions are holding locks that this query needs.",
-            _ when waitType.StartsWith("CXPACKET") || waitType.StartsWith("CXCONSUMER") =>
-                $"Parallel thread skew — {topPct:N0}% of wait time is {top.WaitType}. Work is unevenly distributed across parallel threads.",
-            _ when waitType.Contains("IO_COMPLETION") =>
-                $"I/O bound — {topPct:N0}% of wait time is {top.WaitType}.",
-            _ when waitType.StartsWith("RESOURCE_SEMAPHORE") =>
-                $"Memory grant wait — {topPct:N0}% of wait time is {top.WaitType}. The query had to wait for a memory grant.",
-            _ => $"Dominant wait is {top.WaitType} ({topPct:N0}% of wait time)."
-        };
+        return DescribeWaitType(top.WaitType, topPct);
+    }
 
-        return advice;
+    /// <summary>
+    /// Maps a wait type to a human-readable description with percentage context.
+    /// Covers all wait types observed in real execution plan files.
+    /// </summary>
+    private static string DescribeWaitType(string rawWaitType, double topPct)
+    {
+        var waitType = rawWaitType.ToUpperInvariant();
+        return waitType switch
+        {
+            // I/O: reading/writing data pages from disk
+            _ when waitType.StartsWith("PAGEIOLATCH") =>
+                $"I/O bound — {topPct:N0}% of wait time is {rawWaitType}. Data is being read from disk rather than memory. Consider adding indexes to reduce I/O, or investigate memory pressure.",
+            _ when waitType.Contains("IO_COMPLETION") =>
+                $"I/O bound — {topPct:N0}% of wait time is {rawWaitType}. Non-buffer I/O such as sort/hash spills to TempDB or eager writes.",
+
+            // CPU: thread yielding its scheduler quantum
+            _ when waitType == "SOS_SCHEDULER_YIELD" =>
+                $"CPU bound — {topPct:N0}% of wait time is {rawWaitType}. The query is consuming significant CPU. Look for expensive operators (scans, sorts, hash builds) that could be eliminated or reduced.",
+
+            // Parallelism: exchange and synchronization waits
+            _ when waitType.StartsWith("CXPACKET") || waitType.StartsWith("CXCONSUMER") =>
+                $"Parallel thread skew — {topPct:N0}% of wait time is {rawWaitType}. Work is unevenly distributed across parallel threads.",
+            _ when waitType.StartsWith("CXSYNC") =>
+                $"Parallel synchronization — {topPct:N0}% of wait time is {rawWaitType}. Threads are waiting at exchange operators to synchronize parallel execution.",
+
+            // Hash operations
+            _ when waitType.StartsWith("HT") =>
+                $"Hash operation — {topPct:N0}% of wait time is {rawWaitType}. Time spent building, repartitioning, or cleaning up hash tables. Large hash builds may indicate missing indexes or bad row estimates.",
+
+            // Sort/bitmap batch operations
+            _ when waitType == "BPSORT" =>
+                $"Batch sort — {topPct:N0}% of wait time is {rawWaitType}. Time spent in batch-mode sort operations.",
+            _ when waitType == "BMPBUILD" =>
+                $"Bitmap build — {topPct:N0}% of wait time is {rawWaitType}. Time spent building bitmap filters for hash joins.",
+
+            // Memory allocation
+            _ when waitType.Contains("MEMORY_ALLOCATION_EXT") =>
+                $"Memory allocation — {topPct:N0}% of wait time is {rawWaitType}. Frequent memory allocations during query execution.",
+
+            // Latch contention (non-I/O)
+            _ when waitType.StartsWith("PAGELATCH") =>
+                $"Page latch contention — {topPct:N0}% of wait time is {rawWaitType}. In-memory page contention, often on TempDB or hot pages.",
+            _ when waitType.StartsWith("LATCH_") =>
+                $"Latch contention — {topPct:N0}% of wait time is {rawWaitType}.",
+
+            // Lock contention
+            _ when waitType.StartsWith("LCK_") =>
+                $"Lock contention — {topPct:N0}% of wait time is {rawWaitType}. Other sessions are holding locks that this query needs.",
+
+            // Log writes
+            _ when waitType == "LOGBUFFER" =>
+                $"Log write — {topPct:N0}% of wait time is {rawWaitType}. Waiting for transaction log buffer flushes, typically from data modifications.",
+
+            // Network
+            _ when waitType == "ASYNC_NETWORK_IO" =>
+                $"Network bound — {topPct:N0}% of wait time is {rawWaitType}. The client application is not consuming results fast enough.",
+
+            // Physical page cache
+            _ when waitType == "SOS_PHYS_PAGE_CACHE" =>
+                $"Physical page cache — {topPct:N0}% of wait time is {rawWaitType}. Contention on the physical memory page allocator.",
+
+            _ => $"Dominant wait is {rawWaitType} ({topPct:N0}% of wait time)."
+        };
+    }
+
+    /// <summary>
+    /// Returns true if the statement has significant I/O waits (PAGEIOLATCH_*, IO_COMPLETION).
+    /// Used for severity elevation decisions where I/O specifically indicates disk access.
+    /// Thresholds: I/O waits >= 20% of total wait time AND >= 100ms absolute.
+    /// </summary>
+    private static bool HasSignificantIoWaits(List<WaitStatInfo> waits)
+    {
+        if (waits.Count == 0)
+            return false;
+
+        var totalMs = waits.Sum(w => w.WaitTimeMs);
+        if (totalMs == 0)
+            return false;
+
+        long ioMs = 0;
+        foreach (var w in waits)
+        {
+            var wt = w.WaitType.ToUpperInvariant();
+            if (wt.StartsWith("PAGEIOLATCH") || wt.Contains("IO_COMPLETION"))
+                ioMs += w.WaitTimeMs;
+        }
+
+        var pct = (double)ioMs / totalMs * 100;
+        return ioMs >= 100 && pct >= 20;
     }
 
     private static bool AllocatesResources(PlanNode node)

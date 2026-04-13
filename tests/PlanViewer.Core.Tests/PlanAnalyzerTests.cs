@@ -1,4 +1,5 @@
 using PlanViewer.Core.Models;
+using PlanViewer.Core.Services;
 
 namespace PlanViewer.Core.Tests;
 
@@ -843,5 +844,102 @@ public class PlanAnalyzerTests
             .Where(w => w.WarningType == "Filter Operator").ToList();
 
         Assert.Empty(filterWarnings);
+    }
+
+    // ---------------------------------------------------------------
+    // Wait stats cross-cutting integration
+    // ---------------------------------------------------------------
+
+    private static List<WaitStatInfo> IoWaits(long ms = 2000) => new()
+    {
+        new WaitStatInfo { WaitType = "PAGEIOLATCH_SH", WaitTimeMs = ms, WaitCount = 50 },
+        new WaitStatInfo { WaitType = "ASYNC_NETWORK_IO", WaitTimeMs = 100, WaitCount = 10 }
+    };
+
+    private static List<WaitStatInfo> CpuWaits(long ms = 4000) => new()
+    {
+        new WaitStatInfo { WaitType = "SOS_SCHEDULER_YIELD", WaitTimeMs = ms, WaitCount = 5000 },
+        new WaitStatInfo { WaitType = "ASYNC_NETWORK_IO", WaitTimeMs = 100, WaitCount = 10 }
+    };
+
+    private static ParsedPlan BuildSyntheticPlan(PlanStatement stmt)
+    {
+        var plan = new ParsedPlan();
+        plan.Batches.Add(new PlanBatch { Statements = { stmt } });
+        return plan;
+    }
+
+    [Fact]
+    public void WaitStats_Rule11_ScanWithIoWaitsElevatedToCritical()
+    {
+        // Scan at 60% cost + I/O waits → elevated to Critical (normally needs 90%)
+        var scan = new PlanNode
+        {
+            NodeId = 0, PhysicalOp = "Clustered Index Scan", LogicalOp = "Clustered Index Scan",
+            Predicate = "[col1] = @p1",
+            EstimatedTotalSubtreeCost = 6.0
+        };
+        var stmt = new PlanStatement
+        {
+            RootNode = scan,
+            StatementSubTreeCost = 10.0,
+            WaitStats = IoWaits()
+        };
+        var plan = BuildSyntheticPlan(stmt);
+        PlanAnalyzer.Analyze(plan);
+
+        var warnings = PlanTestHelper.AllNodeWarnings(stmt)
+            .Where(w => w.WarningType == "Scan With Predicate").ToList();
+        Assert.NotEmpty(warnings);
+        Assert.Contains(warnings, w => w.Severity == PlanWarningSeverity.Critical);
+    }
+
+    [Fact]
+    public void WaitStats_Rule11_ScanWithoutIoWaitsStaysWarning()
+    {
+        // Same scan at 60% cost but no I/O waits → stays Warning
+        var scan = new PlanNode
+        {
+            NodeId = 0, PhysicalOp = "Clustered Index Scan", LogicalOp = "Clustered Index Scan",
+            Predicate = "[col1] = @p1",
+            EstimatedTotalSubtreeCost = 6.0
+        };
+        var stmt = new PlanStatement
+        {
+            RootNode = scan,
+            StatementSubTreeCost = 10.0
+        };
+        var plan = BuildSyntheticPlan(stmt);
+        PlanAnalyzer.Analyze(plan);
+
+        var warnings = PlanTestHelper.AllNodeWarnings(stmt)
+            .Where(w => w.WarningType == "Scan With Predicate").ToList();
+        Assert.NotEmpty(warnings);
+        Assert.All(warnings, w => Assert.Equal(PlanWarningSeverity.Warning, w.Severity));
+    }
+
+    [Fact]
+    public void WaitStats_Rule11_CpuWaitsDoNotElevateSeverity()
+    {
+        // CPU waits (SOS_SCHEDULER_YIELD) are not I/O — should NOT elevate at 60% cost
+        var scan = new PlanNode
+        {
+            NodeId = 0, PhysicalOp = "Clustered Index Scan", LogicalOp = "Clustered Index Scan",
+            Predicate = "[col1] = @p1",
+            EstimatedTotalSubtreeCost = 6.0
+        };
+        var stmt = new PlanStatement
+        {
+            RootNode = scan,
+            StatementSubTreeCost = 10.0,
+            WaitStats = CpuWaits()
+        };
+        var plan = BuildSyntheticPlan(stmt);
+        PlanAnalyzer.Analyze(plan);
+
+        var warnings = PlanTestHelper.AllNodeWarnings(stmt)
+            .Where(w => w.WarningType == "Scan With Predicate").ToList();
+        Assert.NotEmpty(warnings);
+        Assert.All(warnings, w => Assert.Equal(PlanWarningSeverity.Warning, w.Severity));
     }
 }
