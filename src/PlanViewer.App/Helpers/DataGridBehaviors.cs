@@ -84,7 +84,7 @@ public static class DataGridBehaviors
 
             if (hBar is not null)
             {
-                hBar.Value = Math.Clamp(scrollStartH + delta.X, hBar.Minimum, hBar.Maximum);
+                hBar.Value = Math.Clamp(scrollStartH - delta.X, hBar.Minimum, hBar.Maximum);
                 // Raise Thumb.DragDeltaEvent on the scrollbar — a public routed event whose
                 // ScrollBar class handler calls OnScroll → fires Scroll event → DataGrid
                 // processes the new Value without any reflection on private members.
@@ -92,7 +92,7 @@ public static class DataGridBehaviors
             }
             if (vBar is not null)
             {
-                vBar.Value = Math.Clamp(scrollStartV + delta.Y, vBar.Minimum, vBar.Maximum);
+                vBar.Value = Math.Clamp(scrollStartV - delta.Y, vBar.Minimum, vBar.Maximum);
                 vBar.RaiseEvent(new VectorEventArgs { RoutedEvent = Thumb.DragDeltaEvent });
             }
 
