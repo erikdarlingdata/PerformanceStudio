@@ -377,7 +377,7 @@ public partial class PlanViewerControl : UserControl
         // Update banners
         ShowMissingIndexes(statement.MissingIndexes);
         ShowParameters(statement);
-        ShowWaitStats(statement.WaitStats, statement.QueryTimeStats != null);
+        ShowWaitStats(statement.WaitStats, statement.WaitBenefits, statement.QueryTimeStats != null);
         ShowRuntimeSummary(statement);
         UpdateInsightsHeader();
 
@@ -2635,7 +2635,7 @@ public partial class PlanViewerControl : UserControl
         return sum;
     }
 
-    private void ShowWaitStats(List<WaitStatInfo> waits, bool isActualPlan)
+    private void ShowWaitStats(List<WaitStatInfo> waits, List<WaitBenefit> benefits, bool isActualPlan)
     {
         WaitStatsContent.Children.Clear();
 
@@ -2651,6 +2651,11 @@ public partial class PlanViewerControl : UserControl
 
         WaitStatsEmpty.IsVisible = false;
 
+        // Build benefit lookup
+        var benefitLookup = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+        foreach (var wb in benefits)
+            benefitLookup[wb.WaitType] = wb.MaxBenefitPercent;
+
         var sorted = waits.OrderByDescending(w => w.WaitTimeMs).ToList();
         var maxWait = sorted[0].WaitTimeMs;
         var totalWait = sorted.Sum(w => w.WaitTimeMs);
@@ -2659,10 +2664,10 @@ public partial class PlanViewerControl : UserControl
         WaitStatsHeader.Text = $"  Wait Stats \u2014 {totalWait:N0}ms total";
 
         // Build a single Grid for all rows so columns align
-        // Name and duration auto-size; bar fills remaining space
+        // Name, bar, duration, and benefit columns
         var grid = new Grid
         {
-            ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto")
+            ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto,Auto")
         };
         for (int i = 0; i < sorted.Count; i++)
             grid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
@@ -2709,11 +2714,27 @@ public partial class PlanViewerControl : UserControl
                 FontSize = 12,
                 Foreground = new SolidColorBrush(Color.Parse("#E4E6EB")),
                 VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 2, 0, 2)
+                Margin = new Thickness(0, 2, 8, 2)
             };
             Grid.SetRow(durationText, i);
             Grid.SetColumn(durationText, 2);
             grid.Children.Add(durationText);
+
+            // Benefit % (if available)
+            if (benefitLookup.TryGetValue(w.WaitType, out var benefitPct) && benefitPct > 0)
+            {
+                var benefitText = new TextBlock
+                {
+                    Text = $"up to {benefitPct:N0}%",
+                    FontSize = 11,
+                    Foreground = new SolidColorBrush(Color.Parse("#8b949e")),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(0, 2, 0, 2)
+                };
+                Grid.SetRow(benefitText, i);
+                Grid.SetColumn(benefitText, 3);
+                grid.Children.Add(benefitText);
+            }
         }
 
         WaitStatsContent.Children.Add(grid);
