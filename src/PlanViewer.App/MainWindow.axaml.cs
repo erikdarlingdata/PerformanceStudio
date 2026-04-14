@@ -96,20 +96,25 @@ public partial class MainWindow : Window
             }
         }, RoutingStrategies.Tunnel);
 
-        // Accept command-line argument or restore previously open plans
-        var args = Environment.GetCommandLineArgs();
-        if (args.Length > 1 && File.Exists(args[1]))
+        // Defer plan loading and MCP startup until the window is visible,
+        // so any ShowDialog calls have a valid visible owner.
+        Opened += (_, _) =>
         {
-            LoadPlanFile(args[1]);
-        }
-        else
-        {
-            // Restore plans that were open in the previous session
-            RestoreOpenPlans();
-        }
+            // Accept command-line argument or restore previously open plans
+            var args = Environment.GetCommandLineArgs();
+            if (args.Length > 1 && File.Exists(args[1]))
+            {
+                LoadPlanFile(args[1]);
+            }
+            else
+            {
+                // Restore plans that were open in the previous session
+                RestoreOpenPlans();
+            }
 
-        // Start MCP server if enabled in settings
-        StartMcpServer();
+            // Start MCP server if enabled in settings
+            StartMcpServer();
+        };
     }
 
     private void StartPipeServer()

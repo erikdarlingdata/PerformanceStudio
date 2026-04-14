@@ -63,6 +63,7 @@ public partial class QueryStoreGridControl : UserControl
         _slicerDaysBack = AppSettingsService.Load().QueryStoreSlicerDays;
         InitializeComponent();
         ResultsGrid.ItemsSource = _filteredRows;
+        Helpers.DataGridBehaviors.Attach(ResultsGrid);
         EnsureFilterPopup();
         SetupColumnHeaders();
         PopulateDatabaseBox(databases, initialDatabase);
