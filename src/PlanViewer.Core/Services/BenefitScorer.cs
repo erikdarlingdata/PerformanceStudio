@@ -35,6 +35,9 @@ public static class BenefitScorer
 
                 if (stmt.RootNode != null)
                     ScoreNodeTree(stmt.RootNode, stmt);
+
+                if (stmt.WaitStats.Count > 0 && stmt.QueryTimeStats != null)
+                    ScoreWaitStats(stmt);
             }
         }
     }
@@ -375,5 +378,217 @@ public static class BenefitScorer
 
         var maxChildElapsed = node.Children.Max(c => c.ActualElapsedMs);
         return Math.Max(0, node.ActualElapsedMs - maxChildElapsed);
+    }
+
+    // ---------------------------------------------------------------
+    //  Stage 2: Wait Stats Benefit
+    // ---------------------------------------------------------------
+
+    /// <summary>
+    /// Calculates MaxBenefitPercent for each wait type in the statement's wait stats.
+    /// Serial plans: simple ratio of wait time to elapsed time.
+    /// Parallel plans: proportional allocation across relevant operators (Joe's formula).
+    /// </summary>
+    private static void ScoreWaitStats(PlanStatement stmt)
+    {
+        var elapsedMs = stmt.QueryTimeStats!.ElapsedTimeMs;
+        if (elapsedMs <= 0) return;
+
+        var isParallel = stmt.DegreeOfParallelism > 1 && stmt.RootNode != null;
+
+        // Collect all operators with per-thread stats for parallel benefit calculation
+        List<OperatorWaitProfile>? operatorProfiles = null;
+        if (isParallel)
+        {
+            operatorProfiles = new List<OperatorWaitProfile>();
+            CollectOperatorWaitProfiles(stmt.RootNode!, operatorProfiles);
+        }
+
+        foreach (var wait in stmt.WaitStats)
+        {
+            if (wait.WaitTimeMs <= 0) continue;
+
+            var category = ClassifyWaitType(wait.WaitType);
+            double benefitPct;
+
+            if (category == "Parallelism" && isParallel)
+            {
+                // CXPACKET/CXCONSUMER/CXSYNC: benefit is the parallelism efficiency gap,
+                // not the raw wait time. Threads waiting for other threads is a symptom
+                // of imperfect parallelism, not directly addressable time.
+                var cpu = stmt.QueryTimeStats!.CpuTimeMs;
+                var dop = stmt.DegreeOfParallelism;
+                if (cpu > 0 && dop > 1)
+                {
+                    var idealElapsed = (double)cpu / dop;
+                    benefitPct = Math.Max(0, (elapsedMs - idealElapsed) / elapsedMs * 100);
+                }
+                else
+                {
+                    benefitPct = (double)wait.WaitTimeMs / elapsedMs * 100;
+                }
+            }
+            else if (!isParallel || operatorProfiles == null || operatorProfiles.Count == 0)
+            {
+                // Serial plan or no operator data: simple ratio
+                benefitPct = (double)wait.WaitTimeMs / elapsedMs * 100;
+            }
+            else
+            {
+                // Parallel plan: proportional allocation across relevant operators
+                benefitPct = CalculateParallelWaitBenefit(wait, category, operatorProfiles, elapsedMs);
+            }
+
+            stmt.WaitBenefits.Add(new WaitBenefit
+            {
+                WaitType = wait.WaitType,
+                MaxBenefitPercent = Math.Round(Math.Min(100, Math.Max(0, benefitPct)), 1),
+                Category = category
+            });
+        }
+    }
+
+    /// <summary>
+    /// Parallel wait benefit using Joe's formula:
+    /// benefit = (SUM relevant operator max waits) * (total_wait_for_type) / (SUM relevant operator total waits)
+    /// Then convert to % of statement elapsed time.
+    /// </summary>
+    private static double CalculateParallelWaitBenefit(
+        WaitStatInfo wait, string category,
+        List<OperatorWaitProfile> profiles, long stmtElapsedMs)
+    {
+        // Filter to operators relevant for this wait category
+        var relevant = new List<OperatorWaitProfile>();
+        foreach (var p in profiles)
+        {
+            if (IsOperatorRelevantForCategory(p, category))
+                relevant.Add(p);
+        }
+
+        // If no operators match, fall back to simple ratio
+        if (relevant.Count == 0)
+            return (double)wait.WaitTimeMs / stmtElapsedMs * 100;
+
+        // Joe's formula:
+        // sum_max = SUM of each relevant operator's max per-thread wait time
+        // sum_total = SUM of each relevant operator's total wait time across all threads
+        // benefit_ms = sum_max * wait.WaitTimeMs / sum_total
+        double sumMax = 0;
+        double sumTotal = 0;
+        foreach (var p in relevant)
+        {
+            sumMax += p.MaxThreadWaitMs;
+            sumTotal += p.TotalWaitMs;
+        }
+
+        if (sumTotal <= 0)
+            return (double)wait.WaitTimeMs / stmtElapsedMs * 100;
+
+        var benefitMs = sumMax * wait.WaitTimeMs / sumTotal;
+        return benefitMs / stmtElapsedMs * 100;
+    }
+
+    /// <summary>
+    /// Determines if an operator is relevant for a given wait category.
+    /// </summary>
+    private static bool IsOperatorRelevantForCategory(OperatorWaitProfile profile, string category)
+    {
+        return category switch
+        {
+            "I/O" => profile.HasPhysicalReads,
+            "CPU" => profile.HasCpuWork,
+            "Parallelism" => profile.IsExchange,
+            "Hash" => profile.IsHashOperator,
+            "Sort" => profile.IsSortOperator,
+            "Latch" => profile.HasTempDbActivity,
+            "Lock" => true,  // any operator can be blocked by locks
+            "Network" => false,  // ASYNC_NETWORK_IO is client-side, not attributable to operators
+            "Memory" => false,  // memory waits are statement-level
+            _ => true,  // unknown category: include all operators
+        };
+    }
+
+    /// <summary>
+    /// Walks the operator tree and collects wait time profiles for each operator.
+    /// Wait time per thread = max(0, elapsed - cpu) for that thread.
+    /// </summary>
+    private static void CollectOperatorWaitProfiles(PlanNode node, List<OperatorWaitProfile> profiles)
+    {
+        if (node.HasActualStats && node.PerThreadStats.Count > 0)
+        {
+            long maxThreadWait = 0;
+            long totalWait = 0;
+
+            foreach (var ts in node.PerThreadStats)
+            {
+                var threadWait = Math.Max(0, ts.ActualElapsedMs - ts.ActualCPUMs);
+                totalWait += threadWait;
+                if (threadWait > maxThreadWait)
+                    maxThreadWait = threadWait;
+            }
+
+            if (totalWait > 0 || maxThreadWait > 0)
+            {
+                profiles.Add(new OperatorWaitProfile
+                {
+                    Node = node,
+                    MaxThreadWaitMs = maxThreadWait,
+                    TotalWaitMs = totalWait,
+                    HasPhysicalReads = node.ActualPhysicalReads > 0,
+                    HasCpuWork = node.ActualCPUMs > 0,
+                    IsExchange = node.PhysicalOp == "Parallelism",
+                    IsHashOperator = node.PhysicalOp.StartsWith("Hash", StringComparison.OrdinalIgnoreCase),
+                    IsSortOperator = node.PhysicalOp.StartsWith("Sort", StringComparison.OrdinalIgnoreCase),
+                    HasTempDbActivity = node.Warnings.Any(w => w.SpillDetails != null)
+                                     || node.PhysicalOp.Contains("Spool", StringComparison.OrdinalIgnoreCase)
+                });
+            }
+        }
+
+        foreach (var child in node.Children)
+            CollectOperatorWaitProfiles(child, profiles);
+    }
+
+    /// <summary>
+    /// Classifies a wait type into a category for operator-to-wait mapping.
+    /// </summary>
+    internal static string ClassifyWaitType(string waitType)
+    {
+        var wt = waitType.ToUpperInvariant();
+        return wt switch
+        {
+            _ when wt.StartsWith("PAGEIOLATCH") => "I/O",
+            _ when wt.Contains("IO_COMPLETION") => "I/O",
+            _ when wt.StartsWith("WRITELOG") => "I/O",
+            _ when wt == "SOS_SCHEDULER_YIELD" => "CPU",
+            _ when wt.StartsWith("CXPACKET") || wt.StartsWith("CXCONSUMER") => "Parallelism",
+            _ when wt.StartsWith("CXSYNC") => "Parallelism",
+            _ when wt.StartsWith("HT") => "Hash",
+            _ when wt == "BPSORT" => "Sort",
+            _ when wt == "BMPBUILD" => "Hash",
+            _ when wt.StartsWith("PAGELATCH") => "Latch",
+            _ when wt.StartsWith("LATCH_") => "Latch",
+            _ when wt.StartsWith("LCK_") => "Lock",
+            _ when wt == "ASYNC_NETWORK_IO" => "Network",
+            _ when wt.Contains("MEMORY_ALLOCATION") => "Memory",
+            _ when wt == "SOS_PHYS_PAGE_CACHE" => "Memory",
+            _ => "Other"
+        };
+    }
+
+    /// <summary>
+    /// Per-operator wait time profile used for parallel benefit allocation.
+    /// </summary>
+    private sealed class OperatorWaitProfile
+    {
+        public PlanNode Node { get; init; } = null!;
+        public long MaxThreadWaitMs { get; init; }
+        public long TotalWaitMs { get; init; }
+        public bool HasPhysicalReads { get; init; }
+        public bool HasCpuWork { get; init; }
+        public bool IsExchange { get; init; }
+        public bool IsHashOperator { get; init; }
+        public bool IsSortOperator { get; init; }
+        public bool HasTempDbActivity { get; init; }
     }
 }

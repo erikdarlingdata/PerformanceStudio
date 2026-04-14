@@ -391,14 +391,22 @@ pre.query-text, pre.text-output {
         sb.AppendLine("<div class=\"card-body\">");
         if (stmt.WaitStats.Count > 0)
         {
+            // Build benefit lookup
+            var benefitLookup = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+            foreach (var wb in stmt.WaitBenefits)
+                benefitLookup[wb.WaitType] = wb.MaxBenefitPercent;
+
             var maxWait = stmt.WaitStats.Max(w => w.WaitTimeMs);
             foreach (var w in stmt.WaitStats.OrderByDescending(w => w.WaitTimeMs))
             {
                 var barPct = maxWait > 0 ? (double)w.WaitTimeMs / maxWait * 100 : 0;
+                var benefitTag = benefitLookup.TryGetValue(w.WaitType, out var pct)
+                    ? $" <span class=\"warn-benefit\">up to {pct:N0}%</span>"
+                    : "";
                 sb.AppendLine("<div class=\"wait-row\">");
                 sb.AppendLine($"<span class=\"wait-type\">{Encode(w.WaitType)}</span>");
                 sb.AppendLine($"<div class=\"wait-bar-container\"><div class=\"wait-bar\" style=\"width:{barPct:F0}%\"></div></div>");
-                sb.AppendLine($"<span class=\"wait-ms\">{w.WaitTimeMs:N0} ms</span>");
+                sb.AppendLine($"<span class=\"wait-ms\">{w.WaitTimeMs:N0} ms{benefitTag}</span>");
                 sb.AppendLine("</div>");
             }
         }

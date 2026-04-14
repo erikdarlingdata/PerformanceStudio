@@ -129,6 +129,17 @@ public static class ResultMapper
             });
         }
 
+        // Wait stat benefits
+        foreach (var wb in stmt.WaitBenefits)
+        {
+            result.WaitBenefits.Add(new WaitBenefitResult
+            {
+                WaitType = wb.WaitType,
+                MaxBenefitPercent = wb.MaxBenefitPercent,
+                Category = wb.Category
+            });
+        }
+
         // Parameters — flag potential sniffing issues
         foreach (var p in stmt.Parameters)
         {
