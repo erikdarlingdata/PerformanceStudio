@@ -1,5 +1,4 @@
 using System;
-using System.Reflection;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
@@ -14,14 +13,6 @@ namespace PlanViewer.App.Helpers;
 /// </summary>
 public static class DataGridBehaviors
 {
-    // Cached reflection accessors for DataGrid internal scroll methods.
-    // ProcessHorizontalScroll / ProcessVerticalScroll read the scrollbar's current Value
-    // and reposition the grid content — the same code path used during real scrollbar interaction.
-    private static readonly MethodInfo? _processHScroll =
-        typeof(DataGrid).GetMethod("ProcessHorizontalScroll", BindingFlags.Instance | BindingFlags.NonPublic);
-    private static readonly MethodInfo? _processVScroll =
-        typeof(DataGrid).GetMethod("ProcessVerticalScroll",   BindingFlags.Instance | BindingFlags.NonPublic);
-
     /// <summary>Attach middle-click pan behavior to <paramref name="grid"/>.</summary>
     public static void Attach(DataGrid grid)
     {
@@ -94,12 +85,15 @@ public static class DataGridBehaviors
             if (hBar is not null)
             {
                 hBar.Value = Math.Clamp(scrollStartH + delta.X, hBar.Minimum, hBar.Maximum);
-                _processHScroll?.Invoke(grid, [ScrollEventType.ThumbTrack]);
+                // Raise Thumb.DragDeltaEvent on the scrollbar — a public routed event whose
+                // ScrollBar class handler calls OnScroll → fires Scroll event → DataGrid
+                // processes the new Value without any reflection on private members.
+                hBar.RaiseEvent(new VectorEventArgs { RoutedEvent = Thumb.DragDeltaEvent });
             }
             if (vBar is not null)
             {
                 vBar.Value = Math.Clamp(scrollStartV + delta.Y, vBar.Minimum, vBar.Maximum);
-                _processVScroll?.Invoke(grid, [ScrollEventType.ThumbTrack]);
+                vBar.RaiseEvent(new VectorEventArgs { RoutedEvent = Thumb.DragDeltaEvent });
             }
 
             e.Handled = true;
