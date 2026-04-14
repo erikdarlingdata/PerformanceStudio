@@ -141,6 +141,7 @@ public partial class PlanViewerControl : UserControl
         var layoutTransform = this.FindControl<Avalonia.Controls.LayoutTransformControl>("PlanLayoutTransform")!;
         _zoomTransform = (ScaleTransform)layoutTransform.LayoutTransform!;
 
+        Helpers.DataGridBehaviors.Attach(StatementsGrid);
     }
 
     /// <summary>
