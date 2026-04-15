@@ -104,6 +104,8 @@ public partial class QueryStoreHistoryWindow : Window
         _maxHoursBack = slicerDaysBack * 24;
         InitializeComponent();
 
+        Helpers.DataGridBehaviors.Attach(HistoryDataGrid);
+
         QueryIdentifierText.Text = $"Query Store History: {queryHash} in [{database}]";
         QueryTextBox.Text = queryText;
 

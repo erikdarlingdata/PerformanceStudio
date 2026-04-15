@@ -139,6 +139,10 @@ public class StatementResult
     [JsonPropertyName("wait_stats")]
     public List<WaitStatResult> WaitStats { get; set; } = new();
 
+    // Wait stats benefit analysis
+    [JsonPropertyName("wait_benefits")]
+    public List<WaitBenefitResult> WaitBenefits { get; set; } = new();
+
     // Cursor metadata
     [JsonPropertyName("cursor")]
     public CursorResult? Cursor { get; set; }
@@ -351,6 +355,18 @@ public class WaitStatResult
 
     [JsonPropertyName("wait_count")]
     public long WaitCount { get; set; }
+}
+
+public class WaitBenefitResult
+{
+    [JsonPropertyName("wait_type")]
+    public string WaitType { get; set; } = "";
+
+    [JsonPropertyName("max_benefit_percent")]
+    public double MaxBenefitPercent { get; set; }
+
+    [JsonPropertyName("category")]
+    public string Category { get; set; } = "";
 }
 
 public class CursorResult

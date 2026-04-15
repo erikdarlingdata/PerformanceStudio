@@ -62,6 +62,7 @@ public class PlanStatement
     public SetOptionsInfo? SetOptions { get; set; }
     public List<PlanParameter> Parameters { get; set; } = new();
     public List<WaitStatInfo> WaitStats { get; set; } = new();
+    public List<WaitBenefit> WaitBenefits { get; set; } = new();
     public QueryTimeInfo? QueryTimeStats { get; set; }
 
     // MaxQueryMemory + QueryPlan-level warnings
@@ -445,6 +446,13 @@ public class PlanParameter
     public string DataType { get; set; } = "";
     public string? CompiledValue { get; set; }
     public string? RuntimeValue { get; set; }
+}
+
+public class WaitBenefit
+{
+    public string WaitType { get; set; } = "";
+    public double MaxBenefitPercent { get; set; }
+    public string Category { get; set; } = "";
 }
 
 public class WaitStatInfo

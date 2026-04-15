@@ -131,8 +131,18 @@ public static class TextFormatter
             if (stmt.WaitStats.Count > 0)
             {
                 writer.WriteLine("Wait stats:");
+                // Build a lookup from wait type to benefit %
+                var benefitLookup = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+                foreach (var wb in stmt.WaitBenefits)
+                    benefitLookup[wb.WaitType] = wb.MaxBenefitPercent;
+
                 foreach (var w in stmt.WaitStats.OrderByDescending(w => w.WaitTimeMs))
-                    writer.WriteLine($"  {w.WaitType}: {w.WaitTimeMs:N0}ms");
+                {
+                    var benefitTag = benefitLookup.TryGetValue(w.WaitType, out var pct)
+                        ? $" (up to {pct:N0}% benefit)"
+                        : "";
+                    writer.WriteLine($"  {w.WaitType}: {w.WaitTimeMs:N0}ms{benefitTag}");
+                }
             }
 
             if (stmt.Parameters.Count > 0)
