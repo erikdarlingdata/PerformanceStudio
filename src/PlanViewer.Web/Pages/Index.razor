@@ -280,15 +280,23 @@ else
                 @if (ActiveStmt!.WaitStats.Count > 0)
                 {
                     var maxWait = ActiveStmt!.WaitStats.Max(w => w.WaitTimeMs);
+                    var benefitLookup = ActiveStmt!.WaitBenefits.ToDictionary(wb => wb.WaitType, wb => wb.MaxBenefitPercent, StringComparer.OrdinalIgnoreCase);
                     @foreach (var w in ActiveStmt!.WaitStats.OrderByDescending(w => w.WaitTimeMs))
                     {
                         var barPct = maxWait > 0 ? (double)w.WaitTimeMs / maxWait * 100 : 0;
+                        benefitLookup.TryGetValue(w.WaitType, out var benefitPct);
                         <div class="wait-row">
                             <span class="wait-type">@w.WaitType</span>
                             <div class="wait-bar-container">
                                 <div class="wait-bar" style="width: @barPct.ToString("F0")%"></div>
                             </div>
-                            <span class="wait-ms">@w.WaitTimeMs.ToString("N0") ms</span>
+                            <span class="wait-ms">
+                                @w.WaitTimeMs.ToString("N0") ms
+                                @if (benefitPct > 0)
+                                {
+                                    <span class="wait-benefit">up to @benefitPct.ToString("N0")%</span>
+                                }
+                            </span>
                         </div>
                     }
                 }

@@ -717,6 +717,16 @@ textarea::placeholder {
     font-size: 0.7rem;
 }
 
+.wait-benefit {
+    font-size: 0.65rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    padding: 0.05rem 0.3rem;
+    border-radius: 3px;
+    background: rgba(0, 0, 0, 0.04);
+    margin-left: 0.25rem;
+}
+
 /* === Warnings Strip === */
 .warnings-strip {
     margin-bottom: 0.75rem;
