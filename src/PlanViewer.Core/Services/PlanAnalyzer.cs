@@ -613,7 +613,8 @@ public static class PlanAnalyzer
         // - A parent join may have chosen the wrong strategy
         // - Root nodes with no parent to harm are skipped
         // - Nodes whose only parents are Parallelism/Top/Sort (no spill) are skipped
-        if (!cfg.IsRuleDisabled(5) && node.HasActualStats && node.EstimateRows > 0)
+        if (!cfg.IsRuleDisabled(5) && node.HasActualStats && node.EstimateRows > 0
+            && !node.Lookup) // Key lookups are point lookups (1 row per execution) — per-execution estimate is misleading
         {
             if (node.ActualRows == 0)
             {
@@ -789,7 +790,9 @@ public static class PlanAnalyzer
         }
 
         // Rule 12: Non-SARGable predicate on scan
-        var nonSargableReason = cfg.IsRuleDisabled(12) ? null : DetectNonSargablePredicate(node);
+        // Skip for 0-execution nodes — the operator never ran, so the warning is academic
+        var nonSargableReason = cfg.IsRuleDisabled(12) || (node.HasActualStats && node.ActualExecutions == 0)
+            ? null : DetectNonSargablePredicate(node);
         if (nonSargableReason != null)
         {
             var nonSargableAdvice = nonSargableReason switch
@@ -818,8 +821,9 @@ public static class PlanAnalyzer
 
         // Rule 11: Scan with residual predicate (skip if non-SARGable already flagged)
         // A PROBE() alone is just a bitmap filter — not a real residual predicate.
+        // Skip for 0-execution nodes — the operator never ran
         if (!cfg.IsRuleDisabled(11) && nonSargableReason == null && IsRowstoreScan(node) && !string.IsNullOrEmpty(node.Predicate) &&
-            !IsProbeOnly(node.Predicate))
+            !IsProbeOnly(node.Predicate) && !(node.HasActualStats && node.ActualExecutions == 0))
         {
             var displayPredicate = StripProbeExpressions(node.Predicate);
             var details = BuildScanImpactDetails(node, stmt);
@@ -1139,12 +1143,25 @@ public static class PlanAnalyzer
             // tiny floating-point differences that display identically are noise
             if (reduction >= 2.0)
             {
-                node.Warnings.Add(new PlanWarning
+                // If we have actual stats, check whether the row goal prediction was correct.
+                // When actual rows ≤ the row goal estimate, the optimizer stopped early as planned — benign.
+                var rowGoalWorked = false;
+                if (node.HasActualStats)
                 {
-                    WarningType = "Row Goal",
-                    Message = $"Row goal active: estimate reduced from {node.EstimateRowsWithoutRowGoal:N0} to {node.EstimateRows:N0} ({reduction:N0}x reduction) due to TOP, EXISTS, IN, or FAST hint. The optimizer chose this plan shape expecting to stop reading early. If the query reads all rows anyway, the plan choice may be suboptimal.",
-                    Severity = PlanWarningSeverity.Info
-                });
+                    var executions = node.ActualExecutions > 0 ? node.ActualExecutions : 1;
+                    var actualPerExec = (double)node.ActualRows / executions;
+                    rowGoalWorked = actualPerExec <= node.EstimateRows;
+                }
+
+                if (!rowGoalWorked)
+                {
+                    node.Warnings.Add(new PlanWarning
+                    {
+                        WarningType = "Row Goal",
+                        Message = $"Row goal active: estimate reduced from {node.EstimateRowsWithoutRowGoal:N0} to {node.EstimateRows:N0} ({reduction:N0}x reduction) due to TOP, EXISTS, IN, or FAST hint. The optimizer chose this plan shape expecting to stop reading early. If the query reads all rows anyway, the plan choice may be suboptimal.",
+                        Severity = PlanWarningSeverity.Info
+                    });
+                }
             }
         }
 
@@ -1166,7 +1183,8 @@ public static class PlanAnalyzer
         }
 
         // Rule 29: Enhance implicit conversion warnings — Seek Plan is more severe
-        if (!cfg.IsRuleDisabled(29))
+        // Skip for 0-execution nodes — the operator never ran
+        if (!cfg.IsRuleDisabled(29) && !(node.HasActualStats && node.ActualExecutions == 0))
         foreach (var w in node.Warnings.ToList())
         {
             if (w.WarningType == "Implicit Conversion" && w.Message.StartsWith("Seek Plan"))
@@ -1719,11 +1737,15 @@ public static class PlanAnalyzer
         var top = waits.OrderByDescending(w => w.WaitTimeMs).First();
         var topPct = (double)top.WaitTimeMs / totalMs * 100;
 
-        // Only give targeted advice if the dominant wait is >= 80% of total wait time
-        if (topPct < 80)
-            return null;
+        // Single dominant wait — give targeted advice
+        if (topPct >= 80)
+            return DescribeWaitType(top.WaitType, topPct);
 
-        return DescribeWaitType(top.WaitType, topPct);
+        // Multiple waits — summarize the top contributors instead of guessing
+        var topWaits = waits.OrderByDescending(w => w.WaitTimeMs).Take(3)
+            .Select(w => $"{w.WaitType} ({(double)w.WaitTimeMs / totalMs * 100:N0}%)")
+            .ToList();
+        return $"Top waits: {string.Join(", ", topWaits)}.";
     }
 
     /// <summary>
