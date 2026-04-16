@@ -157,15 +157,12 @@ public static class BenefitScorer
             {
                 ScoreByOperatorTime(warning, node, stmt);
             }
-            else if (warning.WarningType == "Parallel Skew") // Rule 8
-            {
-                ScoreByOperatorTime(warning, node, stmt);
-            }
             else if (warning.WarningType == "Row Estimate Mismatch") // Rule 5
             {
                 ScoreEstimateMismatchWarning(warning, node, stmt);
             }
             // Rules that stay null: Scalar UDF (Rule 6, informational reference),
+            // Parallel Skew (Rule 8 — will be integrated per-operator later),
             // Data Type Mismatch (Rule 13),
             // Lazy Spool Ineffective (Rule 14), Join OR Clause (Rule 15),
             // Many-to-Many Merge Join (Rule 17), CTE Multiple References (Rule 21),
