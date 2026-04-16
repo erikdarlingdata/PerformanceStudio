@@ -573,32 +573,8 @@ public class PlanAnalyzerTests
         Assert.Contains(warnings, w => w.Message.Contains("prevented an index seek"));
     }
 
-    // ---------------------------------------------------------------
-    // Rule 25: Ineffective Parallelism
-    // ---------------------------------------------------------------
-
-    [Fact]
-    public void Rule25_IneffectiveParallelism_DetectedWhenCpuEqualsElapsed()
-    {
-        // serially-parallel: DOP 8 but CPU 17,110ms ≈ elapsed 17,112ms (efficiency ~0%)
-        var plan = PlanTestHelper.LoadAndAnalyze("serially-parallel.sqlplan");
-        var warnings = PlanTestHelper.WarningsOfType(plan, "Ineffective Parallelism");
-
-        Assert.Single(warnings);
-        Assert.Contains("DOP 8", warnings[0].Message);
-        Assert.Contains("% efficient", warnings[0].Message);
-    }
-
-    [Fact]
-    public void Rule25_IneffectiveParallelism_NotFiredOnEffectiveParallelPlan()
-    {
-        // parallel-skew: DOP 4, CPU 28,634ms vs elapsed 9,417ms (ratio ~3.0)
-        // This is effective parallelism — Rule 25 should NOT fire
-        var plan = PlanTestHelper.LoadAndAnalyze("parallel-skew.sqlplan");
-        var warnings = PlanTestHelper.WarningsOfType(plan, "Ineffective Parallelism");
-
-        Assert.Empty(warnings);
-    }
+    // Rules 25 and 31 were removed — CPU:Elapsed ratio is shown in the runtime
+    // summary instead, and wait stats speak for themselves.
 
     // ---------------------------------------------------------------
     // Rule 28: NOT IN with Nullable Column (Row Count Spool)
@@ -640,25 +616,6 @@ public class PlanAnalyzerTests
             // At minimum, the rule ran without errors
             Assert.True(true);
         }
-    }
-
-    // ---------------------------------------------------------------
-    // Rule 31: Parallel Wait Bottleneck
-    // ---------------------------------------------------------------
-
-    [Fact]
-    public void Rule31_ParallelWaitBottleneck_DetectedWhenElapsedExceedsCpu()
-    {
-        // excellent-parallel-spill: DOP 4, CPU 172,222ms vs elapsed 225,870ms
-        // speedup ~0.76 — CPU < Elapsed but >= 0.5, so fires as Ineffective Parallelism
-        // (wait bottleneck only fires when speedup < 0.5 — extreme waiting)
-        var plan = PlanTestHelper.LoadAndAnalyze("excellent-parallel-spill.sqlplan");
-
-        // At DOP 4 with speedup 0.76, efficiency ≈ 0% — fires Ineffective Parallelism
-        var warnings = PlanTestHelper.WarningsOfType(plan, "Ineffective Parallelism");
-        Assert.NotEmpty(warnings);
-        Assert.Contains("DOP 4", warnings[0].Message);
-        Assert.Contains("% efficient", warnings[0].Message);
     }
 
     // ---------------------------------------------------------------
