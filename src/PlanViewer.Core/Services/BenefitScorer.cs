@@ -18,8 +18,7 @@ public static class BenefitScorer
         "Filter Operator",      // Rule 1
         "Eager Index Spool",    // Rule 2
         "Spill",                // Rule 7
-        "Key Lookup",           // Rule 10
-        "RID Lookup",           // Rule 10 variant
+        // Key Lookup / RID Lookup (Rule 10) handled separately by ScoreKeyLookupWarning
         "Scan With Predicate",  // Rule 11
         "Non-SARGable Predicate", // Rule 12
         "Scan Cardinality Misestimate", // Rule 32
@@ -150,7 +149,15 @@ public static class BenefitScorer
             {
                 ScoreSpillWarning(warning, node, stmt);
             }
+            else if (warning.WarningType is "Key Lookup" or "RID Lookup") // Rule 10
+            {
+                ScoreKeyLookupWarning(warning, node, stmt);
+            }
             else if (OperatorTimeRules.Contains(warning.WarningType))
+            {
+                ScoreByOperatorTime(warning, node, stmt);
+            }
+            else if (warning.WarningType == "Parallel Skew") // Rule 8
             {
                 ScoreByOperatorTime(warning, node, stmt);
             }
@@ -159,7 +166,7 @@ public static class BenefitScorer
                 ScoreEstimateMismatchWarning(warning, node, stmt);
             }
             // Rules that stay null: Scalar UDF (Rule 6, informational reference),
-            // Parallel Skew (Rule 8), Data Type Mismatch (Rule 13),
+            // Data Type Mismatch (Rule 13),
             // Lazy Spool Ineffective (Rule 14), Join OR Clause (Rule 15),
             // Many-to-Many Merge Join (Rule 17), CTE Multiple References (Rule 21),
             // Table Variable (Rule 22), Table-Valued Function (Rule 23),
@@ -278,6 +285,61 @@ public static class BenefitScorer
         {
             // Estimated plan fallback: use operator cost percentage
             var benefit = (double)node.CostPercent;
+            warning.MaxBenefitPercent = Math.Round(Math.Min(100, benefit), 1);
+        }
+    }
+
+    /// <summary>
+    /// Rule 10: Key Lookup / RID Lookup — benefit includes the lookup operator's time,
+    /// plus the parent Nested Loops join when the NL only exists to drive the lookup
+    /// (inner child is the lookup, outer child is a seek/scan with no subtree).
+    /// </summary>
+    private static void ScoreKeyLookupWarning(PlanWarning warning, PlanNode node, PlanStatement stmt)
+    {
+        var stmtMs = stmt.QueryTimeStats?.ElapsedTimeMs ?? 0;
+
+        if (node.HasActualStats && stmtMs > 0)
+        {
+            var operatorMs = PlanAnalyzer.GetOperatorOwnElapsedMs(node);
+
+            // Check if the parent NL join is purely a lookup driver:
+            // - Parent is Nested Loops
+            // - Has exactly 2 children
+            // - This node (the lookup) is the inner child (index 1)
+            // - The outer child (index 0) is a simple seek/scan with no children
+            var parent = node.Parent;
+            if (parent != null
+                && parent.PhysicalOp == "Nested Loops"
+                && parent.Children.Count == 2
+                && parent.Children[1] == node
+                && parent.Children[0].Children.Count == 0)
+            {
+                operatorMs += PlanAnalyzer.GetOperatorOwnElapsedMs(parent);
+            }
+
+            if (operatorMs > 0)
+            {
+                var benefit = (double)operatorMs / stmtMs * 100;
+                warning.MaxBenefitPercent = Math.Round(Math.Min(100, benefit), 1);
+            }
+            else
+            {
+                warning.MaxBenefitPercent = 0;
+            }
+        }
+        else if (!node.HasActualStats && stmt.StatementSubTreeCost > 0)
+        {
+            var benefit = (double)node.CostPercent;
+            // Same parent-NL logic for estimated plans
+            var parent = node.Parent;
+            if (parent != null
+                && parent.PhysicalOp == "Nested Loops"
+                && parent.Children.Count == 2
+                && parent.Children[1] == node
+                && parent.Children[0].Children.Count == 0)
+            {
+                benefit += parent.CostPercent;
+            }
             warning.MaxBenefitPercent = Math.Round(Math.Min(100, benefit), 1);
         }
     }
