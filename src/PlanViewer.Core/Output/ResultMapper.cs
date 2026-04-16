@@ -271,7 +271,7 @@ public static class ResultMapper
                 Type = w.WarningType,
                 Severity = w.Severity.ToString(),
                 Message = w.Message,
-                Operator = $"{node.PhysicalOp} (Node {node.NodeId})",
+                Operator = FormatOperatorLabel(node),
                 NodeId = node.NodeId,
                 MaxBenefitPercent = w.MaxBenefitPercent,
                 ActionableFix = w.ActionableFix
@@ -315,5 +315,23 @@ public static class ResultMapper
         warnings.AddRange(node.Warnings);
         foreach (var child in node.Children)
             CollectNodeWarnings(child, warnings);
+    }
+
+    /// <summary>
+    /// Formats an operator label for the Operator field on warnings.
+    /// Includes object name for data access operators (scans, seeks, lookups)
+    /// where it helps identify which table/index is involved.
+    /// </summary>
+    private static string FormatOperatorLabel(PlanNode node)
+    {
+        if (!string.IsNullOrEmpty(node.ObjectName))
+        {
+            var objRef = !string.IsNullOrEmpty(node.DatabaseName)
+                ? $"{node.DatabaseName}.{node.ObjectName}"
+                : node.ObjectName;
+            return $"{node.PhysicalOp} on {objRef} (Node {node.NodeId})";
+        }
+
+        return $"{node.PhysicalOp} (Node {node.NodeId})";
     }
 }

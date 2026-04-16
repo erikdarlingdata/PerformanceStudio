@@ -272,16 +272,24 @@ public static class PlanAnalyzer
                 });
             }
 
-            // Large memory grant with sort/hash guidance
+            // Large memory grant with top consumers
             if (grant.GrantedMemoryKB >= 1048576 && stmt.RootNode != null)
             {
                 var consumers = new List<string>();
                 FindMemoryConsumers(stmt.RootNode, consumers);
 
                 var grantMB = grant.GrantedMemoryKB / 1024.0;
-                var guidance = consumers.Count > 0
-                    ? $" Memory consumers: {string.Join(", ", consumers)}. Check whether these operators are processing more rows than necessary."
-                    : "";
+                var guidance = "";
+                if (consumers.Count > 0)
+                {
+                    // Show only the top 3 consumers — listing 20+ is noise
+                    var shown = consumers.Take(3);
+                    var remaining = consumers.Count - 3;
+                    guidance = $" Largest consumers: {string.Join(", ", shown)}";
+                    if (remaining > 0)
+                        guidance += $", and {remaining} more";
+                    guidance += ".";
+                }
 
                 stmt.PlanWarnings.Add(new PlanWarning
                 {
@@ -753,6 +761,11 @@ public static class PlanAnalyzer
                         message += " Batch mode sorts produce all output rows on a single thread by design, unless feeding a batch mode Window Aggregate.";
                         severity = PlanWarningSeverity.Info;
                     }
+                    else
+                    {
+                        // Add practical context — skew is often hard to fix
+                        message += " Common causes: uneven data distribution across partitions or hash buckets, or a scan/seek whose predicate sends most rows to one range. Reducing DOP or rewriting the query to avoid the skewed operation may help.";
+                    }
 
                     node.Warnings.Add(new PlanWarning
                     {
@@ -779,12 +792,29 @@ public static class PlanAnalyzer
                 Severity = PlanWarningSeverity.Warning
             });
         }
-        else if (!cfg.IsRuleDisabled(10) && node.Lookup && !string.IsNullOrEmpty(node.Predicate))
+        else if (!cfg.IsRuleDisabled(10) && node.Lookup)
         {
+            var lookupMsg = "Key Lookup — SQL Server found rows via a nonclustered index but had to go back to the clustered index for additional columns.";
+
+            // Show what columns the lookup is fetching
+            if (!string.IsNullOrEmpty(node.OutputColumns))
+                lookupMsg += $"\nColumns fetched: {Truncate(node.OutputColumns, 200)}";
+
+            // Only call out the predicate if it actually filters rows
+            if (!string.IsNullOrEmpty(node.Predicate))
+            {
+                var predicateFilters = node.HasActualStats && node.ActualExecutions > 0
+                    && node.ActualRows < node.ActualExecutions;
+                if (predicateFilters)
+                    lookupMsg += $"\nResidual predicate (filtered {node.ActualExecutions - node.ActualRows:N0} rows): {Truncate(node.Predicate, 200)}";
+            }
+
+            lookupMsg += "\nTo eliminate the lookup, consider adding the needed columns as INCLUDE columns on the nonclustered index. This widens the index, so weigh the read benefit against write and storage overhead.";
+
             node.Warnings.Add(new PlanWarning
             {
                 WarningType = "Key Lookup",
-                Message = $"Key Lookup — SQL Server found rows via a nonclustered index but had to go back to the clustered index for additional columns. Alter the nonclustered index to add the predicate column as a key column or as an INCLUDE column.\nPredicate: {Truncate(node.Predicate, 200)}",
+                Message = lookupMsg,
                 Severity = PlanWarningSeverity.Critical
             });
         }
@@ -1123,7 +1153,7 @@ public static class PlanAnalyzer
                     node.Warnings.Add(new PlanWarning
                     {
                         WarningType = "Top Above Scan",
-                        Message = $"{topLabel} reads from {scanCandidate.PhysicalOp} (Node {scanCandidate.NodeId}).{innerNote}{predInfo} An index on the ORDER BY columns could eliminate the scan and sort entirely.",
+                        Message = $"{topLabel} reads from {FormatNodeRef(scanCandidate)}.{innerNote}{predInfo} An index on the ORDER BY columns could eliminate the scan and sort entirely.",
                         Severity = onInner ? PlanWarningSeverity.Critical : PlanWarningSeverity.Warning
                     });
                 }
@@ -1155,10 +1185,13 @@ public static class PlanAnalyzer
 
                 if (!rowGoalWorked)
                 {
+                    // Try to identify the specific row goal cause from the statement text
+                    var cause = IdentifyRowGoalCause(stmt.StatementText);
+
                     node.Warnings.Add(new PlanWarning
                     {
                         WarningType = "Row Goal",
-                        Message = $"Row goal active: estimate reduced from {node.EstimateRowsWithoutRowGoal:N0} to {node.EstimateRows:N0} ({reduction:N0}x reduction) due to TOP, EXISTS, IN, or FAST hint. The optimizer chose this plan shape expecting to stop reading early. If the query reads all rows anyway, the plan choice may be suboptimal.",
+                        Message = $"Row goal active: estimate reduced from {node.EstimateRowsWithoutRowGoal:N0} to {node.EstimateRows:N0} ({reduction:N0}x reduction) due to {cause}. The optimizer chose this plan shape expecting to stop reading early. If the query reads all rows anyway, the plan choice may be suboptimal.",
                         Severity = PlanWarningSeverity.Info
                     });
                 }
@@ -1444,24 +1477,36 @@ public static class PlanAnalyzer
     /// </summary>
     private static void FindMemoryConsumers(PlanNode node, List<string> consumers)
     {
+        // Collect all consumers first, then sort by row count descending
+        var raw = new List<(string Label, double Rows)>();
+        FindMemoryConsumersRecursive(node, raw);
+
+        foreach (var (label, _) in raw.OrderByDescending(c => c.Rows))
+            consumers.Add(label);
+    }
+
+    private static void FindMemoryConsumersRecursive(PlanNode node, List<(string Label, double Rows)> consumers)
+    {
         if (node.PhysicalOp.Contains("Sort", StringComparison.OrdinalIgnoreCase) &&
             !node.PhysicalOp.Contains("Spool", StringComparison.OrdinalIgnoreCase))
         {
+            var rowCount = node.HasActualStats ? node.ActualRows : node.EstimateRows;
             var rows = node.HasActualStats
                 ? $"{node.ActualRows:N0} actual rows"
                 : $"{node.EstimateRows:N0} estimated rows";
-            consumers.Add($"Sort (Node {node.NodeId}, {rows})");
+            consumers.Add(($"Sort (Node {node.NodeId}, {rows})", rowCount));
         }
         else if (node.PhysicalOp.Contains("Hash", StringComparison.OrdinalIgnoreCase))
         {
+            var rowCount = node.HasActualStats ? node.ActualRows : node.EstimateRows;
             var rows = node.HasActualStats
                 ? $"{node.ActualRows:N0} actual rows"
                 : $"{node.EstimateRows:N0} estimated rows";
-            consumers.Add($"Hash Match (Node {node.NodeId}, {rows})");
+            consumers.Add(($"Hash Match (Node {node.NodeId}, {rows})", rowCount));
         }
 
         foreach (var child in node.Children)
-            FindMemoryConsumers(child, consumers);
+            FindMemoryConsumersRecursive(child, consumers);
     }
 
     /// <summary>
@@ -1938,6 +1983,50 @@ public static class PlanAnalyzer
     private static bool HasSpillWarning(PlanNode node)
     {
         return node.Warnings.Any(w => w.SpillDetails != null);
+    }
+
+    /// <summary>
+    /// Formats a node reference for use in warning messages. Includes object name
+    /// for data access operators where it helps identify which table is involved.
+    /// </summary>
+    private static string FormatNodeRef(PlanNode node)
+    {
+        if (!string.IsNullOrEmpty(node.ObjectName))
+        {
+            var objRef = !string.IsNullOrEmpty(node.DatabaseName)
+                ? $"{node.DatabaseName}.{node.ObjectName}"
+                : node.ObjectName;
+            return $"{node.PhysicalOp} on {objRef} (Node {node.NodeId})";
+        }
+
+        return $"{node.PhysicalOp} (Node {node.NodeId})";
+    }
+
+    /// <summary>
+    /// Identifies the specific cause of a row goal from the statement text.
+    /// Returns a specific cause when detectable, or a generic list as fallback.
+    /// </summary>
+    private static string IdentifyRowGoalCause(string stmtText)
+    {
+        if (string.IsNullOrEmpty(stmtText))
+            return "TOP, EXISTS, IN, or FAST hint";
+
+        var text = stmtText.ToUpperInvariant();
+        var causes = new List<string>(4);
+
+        if (Regex.IsMatch(text, @"\bTOP\b"))
+            causes.Add("TOP");
+        if (Regex.IsMatch(text, @"\bEXISTS\b"))
+            causes.Add("EXISTS");
+        // IN with subquery — bare "IN (" followed by SELECT, not just "IN (1,2,3)"
+        if (Regex.IsMatch(text, @"\bIN\s*\(\s*SELECT\b"))
+            causes.Add("IN (subquery)");
+        if (Regex.IsMatch(text, @"\bFAST\b"))
+            causes.Add("FAST hint");
+
+        return causes.Count > 0
+            ? string.Join(", ", causes)
+            : "TOP, EXISTS, IN, or FAST hint";
     }
 
     private static string Truncate(string value, int maxLength)
