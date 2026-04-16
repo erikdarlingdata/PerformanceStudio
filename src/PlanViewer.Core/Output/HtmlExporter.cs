@@ -300,6 +300,11 @@ pre.query-text, pre.text-output {
         {
             WriteRow(sb, "Elapsed", $"{stmt.QueryTime.ElapsedTimeMs:N0} ms");
             WriteRow(sb, "CPU", $"{stmt.QueryTime.CpuTimeMs:N0} ms");
+            if (stmt.QueryTime.ElapsedTimeMs > 0)
+            {
+                var ratio = (double)stmt.QueryTime.CpuTimeMs / stmt.QueryTime.ElapsedTimeMs;
+                WriteRow(sb, "CPU:Elapsed", ratio.ToString("N2"));
+            }
         }
         if (stmt.DegreeOfParallelism > 0)
             WriteRow(sb, "DOP", stmt.DegreeOfParallelism.ToString());

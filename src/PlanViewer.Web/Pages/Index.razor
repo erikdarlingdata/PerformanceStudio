@@ -160,6 +160,14 @@ else
                         <span class="insight-label">CPU</span>
                         <span class="insight-value">@ActiveStmt!.QueryTime.CpuTimeMs.ToString("N0") ms</span>
                     </div>
+                    @if (ActiveStmt!.QueryTime.ElapsedTimeMs > 0)
+                    {
+                        var ratio = (double)ActiveStmt!.QueryTime.CpuTimeMs / ActiveStmt!.QueryTime.ElapsedTimeMs;
+                        <div class="insight-row">
+                            <span class="insight-label">CPU:Elapsed</span>
+                            <span class="insight-value">@ratio.ToString("N2")</span>
+                        </div>
+                    }
                 }
                 @if (ActiveStmt!.DegreeOfParallelism > 0)
                 {

@@ -49,24 +49,6 @@ public static class BenefitScorer
         {
             switch (warning.WarningType)
             {
-                case "Ineffective Parallelism":   // Rule 25
-                case "Parallel Wait Bottleneck":  // Rule 31
-                    // These are meta-findings about parallelism efficiency.
-                    // The benefit is the gap between actual and ideal elapsed time.
-                    if (elapsedMs > 0 && stmt.QueryTimeStats != null)
-                    {
-                        var cpu = stmt.QueryTimeStats.CpuTimeMs;
-                        var dop = stmt.DegreeOfParallelism;
-                        if (dop > 1 && cpu > 0)
-                        {
-                            // Ideal elapsed = CPU / DOP. Benefit = (actual - ideal) / actual
-                            var idealElapsed = (double)cpu / dop;
-                            var benefit = Math.Max(0, (elapsedMs - idealElapsed) / elapsedMs * 100);
-                            warning.MaxBenefitPercent = Math.Min(100, Math.Round(benefit, 1));
-                        }
-                    }
-                    break;
-
                 case "Serial Plan": // Rule 3
                     // Can't know how fast a parallel plan would be, but estimate:
                     // CPU-bound: benefit up to (1 - 1/maxDOP) * 100%
