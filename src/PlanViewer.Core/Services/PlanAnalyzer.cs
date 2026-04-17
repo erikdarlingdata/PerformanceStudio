@@ -905,6 +905,40 @@ public static class PlanAnalyzer
             }
         }
 
+        // Rule 34: Bare scan with narrow output — NC index or columnstore candidate.
+        // When a Clustered Index Scan or heap Table Scan reads the full table with no
+        // predicate but only outputs a few columns, a narrower nonclustered index could
+        // cover the query with far less I/O. For analytical workloads, columnstore may
+        // be a better fit.
+        var isBareScanCandidate = (node.PhysicalOp == "Clustered Index Scan" || node.PhysicalOp == "Table Scan")
+            && !node.Lookup
+            && string.IsNullOrEmpty(node.Predicate)
+            && !string.IsNullOrEmpty(node.OutputColumns);
+        if (!cfg.IsRuleDisabled(34) && isBareScanCandidate)
+        {
+            var colCount = node.OutputColumns!.Split(',').Length;
+            var isSignificant = node.HasActualStats
+                ? GetOperatorOwnElapsedMs(node) > 0
+                : node.CostPercent >= 20;
+
+            if (colCount <= 3 && isSignificant)
+            {
+                var scanKind = node.PhysicalOp == "Clustered Index Scan"
+                    ? "Clustered index scan"
+                    : "Heap table scan";
+                var indexAdvice = node.PhysicalOp == "Clustered Index Scan"
+                    ? "Consider a nonclustered index on the output columns (as key or INCLUDE) so SQL Server can read a narrower structure."
+                    : "Consider a clustered or nonclustered index on the output columns so SQL Server can read a narrower structure.";
+
+                node.Warnings.Add(new PlanWarning
+                {
+                    WarningType = "Bare Scan",
+                    Message = $"{scanKind} reads the full table with no predicate, outputting {colCount} column(s): {Truncate(node.OutputColumns, 200)}. {indexAdvice} For analytical workloads, a columnstore index may be a better fit.",
+                    Severity = PlanWarningSeverity.Warning
+                });
+            }
+        }
+
         // Rule 13: Mismatched data types (GetRangeWithMismatchedTypes / GetRangeThroughConvert)
         if (!cfg.IsRuleDisabled(13) && node.PhysicalOp == "Compute Scalar" && !string.IsNullOrEmpty(node.DefinedValues))
         {
