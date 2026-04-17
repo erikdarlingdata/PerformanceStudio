@@ -2005,4 +2005,29 @@ public partial class QuerySessionControl : UserControl
         var parent = this.VisualRoot;
         return parent as Window ?? throw new InvalidOperationException("No parent window");
     }
+
+    private void Format_Click(object? sender, RoutedEventArgs e)
+    {
+        var sql = QueryEditor.Text;
+        if (string.IsNullOrWhiteSpace(sql))
+            return;
+
+        var settings = SqlFormatSettingsService.Load();
+        var (formatted, errors) = SqlFormattingService.Format(sql, settings);
+
+        if (errors != null && errors.Count > 0)
+        {
+            SetStatus($"Format: {errors.Count} parse error(s) — {errors[0].Message}");
+            return;
+        }
+
+        QueryEditor.Text = formatted;
+        SetStatus("Formatted");
+    }
+
+    private void FormatOptions_Click(object? sender, RoutedEventArgs e)
+    {
+        var dialog = new Dialogs.FormatOptionsWindow();
+        dialog.ShowDialog(GetParentWindow());
+    }
 }

@@ -1,0 +1,41 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:dialogs="using:PlanViewer.App.Dialogs"
+        x:Class="PlanViewer.App.Dialogs.FormatOptionsWindow"
+        Title="SQL Format Options"
+        Width="620" Height="550"
+        MinWidth="500" MinHeight="400"
+        Background="#1A1D23"
+        Foreground="#E4E6EB"
+        WindowStartupLocation="CenterOwner">
+    <Grid RowDefinitions="*,Auto" Margin="12">
+        <DataGrid x:Name="OptionsGrid" Grid.Row="0"
+                  x:DataType="dialogs:FormatOptionRow"
+                  AutoGenerateColumns="False"
+                  CanUserReorderColumns="False"
+                  CanUserSortColumns="False"
+                  HeadersVisibility="Column"
+                  GridLinesVisibility="Horizontal"
+                  IsReadOnly="False"
+                  Background="#1A1D23"
+                  Foreground="#E4E6EB"
+                  Margin="0,0,0,12">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="Parameter" Binding="{Binding Name}" IsReadOnly="True" Width="2*"/>
+                <DataGridTextColumn Header="Current Value" Binding="{Binding CurrentValue}" Width="*"/>
+                <DataGridTextColumn Header="Default Value" Binding="{Binding DefaultValue}" IsReadOnly="True" Width="*"/>
+            </DataGrid.Columns>
+        </DataGrid>
+        <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+            <Button x:Name="RevertButton" Content="Revert to Default" Click="Revert_Click"
+                    Height="32" Padding="16,0" FontSize="12"
+                    Theme="{StaticResource AppButton}"/>
+            <Button x:Name="SaveButton" Content="Save" Click="Save_Click"
+                    Height="32" Padding="16,0" FontSize="12"
+                    Theme="{StaticResource AppButton}"/>
+            <Button x:Name="CloseButton" Content="Close" Click="Close_Click"
+                    Height="32" Padding="16,0" FontSize="12"
+                    Theme="{StaticResource AppButton}"/>
+        </StackPanel>
+    </Grid>
+</Window>
