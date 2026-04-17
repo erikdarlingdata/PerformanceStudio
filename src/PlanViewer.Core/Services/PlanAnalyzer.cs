@@ -212,7 +212,7 @@ public static class PlanAnalyzer
                     stmt.PlanWarnings.Add(new PlanWarning
                     {
                         WarningType = "Serial Plan",
-                        Message = $"Query running serially: {reason}.",
+                        Message = "Query running serially: MAXDOP is set to 1 using a query hint.",
                         Severity = PlanWarningSeverity.Warning
                     });
                 }
@@ -624,7 +624,13 @@ public static class PlanAnalyzer
         }
 
         // Rule 6: Scalar UDF references (works on estimated plans too)
-        if (!cfg.IsRuleDisabled(6))
+        // Suppress when Serial Plan warning is already firing for a UDF-related reason —
+        // the Serial Plan warning already explains the issue, this would be redundant.
+        var serialPlanCoversUdf = stmt.NonParallelPlanReason is
+            "TSQLUserDefinedFunctionsNotParallelizable"
+            or "CLRUserDefinedFunctionRequiresDataAccess"
+            or "CouldNotGenerateValidParallelPlan";
+        if (!cfg.IsRuleDisabled(6) && !serialPlanCoversUdf)
         foreach (var udf in node.ScalarUdfs)
         {
             var type = udf.IsClrFunction ? "CLR" : "T-SQL";
