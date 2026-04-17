@@ -74,8 +74,6 @@ public partial class QuerySessionControl : UserControl
             QueryEditor.TextArea.Focus();
         };
 
-        DetachedFromVisualTree += (_, _) => _textMateInstallation?.Dispose();
-
         // Focus the editor when the Editor tab is selected; toggle plan-dependent buttons
         SubTabControl.SelectionChanged += (_, _) =>
         {
