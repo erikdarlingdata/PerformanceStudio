@@ -30,12 +30,21 @@ public partial class FormatOptionsWindow : Window
         {
             var currentVal = prop.GetValue(current);
             var defaultVal = prop.GetValue(_defaults);
+            var isBool = prop.PropertyType == typeof(bool);
+
+            string[]? choiceOptions = null;
+            if (prop.Name == "KeywordCasing")
+                choiceOptions = ["Uppercase", "Lowercase", "PascalCase"];
 
             _rows.Add(new FormatOptionRow
             {
                 Name = prop.Name,
                 CurrentValue = currentVal?.ToString() ?? "",
                 DefaultValue = defaultVal?.ToString() ?? "",
+                IsBool = isBool,
+                BoolValue = isBool && currentVal is true,
+                DefaultBoolValue = isBool && defaultVal is true,
+                ChoiceOptions = choiceOptions,
                 PropertyInfo = prop
             });
         }
@@ -55,7 +64,7 @@ public partial class FormatOptionsWindow : Window
                 object? value;
 
                 if (prop.PropertyType == typeof(bool))
-                    value = bool.Parse(row.CurrentValue);
+                    value = row.BoolValue;
                 else if (prop.PropertyType == typeof(int))
                     value = int.Parse(row.CurrentValue);
                 else
@@ -70,6 +79,7 @@ public partial class FormatOptionsWindow : Window
         }
 
         SqlFormatSettingsService.Save(settings);
+        Close();
     }
 
     private void Revert_Click(object? sender, RoutedEventArgs e)
@@ -77,9 +87,10 @@ public partial class FormatOptionsWindow : Window
         foreach (var row in _rows)
         {
             row.CurrentValue = row.DefaultValue;
+            if (row.IsBool)
+                row.BoolValue = row.DefaultBoolValue;
         }
 
-        // Refresh the grid
         OptionsGrid.ItemsSource = null;
         OptionsGrid.ItemsSource = _rows;
     }
@@ -93,8 +104,35 @@ public partial class FormatOptionsWindow : Window
 public class FormatOptionRow : INotifyPropertyChanged
 {
     private string _currentValue = "";
+    private bool _boolValue;
 
     public string Name { get; set; } = "";
+
+    public bool IsBool { get; set; }
+
+    public bool BoolValue
+    {
+        get => _boolValue;
+        set
+        {
+            _boolValue = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(BoolValue)));
+            // Keep CurrentValue in sync for serialization
+            if (IsBool)
+            {
+                _currentValue = value.ToString();
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CurrentValue)));
+            }
+        }
+    }
+
+    public bool DefaultBoolValue { get; set; }
+
+    public string[]? ChoiceOptions { get; set; }
+
+    public bool IsChoice => ChoiceOptions != null;
+
+    public bool IsText => !IsBool && !IsChoice;
 
     public string CurrentValue
     {
