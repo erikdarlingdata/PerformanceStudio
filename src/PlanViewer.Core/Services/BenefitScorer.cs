@@ -50,25 +50,17 @@ public static class BenefitScorer
             switch (warning.WarningType)
             {
                 case "Serial Plan": // Rule 3
-                    // Can't know how fast a parallel plan would be, but estimate:
-                    // CPU-bound: benefit up to (1 - 1/maxDOP) * 100%
-                    if (elapsedMs > 0 && stmt.QueryTimeStats != null)
+                    // Per Joe's formula: (cpu * (DOP - 1) / DOP) / elapsed * 100
+                    // Assumes DOP 4 when the plan doesn't tell us. No benefit when cost < 1
+                    // (trivial plans don't gain from parallelism).
+                    if (elapsedMs > 0 && stmt.QueryTimeStats != null && stmt.StatementSubTreeCost >= 1.0)
                     {
                         var cpu = stmt.QueryTimeStats.CpuTimeMs;
-                        // Assume server max DOP — use a conservative 4 if unknown
                         var potentialDop = 4;
-                        if (cpu >= elapsedMs)
+                        if (cpu > 0)
                         {
-                            // CPU-bound: parallelism could help significantly
-                            var benefit = (1.0 - 1.0 / potentialDop) * 100;
-                            warning.MaxBenefitPercent = Math.Round(benefit, 1);
-                        }
-                        else
-                        {
-                            // Not CPU-bound: parallelism helps less
-                            var cpuRatio = (double)cpu / elapsedMs;
-                            var benefit = cpuRatio * (1.0 - 1.0 / potentialDop) * 100;
-                            warning.MaxBenefitPercent = Math.Round(Math.Min(50, benefit), 1);
+                            var benefit = ((double)cpu * (potentialDop - 1) / potentialDop) / elapsedMs * 100;
+                            warning.MaxBenefitPercent = Math.Round(Math.Min(100, benefit), 1);
                         }
                     }
                     break;

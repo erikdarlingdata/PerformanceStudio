@@ -212,7 +212,7 @@ public static class PlanAnalyzer
                     stmt.PlanWarnings.Add(new PlanWarning
                     {
                         WarningType = "Serial Plan",
-                        Message = $"Query running serially: {reason}.",
+                        Message = "Query running serially: MAXDOP is set to 1 using a query hint.",
                         Severity = PlanWarningSeverity.Warning
                     });
                 }
@@ -252,10 +252,17 @@ public static class PlanAnalyzer
                 {
                     var grantMB = grant.GrantedMemoryKB / 1024.0;
                     var usedMB = grant.MaxUsedMemoryKB / 1024.0;
+                    var message = $"Granted {grantMB:N0} MB but only used {usedMB:N0} MB ({wasteRatio:F0}x overestimate). The unused memory is reserved and unavailable to other queries.";
+
+                    // Note adaptive joins that chose Nested Loops at runtime — the grant
+                    // was sized for a hash join that never happened.
+                    if (stmt.RootNode != null && HasAdaptiveJoinChoseNestedLoop(stmt.RootNode))
+                        message += " An adaptive join in this plan executed as a Nested Loop at runtime — the memory grant was sized for the hash join alternative that wasn't used.";
+
                     stmt.PlanWarnings.Add(new PlanWarning
                     {
                         WarningType = "Excessive Memory Grant",
-                        Message = $"Granted {grantMB:N0} MB but only used {usedMB:N0} MB ({wasteRatio:F0}x overestimate). The unused memory is reserved and unavailable to other queries.",
+                        Message = message,
                         Severity = PlanWarningSeverity.Warning
                     });
                 }
@@ -624,7 +631,13 @@ public static class PlanAnalyzer
         }
 
         // Rule 6: Scalar UDF references (works on estimated plans too)
-        if (!cfg.IsRuleDisabled(6))
+        // Suppress when Serial Plan warning is already firing for a UDF-related reason —
+        // the Serial Plan warning already explains the issue, this would be redundant.
+        var serialPlanCoversUdf = stmt.NonParallelPlanReason is
+            "TSQLUserDefinedFunctionsNotParallelizable"
+            or "CLRUserDefinedFunctionRequiresDataAccess"
+            or "CouldNotGenerateValidParallelPlan";
+        if (!cfg.IsRuleDisabled(6) && !serialPlanCoversUdf)
         foreach (var udf in node.ScalarUdfs)
         {
             var type = udf.IsClrFunction ? "CLR" : "T-SQL";
@@ -1431,6 +1444,23 @@ public static class PlanAnalyzer
     /// <summary>
     /// Finds Sort and Hash Match operators in the tree that consume memory.
     /// </summary>
+    /// <summary>
+    /// Returns true if the plan contains an adaptive join that executed as a Nested Loop.
+    /// Indicates a memory grant was sized for the hash alternative but never needed.
+    /// </summary>
+    private static bool HasAdaptiveJoinChoseNestedLoop(PlanNode node)
+    {
+        if (node.IsAdaptive && node.ActualJoinType != null
+            && node.ActualJoinType.Contains("Nested", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        foreach (var child in node.Children)
+            if (HasAdaptiveJoinChoseNestedLoop(child))
+                return true;
+
+        return false;
+    }
+
     private static void FindMemoryConsumers(PlanNode node, List<string> consumers)
     {
         // Collect all consumers first, then sort by row count descending

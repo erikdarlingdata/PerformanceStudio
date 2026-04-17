@@ -94,13 +94,18 @@ public class PlanAnalyzerTests
     // ---------------------------------------------------------------
 
     [Fact]
-    public void Rule06_ScalarUdfReference_DetectsUdfInPlan()
+    public void Rule06_ScalarUdfReference_SuppressedWhenSerialPlanCoversIt()
     {
+        // The udf_plan has NonParallelPlanReason = TSQLUserDefinedFunctionsNotParallelizable,
+        // so the Serial Plan warning already explains why the plan is serial and Rule 6
+        // would be redundant (per Joe's b6 feedback on #215).
         var plan = PlanTestHelper.LoadAndAnalyze("udf_plan.sqlplan");
-        var warnings = PlanTestHelper.WarningsOfType(plan, "Scalar UDF");
+        var udfWarnings = PlanTestHelper.WarningsOfType(plan, "Scalar UDF");
+        var serialWarnings = PlanTestHelper.WarningsOfType(plan, "Serial Plan");
 
-        Assert.NotEmpty(warnings);
-        Assert.Contains(warnings, w => w.Message.Contains("once per row"));
+        Assert.Empty(udfWarnings);
+        Assert.NotEmpty(serialWarnings);
+        Assert.Contains(serialWarnings, w => w.Message.Contains("UDF"));
     }
 
     // ---------------------------------------------------------------
