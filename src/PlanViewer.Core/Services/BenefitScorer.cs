@@ -22,6 +22,7 @@ public static class BenefitScorer
         "Scan With Predicate",  // Rule 11
         "Non-SARGable Predicate", // Rule 12
         "Scan Cardinality Misestimate", // Rule 32
+        "Bare Scan",            // Rule 34
     };
 
     public static void Score(ParsedPlan plan)
