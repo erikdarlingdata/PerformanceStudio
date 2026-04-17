@@ -2021,7 +2021,15 @@ public partial class QuerySessionControl : UserControl
             return;
         }
 
-        QueryEditor.Text = formatted;
+        QueryEditor.Document.BeginUpdate();
+        try
+        {
+            QueryEditor.Document.Replace(0, QueryEditor.Document.TextLength, formatted);
+        }
+        finally
+        {
+            QueryEditor.Document.EndUpdate();
+        }
         SetStatus("Formatted");
     }
 
