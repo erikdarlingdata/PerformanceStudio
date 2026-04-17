@@ -68,10 +68,21 @@ public partial class QuerySessionControl : UserControl
         QueryEditor.TextArea.TextEntered += OnTextEntered;
 
         // Focus the editor when the control is attached to the visual tree
+        // Re-install TextMate if it was disposed on detach (tab switching disposes it)
         AttachedToVisualTree += (_, _) =>
         {
+            if (_textMateInstallation == null)
+                SetupSyntaxHighlighting();
+
             QueryEditor.Focus();
             QueryEditor.TextArea.Focus();
+        };
+
+        // Dispose TextMate when detached (e.g. tab switch) to release renderers/transformers
+        DetachedFromVisualTree += (_, _) =>
+        {
+            _textMateInstallation?.Dispose();
+            _textMateInstallation = null;
         };
 
         // Focus the editor when the Editor tab is selected; toggle plan-dependent buttons
