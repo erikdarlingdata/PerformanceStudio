@@ -2022,7 +2022,41 @@ public partial class QuerySessionControl : UserControl
 
             if (errors != null && errors.Count > 0)
             {
-                SetStatus($"Format: {errors.Count} parse warning(s) — {errors[0].Message}");
+                var errorMessages = string.Join("\n", errors.Select(err => $"Line {err.Line}: {err.Message}"));
+                var dialog = new Window
+                {
+                    Title = "SQL Format Error",
+                    Width = 500,
+                    Height = 250,
+                    WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                    Icon = GetParentWindow().Icon,
+                    Background = new SolidColorBrush(Color.Parse("#1A1D23")),
+                    Foreground = new SolidColorBrush(Color.Parse("#E4E6EB")),
+                    Content = new StackPanel
+                    {
+                        Margin = new Avalonia.Thickness(20),
+                        Children =
+                        {
+                            new TextBlock
+                            {
+                                Text = $"Could not format: {errors.Count} parse error(s)",
+                                FontWeight = Avalonia.Media.FontWeight.Bold,
+                                FontSize = 14,
+                                Margin = new Avalonia.Thickness(0, 0, 0, 10)
+                            },
+                            new TextBlock
+                            {
+                                Text = errorMessages,
+                                TextWrapping = TextWrapping.Wrap,
+                                FontSize = 12,
+                                Foreground = new SolidColorBrush(Color.Parse("#E4E6EB"))
+                            }
+                        }
+                    }
+                };
+                dialog.ShowDialog(GetParentWindow());
+                SetStatus($"Format failed: {errors.Count} error(s)");
+                return;
             }
 
             var caretOffset = QueryEditor.CaretOffset;
@@ -2038,9 +2072,7 @@ public partial class QuerySessionControl : UserControl
             }
 
             QueryEditor.CaretOffset = Math.Min(caretOffset, QueryEditor.Document.TextLength);
-
-            if (errors == null || errors.Count == 0)
-                SetStatus("Formatted");
+            SetStatus("Formatted");
         }
         finally
         {
