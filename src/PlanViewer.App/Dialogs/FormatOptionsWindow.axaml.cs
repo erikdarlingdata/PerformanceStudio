@@ -1,7 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Linq;
 using System.Reflection;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
@@ -20,20 +22,48 @@ public partial class FormatOptionsWindow : Window
         LoadSettings();
     }
 
+    // Explicit ordering — reflection doesn't guarantee declaration order
+    private static readonly string[] PropertyOrder =
+    [
+        "KeywordCasing", "SqlVersion", "IndentationSize",
+        "AlignClauseBodies", "AlignColumnDefinitionFields", "AlignSetClauseItem",
+        "AsKeywordOnOwnLine", "IncludeSemicolons",
+        "IndentSetClause", "IndentViewBody",
+        "MultilineInsertSourcesList", "MultilineInsertTargetsList",
+        "MultilineSelectElementsList", "MultilineSetClauseItems",
+        "MultilineViewColumnsList", "MultilineWherePredicatesList",
+        "NewLineBeforeCloseParenthesisInMultilineList",
+        "NewLineBeforeFromClause", "NewLineBeforeGroupByClause",
+        "NewLineBeforeHavingClause", "NewLineBeforeJoinClause",
+        "NewLineBeforeOffsetClause", "NewLineBeforeOpenParenthesisInMultilineList",
+        "NewLineBeforeOrderByClause", "NewLineBeforeOutputClause",
+        "NewLineBeforeWhereClause", "NewLineBeforeWindowClause",
+    ];
+
+    private static readonly Dictionary<string, string[]> ChoiceOptionsMap = new()
+    {
+        ["KeywordCasing"] = ["Uppercase", "Lowercase", "PascalCase"],
+        ["SqlVersion"] = ["80", "90", "100", "110", "120", "130", "140", "150", "160", "170"],
+    };
+
     private void LoadSettings()
     {
         var current = SqlFormatSettingsService.Load();
         _rows.Clear();
 
-        foreach (var prop in typeof(SqlFormatSettings).GetProperties(BindingFlags.Public | BindingFlags.Instance))
+        var props = typeof(SqlFormatSettings).GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .ToDictionary(p => p.Name);
+
+        foreach (var name in PropertyOrder)
         {
+            if (!props.TryGetValue(name, out var prop))
+                continue;
+
             var currentVal = prop.GetValue(current);
             var defaultVal = prop.GetValue(_defaults);
             var isBool = prop.PropertyType == typeof(bool);
 
-            string[]? choiceOptions = null;
-            if (prop.Name == "KeywordCasing")
-                choiceOptions = ["Uppercase", "Lowercase", "PascalCase"];
+            ChoiceOptionsMap.TryGetValue(prop.Name, out var choiceOptions);
 
             _rows.Add(new FormatOptionRow
             {

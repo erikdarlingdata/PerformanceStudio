@@ -2006,34 +2006,46 @@ public partial class QuerySessionControl : UserControl
         return parent as Window ?? throw new InvalidOperationException("No parent window");
     }
 
-    private void Format_Click(object? sender, RoutedEventArgs e)
+    private async void Format_Click(object? sender, RoutedEventArgs e)
     {
         var sql = QueryEditor.Text;
         if (string.IsNullOrWhiteSpace(sql))
             return;
 
-        var settings = SqlFormatSettingsService.Load();
-        var (formatted, errors) = SqlFormattingService.Format(sql, settings);
+        FormatButton.IsEnabled = false;
+        SetStatus("Formatting...");
 
-        if (errors != null && errors.Count > 0)
-        {
-            SetStatus($"Format: {errors.Count} parse warning(s) — {errors[0].Message}");
-        }
-
-        var caretOffset = QueryEditor.CaretOffset;
-
-        QueryEditor.Document.BeginUpdate();
         try
         {
-            QueryEditor.Document.Replace(0, QueryEditor.Document.TextLength, formatted);
+            var settings = SqlFormatSettingsService.Load();
+            var (formatted, errors) = await Task.Run(() => SqlFormattingService.Format(sql, settings));
+
+            if (errors != null && errors.Count > 0)
+            {
+                SetStatus($"Format: {errors.Count} parse warning(s) — {errors[0].Message}");
+            }
+
+            var caretOffset = QueryEditor.CaretOffset;
+
+            QueryEditor.Document.BeginUpdate();
+            try
+            {
+                QueryEditor.Document.Replace(0, QueryEditor.Document.TextLength, formatted);
+            }
+            finally
+            {
+                QueryEditor.Document.EndUpdate();
+            }
+
+            QueryEditor.CaretOffset = Math.Min(caretOffset, QueryEditor.Document.TextLength);
+
+            if (errors == null || errors.Count == 0)
+                SetStatus("Formatted");
         }
         finally
         {
-            QueryEditor.Document.EndUpdate();
+            FormatButton.IsEnabled = true;
         }
-
-        QueryEditor.CaretOffset = Math.Min(caretOffset, QueryEditor.Document.TextLength);
-        SetStatus("Formatted");
     }
 
     private void FormatOptions_Click(object? sender, RoutedEventArgs e)
