@@ -209,8 +209,8 @@
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
-                <DataGridTextColumn Header="Last Executed (Local)" Binding="{ReflectionBinding LastExecutedLocal}" SortMemberPath="LastExecutedLocal" Width="160"/>
-                <DataGridTemplateColumn Header="Executions" SortMemberPath="ExecsSort" Width="100">
+                <DataGridTextColumn Header="Last Executed" Binding="{ReflectionBinding LastExecutedLocal}" SortMemberPath="LastExecutedLocal" Width="160"/>
+                <DataGridTemplateColumn Header="Executions" SortMemberPath="ExecsSort" Width="105">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate x:DataType="local:QueryStoreRow">
                             <local:BarChartCell DisplayText="{Binding ExecsDisplay}"
@@ -220,7 +220,7 @@
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
-                <DataGridTemplateColumn Header="Total CPU (ms)" SortMemberPath="TotalCpuSort" Width="120">
+                <DataGridTemplateColumn Header="Total CPU (ms)" SortMemberPath="TotalCpuSort" Width="135">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate x:DataType="local:QueryStoreRow">
                             <local:BarChartCell DisplayText="{Binding TotalCpuDisplay}"
@@ -230,7 +230,7 @@
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
-                <DataGridTemplateColumn Header="Avg CPU (ms)" SortMemberPath="AvgCpuSort" Width="110">
+                <DataGridTemplateColumn Header="Avg CPU (ms)" SortMemberPath="AvgCpuSort" Width="120">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate x:DataType="local:QueryStoreRow">
                             <local:BarChartCell DisplayText="{Binding AvgCpuDisplay}"
@@ -240,7 +240,7 @@
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
-                <DataGridTemplateColumn Header="Total Duration (ms)" SortMemberPath="TotalDurSort" Width="150">
+                <DataGridTemplateColumn Header="Total Duration (ms)" SortMemberPath="TotalDurSort" Width="165">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate x:DataType="local:QueryStoreRow">
                             <local:BarChartCell DisplayText="{Binding TotalDurDisplay}"
@@ -250,7 +250,7 @@
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
-                <DataGridTemplateColumn Header="Avg Duration (ms)" SortMemberPath="AvgDurSort" Width="140">
+                <DataGridTemplateColumn Header="Avg Duration (ms)" SortMemberPath="AvgDurSort" Width="155">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate x:DataType="local:QueryStoreRow">
                             <local:BarChartCell DisplayText="{Binding AvgDurDisplay}"
@@ -300,7 +300,7 @@
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
-                <DataGridTemplateColumn Header="Total Physical Reads" SortMemberPath="TotalPhysReadsSort" Width="155">
+                <DataGridTemplateColumn Header="Total Phys Reads" SortMemberPath="TotalPhysReadsSort" Width="140">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate x:DataType="local:QueryStoreRow">
                             <local:BarChartCell DisplayText="{Binding TotalPhysReadsDisplay}"
@@ -310,7 +310,7 @@
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
-                <DataGridTemplateColumn Header="Avg Physical Reads" SortMemberPath="AvgPhysReadsSort" Width="140">
+                <DataGridTemplateColumn Header="Avg Phys Reads" SortMemberPath="AvgPhysReadsSort" Width="130">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate x:DataType="local:QueryStoreRow">
                             <local:BarChartCell DisplayText="{Binding AvgPhysReadsDisplay}"
@@ -320,7 +320,7 @@
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
-                <DataGridTemplateColumn Header="Total Memory (MB)" SortMemberPath="TotalMemSort" Width="140">
+                <DataGridTemplateColumn Header="Total Memory (MB)" SortMemberPath="TotalMemSort" Width="155">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate x:DataType="local:QueryStoreRow">
                             <local:BarChartCell DisplayText="{Binding TotalMemDisplay}"
@@ -330,7 +330,7 @@
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
-                <DataGridTemplateColumn Header="Avg Memory (MB)" SortMemberPath="AvgMemSort" Width="130">
+                <DataGridTemplateColumn Header="Avg Memory (MB)" SortMemberPath="AvgMemSort" Width="145">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate x:DataType="local:QueryStoreRow">
                             <local:BarChartCell DisplayText="{Binding AvgMemDisplay}"
