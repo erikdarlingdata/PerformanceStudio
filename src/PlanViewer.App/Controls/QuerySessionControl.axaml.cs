@@ -2030,8 +2030,8 @@ public partial class QuerySessionControl : UserControl
                     Height = 250,
                     WindowStartupLocation = WindowStartupLocation.CenterOwner,
                     Icon = GetParentWindow().Icon,
-                    Background = new SolidColorBrush(Color.Parse("#1A1D23")),
-                    Foreground = new SolidColorBrush(Color.Parse("#E4E6EB")),
+                    Background = (IBrush)this.FindResource("BackgroundBrush")!,
+                    Foreground = (IBrush)this.FindResource("ForegroundBrush")!,
                     Content = new StackPanel
                     {
                         Margin = new Avalonia.Thickness(20),
@@ -2048,8 +2048,7 @@ public partial class QuerySessionControl : UserControl
                             {
                                 Text = errorMessages,
                                 TextWrapping = TextWrapping.Wrap,
-                                FontSize = 12,
-                                Foreground = new SolidColorBrush(Color.Parse("#E4E6EB"))
+                                FontSize = 12
                             }
                         }
                     }

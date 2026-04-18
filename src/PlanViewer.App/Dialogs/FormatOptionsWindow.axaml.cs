@@ -5,8 +5,10 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
+using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.Media;
 using PlanViewer.App.Services;
 
 namespace PlanViewer.App.Dialogs;
@@ -15,6 +17,8 @@ public partial class FormatOptionsWindow : Window
 {
     private readonly ObservableCollection<FormatOptionRow> _rows = new();
     private readonly SqlFormatSettings _defaults = new();
+
+    private bool _isDirty;
 
     public FormatOptionsWindow()
     {
@@ -79,6 +83,10 @@ public partial class FormatOptionsWindow : Window
         }
 
         OptionsGrid.ItemsSource = _rows;
+
+        // Track changes for dirty-state prompt
+        foreach (var row in _rows)
+            row.PropertyChanged += (_, _) => _isDirty = true;
     }
 
     private void Save_Click(object? sender, RoutedEventArgs e)
@@ -115,6 +123,7 @@ public partial class FormatOptionsWindow : Window
         }
 
         SqlFormatSettingsService.Save(settings);
+        _isDirty = false;
         Close();
     }
 
@@ -130,7 +139,106 @@ public partial class FormatOptionsWindow : Window
 
     private void Close_Click(object? sender, RoutedEventArgs e)
     {
-        Close();
+        TryClose();
+    }
+
+    protected override void OnClosing(WindowClosingEventArgs e)
+    {
+        if (_isDirty)
+        {
+            e.Cancel = true;
+            TryClose();
+            return;
+        }
+        base.OnClosing(e);
+    }
+
+    private async void TryClose()
+    {
+        if (!_isDirty)
+        {
+            _isDirty = false; // prevent re-entry
+            Close();
+            return;
+        }
+
+        var result = await ShowDiscardDialog();
+        if (result)
+        {
+            _isDirty = false;
+            Close();
+        }
+    }
+
+    private async Task<bool> ShowDiscardDialog()
+    {
+        var tcs = new TaskCompletionSource<bool>();
+
+        var dialog = new Window
+        {
+            Title = "Unsaved Changes",
+            Width = 360,
+            Height = 160,
+            MinWidth = 360,
+            MinHeight = 160,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Background = (IBrush)this.FindResource("BackgroundBrush")!,
+            Foreground = (IBrush)this.FindResource("ForegroundBrush")!,
+            Content = new StackPanel
+            {
+                Margin = new Avalonia.Thickness(20),
+                Children =
+                {
+                    new TextBlock
+                    {
+                        Text = "You have unsaved changes. Discard them?",
+                        FontSize = 13,
+                        TextWrapping = TextWrapping.Wrap,
+                        Margin = new Avalonia.Thickness(0, 0, 0, 16)
+                    }
+                }
+            }
+        };
+
+        var discardBtn = new Button
+        {
+            Content = "Discard",
+            Height = 32, Width = 90,
+            Padding = new Avalonia.Thickness(16, 0),
+            FontSize = 12,
+            HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+            VerticalContentAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            Theme = (Avalonia.Styling.ControlTheme)this.FindResource("AppButton")!
+        };
+
+        var cancelBtn = new Button
+        {
+            Content = "Cancel",
+            Height = 32, Width = 90,
+            Padding = new Avalonia.Thickness(16, 0),
+            FontSize = 12,
+            Margin = new Avalonia.Thickness(8, 0, 0, 0),
+            HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Center,
+            VerticalContentAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            Theme = (Avalonia.Styling.ControlTheme)this.FindResource("AppButton")!
+        };
+
+        var buttonPanel = new StackPanel
+        {
+            Orientation = Avalonia.Layout.Orientation.Horizontal,
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right
+        };
+        buttonPanel.Children.Add(discardBtn);
+        buttonPanel.Children.Add(cancelBtn);
+
+        ((StackPanel)dialog.Content!).Children.Add(buttonPanel);
+
+        discardBtn.Click += (_, _) => { tcs.TrySetResult(true); dialog.Close(); };
+        cancelBtn.Click += (_, _) => { tcs.TrySetResult(false); dialog.Close(); };
+        dialog.Closing += (_, _) => tcs.TrySetResult(false);
+
+        await dialog.ShowDialog(this);
+        return await tcs.Task;
     }
 }
 
