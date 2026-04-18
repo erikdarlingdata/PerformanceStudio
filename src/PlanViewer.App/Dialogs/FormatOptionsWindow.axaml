@@ -5,8 +5,8 @@
         Title="SQL Format Options"
         Width="650" Height="580"
         MinWidth="520" MinHeight="400"
-        Background="#1A1D23"
-        Foreground="#E4E6EB"
+        Background="{DynamicResource BackgroundBrush}"
+        Foreground="{DynamicResource ForegroundBrush}"
         WindowStartupLocation="CenterOwner">
 
     <Window.Styles>
