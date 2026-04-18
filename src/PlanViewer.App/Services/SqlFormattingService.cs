@@ -1,6 +1,5 @@
 using System.Collections.Generic;
 using System.IO;
-using System.Text;
 using Microsoft.SqlServer.TransactSql.ScriptDom;
 
 namespace PlanViewer.App.Services;
@@ -24,13 +23,15 @@ internal static class SqlFormattingService
         using var reader = new StringReader(sql);
         var fragment = parser.Parse(reader, out var errors);
 
-        if (errors != null && errors.Count > 0)
+        if (fragment == null)
             return (sql, errors);
 
         var generator = GetGenerator(settings);
         generator.GenerateScript(fragment, out var formatted);
 
-        return (formatted, null);
+        // Return any non-fatal parse errors alongside the formatted output
+        var hasErrors = errors != null && errors.Count > 0;
+        return (formatted, hasErrors ? errors : null);
     }
 
     private static TSqlParser GetParser(int version)

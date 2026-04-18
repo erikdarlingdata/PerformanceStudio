@@ -1,5 +1,7 @@
+using System;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Reflection;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
@@ -63,15 +65,22 @@ public partial class FormatOptionsWindow : Window
                 if (prop.PropertyType == typeof(bool))
                     value = row.BoolValue;
                 else if (prop.PropertyType == typeof(int))
-                    value = int.Parse(row.CurrentValue);
+                {
+                    if (!int.TryParse(row.CurrentValue, out var intVal))
+                    {
+                        Debug.WriteLine($"FormatOptions: invalid int value '{row.CurrentValue}' for {row.Name}, using default");
+                        continue;
+                    }
+                    value = intVal;
+                }
                 else
                     value = row.CurrentValue;
 
                 prop.SetValue(settings, value);
             }
-            catch
+            catch (Exception ex)
             {
-                // Skip invalid values — keep default
+                Debug.WriteLine($"FormatOptions: failed to set {row.Name}: {ex.Message}");
             }
         }
 
@@ -87,9 +96,6 @@ public partial class FormatOptionsWindow : Window
             if (row.IsBool)
                 row.BoolValue = row.DefaultBoolValue;
         }
-
-        OptionsGrid.ItemsSource = null;
-        OptionsGrid.ItemsSource = _rows;
     }
 
     private void Close_Click(object? sender, RoutedEventArgs e)

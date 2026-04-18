@@ -2017,9 +2017,10 @@ public partial class QuerySessionControl : UserControl
 
         if (errors != null && errors.Count > 0)
         {
-            SetStatus($"Format: {errors.Count} parse error(s) — {errors[0].Message}");
-            return;
+            SetStatus($"Format: {errors.Count} parse warning(s) — {errors[0].Message}");
         }
+
+        var caretOffset = QueryEditor.CaretOffset;
 
         QueryEditor.Document.BeginUpdate();
         try
@@ -2030,6 +2031,8 @@ public partial class QuerySessionControl : UserControl
         {
             QueryEditor.Document.EndUpdate();
         }
+
+        QueryEditor.CaretOffset = Math.Min(caretOffset, QueryEditor.Document.TextLength);
         SetStatus("Formatted");
     }
 

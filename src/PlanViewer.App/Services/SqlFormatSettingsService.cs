@@ -1,8 +1,7 @@
 using System;
-using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using Microsoft.SqlServer.TransactSql.ScriptDom;
 
 namespace PlanViewer.App.Services;
@@ -56,7 +55,9 @@ public sealed class SqlFormatSettings
             IndentSetClause = IndentSetClause,
             IndentViewBody = IndentViewBody,
             IndentationSize = IndentationSize,
-            KeywordCasing = Enum.TryParse<Microsoft.SqlServer.TransactSql.ScriptDom.KeywordCasing>(KeywordCasing, true, out var kc) ? kc : Microsoft.SqlServer.TransactSql.ScriptDom.KeywordCasing.Uppercase,
+            KeywordCasing = Enum.TryParse<Microsoft.SqlServer.TransactSql.ScriptDom.KeywordCasing>(KeywordCasing, true, out var kc)
+                            && Enum.IsDefined(kc)
+                            ? kc : Microsoft.SqlServer.TransactSql.ScriptDom.KeywordCasing.Uppercase,
             MultilineInsertSourcesList = MultilineInsertSourcesList,
             MultilineInsertTargetsList = MultilineInsertTargetsList,
             MultilineSelectElementsList = MultilineSelectElementsList,
@@ -93,8 +94,7 @@ internal static class SqlFormatSettingsService
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
-        WriteIndented = true,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+        WriteIndented = true
     };
 
     public static SqlFormatSettings Load()
@@ -107,8 +107,9 @@ internal static class SqlFormatSettingsService
             var json = File.ReadAllText(SettingsPath);
             return JsonSerializer.Deserialize<SqlFormatSettings>(json, JsonOptions) ?? new SqlFormatSettings();
         }
-        catch
+        catch (Exception ex)
         {
+            Debug.WriteLine($"SqlFormatSettings: failed to load settings: {ex.Message}");
             return new SqlFormatSettings();
         }
     }
@@ -121,9 +122,9 @@ internal static class SqlFormatSettingsService
             var json = JsonSerializer.Serialize(settings, JsonOptions);
             File.WriteAllText(SettingsPath, json);
         }
-        catch
+        catch (Exception ex)
         {
-            // Best-effort
+            Debug.WriteLine($"SqlFormatSettings: failed to save settings: {ex.Message}");
         }
     }
 }
