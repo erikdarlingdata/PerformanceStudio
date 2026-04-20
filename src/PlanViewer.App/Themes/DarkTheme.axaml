@@ -8,6 +8,13 @@
     <SolidColorBrush x:Key="BorderBrush" Color="#3A3D45"/>
     <SolidColorBrush x:Key="AccentBrush" Color="#2eaef1"/>
 
+    <!-- Fluent theme accent override: TabItem selected underline, focus rings, etc. -->
+    <Color x:Key="SystemAccentColor">#2eaef1</Color>
+    <Color x:Key="SystemAccentColorDark1">#2596d4</Color>
+    <Color x:Key="SystemAccentColorDark2">#1f80b6</Color>
+    <Color x:Key="SystemAccentColorLight1">#5bc0f4</Color>
+    <Color x:Key="SystemAccentColorLight2">#88d1f7</Color>
+
     <!-- Button style: brand blue on hover -->
     <ControlTheme x:Key="AppButton" TargetType="Button">
         <Setter Property="Background" Value="{DynamicResource BackgroundLightBrush}"/>
@@ -67,7 +74,7 @@
     <!-- Wait Stats category colors (fixed per category) -->
     <SolidColorBrush x:Key="WaitCategory.Unknown"            Color="#8E8E93"/>
     <SolidColorBrush x:Key="WaitCategory.CPU"                Color="#00bd23"/>
-    <SolidColorBrush x:Key="WaitCategory.Worker Thread"      Color="#19ff25"/>
+    <SolidColorBrush x:Key="WaitCategory.Worker Thread"      Color="#52E3B5"/>
     <SolidColorBrush x:Key="WaitCategory.Lock"               Color="#EE5A24"/>
     <SolidColorBrush x:Key="WaitCategory.Latch"              Color="#F368E0"/>
     <SolidColorBrush x:Key="WaitCategory.Buffer Latch"       Color="#f5069e"/>
@@ -80,7 +87,7 @@
     <SolidColorBrush x:Key="WaitCategory.Service Broker"     Color="#E17055"/>
     <SolidColorBrush x:Key="WaitCategory.Tran Log IO"        Color="#0984E3"/>
     <SolidColorBrush x:Key="WaitCategory.Network IO"         Color="#75bbf8"/>
-    <SolidColorBrush x:Key="WaitCategory.Parallelism"        Color="#fd01d3"/>
+    <SolidColorBrush x:Key="WaitCategory.Parallelism"        Color="#7B4FFF"/>
     <SolidColorBrush x:Key="WaitCategory.Memory"             Color="#FDCB6E"/>
     <SolidColorBrush x:Key="WaitCategory.Tracing"            Color="#B2BEC3"/>
     <SolidColorBrush x:Key="WaitCategory.Full Text Search"   Color="#DFE6E9"/>

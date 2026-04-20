@@ -8,67 +8,77 @@
         <Border Grid.Row="0" Background="{DynamicResource BackgroundDarkBrush}" Padding="8,6"
                 BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
             <DockPanel>
-                <StackPanel Orientation="Horizontal" DockPanel.Dock="Left" Spacing="6">
+                <StackPanel Orientation="Horizontal" DockPanel.Dock="Left" Spacing="4">
                     <Button x:Name="ConnectButton" Content="Connect" Click="Connect_Click"
-                            Height="28" Padding="10,0" FontSize="12"
+                            Height="28" Padding="8,0" FontSize="12"
                             Theme="{StaticResource AppButton}"
                             ToolTip.Tip="Connect to a SQL Server"/>
                     <TextBlock x:Name="ServerLabel" Text="Not connected"
                                VerticalAlignment="Center" FontSize="12"
-                               Foreground="{DynamicResource ForegroundBrush}"/>
+                               Foreground="{DynamicResource ForegroundBrush}" Margin="2,0,0,0"/>
                     <TextBlock Text="|" VerticalAlignment="Center"
-                               Foreground="{DynamicResource ForegroundBrush}" Margin="4,0"/>
+                               Foreground="{DynamicResource ForegroundBrush}" Margin="2,0"/>
                     <ComboBox x:Name="DatabaseBox" Width="200" Height="28" FontSize="12"
                               IsEnabled="False" PlaceholderText="Database"
                               SelectionChanged="Database_SelectionChanged"/>
                     <TextBlock Text="|" VerticalAlignment="Center"
-                               Foreground="{DynamicResource ForegroundBrush}" Margin="4,0"/>
+                               Foreground="{DynamicResource ForegroundBrush}" Margin="2,0"/>
                     <Button x:Name="ExecuteButton" Content="&#x25B6; Actual Plan" Click="Execute_Click"
-                            Height="28" Padding="10,0" FontSize="12" IsEnabled="False"
+                            Height="28" Padding="8,0" FontSize="12" IsEnabled="False"
                             Theme="{StaticResource AppButton}"
                             ToolTip.Tip="Run query and capture execution plan with runtime stats (F5 / Ctrl+E)"/>
                     <Button x:Name="ExecuteEstButton" Content="&#x25C7; Estimated Plan" Click="ExecuteEstimated_Click"
-                            Height="28" Padding="10,0" FontSize="12" IsEnabled="False"
+                            Height="28" Padding="8,0" FontSize="12" IsEnabled="False"
                             Theme="{StaticResource AppButton}"
                             ToolTip.Tip="Capture estimated plan without executing (Ctrl+L)"/>
                     <TextBlock Text="|" VerticalAlignment="Center"
-                               Foreground="{DynamicResource ForegroundBrush}" Margin="4,0"/>
+                               Foreground="{DynamicResource ForegroundBrush}" Margin="2,0"/>
                     <Button x:Name="HumanAdviceButton" Content="&#x1F9D1; Human Advice"
                             Click="HumanAdvice_Click"
-                            Height="28" Padding="10,0" FontSize="12" IsEnabled="False"
+                            Height="28" Padding="8,0" FontSize="12" IsEnabled="False"
                             Theme="{StaticResource AppButton}"
                             ToolTip.Tip="Human-readable plan analysis"/>
                     <Button x:Name="RobotAdviceButton" Content="&#x1F916; Robot Advice"
                             Click="RobotAdvice_Click"
-                            Height="28" Padding="10,0" FontSize="12" IsEnabled="False"
+                            Height="28" Padding="8,0" FontSize="12" IsEnabled="False"
                             Theme="{StaticResource AppButton}"
                             ToolTip.Tip="JSON analysis for LLMs and automation"/>
                     <TextBlock Text="|" VerticalAlignment="Center"
-                               Foreground="{DynamicResource ForegroundBrush}" Margin="4,0"/>
+                               Foreground="{DynamicResource ForegroundBrush}" Margin="2,0"/>
                     <Button x:Name="ComparePlansButton" Content="&#x2194; Compare Plans"
                             Click="ComparePlans_Click"
-                            Height="28" Padding="10,0" FontSize="12" IsEnabled="False"
+                            Height="28" Padding="8,0" FontSize="12" IsEnabled="False"
                             Theme="{StaticResource AppButton}"
                             ToolTip.Tip="Compare two plan tabs"/>
                     <TextBlock Text="|" VerticalAlignment="Center"
-                               Foreground="{DynamicResource ForegroundBrush}" Margin="4,0"/>
+                               Foreground="{DynamicResource ForegroundBrush}" Margin="2,0"/>
                     <Button x:Name="QueryStoreButton" Content="&#x1F4CA; Query Store"
                             Click="QueryStore_Click"
-                            Height="28" Padding="10,0" FontSize="12"
+                            Height="28" Padding="8,0" FontSize="12"
                             Theme="{StaticResource AppButton}"
                             ToolTip.Tip="Analyze top queries from Query Store"/>
                     <TextBlock Text="|" VerticalAlignment="Center"
-                               Foreground="{DynamicResource ForegroundBrush}" Margin="4,0"/>
+                               Foreground="{DynamicResource ForegroundBrush}" Margin="2,0"/>
                     <Button x:Name="CopyReproButton" Content="&#x1F4CB; Copy Repro"
                             Click="CopyRepro_Click"
-                            Height="28" Padding="10,0" FontSize="12" IsEnabled="False"
+                            Height="28" Padding="8,0" FontSize="12" IsEnabled="False"
                             Theme="{StaticResource AppButton}"
                             ToolTip.Tip="Copy reproduction script to clipboard"/>
                     <Button x:Name="GetActualPlanButton" Content="&#x25B6; Run Repro"
                             Click="GetActualPlan_Click"
-                            Height="28" Padding="10,0" FontSize="12" IsEnabled="False"
+                            Height="28" Padding="8,0" FontSize="12" IsEnabled="False"
                             Theme="{StaticResource AppButton}"
                             ToolTip.Tip="Execute the repro script and capture actual plan with runtime stats"/>
+                    <TextBlock Text="|" VerticalAlignment="Center"
+                               Foreground="{DynamicResource ForegroundBrush}" Margin="4,0"/>
+                    <Button x:Name="FormatButton" Content="&#x1F4DD; Format" Click="Format_Click"
+                            Height="28" Padding="10,0" FontSize="12"
+                            Theme="{StaticResource AppButton}"
+                            ToolTip.Tip="Format the SQL query"/>
+                    <Button x:Name="FormatOptionsButton" Content="&#x2699; Format Options" Click="FormatOptions_Click"
+                            Height="28" Padding="10,0" FontSize="12"
+                            Theme="{StaticResource AppButton}"
+                            ToolTip.Tip="Configure SQL formatting options"/>
                 </StackPanel>
                 <TextBlock x:Name="StatusText" DockPanel.Dock="Right"
                            HorizontalAlignment="Right" VerticalAlignment="Center"
