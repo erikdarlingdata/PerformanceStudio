@@ -69,6 +69,16 @@
                             Height="28" Padding="8,0" FontSize="12" IsEnabled="False"
                             Theme="{StaticResource AppButton}"
                             ToolTip.Tip="Execute the repro script and capture actual plan with runtime stats"/>
+                    <TextBlock Text="|" VerticalAlignment="Center"
+                               Foreground="{DynamicResource ForegroundBrush}" Margin="4,0"/>
+                    <Button x:Name="FormatButton" Content="&#x1F4DD; Format" Click="Format_Click"
+                            Height="28" Padding="10,0" FontSize="12"
+                            Theme="{StaticResource AppButton}"
+                            ToolTip.Tip="Format the SQL query"/>
+                    <Button x:Name="FormatOptionsButton" Content="&#x2699; Format Options" Click="FormatOptions_Click"
+                            Height="28" Padding="10,0" FontSize="12"
+                            Theme="{StaticResource AppButton}"
+                            ToolTip.Tip="Configure SQL formatting options"/>
                 </StackPanel>
                 <TextBlock x:Name="StatusText" DockPanel.Dock="Right"
                            HorizontalAlignment="Right" VerticalAlignment="Center"
