@@ -2056,7 +2056,7 @@ public partial class QuerySessionControl : UserControl
                         }
                     }
                 };
-                dialog.ShowDialog(GetParentWindow());
+                await dialog.ShowDialog(GetParentWindow());
                 SetStatus($"Format failed: {errors.Count} error(s)");
                 return;
             }
