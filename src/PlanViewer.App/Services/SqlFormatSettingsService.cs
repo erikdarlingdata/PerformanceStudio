@@ -97,8 +97,9 @@ internal static class SqlFormatSettingsService
         WriteIndented = true
     };
 
-    public static SqlFormatSettings Load()
+    public static SqlFormatSettings Load(out string? error)
     {
+        error = null;
         try
         {
             if (!File.Exists(SettingsPath))
@@ -110,21 +111,26 @@ internal static class SqlFormatSettingsService
         catch (Exception ex)
         {
             Debug.WriteLine($"SqlFormatSettings: failed to load settings: {ex.Message}");
+            error = $"Could not load format settings from:\n{SettingsPath}\n\n{ex.Message}\n\nUsing defaults. Delete or fix the file to clear this error.";
             return new SqlFormatSettings();
         }
     }
 
-    public static void Save(SqlFormatSettings settings)
+    public static bool Save(SqlFormatSettings settings, out string? error)
     {
+        error = null;
         try
         {
             Directory.CreateDirectory(SettingsDir);
             var json = JsonSerializer.Serialize(settings, JsonOptions);
             File.WriteAllText(SettingsPath, json);
+            return true;
         }
         catch (Exception ex)
         {
             Debug.WriteLine($"SqlFormatSettings: failed to save settings: {ex.Message}");
+            error = $"Could not save format settings to:\n{SettingsPath}\n\n{ex.Message}\n\nCheck that the folder is writable and not locked by another process.";
+            return false;
         }
     }
 }

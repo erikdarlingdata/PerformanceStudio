@@ -52,7 +52,9 @@ public partial class FormatOptionsWindow : Window
 
     private void LoadSettings()
     {
-        var current = SqlFormatSettingsService.Load();
+        var current = SqlFormatSettingsService.Load(out var loadError);
+        if (loadError != null)
+            ShowErrorPopup("Load Error", loadError);
         _rows.Clear();
 
         var props = typeof(SqlFormatSettings).GetProperties(BindingFlags.Public | BindingFlags.Instance)
@@ -122,7 +124,11 @@ public partial class FormatOptionsWindow : Window
             }
         }
 
-        SqlFormatSettingsService.Save(settings);
+        if (!SqlFormatSettingsService.Save(settings, out var saveError))
+        {
+            ShowErrorPopup("Save Error", saveError!);
+            return;
+        }
         _isDirty = false;
         Close();
     }
@@ -135,6 +141,33 @@ public partial class FormatOptionsWindow : Window
             if (row.IsBool)
                 row.BoolValue = row.DefaultBoolValue;
         }
+    }
+
+    private void ShowErrorPopup(string title, string message)
+    {
+        var dialog = new Window
+        {
+            Title = title,
+            Width = 480,
+            Height = 220,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Background = (IBrush)this.FindResource("BackgroundBrush")!,
+            Foreground = (IBrush)this.FindResource("ForegroundBrush")!,
+            Content = new StackPanel
+            {
+                Margin = new Avalonia.Thickness(20),
+                Children =
+                {
+                    new TextBlock
+                    {
+                        Text = message,
+                        TextWrapping = TextWrapping.Wrap,
+                        FontSize = 13
+                    }
+                }
+            }
+        };
+        dialog.ShowDialog(this);
     }
 
     private void Close_Click(object? sender, RoutedEventArgs e)
