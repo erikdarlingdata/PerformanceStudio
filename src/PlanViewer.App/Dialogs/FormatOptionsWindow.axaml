@@ -22,11 +22,11 @@
             <Setter Property="RenderTransform" Value="scale(0.75)"/>
         </Style>
         <Style Selector="ToggleSwitch:checked /template/ Border#SwitchKnobBounds">
-            <Setter Property="Background" Value="#00D4FF"/>
-            <Setter Property="BorderBrush" Value="#00D4FF"/>
+            <Setter Property="Background" Value="{DynamicResource AccentBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
         </Style>
         <Style Selector="ToggleSwitch:checked /template/ Border#OuterBorder">
-            <Setter Property="BorderBrush" Value="#00D4FF"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
         </Style>
     </Window.Styles>
 
@@ -39,8 +39,8 @@
                   HeadersVisibility="Column"
                   GridLinesVisibility="Horizontal"
                   IsReadOnly="False"
-                  Background="#1A1D23"
-                  Foreground="#E4E6EB"
+                  Background="{DynamicResource BackgroundBrush}"
+                  Foreground="{DynamicResource ForegroundBrush}"
                   Margin="0,0,0,12">
             <DataGrid.Columns>
                 <DataGridTextColumn Header="Parameter" Binding="{Binding Name}" IsReadOnly="True" Width="2*"/>
