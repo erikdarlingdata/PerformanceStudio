@@ -169,6 +169,16 @@ public partial class QueryStoreHistoryWindow : Window
             : "AvgCpuMs";
     }
 
+    protected override void OnClosed(EventArgs e)
+    {
+        // Cancel any in-flight history fetch so the SqlConnection doesn't sit open on the
+        // server after the dialog is dismissed.
+        _fetchCts?.Cancel();
+        _fetchCts?.Dispose();
+        _fetchCts = null;
+        base.OnClosed(e);
+    }
+
     private async System.Threading.Tasks.Task LoadHistoryAsync()
     {
         _fetchCts?.Cancel();

@@ -21,6 +21,20 @@ namespace PlanViewer.Core.Services;
 public static class ReproScriptBuilder
 {
     /// <summary>
+    /// Valid T-SQL isolation level names (uppercase) that may appear in a SET TRANSACTION
+    /// ISOLATION LEVEL statement. Used to gate interpolation so arbitrary upstream strings
+    /// can't land in the generated script.
+    /// </summary>
+    private static readonly HashSet<string> IsolationLevels = new(StringComparer.Ordinal)
+    {
+        "READ UNCOMMITTED",
+        "READ COMMITTED",
+        "REPEATABLE READ",
+        "SNAPSHOT",
+        "SERIALIZABLE",
+    };
+
+    /// <summary>
     /// Builds a complete reproduction script from available query data.
     /// </summary>
     public static string BuildReproScript(
@@ -94,10 +108,11 @@ public static class ReproScriptBuilder
         sb.AppendLine("*/");
         sb.AppendLine();
 
-        /* USE database (skip for Azure SQL DB — USE is invalid there) */
+        /* USE database (skip for Azure SQL DB — USE is invalid there).
+           Double any ']' in the identifier so names like 'cool]stuff' still parse. */
         if (!string.IsNullOrEmpty(databaseName) && !isAzureSqlDb)
         {
-            sb.AppendLine($"USE [{databaseName}];");
+            sb.AppendLine($"USE [{databaseName.Replace("]", "]]")}];");
             sb.AppendLine();
         }
 
@@ -116,7 +131,9 @@ public static class ReproScriptBuilder
 
         if (!string.IsNullOrEmpty(isolationLevel))
         {
-            sb.AppendLine($"SET TRANSACTION ISOLATION LEVEL {isolationLevel.ToUpperInvariant()};");
+            var upper = isolationLevel.ToUpperInvariant();
+            if (IsolationLevels.Contains(upper))
+                sb.AppendLine($"SET TRANSACTION ISOLATION LEVEL {upper};");
         }
         sb.AppendLine("SET NOCOUNT ON;");
         sb.AppendLine();
