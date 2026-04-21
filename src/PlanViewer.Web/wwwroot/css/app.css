@@ -807,6 +807,26 @@ textarea::placeholder {
     font-size: 0.75rem;
 }
 
+.warn-benefit {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    padding: 0.05rem 0.35rem;
+    border-radius: 3px;
+    background: rgba(0, 0, 0, 0.05);
+    margin-right: 0.4rem;
+}
+
+.warning-fix {
+    color: var(--text-secondary);
+    display: block;
+    margin-top: 0.25rem;
+    font-size: 0.75rem;
+    font-style: italic;
+    border-left: 2px solid var(--border);
+    padding-left: 0.5rem;
+}
+
 /* === Query Text === */
 .stmt-text-section {
     margin-bottom: 0.75rem;

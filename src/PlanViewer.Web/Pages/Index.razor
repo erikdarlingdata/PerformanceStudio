@@ -332,7 +332,10 @@ else
                 @if (infoCount > 0) { <span class="warn-count-badge info">@infoCount</span> }
             </h4>
             <div class="warnings-list">
-                @foreach (var w in GetAllWarnings(ActiveStmt!))
+                @foreach (var w in GetAllWarnings(ActiveStmt!)
+                    .OrderByDescending(x => x.MaxBenefitPercent ?? -1)
+                    .ThenByDescending(x => x.Severity == "Critical" ? 3 : x.Severity == "Warning" ? 2 : 1)
+                    .ThenBy(x => x.Type))
                 {
                     <div class="warning @w.Severity.ToLower()">
                         <span class="severity">@w.Severity</span>
@@ -341,7 +344,15 @@ else
                             <span class="warning-op">@w.Operator</span>
                         }
                         <span class="warning-type">@w.Type</span>
+                        @if (w.MaxBenefitPercent.HasValue)
+                        {
+                            <span class="warn-benefit">up to @w.MaxBenefitPercent.Value.ToString("N0")% benefit</span>
+                        }
                         <span class="warning-msg">@w.Message</span>
+                        @if (!string.IsNullOrEmpty(w.ActionableFix))
+                        {
+                            <span class="warning-fix">@w.ActionableFix</span>
+                        }
                     </div>
                 }
             </div>
