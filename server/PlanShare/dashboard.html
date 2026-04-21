@@ -275,13 +275,28 @@
     }
     function updateReferrers() {
         var tbody = document.querySelector("#referrersTable tbody");
+        tbody.replaceChildren();
         if (!planStats || !planStats.traffic.top_referrers.length) {
-            tbody.innerHTML = "<tr><td colspan='2' style='color:#484f58'>No referrer data yet</td></tr>";
+            var tr = document.createElement("tr");
+            var td = document.createElement("td");
+            td.setAttribute("colspan", "2");
+            td.style.color = "#484f58";
+            td.textContent = "No referrer data yet";
+            tr.appendChild(td);
+            tbody.appendChild(tr);
             return;
         }
-        tbody.innerHTML = planStats.traffic.top_referrers.map(function(r) {
-            return "<tr><td>" + r.referrer + "</td><td class='num'>" + fmt(r.count) + "</td></tr>";
-        }).join("");
+        planStats.traffic.top_referrers.forEach(function(r) {
+            var tr = document.createElement("tr");
+            var tdRef = document.createElement("td");
+            tdRef.textContent = r.referrer;
+            var tdCount = document.createElement("td");
+            tdCount.className = "num";
+            tdCount.textContent = fmt(r.count);
+            tr.appendChild(tdRef);
+            tr.appendChild(tdCount);
+            tbody.appendChild(tr);
+        });
     }
     function updateCharts() {
         updateChart("starsChart", "line", {

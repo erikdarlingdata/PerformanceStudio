@@ -44,8 +44,14 @@ using (var conn = new SqliteConnection(connectionString))
     cmd.ExecuteNonQuery();
 }
 
+// --- Rate limiters (in-memory) ---
+// Created before Build() so they can be DI-registered and swept by CleanupService.
+var rateLimiter = new RateLimiter(maxRequests: 10, windowSeconds: 60);
+var analyticsRateLimiter = new RateLimiter(maxRequests: 30, windowSeconds: 60);
+
 // Register the cleanup background service
 builder.Services.AddSingleton(new PlanDbConfig(connectionString));
+builder.Services.AddSingleton(new RateLimiters(rateLimiter, analyticsRateLimiter));
 builder.Services.AddHostedService<CleanupService>();
 
 // Request size limit (10 MB)
@@ -53,10 +59,6 @@ builder.WebHost.ConfigureKestrel(o => o.Limits.MaxRequestBodySize = 10 * 1024 * 
 
 var app = builder.Build();
 app.UseCors();
-
-// --- Rate limiters (in-memory) ---
-var rateLimiter = new RateLimiter(maxRequests: 10, windowSeconds: 60);
-var analyticsRateLimiter = new RateLimiter(maxRequests: 30, windowSeconds: 60);
 
 const int MaxTtlDays = 365;
 
@@ -161,9 +163,15 @@ app.MapPost("/api/event", async (HttpContext ctx) =>
         return Results.BadRequest("Invalid JSON");
     }
 
-    // Strip referrer to domain only (no full URLs with query params)
-    if (!string.IsNullOrEmpty(referrer) && Uri.TryCreate(referrer, UriKind.Absolute, out var refUri))
-        referrer = refUri.Host;
+    // Strip referrer to domain only (no full URLs with query params).
+    // If it doesn't parse as an absolute URL, drop it — never persist raw
+    // client-supplied strings, since the dashboard renders referrers in HTML.
+    if (!string.IsNullOrEmpty(referrer))
+    {
+        referrer = Uri.TryCreate(referrer, UriKind.Absolute, out var refUri)
+            ? refUri.Host
+            : null;
+    }
 
     // Visitor hash: SHA256(IP + User-Agent + date) — unique per day, no PII stored
     var ua = ctx.Request.Headers.UserAgent.FirstOrDefault() ?? "";
@@ -352,14 +360,18 @@ static string GenerateDeleteToken()
 
 record PlanDbConfig(string ConnectionString);
 
+record RateLimiters(RateLimiter Share, RateLimiter Analytics);
+
 sealed class CleanupService : BackgroundService
 {
     private readonly PlanDbConfig _config;
+    private readonly RateLimiters _rateLimiters;
     private readonly ILogger<CleanupService> _logger;
 
-    public CleanupService(PlanDbConfig config, ILogger<CleanupService> logger)
+    public CleanupService(PlanDbConfig config, RateLimiters rateLimiters, ILogger<CleanupService> logger)
     {
         _config = config;
+        _rateLimiters = rateLimiters;
         _logger = logger;
     }
 
@@ -401,6 +413,14 @@ sealed class CleanupService : BackgroundService
                 if (deleted > 0)
                     _logger.LogInformation("Cleaned up {Count} old page views", deleted);
             }
+
+            // Evict stale rate-limiter keys so the dictionary doesn't grow forever.
+            var shareEvicted = _rateLimiters.Share.Sweep();
+            var analyticsEvicted = _rateLimiters.Analytics.Sweep();
+            if (shareEvicted + analyticsEvicted > 0)
+                _logger.LogInformation(
+                    "Evicted {Share} share + {Analytics} analytics rate-limit keys",
+                    shareEvicted, analyticsEvicted);
         }
         catch (Exception ex)
         {
@@ -440,5 +460,26 @@ sealed class RateLimiter
             timestamps.Add(now);
             return true;
         }
+    }
+
+    /// <summary>
+    /// Evicts keys whose timestamp lists have gone empty. Call periodically
+    /// so the dictionary doesn't grow forever across unique IPs.
+    /// Returns the number of keys evicted.
+    /// </summary>
+    public int Sweep()
+    {
+        var cutoff = DateTime.UtcNow.AddSeconds(-_windowSeconds);
+        var evicted = 0;
+        foreach (var kvp in _requests)
+        {
+            lock (kvp.Value)
+            {
+                kvp.Value.RemoveAll(t => t < cutoff);
+                if (kvp.Value.Count == 0 && _requests.TryRemove(kvp))
+                    evicted++;
+            }
+        }
+        return evicted;
     }
 }
