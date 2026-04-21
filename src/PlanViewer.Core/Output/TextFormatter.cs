@@ -172,6 +172,8 @@ public static class TextFormatter
                         ? $" (up to {w.MaxBenefitPercent:N0}% benefit)"
                         : "";
                     writer.WriteLine($"  [{w.Severity}] {w.Type}{benefitTag}: {EscapeNewlines(w.Message)}");
+                    if (!string.IsNullOrEmpty(w.ActionableFix))
+                        writer.WriteLine($"    Fix: {EscapeNewlines(w.ActionableFix)}");
                 }
             }
 

@@ -187,6 +187,7 @@ pre.mi-create {
 .warn-type { font-size: 0.75rem; font-weight: 600; }
 .warn-benefit { font-size: 0.7rem; font-weight: 600; color: var(--text-muted); padding: 0.05rem 0.3rem; border-radius: 3px; background: rgba(0,0,0,0.04); }
 .warn-msg { font-size: 0.8rem; color: var(--text); flex-basis: 100%; }
+.warn-fix { font-size: 0.75rem; color: var(--text-secondary); font-style: italic; flex-basis: 100%; border-left: 2px solid var(--border); padding-left: 0.5rem; margin-top: 0.15rem; }
 
 /* Query text */
 details { margin-bottom: 0.75rem; }
@@ -459,6 +460,8 @@ pre.query-text, pre.text-output {
             if (w.MaxBenefitPercent.HasValue)
                 sb.AppendLine($"<span class=\"warn-benefit\">up to {w.MaxBenefitPercent:N0}% benefit</span>");
             sb.AppendLine($"<span class=\"warn-msg\">{Encode(w.Message)}</span>");
+            if (!string.IsNullOrEmpty(w.ActionableFix))
+                sb.AppendLine($"<span class=\"warn-fix\">{Encode(w.ActionableFix)}</span>");
             sb.AppendLine("</div>");
         }
         sb.AppendLine("</div>");

@@ -1754,6 +1754,18 @@ public partial class PlanViewerControl : UserControl
                         TextWrapping = TextWrapping.Wrap,
                         Margin = new Thickness(16, 0, 0, 0)
                     });
+                    if (!string.IsNullOrEmpty(w.ActionableFix))
+                    {
+                        warnPanel.Children.Add(new TextBlock
+                        {
+                            Text = w.ActionableFix,
+                            FontSize = 11,
+                            FontStyle = FontStyle.Italic,
+                            Foreground = TooltipFgBrush,
+                            TextWrapping = TextWrapping.Wrap,
+                            Margin = new Thickness(16, 2, 0, 0)
+                        });
+                    }
                     planWarningsPanel.Children.Add(warnPanel);
                 }
 
