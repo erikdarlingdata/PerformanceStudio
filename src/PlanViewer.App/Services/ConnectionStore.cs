@@ -39,7 +39,7 @@ public class ConnectionStore
     {
         Directory.CreateDirectory(ConfigDir);
         var json = JsonSerializer.Serialize(connections, JsonOptions);
-        File.WriteAllText(ConfigFile, json);
+        AtomicFile.WriteAllText(ConfigFile, json);
     }
 
     public void AddOrUpdate(ServerConnection connection)

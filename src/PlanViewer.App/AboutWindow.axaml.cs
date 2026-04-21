@@ -56,7 +56,7 @@ public partial class AboutWindow : Window
         }, new JsonSerializerOptions { WriteIndented = true });
 
         Directory.CreateDirectory(settingsDir);
-        File.WriteAllText(settingsFile, json);
+        Services.AtomicFile.WriteAllText(settingsFile, json);
     }
 
     private void GitHubLink_Click(object? sender, PointerPressedEventArgs e) => OpenUrl(GitHubUrl);
