@@ -78,11 +78,15 @@ public partial class QuerySessionControl : UserControl
             QueryEditor.TextArea.Focus();
         };
 
-        // Dispose TextMate when detached (e.g. tab switch) to release renderers/transformers
+        // Dispose TextMate when detached (e.g. tab switch) to release renderers/transformers.
+        // Also cancel any in-flight status-clear dispatch so it doesn't fire on a dead control.
         DetachedFromVisualTree += (_, _) =>
         {
             _textMateInstallation?.Dispose();
             _textMateInstallation = null;
+            _statusClearCts?.Cancel();
+            _statusClearCts?.Dispose();
+            _statusClearCts = null;
         };
 
         // Focus the editor when the Editor tab is selected; toggle plan-dependent buttons
