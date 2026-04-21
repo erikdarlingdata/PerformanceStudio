@@ -95,7 +95,11 @@ public static class AnalyzeCommand
 
         var passwordOption = new Option<string?>(
             "--password",
-            "SQL Server password (bypasses credential store)");
+            "SQL Server password (bypasses credential store). Visible in process listings — prefer --password-stdin.");
+
+        var passwordStdinOption = new Option<bool>(
+            "--password-stdin",
+            "Read the SQL Server password from stdin (avoids process-listing exposure). Mutually exclusive with --password.");
 
         var configOption = new Option<string?>(
             "--config",
@@ -118,6 +122,7 @@ public static class AnalyzeCommand
             timeoutOption,
             loginOption,
             passwordOption,
+            passwordStdinOption,
             configOption
         };
 
@@ -137,7 +142,8 @@ public static class AnalyzeCommand
             var trustCert = ctx.ParseResult.GetValueForOption(trustCertOption);
             var timeout = ctx.ParseResult.GetValueForOption(timeoutOption);
             var login = ctx.ParseResult.GetValueForOption(loginOption);
-            var password = ctx.ParseResult.GetValueForOption(passwordOption);
+            var passwordInline = ctx.ParseResult.GetValueForOption(passwordOption);
+            var passwordStdin = ctx.ParseResult.GetValueForOption(passwordStdinOption);
             var configPath = ctx.ParseResult.GetValueForOption(configOption);
 
             // Load analyzer config
@@ -148,9 +154,19 @@ public static class AnalyzeCommand
             server ??= env.GetValueOrDefault("PLANVIEW_SERVER");
             database ??= env.GetValueOrDefault("PLANVIEW_DATABASE");
             login ??= env.GetValueOrDefault("PLANVIEW_LOGIN");
-            password ??= env.GetValueOrDefault("PLANVIEW_PASSWORD");
             if (!trustCert && env.GetValueOrDefault("PLANVIEW_TRUST_CERT")?.Equals("true", StringComparison.OrdinalIgnoreCase) == true)
                 trustCert = true;
+
+            // Resolve password from --password-stdin, --password, or PLANVIEW_PASSWORD
+            // (in that order). --stdin for plan XML conflicts with --password-stdin.
+            if (!PasswordResolver.TryResolve(
+                    passwordInline, passwordStdin, stdin,
+                    env.GetValueOrDefault("PLANVIEW_PASSWORD"),
+                    out var password))
+            {
+                Environment.ExitCode = 1;
+                return;
+            }
 
             if (server != null)
             {

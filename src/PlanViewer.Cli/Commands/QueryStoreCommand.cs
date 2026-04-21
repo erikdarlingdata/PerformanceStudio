@@ -72,7 +72,11 @@ public static class QueryStoreCommand
             "--login", "SQL Server login (bypasses credential store)");
 
         var passwordOption = new Option<string?>(
-            "--password", "SQL Server password");
+            "--password", "SQL Server password. Visible in process listings — prefer --password-stdin.");
+
+        var passwordStdinOption = new Option<bool>(
+            "--password-stdin",
+            "Read the SQL Server password from stdin (avoids process-listing exposure). Mutually exclusive with --password.");
 
         var queryIdOption = new Option<long?>(
             "--query-id", "Filter by Query Store query ID");
@@ -93,7 +97,7 @@ public static class QueryStoreCommand
         {
             serverOption, databaseOption, topOption, orderByOption, hoursBackOption,
             outputDirOption, outputOption, compactOption, warningsOnlyOption, configOption,
-            authOption, trustCertOption, loginOption, passwordOption,
+            authOption, trustCertOption, loginOption, passwordOption, passwordStdinOption,
             queryIdOption, planIdOption, queryHashOption, planHashOption, moduleOption
         };
 
@@ -112,7 +116,8 @@ public static class QueryStoreCommand
             var auth = ctx.ParseResult.GetValueForOption(authOption);
             var trustCert = ctx.ParseResult.GetValueForOption(trustCertOption);
             var login = ctx.ParseResult.GetValueForOption(loginOption);
-            var password = ctx.ParseResult.GetValueForOption(passwordOption);
+            var passwordInline = ctx.ParseResult.GetValueForOption(passwordOption);
+            var passwordStdin = ctx.ParseResult.GetValueForOption(passwordStdinOption);
             var filterQueryId = ctx.ParseResult.GetValueForOption(queryIdOption);
             var filterPlanId = ctx.ParseResult.GetValueForOption(planIdOption);
             var filterQueryHash = ctx.ParseResult.GetValueForOption(queryHashOption);
@@ -122,9 +127,18 @@ public static class QueryStoreCommand
             // Load .env file if present (CLI args take precedence)
             var env = ConnectionHelper.LoadEnvFile();
             login ??= env.GetValueOrDefault("PLANVIEW_LOGIN");
-            password ??= env.GetValueOrDefault("PLANVIEW_PASSWORD");
             if (!trustCert && env.GetValueOrDefault("PLANVIEW_TRUST_CERT")?.Equals("true", StringComparison.OrdinalIgnoreCase) == true)
                 trustCert = true;
+
+            // Resolve password from --password-stdin, --password, or PLANVIEW_PASSWORD
+            if (!PasswordResolver.TryResolve(
+                    passwordInline, passwordStdin, stdinAlreadyClaimed: false,
+                    env.GetValueOrDefault("PLANVIEW_PASSWORD"),
+                    out var password))
+            {
+                Environment.ExitCode = 1;
+                return;
+            }
 
             if (top < 1)
             {

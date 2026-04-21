@@ -23,4 +23,8 @@ var root = new RootCommand("SQL Server execution plan analyzer")
 if (credentialService != null)
     root.Add(CredentialCommand.Create(credentialService));
 
-return await root.InvokeAsync(args);
+// System.CommandLine's InvokeAsync returns 0 for successful dispatch even when a
+// handler set Environment.ExitCode = 1 to signal a validation error. Honor either
+// signal so scripts can tell success from failure.
+var code = await root.InvokeAsync(args);
+return code != 0 ? code : Environment.ExitCode;
