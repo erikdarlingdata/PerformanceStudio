@@ -16,7 +16,7 @@ public class WindowsCredentialService : ICredentialService
                 userName: username,
                 secret: password,
                 comment: "planview credential",
-                persistence: CredentialPersistence.LocalMachine);
+                persistence: CredentialPersistence.Enterprise);
             return true;
         }
         catch { return false; }
