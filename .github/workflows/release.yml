@@ -46,20 +46,17 @@ jobs:
           gh release create "v${{ steps.version.outputs.VERSION }}" --title "v${{ steps.version.outputs.VERSION }}" --generate-notes --target main
 
       - name: Setup .NET 8.0
-        if: steps.check.outputs.EXISTS == 'false'
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
 
       - name: Build and test
-        if: steps.check.outputs.EXISTS == 'false'
         run: |
           dotnet restore
           dotnet build -c Release
           dotnet test tests/PlanViewer.Core.Tests/PlanViewer.Core.Tests.csproj -c Release --no-build --verbosity normal
 
       - name: Publish App (all platforms)
-        if: steps.check.outputs.EXISTS == 'false'
         run: |
           dotnet publish src/PlanViewer.App/PlanViewer.App.csproj -c Release -r win-x64 --self-contained -o publish/win-x64
           dotnet publish src/PlanViewer.App/PlanViewer.App.csproj -c Release -r linux-x64 --self-contained -o publish/linux-x64
@@ -68,7 +65,6 @@ jobs:
 
       # ── SignPath code signing (Windows only, skipped if secret not configured) ──
       - name: Check if signing is configured
-        if: steps.check.outputs.EXISTS == 'false'
         id: signing
         shell: bash
         run: |
@@ -80,7 +76,7 @@ jobs:
           fi
 
       - name: Upload Windows build for signing
-        if: steps.check.outputs.EXISTS == 'false' && steps.signing.outputs.ENABLED == 'true'
+        if: steps.signing.outputs.ENABLED == 'true'
         id: upload-unsigned
         uses: actions/upload-artifact@v4
         with:
@@ -88,7 +84,7 @@ jobs:
           path: publish/win-x64/
 
       - name: Sign Windows build
-        if: steps.check.outputs.EXISTS == 'false' && steps.signing.outputs.ENABLED == 'true'
+        if: steps.signing.outputs.ENABLED == 'true'
         uses: signpath/github-action-submit-signing-request@v1
         with:
           api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
@@ -101,7 +97,7 @@ jobs:
           output-artifact-directory: 'signed/win-x64'
 
       - name: Replace unsigned Windows build with signed
-        if: steps.check.outputs.EXISTS == 'false' && steps.signing.outputs.ENABLED == 'true'
+        if: steps.signing.outputs.ENABLED == 'true'
         shell: pwsh
         run: |
           Remove-Item -Recurse -Force publish/win-x64
@@ -109,7 +105,6 @@ jobs:
 
       # ── Velopack (uses signed Windows binaries) ───────────────────────
       - name: Create Velopack release (Windows)
-        if: steps.check.outputs.EXISTS == 'false'
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -126,7 +121,6 @@ jobs:
 
       # ── Package and upload ────────────────────────────────────────────
       - name: Package and upload
-        if: steps.check.outputs.EXISTS == 'false'
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
