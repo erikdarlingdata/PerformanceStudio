@@ -1,0 +1,307 @@
+using System;
+using System.Collections.Generic;
+
+namespace PlanViewer.Core.Services;
+
+/// <summary>
+/// Per-wait-type knowledge used when surfacing wait stats as warnings:
+/// what the wait means, how to address it, and any per-wait display hints.
+/// Entries are looked up by exact wait type first, then by prefix/family fallback,
+/// and finally a generic default.
+/// </summary>
+public static class WaitStatsKnowledge
+{
+    public sealed class Entry
+    {
+        /// <summary>Short, human-readable explanation of what the wait represents.</summary>
+        public string Description { get; init; } = "";
+
+        /// <summary>Concrete guidance on how to reduce or eliminate the wait.</summary>
+        public string HowToFix { get; init; } = "";
+
+        /// <summary>
+        /// If true, surface an effective per-wait latency (wait_ms / wait_count)
+        /// in the warning message. Useful for latch/I/O waits where tail latency is
+        /// the thing to focus on.
+        /// </summary>
+        public bool ShowEffectiveLatency { get; init; }
+    }
+
+    private static readonly Entry Default = new()
+    {
+        Description = "Query time was spent waiting on this resource.",
+        HowToFix = "Investigate why this wait is elevated for this query — the wait type name is the best starting point."
+    };
+
+    // Exact-match lookup. Prefix fallbacks handled in Lookup().
+    private static readonly Dictionary<string, Entry> Exact = new(StringComparer.OrdinalIgnoreCase)
+    {
+        // ---- I/O ----
+        ["PAGEIOLATCH_SH"] = new()
+        {
+            Description = "Waiting to read a data page from disk into the buffer pool (shared latch for a reader).",
+            HowToFix = "Reduce physical reads: add or redesign indexes so fewer pages are touched, fix cardinality estimates that cause over-scanning, or move the workload to faster storage. Check whether the buffer pool is under memory pressure and evicting pages that should stay hot.",
+            ShowEffectiveLatency = true
+        },
+        ["PAGEIOLATCH_EX"] = new()
+        {
+            Description = "Waiting to read a data page from disk into the buffer pool for modification (exclusive latch for a writer).",
+            HowToFix = "Same levers as PAGEIOLATCH_SH — reduce the number of pages the write path touches, fix bad estimates that fan writes out more than they should, and check for buffer pool pressure.",
+            ShowEffectiveLatency = true
+        },
+        ["PAGEIOLATCH_UP"] = new()
+        {
+            Description = "Waiting to read a data page from disk into the buffer pool for an update latch (typically an index maintenance/update path).",
+            HowToFix = "Same levers as PAGEIOLATCH_SH/EX. A consistently elevated _UP latch often points at update-in-place paths on heavily fragmented tables or ascending-key hot spots.",
+            ShowEffectiveLatency = true
+        },
+        ["PAGEIOLATCH_DT"] = new()
+        {
+            Description = "Waiting to read a data page from disk with a destroy latch — nearly always a tempdb allocation or deallocation path.",
+            HowToFix = "Look at tempdb activity in this plan: spills, spools, large sorts, and hash operations. Reducing the size/count of tempdb trips (fix estimates, tighter memory grants, smaller intermediate result sets) is usually more effective than tempdb file tuning for query-level waits.",
+            ShowEffectiveLatency = true
+        },
+        ["WRITELOG"] = new()
+        {
+            Description = "Waiting for the log writer to harden transaction log records to disk.",
+            HowToFix = "Faster log storage (lower write latency) is the direct lever. Also look at batching small transactions, avoiding row-at-a-time modifications, and checking whether the log file is growing during the query (preallocate it)."
+        },
+        ["IO_COMPLETION"] = new()
+        {
+            Description = "Waiting for non-data-page I/O (log reads, backup I/O, tempdb sort spills, merge join spools, etc.) to complete.",
+            HowToFix = "Identify what's doing the non-data I/O — for queries, spills and sort/merge workfiles are the usual culprits. Fix cardinality estimates that cause undersized memory grants and avoid sorts you don't need."
+        },
+        ["ASYNC_IO_COMPLETION"] = new()
+        {
+            Description = "Waiting for asynchronous I/O to complete (backup, file growth, read-ahead).",
+            HowToFix = "If this shows up on a query plan it usually indicates a read-ahead starvation pattern or file growth happening mid-query. Pre-grow files, and verify storage is keeping up with read-ahead prefetching."
+        },
+        ["LOGBUFFER"] = new()
+        {
+            Description = "Waiting for space in the in-memory log buffer before log records can be written.",
+            HowToFix = "The log writer can't harden records fast enough to free buffer space. Faster log storage is the primary fix. Also reduce log volume generated by this query (fewer rows modified per statement, no unnecessary triggers)."
+        },
+
+        // ---- Memory ----
+        ["MEMORY_ALLOCATION_EXT"] = new()
+        {
+            Description = "Waiting on the memory allocator while granting or extending a memory grant — generally a sign of memory pressure inside the server.",
+            HowToFix = "Right-size memory grants so queries don't over-request. Look for cardinality misestimates that cause inflated grants. At the server level: check for too-generous Resource Governor settings, competing workloads soaking up the buffer pool, and whether max server memory is set sensibly."
+        },
+        ["RESOURCE_SEMAPHORE"] = new()
+        {
+            Description = "Waiting for a memory grant before execution can begin — the memory grant queue is backed up.",
+            HowToFix = "Shrink the grant this query asks for (fix the estimates that inflate it) and/or reduce concurrent queries contending for memory. A plan that wants a multi-gigabyte grant for a small result set is almost always fixable by improving cardinality estimates."
+        },
+        ["RESOURCE_SEMAPHORE_QUERY_COMPILE"] = new()
+        {
+            Description = "Waiting for memory to compile the query plan — compile memory is a separately throttled pool.",
+            HowToFix = "Large, auto-generated, or deeply nested queries compile-memory starve. Parameterize and cache plans where possible, split monster queries, and avoid compile-on-every-execution patterns (OPTION RECOMPILE on hot paths, non-parameterized ad hoc SQL)."
+        },
+        ["SOS_PHYS_PAGE_CACHE"] = new()
+        {
+            Description = "Waiting on SQL Server's internal physical page cache (large-page allocator on Linux/containerized hosts).",
+            HowToFix = "This is usually symptomatic of broader memory pressure on the host rather than a query-level issue. Check host memory configuration and whether large pages are enabled correctly."
+        },
+
+        // ---- CPU / scheduler ----
+        ["SOS_SCHEDULER_YIELD"] = new()
+        {
+            Description = "Yielded CPU voluntarily after running for its scheduler quantum — the query was CPU-bound and took turns with other runnable tasks.",
+            HowToFix = "This means the query is CPU-heavy and had runnable peers, not that anything is blocking. Reduce CPU work per row (remove scalar UDFs, simplify expressions, fix plans doing excessive row-by-row work) or give the query more concurrency headroom (higher DOP if it benefits, lower concurrency from competing queries)."
+        },
+        ["THREADPOOL"] = new()
+        {
+            Description = "Waiting for a worker thread — the server's worker pool is exhausted.",
+            HowToFix = "Almost never a single-query problem: something else on the server is eating workers (blocked sessions, too-many-parallel-queries, runaway parallelism). Check the overall workload. If this wait appears for a query, it's a symptom of the environment, not the plan."
+        },
+        ["DISPATCHER_QUEUE_SEMAPHORE"] = new()
+        {
+            Description = "Waiting for a dispatcher thread (background task scheduling).",
+            HowToFix = "Typically benign/background and not a query tuning signal. Investigate only if it dominates elapsed time, which usually points at broader server stress."
+        },
+
+        // ---- Parallelism ----
+        ["CXPACKET"] = new()
+        {
+            Description = "Waiting inside a parallel exchange — producer threads waiting for consumers or vice-versa.",
+            HowToFix = "CXPACKET alone isn't a problem; the question is why threads are blocked. Look at what other waits are present on the same operators (I/O, lock, latch) — those are the real cause. Parallel skew from bad cardinality estimates or uneven data distribution also shows up here."
+        },
+        ["CXCONSUMER"] = new()
+        {
+            Description = "A consumer thread in a parallel exchange is waiting for a producer to deliver rows — generally benign on its own.",
+            HowToFix = "CXCONSUMER is usually a mirror of other waits happening upstream of the exchange. Focus on the producing side of the plan (scans, joins feeding the exchange) rather than CXCONSUMER itself."
+        },
+        ["CXSYNC_PORT"] = new()
+        {
+            Description = "Waiting on a parallel exchange port synchronization — threads coordinating at an exchange operator.",
+            HowToFix = "Another form of parallel coordination. Like CXPACKET, this is usually caused by the underlying work, not parallelism itself. Fix parallel skew, spills, or I/O at the operators below the exchange."
+        },
+        ["CXSYNC_CONSUMER"] = new()
+        {
+            Description = "Consumer-side synchronization wait inside a parallel exchange.",
+            HowToFix = "Same story as CXSYNC_PORT — investigate the producing operators for the real source of delay."
+        },
+        ["HTBUILD"] = new()
+        {
+            Description = "Waiting for a batch-mode hash table to finish building before probing can start.",
+            HowToFix = "Build-side row count drives this wait. Reduce the build-side input (better filter pushdown, fewer rows feeding the hash), or confirm the join order puts the smaller side on the build. Make sure statistics are accurate so the optimizer actually knows which side is smaller."
+        },
+        ["HTREPARTITION"] = new()
+        {
+            Description = "Waiting for a batch-mode hash table to repartition (re-hash onto more threads).",
+            HowToFix = "Repartitioning happens when initial hash distribution is uneven. Check for parallel skew from data distribution (skewed join keys, few distinct values on a hash key). Sometimes forcing MAXDOP down reduces repartition overhead more than it costs in parallelism."
+        },
+        ["HTDELETE"] = new()
+        {
+            Description = "Waiting for batch-mode hash table cleanup at operator shutdown.",
+            HowToFix = "Usually shows up alongside HTBUILD/HTREPARTITION as part of the batch-mode hash lifecycle. The fix is upstream — reduce hash input size and skew."
+        },
+        ["HTMEMO"] = new()
+        {
+            Description = "Waiting on a batch-mode memoization hash (aggregate/distinct memoization).",
+            HowToFix = "Similar to HTBUILD — reduce the volume of rows feeding the aggregate, or confirm batch-mode aggregation is actually the right choice for this shape of work."
+        },
+        ["HTREINIT"] = new()
+        {
+            Description = "Waiting for a batch-mode hash table to be reinitialized for the next execution.",
+            HowToFix = "Shows up when a batch-mode hash runs many times (inner side of a nested loop, apply, etc.). Usually a sign the plan shape is wrong — batch mode is best amortized over large row counts per execution."
+        },
+        ["BPSORT"] = new()
+        {
+            Description = "Waiting inside a batch-mode sort operator.",
+            HowToFix = "Batch-mode sorts that wait are usually memory- or concurrency-limited. Check for a too-small memory grant (spilled sort) or excessive concurrency crowding the sort."
+        },
+        ["BMPBUILD"] = new()
+        {
+            Description = "Waiting for a bitmap filter to build (bitmap-assisted parallel hash/merge).",
+            HowToFix = "Bitmap builds depend on the smaller input finishing. Reduce the build-side input where possible; bad estimates that make the optimizer pick a bitmap-assisted plan incorrectly will also show here."
+        },
+
+        // ---- Latch ----
+        ["PAGELATCH_SH"] = new()
+        {
+            Description = "Waiting for a shared latch on an in-memory page (not an I/O wait — the page is already in the buffer pool).",
+            HowToFix = "Classic tempdb allocation contention (PFS/GAM/SGAM) or last-page insert contention (ascending hot index key). For tempdb: more equally sized tempdb files. For hot pages: use an OPTIMIZE_FOR_SEQUENTIAL_KEY index option, change the clustering key, or hash-partition inserts."
+        },
+        ["PAGELATCH_EX"] = new()
+        {
+            Description = "Waiting for an exclusive latch on an in-memory page — a writer contending with other writers on the same page.",
+            HowToFix = "Same as PAGELATCH_SH: tempdb allocation contention or last-page insert hot spots. OPTIMIZE_FOR_SEQUENTIAL_KEY on ascending-key indexes is the cheapest first-step fix for last-page contention."
+        },
+        ["PAGELATCH_UP"] = new()
+        {
+            Description = "Waiting for an update latch on an in-memory page.",
+            HowToFix = "Usually shows up with PAGELATCH_EX on the same hot pages. The same fixes apply: reduce contention on the specific page type (PFS/GAM/SGAM/last-page)."
+        },
+        ["LATCH_EX"] = new()
+        {
+            Description = "Waiting for an exclusive non-buffer latch (internal SQL Server structures — plan cache, partition maps, etc.).",
+            HowToFix = "Not usually a query-tuning wait; it's a sign of concurrency pressure on shared internal structures. Investigate what other concurrent work is happening. For specific LATCH_EX subtypes check sys.dm_os_latch_stats."
+        },
+        ["LATCH_SH"] = new()
+        {
+            Description = "Waiting for a shared non-buffer latch (internal SQL Server structures).",
+            HowToFix = "Same story as LATCH_EX — a concurrency signal about a shared internal structure, not typically a single-query tuning problem."
+        },
+
+        // ---- Locking ----
+        ["LCK_M_S"]   = new() { Description = "Waiting for a shared (read) lock.",           HowToFix = "Another session holds an incompatible lock. Reduce the duration and granularity of modifications in the blocker, or adopt row versioning (RCSI/SI) so readers don't take S locks in the first place." },
+        ["LCK_M_X"]   = new() { Description = "Waiting for an exclusive (write) lock.",      HowToFix = "A writer is blocked by another session's lock. Shorten transaction duration, update fewer rows per statement, and check for lock escalation turning row locks into table locks." },
+        ["LCK_M_U"]   = new() { Description = "Waiting for an update lock (about to modify).",HowToFix = "Another session holds an incompatible lock. Shorten transactions on the blocker, narrow the rows touched, and verify appropriate indexes so updates don't scan." },
+        ["LCK_M_IS"]  = new() { Description = "Waiting for an intent-shared lock on a higher-level object.", HowToFix = "Reader is blocked by a session escalating or already holding a table-level lock. Look at what caused lock escalation on the blocker." },
+        ["LCK_M_IX"]  = new() { Description = "Waiting for an intent-exclusive lock on a higher-level object.", HowToFix = "Writer intent is blocked by a session holding a higher-level lock. Reduce escalation triggers (batch sizes, statement scope) on the blocker." },
+        ["LCK_M_SCH_S"] = new() { Description = "Waiting for a schema stability lock (DDL compatibility).", HowToFix = "Blocked by DDL on the same object. Time DDL operations for quiet periods; verify online index operations when possible." },
+        ["LCK_M_SCH_M"] = new() { Description = "Waiting for a schema modification lock (DDL blocks everything).", HowToFix = "Your DDL is waiting on active readers/writers to complete. Online index operations where available; otherwise time the change for quiet windows." },
+        ["LCK_M_RS_S"]  = new() { Description = "Waiting for a key-range shared lock (SERIALIZABLE reader).", HowToFix = "SERIALIZABLE isolation is holding key-range locks. Drop to READ COMMITTED + RCSI unless SERIALIZABLE is specifically required." },
+        ["LCK_M_RS_U"]  = new() { Description = "Waiting for a key-range update lock (SERIALIZABLE path).",  HowToFix = "Same as LCK_M_RS_S — SERIALIZABLE is the cost center here." },
+        ["LCK_M_RX_X"]  = new() { Description = "Waiting for a key-range exclusive lock.",                    HowToFix = "SERIALIZABLE writer path. Drop isolation if possible, shorten transactions, and narrow the update predicate." },
+
+        // ---- Network / client ----
+        ["ASYNC_NETWORK_IO"] = new()
+        {
+            Description = "Waiting for the client application to fetch result rows — SQL Server has produced rows faster than the client is reading them.",
+            HowToFix = "This is a client-side problem, not a query-tuning one. The client is either slow to consume rows (processing row-by-row, cross-network, or paused) or it's asking for far more data than it actually uses. Return fewer columns/rows, stream result processing, and move the client closer to the server network-wise."
+        },
+
+        // ---- Misc ----
+        ["EXECSYNC"] = new()
+        {
+            Description = "Waiting on internal parallel execution synchronization (e.g. building a spool that a nested loop on the outer side is reading).",
+            HowToFix = "Often shows up around eager spools in parallel plans. Fixing the underlying reason for the spool (cardinality estimates, Halloween protection concerns, missing indexes) is the lever."
+        },
+        ["PREEMPTIVE_OS_WRITEFILEGATHER"] = new()
+        {
+            Description = "Waiting while SQL Server asks the OS to zero out file space (data or log file growth).",
+            HowToFix = "Pre-size data files to avoid mid-query growth, and enable Instant File Initialization to skip zeroing for data files. (Log files must still be zeroed.)"
+        }
+    };
+
+    /// <summary>
+    /// Look up the knowledge entry for a wait type. Falls back through family prefixes
+    /// (LCK_, HT, CX, PAGEIOLATCH_, PAGELATCH_, LATCH_, PREEMPTIVE_) before returning
+    /// a generic default. Never returns null.
+    /// </summary>
+    public static Entry Lookup(string waitType)
+    {
+        if (string.IsNullOrEmpty(waitType)) return Default;
+        if (Exact.TryGetValue(waitType, out var exact)) return exact;
+
+        var wt = waitType.ToUpperInvariant();
+
+        if (wt.StartsWith("LCK_M_"))
+            return new Entry
+            {
+                Description = "Waiting for a lock held by another session.",
+                HowToFix = "Identify the blocker and reduce its transaction duration, granularity, or isolation level. Consider row versioning (RCSI/SI) for read-heavy workloads."
+            };
+
+        if (wt.StartsWith("PAGEIOLATCH_"))
+            return new Entry
+            {
+                Description = "Waiting to read a data page from disk into the buffer pool.",
+                HowToFix = "Reduce physical reads (better indexes, fewer pages touched, fix cardinality estimates) or move to faster storage.",
+                ShowEffectiveLatency = true
+            };
+
+        if (wt.StartsWith("PAGELATCH_"))
+            return new Entry
+            {
+                Description = "Waiting for a latch on an in-memory page — usually tempdb allocation or last-page contention.",
+                HowToFix = "For tempdb: more equally-sized tempdb files. For last-page inserts: OPTIMIZE_FOR_SEQUENTIAL_KEY or change the clustering key."
+            };
+
+        if (wt.StartsWith("LATCH_"))
+            return new Entry
+            {
+                Description = "Waiting for a non-buffer latch on an internal SQL Server structure.",
+                HowToFix = "Check sys.dm_os_latch_stats for the specific latch class — these are usually concurrency signals rather than query-tuning problems."
+            };
+
+        if (wt.StartsWith("HT") && wt.Length > 2)
+            return new Entry
+            {
+                Description = "Batch-mode hash operation synchronization wait.",
+                HowToFix = "Reduce input rows and skew for the batch-mode hash. Confirm the smaller side is on the build, and check that batch mode is the right choice for this plan shape."
+            };
+
+        if (wt.StartsWith("CX"))
+            return new Entry
+            {
+                Description = "Parallel exchange coordination wait — threads waiting for each other inside a parallel plan.",
+                HowToFix = "CX* waits are usually symptoms of other waits upstream (I/O, lock, latch) or parallel skew. Look at what's happening on the operators feeding the exchange, not the exchange itself."
+            };
+
+        if (wt.StartsWith("PREEMPTIVE_"))
+            return new Entry
+            {
+                Description = "SQL Server is waiting on an external OS or system call.",
+                HowToFix = "The specific preemptive wait suffix indicates the source (file growth, DNS, CLR, etc.). Address whichever external dependency is slow."
+            };
+
+        if (wt.Contains("MEMORY_ALLOCATION"))
+            return Exact["MEMORY_ALLOCATION_EXT"];
+
+        return Default;
+    }
+}
