@@ -171,6 +171,13 @@ else
                         </div>
                     }
                 }
+                @if (ActiveStmt!.CompileTimeMs > 0)
+                {
+                    <div class="insight-row">
+                        <span class="insight-label">Compile</span>
+                        <span class="insight-value">@ActiveStmt!.CompileTimeMs.ToString("N0") ms</span>
+                    </div>
+                }
                 @if (ActiveStmt!.DegreeOfParallelism > 0)
                 {
                     <div class="insight-row">
@@ -188,7 +195,7 @@ else
                 @if (ActiveStmt!.MemoryGrant != null && ActiveStmt!.MemoryGrant.GrantedKB > 0)
                 {
                     var pctUsed = (double)ActiveStmt!.MemoryGrant.MaxUsedKB / ActiveStmt!.MemoryGrant.GrantedKB * 100;
-                    var effClass = pctUsed >= 80 ? "eff-good" : pctUsed >= 60 ? "eff-ok" : pctUsed >= 40 ? "eff-warn" : "eff-bad";
+                    var effClass = pctUsed >= 40 ? "eff-good" : pctUsed >= 20 ? "eff-warn" : "eff-bad";
                     <div class="insight-row">
                         <span class="insight-label">Memory</span>
                         <span class="insight-value">@FormatKB(ActiveStmt!.MemoryGrant.GrantedKB) granted</span>
