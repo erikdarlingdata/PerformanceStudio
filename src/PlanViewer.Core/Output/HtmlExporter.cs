@@ -303,7 +303,8 @@ pre.query-text, pre.text-output {
             WriteRow(sb, "CPU", $"{stmt.QueryTime.CpuTimeMs:N0} ms");
             if (stmt.QueryTime.ElapsedTimeMs > 0)
             {
-                var ratio = (double)stmt.QueryTime.CpuTimeMs / stmt.QueryTime.ElapsedTimeMs;
+                var effectiveCpu = Math.Max(0, stmt.QueryTime.CpuTimeMs - stmt.QueryTime.ExternalWaitMs);
+                var ratio = (double)effectiveCpu / stmt.QueryTime.ElapsedTimeMs;
                 WriteRow(sb, "CPU:Elapsed", ratio.ToString("N2"));
             }
         }
