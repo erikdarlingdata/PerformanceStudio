@@ -451,6 +451,23 @@ textarea::placeholder {
     color: var(--text-muted);
 }
 
+.toolbar-app-version {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    padding: 0.1rem 0.4rem;
+    border-radius: 3px;
+    background: rgba(0, 0, 0, 0.05);
+    margin-left: auto;
+}
+
+.app-version {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    margin-left: 0.25rem;
+}
+
 /* === Statement Tabs === */
 .statement-tabs {
     display: flex;
