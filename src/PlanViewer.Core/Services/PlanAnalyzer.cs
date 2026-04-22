@@ -921,21 +921,38 @@ public static class PlanAnalyzer
                 ? GetOperatorOwnElapsedMs(node) > 0
                 : node.CostPercent >= 20;
 
-            if (colCount <= 3 && isSignificant)
+            if (isSignificant)
             {
                 var scanKind = node.PhysicalOp == "Clustered Index Scan"
                     ? "Clustered index scan"
                     : "Heap table scan";
-                var indexAdvice = node.PhysicalOp == "Clustered Index Scan"
-                    ? "Consider a nonclustered index on the output columns (as key or INCLUDE) so SQL Server can read a narrower structure."
-                    : "Consider a clustered or nonclustered index on the output columns so SQL Server can read a narrower structure.";
 
-                node.Warnings.Add(new PlanWarning
+                if (colCount <= 3)
                 {
-                    WarningType = "Bare Scan",
-                    Message = $"{scanKind} reads the full table with no predicate, outputting {colCount} column(s): {Truncate(node.OutputColumns, 200)}. {indexAdvice} For analytical workloads, a columnstore index may be a better fit.",
-                    Severity = PlanWarningSeverity.Warning
-                });
+                    // Narrow output: a nonclustered rowstore index can cover this cheaply.
+                    var indexAdvice = node.PhysicalOp == "Clustered Index Scan"
+                        ? "Consider a nonclustered index on the output columns (as key or INCLUDE) so SQL Server can read a narrower structure."
+                        : "Consider a clustered or nonclustered index on the output columns so SQL Server can read a narrower structure.";
+
+                    node.Warnings.Add(new PlanWarning
+                    {
+                        WarningType = "Bare Scan",
+                        Message = $"{scanKind} reads the full table with no predicate, outputting {colCount} column(s): {Truncate(node.OutputColumns, 200)}. {indexAdvice} For analytical workloads, a columnstore index may be a better fit.",
+                        Severity = PlanWarningSeverity.Warning
+                    });
+                }
+                else
+                {
+                    // Wider output: rowstore NC index isn't a great fit (would have to
+                    // carry too many columns), but columnstore doesn't care about column
+                    // count. Suggest it for analytical / aggregate-style workloads.
+                    node.Warnings.Add(new PlanWarning
+                    {
+                        WarningType = "Bare Scan",
+                        Message = $"{scanKind} reads the full table with no predicate, outputting {colCount} columns. A nonclustered rowstore index isn't a great fit for wide outputs, but if this is an analytical or aggregate-style query, a columnstore index (CCI or NCCI) can scan the same data far more cheaply — column count doesn't penalize columnstore the way it does rowstore indexes.",
+                        Severity = PlanWarningSeverity.Warning
+                    });
+                }
             }
         }
 
@@ -1227,6 +1244,29 @@ public static class PlanAnalyzer
             {
                 w.Severity = PlanWarningSeverity.Critical;
                 w.Message = $"Implicit conversion prevented an index seek, forcing a scan instead. Fix the data type mismatch: ensure the parameter or variable type matches the column type exactly. {w.Message}";
+            }
+        }
+
+        // Rule 35: Expensive Operator — always show operators that take a significant
+        // share of statement time even when no other rule has something to say. Joe
+        // (#215 C8) wanted expensive scans that the tool had nothing to suggest on
+        // to still surface as top items. Threshold: self-time >= 20% of statement
+        // elapsed. Only emits if no other warning is already on the node to avoid
+        // doubling up. The benefit % is just the self-time share.
+        if (!cfg.IsRuleDisabled(35) && node.HasActualStats && node.Warnings.Count == 0
+            && stmt.QueryTimeStats != null && stmt.QueryTimeStats.ElapsedTimeMs > 0)
+        {
+            var selfMs = GetOperatorOwnElapsedMs(node);
+            var pct = (double)selfMs / stmt.QueryTimeStats.ElapsedTimeMs * 100;
+            if (pct >= 20.0)
+            {
+                node.Warnings.Add(new PlanWarning
+                {
+                    WarningType = "Expensive Operator",
+                    Message = $"{node.PhysicalOp} took {selfMs:N0}ms ({pct:N1}% of statement elapsed) but no specific rule identified a fix. Worth investigating: is the row volume necessary? Are upstream estimates driving this operator harder than it should be?",
+                    Severity = pct >= 50 ? PlanWarningSeverity.Critical : PlanWarningSeverity.Warning,
+                    MaxBenefitPercent = Math.Round(Math.Min(100.0, pct), 1)
+                });
             }
         }
     }
