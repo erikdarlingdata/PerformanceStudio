@@ -163,7 +163,8 @@ else
                     </div>
                     @if (ActiveStmt!.QueryTime.ElapsedTimeMs > 0)
                     {
-                        var ratio = (double)ActiveStmt!.QueryTime.CpuTimeMs / ActiveStmt!.QueryTime.ElapsedTimeMs;
+                        var effectiveCpu = Math.Max(0L, ActiveStmt!.QueryTime.CpuTimeMs - ActiveStmt!.QueryTime.ExternalWaitMs);
+                        var ratio = (double)effectiveCpu / ActiveStmt!.QueryTime.ElapsedTimeMs;
                         <div class="insight-row">
                             <span class="insight-label">CPU:Elapsed</span>
                             <span class="insight-value">@ratio.ToString("N2")</span>

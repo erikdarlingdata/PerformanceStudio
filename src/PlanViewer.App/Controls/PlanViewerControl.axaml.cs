@@ -2839,8 +2839,15 @@ public partial class PlanViewerControl : UserControl
                 statement.QueryTimeStats.CpuTimeMs > 0 &&
                 statement.DegreeOfParallelism > 1)
             {
-                // Speedup ratio: CPU/elapsed = 1.0 means serial, = DOP means perfect parallelism
-                var speedup = (double)statement.QueryTimeStats.CpuTimeMs / statement.QueryTimeStats.ElapsedTimeMs;
+                // Speedup ratio: CPU/elapsed = 1.0 means serial, = DOP means perfect parallelism.
+                // Subtract external/preemptive wait time from CPU — those waits are CPU-busy
+                // in kernel and inflate the ratio without representing real query work.
+                long externalWaitMs = 0;
+                foreach (var w in statement.WaitStats)
+                    if (BenefitScorer.IsExternalWait(w.WaitType))
+                        externalWaitMs += w.WaitTimeMs;
+                var effectiveCpu = Math.Max(0, statement.QueryTimeStats.CpuTimeMs - externalWaitMs);
+                var speedup = (double)effectiveCpu / statement.QueryTimeStats.ElapsedTimeMs;
                 var efficiency = Math.Min(100.0, (speedup - 1.0) / (statement.DegreeOfParallelism - 1.0) * 100.0);
                 efficiency = Math.Max(0.0, efficiency);
                 dopText += $" ({efficiency:N0}% efficient)";
