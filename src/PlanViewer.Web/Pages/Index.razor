@@ -7,7 +7,7 @@
         <div class="landing-content">
             <h2>Free SQL Server Query Plan Analysis</h2>
             <p class="privacy">Paste or upload a .sqlplan file. Your plan XML never leaves your browser.</p>
-            <p class="powered-by">Powered by the same analysis engine in the <a href="https://github.com/erikdarlingdata/PerformanceStudio" target="_blank" rel="noopener">Performance Studio</a> app.</p>
+            <p class="powered-by">Powered by the same analysis engine in the <a href="https://github.com/erikdarlingdata/PerformanceStudio" target="_blank" rel="noopener">Performance Studio</a> app. <span class="app-version">@AppVersion</span></p>
 
             @if (errorMessage != null)
             {
@@ -57,6 +57,7 @@ else
         {
             <span class="toolbar-version">@result.SqlServerBuild</span>
         }
+        <span class="toolbar-app-version" title="Performance Studio web viewer version">@AppVersion</span>
         @if (shareUrl != null)
         {
             <span class="share-url"><a href="@shareUrl" target="_blank">@shareUrl</a></span>
@@ -1663,6 +1664,13 @@ else
 
 @code {
     private const string ShareApiBase = "https://stats.erikdarling.com";
+
+    private static readonly string AppVersion = GetAppVersion();
+    private static string GetAppVersion()
+    {
+        var v = typeof(Index).Assembly.GetName().Version;
+        return v == null ? "?" : $"v{v.Major}.{v.Minor}.{v.Build}";
+    }
 
     private string activeTab = "paste";
     private string planXml = "";
