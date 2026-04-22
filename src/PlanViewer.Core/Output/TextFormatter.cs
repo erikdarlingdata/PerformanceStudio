@@ -139,7 +139,7 @@ public static class TextFormatter
                 foreach (var w in stmt.WaitStats.OrderByDescending(w => w.WaitTimeMs))
                 {
                     var benefitTag = benefitLookup.TryGetValue(w.WaitType, out var pct)
-                        ? $" (up to {pct:N0}% benefit)"
+                        ? $" (up to {(pct >= 100 ? pct.ToString("N0") : pct.ToString("N1"))}% benefit)"
                         : "";
                     writer.WriteLine($"  {w.WaitType}: {w.WaitTimeMs:N0}ms{benefitTag}");
                 }
@@ -169,7 +169,7 @@ public static class TextFormatter
                 foreach (var w in sortedWarnings)
                 {
                     var benefitTag = w.MaxBenefitPercent.HasValue
-                        ? $" (up to {w.MaxBenefitPercent:N0}% benefit)"
+                        ? $" (up to {(w.MaxBenefitPercent.Value >= 100 ? w.MaxBenefitPercent.Value.ToString("N0") : w.MaxBenefitPercent.Value.ToString("N1"))}% benefit)"
                         : "";
                     writer.WriteLine($"  [{w.Severity}] {w.Type}{benefitTag}: {EscapeNewlines(w.Message)}");
                     if (!string.IsNullOrEmpty(w.ActionableFix))

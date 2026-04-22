@@ -302,7 +302,7 @@ else
                                 @w.WaitTimeMs.ToString("N0") ms
                                 @if (benefitPct > 0)
                                 {
-                                    <span class="wait-benefit">up to @benefitPct.ToString("N0")%</span>
+                                    <span class="wait-benefit">up to @(benefitPct >= 100 ? benefitPct.ToString("N0") : benefitPct.ToString("N1"))%</span>
                                 }
                             </span>
                         </div>
@@ -346,7 +346,7 @@ else
                         <span class="warning-type">@w.Type</span>
                         @if (w.MaxBenefitPercent.HasValue)
                         {
-                            <span class="warn-benefit">up to @w.MaxBenefitPercent.Value.ToString("N0")% benefit</span>
+                            <span class="warn-benefit">up to @(w.MaxBenefitPercent.Value >= 100 ? w.MaxBenefitPercent.Value.ToString("N0") : w.MaxBenefitPercent.Value.ToString("N1"))% benefit</span>
                         }
                         <span class="warning-msg">@w.Message</span>
                         @if (!string.IsNullOrEmpty(w.ActionableFix))

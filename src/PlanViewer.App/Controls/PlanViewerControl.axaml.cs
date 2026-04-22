@@ -801,6 +801,9 @@ public partial class PlanViewerControl : UserControl
         return $"{bytes / (1024L * 1024 * 1024):N1} GB";
     }
 
+    private static string FormatBenefitPercent(double pct) =>
+        pct >= 100 ? $"{pct:N0}" : $"{pct:N1}";
+
     #endregion
 
     #region Node Selection & Properties Panel
@@ -1737,7 +1740,7 @@ public partial class PlanViewerControl : UserControl
                         : w.Severity == PlanWarningSeverity.Warning ? "#FFB347" : "#6BB5FF";
                     var warnPanel = new StackPanel { Margin = new Thickness(10, 2, 10, 2) };
                     var planWarnHeader = w.MaxBenefitPercent.HasValue
-                        ? $"\u26A0 {w.WarningType} \u2014 up to {w.MaxBenefitPercent:N0}% benefit"
+                        ? $"\u26A0 {w.WarningType} \u2014 up to {FormatBenefitPercent(w.MaxBenefitPercent.Value)}% benefit"
                         : $"\u26A0 {w.WarningType}";
                     warnPanel.Children.Add(new TextBlock
                     {
@@ -1819,7 +1822,7 @@ public partial class PlanViewerControl : UserControl
                     : w.Severity == PlanWarningSeverity.Warning ? "#FFB347" : "#6BB5FF";
                 var warnPanel = new StackPanel { Margin = new Thickness(10, 2, 10, 2) };
                 var nodeWarnHeader = w.MaxBenefitPercent.HasValue
-                    ? $"\u26A0 {w.WarningType} \u2014 up to {w.MaxBenefitPercent:N0}% benefit"
+                    ? $"\u26A0 {w.WarningType} \u2014 up to {FormatBenefitPercent(w.MaxBenefitPercent.Value)}% benefit"
                     : $"\u26A0 {w.WarningType}";
                 warnPanel.Children.Add(new TextBlock
                 {
