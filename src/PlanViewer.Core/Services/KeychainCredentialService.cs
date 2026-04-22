@@ -103,11 +103,14 @@ public class KeychainCredentialService : ICredentialService
         using var process = Process.Start(psi);
         if (process == null) return (-1, string.Empty);
 
+        // Read both streams concurrently. Doing stderr synchronously while stdout is
+        // async can deadlock if stderr fills its pipe buffer before the process exits
+        // (reproduces on `security dump-keychain` with large keychains).
         var stdoutTask = process.StandardOutput.ReadToEndAsync();
-        var stderr = process.StandardError.ReadToEnd();
+        var stderrTask = process.StandardError.ReadToEndAsync();
         process.WaitForExit();
-        var stdout = stdoutTask.Result;
+        Task.WaitAll(stdoutTask, stderrTask);
 
-        return (process.ExitCode, stdout + stderr);
+        return (process.ExitCode, stdoutTask.Result + stderrTask.Result);
     }
 }

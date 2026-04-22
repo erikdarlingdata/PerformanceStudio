@@ -20,12 +20,21 @@ namespace PlanViewer.Ssms
 
         /// <summary>
         /// Saves plan XML to a temp .sqlplan file and returns the path.
+        /// Uses a cryptographically-random suffix so the filename can't be predicted
+        /// or preempted by another local process (e.g. planting a symlink at the
+        /// expected path before the write lands). FileMode.CreateNew refuses to
+        /// overwrite a pre-existing file, closing the race further.
         /// </summary>
         public static string SavePlanToTemp(string planXml)
         {
-            var fileName = $"ssms_plan_{DateTime.Now:yyyyMMdd_HHmmss}.sqlplan";
+            var suffix = Path.GetFileNameWithoutExtension(Path.GetRandomFileName());
+            var fileName = "ssms_plan_" + suffix + ".sqlplan";
             var tempPath = Path.Combine(Path.GetTempPath(), fileName);
-            File.WriteAllText(tempPath, planXml);
+            using (var fs = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            using (var writer = new StreamWriter(fs))
+            {
+                writer.Write(planXml);
+            }
             return tempPath;
         }
 

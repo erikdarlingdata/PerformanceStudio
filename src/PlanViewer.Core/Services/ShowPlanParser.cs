@@ -1832,6 +1832,7 @@ public static class ShowPlanParser
     private static long ParseLong(string? value)
     {
         if (string.IsNullOrEmpty(value)) return 0;
-        return long.TryParse(value, out var result) ? result : 0;
+        return long.TryParse(value, System.Globalization.NumberStyles.Integer,
+            System.Globalization.CultureInfo.InvariantCulture, out var result) ? result : 0;
     }
 }

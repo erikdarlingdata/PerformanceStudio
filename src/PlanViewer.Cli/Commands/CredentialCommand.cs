@@ -36,6 +36,9 @@ public static class CredentialCommand
             string password;
             if (!string.IsNullOrEmpty(passwordArg))
             {
+                Console.Error.WriteLine(
+                    "Warning: --password is visible in process listings and shell history. " +
+                    "Prefer piping the password into stdin (e.g. `echo hunter2 | planview credential add ...`).");
                 password = passwordArg;
             }
             else if (Console.IsInputRedirected)

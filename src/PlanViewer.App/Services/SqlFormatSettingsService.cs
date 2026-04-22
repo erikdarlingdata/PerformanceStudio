@@ -123,7 +123,7 @@ internal static class SqlFormatSettingsService
         {
             Directory.CreateDirectory(SettingsDir);
             var json = JsonSerializer.Serialize(settings, JsonOptions);
-            File.WriteAllText(SettingsPath, json);
+            AtomicFile.WriteAllText(SettingsPath, json);
             return true;
         }
         catch (Exception ex)

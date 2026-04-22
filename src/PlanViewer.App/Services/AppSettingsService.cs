@@ -59,7 +59,7 @@ internal sealed class AppSettingsService
         {
             Directory.CreateDirectory(SettingsDir);
             var json = JsonSerializer.Serialize(settings, JsonOptions);
-            File.WriteAllText(SettingsPath, json);
+            AtomicFile.WriteAllText(SettingsPath, json);
         }
         catch
         {
