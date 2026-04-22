@@ -407,7 +407,7 @@ pre.query-text, pre.text-output {
             {
                 var barPct = maxWait > 0 ? (double)w.WaitTimeMs / maxWait * 100 : 0;
                 var benefitTag = benefitLookup.TryGetValue(w.WaitType, out var pct)
-                    ? $" <span class=\"warn-benefit\">up to {pct:N0}%</span>"
+                    ? $" <span class=\"warn-benefit\">up to {(pct >= 100 ? pct.ToString("N0") : pct.ToString("N1"))}%</span>"
                     : "";
                 sb.AppendLine("<div class=\"wait-row\">");
                 sb.AppendLine($"<span class=\"wait-type\">{Encode(w.WaitType)}</span>");
@@ -458,7 +458,7 @@ pre.query-text, pre.text-output {
                 sb.AppendLine($"<span class=\"warn-op\">{Encode(w.Operator)}</span>");
             sb.AppendLine($"<span class=\"warn-type\">{Encode(w.Type)}</span>");
             if (w.MaxBenefitPercent.HasValue)
-                sb.AppendLine($"<span class=\"warn-benefit\">up to {w.MaxBenefitPercent:N0}% benefit</span>");
+                sb.AppendLine($"<span class=\"warn-benefit\">up to {(w.MaxBenefitPercent.Value >= 100 ? w.MaxBenefitPercent.Value.ToString("N0") : w.MaxBenefitPercent.Value.ToString("N1"))}% benefit</span>");
             sb.AppendLine($"<span class=\"warn-msg\">{Encode(w.Message)}</span>");
             if (!string.IsNullOrEmpty(w.ActionableFix))
                 sb.AppendLine($"<span class=\"warn-fix\">{Encode(w.ActionableFix)}</span>");

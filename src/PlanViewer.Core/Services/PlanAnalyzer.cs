@@ -1593,24 +1593,43 @@ public static class PlanAnalyzer
     }
 
     /// <summary>
-    /// Serial row mode self-time: subtract all direct children's elapsed.
-    /// Exchange children are skipped through to their real child.
+    /// Serial row mode self-time: subtract all direct children's effective elapsed.
+    /// Pass-through operators (Compute Scalar, etc.) don't carry runtime stats —
+    /// look through them to the first descendant that does. Exchange children
+    /// use max-child elapsed because exchange times are unreliable.
     /// </summary>
     private static long GetSerialOwnElapsed(PlanNode node)
     {
         var totalChildElapsed = 0L;
         foreach (var child in node.Children)
-        {
-            var childElapsed = child.ActualElapsedMs;
-
-            // Exchange operators have unreliable times — skip to their child
-            if (child.PhysicalOp == "Parallelism" && child.Children.Count > 0)
-                childElapsed = child.Children.Max(c => c.ActualElapsedMs);
-
-            totalChildElapsed += childElapsed;
-        }
+            totalChildElapsed += GetEffectiveChildElapsedMs(child);
 
         return Math.Max(0, node.ActualElapsedMs - totalChildElapsed);
+    }
+
+    /// <summary>
+    /// Returns the elapsed time a child contributes to its parent's subtree.
+    /// Looks through pass-through operators (Compute Scalar, Parallelism exchange)
+    /// that don't carry reliable runtime stats.
+    /// </summary>
+    private static long GetEffectiveChildElapsedMs(PlanNode child)
+    {
+        // Exchange operators: unreliable times, use max child
+        if (child.PhysicalOp == "Parallelism" && child.Children.Count > 0)
+            return child.Children.Max(GetEffectiveChildElapsedMs);
+
+        // Child has its own stats: use them
+        if (child.ActualElapsedMs > 0)
+            return child.ActualElapsedMs;
+
+        // No stats (Compute Scalar and similar): look through to descendants
+        if (child.Children.Count == 0)
+            return 0;
+
+        var sum = 0L;
+        foreach (var grandchild in child.Children)
+            sum += GetEffectiveChildElapsedMs(grandchild);
+        return sum;
     }
 
     /// <summary>
