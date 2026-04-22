@@ -2800,9 +2800,12 @@ public partial class PlanViewerControl : UserControl
             rowIndex++;
         }
 
-        // Efficiency thresholds: white >= 80%, yellow >= 60%, orange >= 40%, red < 40%
-        static string EfficiencyColor(double pct) => pct >= 80 ? "#E4E6EB"
-            : pct >= 60 ? "#FFD700" : pct >= 40 ? "#FFB347" : "#E57373";
+        // Efficiency thresholds: white >= 40%, orange >= 20%, red < 20%.
+        // Loosened per Joe's feedback (#215 C1): for memory grants, moderate
+        // utilization (e.g. 60%) is fine — operators can spill near their max,
+        // so we shouldn't flag anything above a real over-grant threshold.
+        static string EfficiencyColor(double pct) => pct >= 40 ? "#E4E6EB"
+            : pct >= 20 ? "#FFB347" : "#E57373";
 
         // Runtime stats (actual plans)
         if (statement.QueryTimeStats != null)
@@ -2814,6 +2817,11 @@ public partial class PlanViewerControl : UserControl
             if (statement.QueryUdfElapsedTimeMs > 0)
                 AddRow("UDF elapsed", $"{statement.QueryUdfElapsedTimeMs:N0}ms");
         }
+
+        // Compile time — plan-level property (category B). Show regardless of
+        // threshold so it's always visible, not just when Rule 19 fires.
+        if (statement.CompileTimeMs > 0)
+            AddRow("Compile", $"{statement.CompileTimeMs:N0}ms");
 
         // Memory grant — color by utilization percentage
         if (statement.MemoryGrant != null)

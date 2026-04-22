@@ -308,6 +308,8 @@ pre.query-text, pre.text-output {
                 WriteRow(sb, "CPU:Elapsed", ratio.ToString("N2"));
             }
         }
+        if (stmt.CompileTimeMs > 0)
+            WriteRow(sb, "Compile", $"{stmt.CompileTimeMs:N0} ms");
         if (stmt.DegreeOfParallelism > 0)
             WriteRow(sb, "DOP", stmt.DegreeOfParallelism.ToString());
         if (stmt.NonParallelReason != null)
@@ -315,7 +317,7 @@ pre.query-text, pre.text-output {
         if (stmt.MemoryGrant != null && stmt.MemoryGrant.GrantedKB > 0)
         {
             var pctUsed = (double)stmt.MemoryGrant.MaxUsedKB / stmt.MemoryGrant.GrantedKB * 100;
-            var effClass = pctUsed >= 80 ? "eff-good" : pctUsed >= 40 ? "eff-warn" : "eff-bad";
+            var effClass = pctUsed >= 40 ? "eff-good" : pctUsed >= 20 ? "eff-warn" : "eff-bad";
             WriteRow(sb, "Memory", FormatKB(stmt.MemoryGrant.GrantedKB) + " granted");
             sb.AppendLine($"<div class=\"row\"><span class=\"label\">Used</span><span class=\"value {effClass}\">{FormatKB(stmt.MemoryGrant.MaxUsedKB)} ({pctUsed:N0}%)</span></div>");
         }
