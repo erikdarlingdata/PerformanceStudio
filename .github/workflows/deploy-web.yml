@@ -6,6 +6,7 @@ on:
     paths:
       - 'src/PlanViewer.Core/**'
       - 'src/PlanViewer.Web/**'
+      - 'src/PlanViewer.App/PlanViewer.App.csproj'
       - '.github/workflows/deploy-web.yml'
   workflow_dispatch:
 
@@ -35,6 +36,17 @@ jobs:
 
       - name: Install WASM workload
         run: dotnet workload install wasm-tools
+
+      - name: Sync web version with app version
+        shell: pwsh
+        run: |
+          $appVersion = ([xml](Get-Content src/PlanViewer.App/PlanViewer.App.csproj)).Project.PropertyGroup.Version | Where-Object { $_ }
+          Write-Host "App version: $appVersion"
+          $webCsproj = 'src/PlanViewer.Web/PlanViewer.Web.csproj'
+          $content = Get-Content $webCsproj -Raw
+          $content = [regex]::Replace($content, '<Version>[^<]+</Version>', "<Version>$appVersion</Version>")
+          Set-Content -Path $webCsproj -Value $content -NoNewline
+          Write-Host "Synced web csproj to $appVersion"
 
       - name: Publish Blazor WASM
         run: dotnet publish src/PlanViewer.Web/PlanViewer.Web.csproj -c Release -o publish
