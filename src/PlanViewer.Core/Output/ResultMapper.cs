@@ -1,4 +1,5 @@
 using PlanViewer.Core.Models;
+using PlanViewer.Core.Services;
 
 namespace PlanViewer.Core.Output;
 
@@ -111,10 +112,18 @@ public static class ResultMapper
         // Query time (actual plans)
         if (stmt.QueryTimeStats != null)
         {
+            long externalWaitMs = 0;
+            foreach (var w in stmt.WaitStats)
+            {
+                if (BenefitScorer.IsExternalWait(w.WaitType))
+                    externalWaitMs += w.WaitTimeMs;
+            }
+
             result.QueryTime = new QueryTimeResult
             {
                 CpuTimeMs = stmt.QueryTimeStats.CpuTimeMs,
-                ElapsedTimeMs = stmt.QueryTimeStats.ElapsedTimeMs
+                ElapsedTimeMs = stmt.QueryTimeStats.ElapsedTimeMs,
+                ExternalWaitMs = externalWaitMs
             };
         }
 

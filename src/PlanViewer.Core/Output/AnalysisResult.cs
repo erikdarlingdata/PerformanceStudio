@@ -176,6 +176,14 @@ public class QueryTimeResult
 
     [JsonPropertyName("elapsed_time_ms")]
     public long ElapsedTimeMs { get; set; }
+
+    /// <summary>
+    /// Sum of external/preemptive wait time (MEMORY_ALLOCATION_*, PREEMPTIVE_*) —
+    /// these waits are CPU-busy in kernel and inflate CpuTimeMs vs real query CPU.
+    /// Subtract from CpuTimeMs for a truer CPU:Elapsed ratio.
+    /// </summary>
+    [JsonPropertyName("external_wait_ms")]
+    public long ExternalWaitMs { get; set; }
 }
 
 public class ParameterResult
