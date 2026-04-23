@@ -834,6 +834,18 @@ textarea::placeholder {
     margin-right: 0.4rem;
 }
 
+.warn-legacy {
+    font-size: 0.65rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    padding: 0.05rem 0.3rem;
+    border-radius: 3px;
+    background: rgba(0, 0, 0, 0.08);
+    margin-right: 0.4rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
 .warning-fix {
     color: var(--text-secondary);
     display: block;

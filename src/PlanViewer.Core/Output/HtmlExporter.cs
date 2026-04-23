@@ -187,6 +187,7 @@ pre.mi-create {
 .warn-type { font-size: 0.75rem; font-weight: 600; }
 .warn-benefit { font-size: 0.7rem; font-weight: 600; color: var(--text-muted); padding: 0.05rem 0.3rem; border-radius: 3px; background: rgba(0,0,0,0.04); }
 .warn-msg { font-size: 0.8rem; color: var(--text); flex-basis: 100%; }
+.warn-legacy { font-size: 0.65rem; font-weight: 600; color: var(--text-muted); padding: 0.05rem 0.3rem; border-radius: 3px; background: rgba(0,0,0,0.08); text-transform: uppercase; letter-spacing: 0.05em; }
 .warn-fix { font-size: 0.75rem; color: var(--text-secondary); font-style: italic; flex-basis: 100%; border-left: 2px solid var(--border); padding-left: 0.5rem; margin-top: 0.15rem; }
 
 /* Query text */
@@ -460,6 +461,8 @@ pre.query-text, pre.text-output {
             if (w.Operator != null)
                 sb.AppendLine($"<span class=\"warn-op\">{Encode(w.Operator)}</span>");
             sb.AppendLine($"<span class=\"warn-type\">{Encode(w.Type)}</span>");
+            if (w.IsLegacy)
+                sb.AppendLine("<span class=\"warn-legacy\" title=\"Legacy rule — predates the benefit-scoring framework\">legacy</span>");
             if (w.MaxBenefitPercent.HasValue)
                 sb.AppendLine($"<span class=\"warn-benefit\">up to {(w.MaxBenefitPercent.Value >= 100 ? w.MaxBenefitPercent.Value.ToString("N0") : w.MaxBenefitPercent.Value.ToString("N1"))}% benefit</span>");
             sb.AppendLine($"<span class=\"warn-msg\">{Encode(w.Message)}</span>");

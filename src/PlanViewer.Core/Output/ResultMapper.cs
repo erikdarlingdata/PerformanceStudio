@@ -180,7 +180,8 @@ public static class ResultMapper
                 Severity = w.Severity.ToString(),
                 Message = w.Message,
                 MaxBenefitPercent = w.MaxBenefitPercent,
-                ActionableFix = w.ActionableFix
+                ActionableFix = w.ActionableFix,
+                IsLegacy = w.IsLegacy
             });
         }
 
@@ -283,7 +284,8 @@ public static class ResultMapper
                 Operator = FormatOperatorLabel(node),
                 NodeId = node.NodeId,
                 MaxBenefitPercent = w.MaxBenefitPercent,
-                ActionableFix = w.ActionableFix
+                ActionableFix = w.ActionableFix,
+                IsLegacy = w.IsLegacy
             });
         }
 

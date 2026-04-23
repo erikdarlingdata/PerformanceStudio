@@ -226,6 +226,13 @@ public class WarningResult
 
     [JsonPropertyName("actionable_fix")]
     public string? ActionableFix { get; set; }
+
+    /// <summary>
+    /// True for rules predating the benefit-scoring framework. Renderers show a
+    /// "legacy" badge to distinguish from new-framework warnings.
+    /// </summary>
+    [JsonPropertyName("is_legacy")]
+    public bool IsLegacy { get; set; }
 }
 
 public class MissingIndexResult
