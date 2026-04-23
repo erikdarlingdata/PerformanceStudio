@@ -171,7 +171,8 @@ public static class TextFormatter
                     var benefitTag = w.MaxBenefitPercent.HasValue
                         ? $" (up to {(w.MaxBenefitPercent.Value >= 100 ? w.MaxBenefitPercent.Value.ToString("N0") : w.MaxBenefitPercent.Value.ToString("N1"))}% benefit)"
                         : "";
-                    writer.WriteLine($"  [{w.Severity}] {w.Type}{benefitTag}: {EscapeNewlines(w.Message)}");
+                    var legacyTag = w.IsLegacy ? " [legacy]" : "";
+                    writer.WriteLine($"  [{w.Severity}] {w.Type}{legacyTag}{benefitTag}: {EscapeNewlines(w.Message)}");
                     if (!string.IsNullOrEmpty(w.ActionableFix))
                         writer.WriteLine($"    Fix: {EscapeNewlines(w.ActionableFix)}");
                 }
@@ -298,7 +299,7 @@ public static class TextFormatter
 
         // Split each message into "data | explanation" at the last sentence boundary
         // that starts with "The " (the harm assessment). Group by shared explanation.
-        var entries = new List<(string Severity, string Operator, string Data, string? Explanation, double? Benefit)>();
+        var entries = new List<(string Severity, string Operator, string Data, string? Explanation, double? Benefit, bool IsLegacy)>();
         foreach (var w in sorted)
         {
             var msg = w.Message;
@@ -317,7 +318,7 @@ public static class TextFormatter
                 data = msg;
             }
 
-            entries.Add((w.Severity, w.Operator ?? "?", data, explanation, w.MaxBenefitPercent));
+            entries.Add((w.Severity, w.Operator ?? "?", data, explanation, w.MaxBenefitPercent, w.IsLegacy));
         }
 
         // Group entries that share the same severity, type, and explanation
@@ -334,8 +335,11 @@ public static class TextFormatter
                 // Multiple operators with the same explanation — list compactly
                 foreach (var item in items)
                 {
-                    var benefitTag = item.Benefit.HasValue ? $" (up to {item.Benefit:N0}% benefit)" : "";
-                    writer.WriteLine($"  [{item.Severity}] {item.Operator}{benefitTag}: {EscapeNewlines(item.Data)}");
+                    var legacyTag = item.IsLegacy ? " [legacy]" : "";
+                    var benefitTag = item.Benefit.HasValue
+                        ? $" (up to {(item.Benefit.Value >= 100 ? item.Benefit.Value.ToString("N0") : item.Benefit.Value.ToString("N1"))}% benefit)"
+                        : "";
+                    writer.WriteLine($"  [{item.Severity}] {item.Operator}{legacyTag}{benefitTag}: {EscapeNewlines(item.Data)}");
                 }
                 writer.WriteLine($"  -> {group.Key.Item2}");
             }
@@ -345,8 +349,11 @@ public static class TextFormatter
                 foreach (var item in items)
                 {
                     var full = item.Explanation != null ? $"{item.Data}. {item.Explanation}" : item.Data;
-                    var benefitTag = item.Benefit.HasValue ? $" (up to {item.Benefit:N0}% benefit)" : "";
-                    writer.WriteLine($"  [{item.Severity}] {item.Operator}{benefitTag}: {EscapeNewlines(full)}");
+                    var legacyTag = item.IsLegacy ? " [legacy]" : "";
+                    var benefitTag = item.Benefit.HasValue
+                        ? $" (up to {(item.Benefit.Value >= 100 ? item.Benefit.Value.ToString("N0") : item.Benefit.Value.ToString("N1"))}% benefit)"
+                        : "";
+                    writer.WriteLine($"  [{item.Severity}] {item.Operator}{legacyTag}{benefitTag}: {EscapeNewlines(full)}");
                 }
             }
         }

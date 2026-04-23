@@ -24,11 +24,6 @@ public static class PlanAnalyzer
         @"\bCASE\s+(WHEN\b|$)",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-    // Matches CTE definitions: WITH name AS ( or , name AS (
-    private static readonly Regex CteDefinitionRegex = new(
-        @"(?:\bWITH\s+|\,\s*)(\w+)\s+AS\s*\(",
-        RegexOptions.IgnoreCase | RegexOptions.Compiled);
-
     public static void Analyze(ParsedPlan plan, AnalyzerConfig? config = null)
     {
         var cfg = config ?? AnalyzerConfig.Default;
@@ -40,12 +35,67 @@ public static class PlanAnalyzer
 
                 if (stmt.RootNode != null)
                     AnalyzeNodeTree(stmt.RootNode, stmt, cfg);
+
+                MarkLegacyWarnings(stmt);
             }
         }
 
         // Apply severity overrides to all warnings
         if (cfg.Rules?.SeverityOverrides?.Count > 0)
             ApplySeverityOverrides(plan, cfg);
+    }
+
+    /// <summary>
+    /// Rule types that predate the benefit-scoring framework (#215) and haven't
+    /// been folded into A/B/C/D categorization yet. Tagged so reviewers can hold
+    /// new-framework items to a higher bar vs known-legacy items that will be
+    /// reworked later. Remove entries from this set as rules migrate.
+    /// </summary>
+    private static readonly HashSet<string> LegacyWarningTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Excessive Memory Grant",
+        "Large Memory Grant",
+        "Compile Memory Exceeded",
+        "Local Variables",
+        "Optimize For Unknown",
+        "Low Impact Index",
+        "Wide Index Suggestion",
+        "Duplicate Index Suggestions",
+        "Table Variable",
+        "Scalar UDF",
+        "Parallel Skew",
+        "Estimated Plan CE Guess",
+        "Data Type Mismatch",
+        "Lazy Spool Ineffective",
+        "Join OR Clause",
+        "Many-to-Many Merge Join",
+        "Table-Valued Function",
+        "Top Above Scan",
+        "Row Goal",
+        "NOT IN with Nullable Column",
+        "Implicit Conversion",
+    };
+
+    private static void MarkLegacyWarnings(PlanStatement stmt)
+    {
+        foreach (var w in stmt.PlanWarnings)
+        {
+            if (LegacyWarningTypes.Contains(w.WarningType))
+                w.IsLegacy = true;
+        }
+        if (stmt.RootNode != null)
+            MarkLegacyWarningsOnTree(stmt.RootNode);
+    }
+
+    private static void MarkLegacyWarningsOnTree(PlanNode node)
+    {
+        foreach (var w in node.Warnings)
+        {
+            if (LegacyWarningTypes.Contains(w.WarningType))
+                w.IsLegacy = true;
+        }
+        foreach (var child in node.Children)
+            MarkLegacyWarningsOnTree(child);
     }
 
     // Rule number → WarningType mapping for severity overrides
@@ -58,7 +108,7 @@ public static class PlanAnalyzer
         [13] = "Data Type Mismatch", [14] = "Lazy Spool Ineffective", [15] = "Join OR Clause",
         [16] = "Nested Loops High Executions", [17] = "Many-to-Many Merge Join",
         [18] = "Compile Memory Exceeded", [19] = "High Compile CPU", [20] = "Local Variables",
-        [21] = "CTE Multiple References", [22] = "Table Variable", [23] = "Table-Valued Function",
+        [22] = "Table Variable", [23] = "Table-Valued Function",
         [24] = "Top Above Scan", [25] = "Ineffective Parallelism", [26] = "Row Goal",
         [27] = "Optimize For Unknown", [28] = "NOT IN with Nullable Column",
         [29] = "Implicit Conversion", [30] = "Wide Index Suggestion",
@@ -367,11 +417,9 @@ public static class PlanAnalyzer
             }
         }
 
-        // Rule 21: CTE referenced multiple times
-        if (!cfg.IsRuleDisabled(21) && !string.IsNullOrEmpty(stmt.StatementText))
-        {
-            DetectMultiReferenceCte(stmt);
-        }
+        // Rule 21 (CTE referenced multiple times) removed per Joe's #215 feedback:
+        // for actual plans, SQL Server runtime stats show exactly where time was
+        // spent, so a statement-text-pattern warning about CTE reuse is guessing.
 
         // Rule 27: OPTIMIZE FOR UNKNOWN in statement text
         if (!cfg.IsRuleDisabled(27) && !string.IsNullOrEmpty(stmt.StatementText) &&
@@ -1443,41 +1491,6 @@ public static class PlanAnalyzer
         // Variables are [@var] or [@var] — single bracket pair with @ prefix.
         // Match [identifier].[identifier] (at least two dotted parts) to distinguish columns.
         return Regex.IsMatch(side, @"\[[^\]@]+\]\.\[");
-    }
-
-    /// <summary>
-    /// Detects CTEs that are referenced more than once in the statement text.
-    /// Each reference re-executes the CTE since SQL Server does not materialize them.
-    /// </summary>
-    private static void DetectMultiReferenceCte(PlanStatement stmt)
-    {
-        var text = stmt.StatementText;
-        var cteMatches = CteDefinitionRegex.Matches(text);
-        if (cteMatches.Count == 0)
-            return;
-
-        foreach (Match match in cteMatches)
-        {
-            var cteName = match.Groups[1].Value;
-            if (string.IsNullOrEmpty(cteName))
-                continue;
-
-            // Count references as FROM/JOIN targets after the CTE definition
-            var refPattern = new Regex(
-                $@"\b(FROM|JOIN)\s+{Regex.Escape(cteName)}\b",
-                RegexOptions.IgnoreCase);
-            var refCount = refPattern.Matches(text).Count;
-
-            if (refCount > 1)
-            {
-                stmt.PlanWarnings.Add(new PlanWarning
-                {
-                    WarningType = "CTE Multiple References",
-                    Message = $"CTE \"{cteName}\" is referenced {refCount} times. SQL Server re-executes the entire CTE each time — it does not materialize the results. Materialize into a #temp table instead.",
-                    Severity = PlanWarningSeverity.Warning
-                });
-            }
-        }
     }
 
     /// <summary>

@@ -353,6 +353,10 @@ else
                             <span class="warning-op">@w.Operator</span>
                         }
                         <span class="warning-type">@w.Type</span>
+                        @if (w.IsLegacy)
+                        {
+                            <span class="warn-legacy" title="Legacy rule — predates the benefit-scoring framework; content and scoring pending rework">legacy</span>
+                        }
                         @if (w.MaxBenefitPercent.HasValue)
                         {
                             <span class="warn-benefit">up to @(w.MaxBenefitPercent.Value >= 100 ? w.MaxBenefitPercent.Value.ToString("N0") : w.MaxBenefitPercent.Value.ToString("N1"))% benefit</span>
