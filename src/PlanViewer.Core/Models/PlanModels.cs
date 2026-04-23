@@ -385,6 +385,14 @@ public class PlanWarning
     /// Short actionable fix suggestion (e.g., "Add INCLUDE (columns) to index").
     /// </summary>
     public string? ActionableFix { get; set; }
+
+    /// <summary>
+    /// True for rules that pre-date the benefit-scoring framework (#215) and haven't
+    /// been folded into A/B/C/D categorization yet. Joe wanted these visibly marked so
+    /// reviewers know which items to hold to a higher bar vs which are known-legacy.
+    /// Renderers show a "legacy" badge when true.
+    /// </summary>
+    public bool IsLegacy { get; set; }
 }
 
 public enum PlanWarningSeverity { Info, Warning, Critical }

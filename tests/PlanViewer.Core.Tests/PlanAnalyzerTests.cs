@@ -436,20 +436,8 @@ public class PlanAnalyzerTests
         Assert.Contains("density estimates", warnings[0].Message);
     }
 
-    // ---------------------------------------------------------------
-    // Rule 21: CTE Multiple References
-    // ---------------------------------------------------------------
-
-    [Fact]
-    public void Rule21_CteMultipleReferences_DetectsDoubleReference()
-    {
-        var plan = PlanTestHelper.LoadAndAnalyze("cte_multi_ref_plan.sqlplan");
-        var warnings = PlanTestHelper.WarningsOfType(plan, "CTE Multiple References");
-
-        Assert.Single(warnings);
-        Assert.Contains("TopUsers", warnings[0].Message);
-        Assert.Contains("2 times", warnings[0].Message);
-    }
+    // Rule 21 (CTE Multiple References) removed per Joe's #215 feedback — actual
+    // plans show time directly, no need to guess from statement-text patterns.
 
     // ---------------------------------------------------------------
     // Rule 22: Table Variable

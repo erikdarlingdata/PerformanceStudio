@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
@@ -1739,9 +1739,10 @@ public partial class PlanViewerControl : UserControl
                     var warnColor = w.Severity == PlanWarningSeverity.Critical ? "#E57373"
                         : w.Severity == PlanWarningSeverity.Warning ? "#FFB347" : "#6BB5FF";
                     var warnPanel = new StackPanel { Margin = new Thickness(10, 2, 10, 2) };
+                    var legacyTag = w.IsLegacy ? " [legacy]" : "";
                     var planWarnHeader = w.MaxBenefitPercent.HasValue
-                        ? $"\u26A0 {w.WarningType} \u2014 up to {FormatBenefitPercent(w.MaxBenefitPercent.Value)}% benefit"
-                        : $"\u26A0 {w.WarningType}";
+                        ? $"\u26A0 {w.WarningType}{legacyTag} \u2014 up to {FormatBenefitPercent(w.MaxBenefitPercent.Value)}% benefit"
+                        : $"\u26A0 {w.WarningType}{legacyTag}";
                     warnPanel.Children.Add(new TextBlock
                     {
                         Text = planWarnHeader,
@@ -1821,9 +1822,10 @@ public partial class PlanViewerControl : UserControl
                 var warnColor = w.Severity == PlanWarningSeverity.Critical ? "#E57373"
                     : w.Severity == PlanWarningSeverity.Warning ? "#FFB347" : "#6BB5FF";
                 var warnPanel = new StackPanel { Margin = new Thickness(10, 2, 10, 2) };
+                var nodeLegacyTag = w.IsLegacy ? " [legacy]" : "";
                 var nodeWarnHeader = w.MaxBenefitPercent.HasValue
-                    ? $"\u26A0 {w.WarningType} \u2014 up to {FormatBenefitPercent(w.MaxBenefitPercent.Value)}% benefit"
-                    : $"\u26A0 {w.WarningType}";
+                    ? $"\u26A0 {w.WarningType}{nodeLegacyTag} \u2014 up to {FormatBenefitPercent(w.MaxBenefitPercent.Value)}% benefit"
+                    : $"\u26A0 {w.WarningType}{nodeLegacyTag}";
                 warnPanel.Children.Add(new TextBlock
                 {
                     Text = nodeWarnHeader,

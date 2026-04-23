@@ -65,7 +65,9 @@ public static class BenefitScorer
             double? benefitPct = benefitByType.TryGetValue(wait.WaitType, out var b) ? b : null;
 
             var msg = new System.Text.StringBuilder();
-            msg.Append(wait.WaitType).Append(": ").Append(entry.Description);
+            msg.Append(wait.WaitType);
+            if (!string.IsNullOrEmpty(entry.Description))
+                msg.Append(": ").Append(entry.Description);
             msg.Append(" Observed ").Append(wait.WaitTimeMs.ToString("N0")).Append(" ms");
             if (wait.WaitCount > 0)
                 msg.Append(" across ").Append(wait.WaitCount.ToString("N0")).Append(" wait").Append(wait.WaitCount == 1 ? "" : "s");
@@ -92,7 +94,7 @@ public static class BenefitScorer
                 Message = msg.ToString(),
                 Severity = severity,
                 MaxBenefitPercent = benefitPct,
-                ActionableFix = entry.HowToFix
+                ActionableFix = string.IsNullOrEmpty(entry.HowToFix) ? null : entry.HowToFix
             });
         }
     }
