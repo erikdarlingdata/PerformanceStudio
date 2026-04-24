@@ -109,10 +109,15 @@ main { max-width: 1200px; margin: 0 auto; padding: 1rem 2rem; }
 /* Insights grid */
 .insights { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 0.75rem; margin-bottom: 0.75rem; }
 .card { border-radius: 6px; border: 1px solid var(--border); overflow: hidden; }
-.card h3 {
+.card h3, .card > summary {
     padding: 0.4rem 0.75rem; font-size: 0.8rem; font-weight: 500;
     border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 0.5rem;
+    list-style: none; cursor: pointer;
 }
+.card > summary::-webkit-details-marker { display: none; }
+.card > summary::before { content: ""\25B8""; font-size: 0.7rem; color: var(--text-muted); width: 0.7rem; }
+details.card[open] > summary::before { content: ""\25BE""; }
+.card.waits summary { color: #2a4365; }
 .card-body { padding: 0.5rem 0.75rem; font-size: 0.8rem; }
 .card.runtime { background: var(--card-runtime); border-color: var(--card-runtime-border); }
 .card.runtime h3 { color: #2c5282; }
@@ -432,11 +437,12 @@ pre.query-text, pre.text-output {
 
     private static void WriteWaitStatsCard(StringBuilder sb, StatementResult stmt, bool hasActualStats)
     {
-        sb.AppendLine("<div class=\"card waits\">");
-        sb.Append("<h3>Wait Stats");
+        // Collapsible (#215 E12): default-closed so improvement items aren't pushed below the fold.
+        sb.AppendLine("<details class=\"card waits\">");
+        sb.Append("<summary>Wait Stats");
         if (stmt.WaitStats.Count > 0)
             sb.Append($" <span class=\"card-count\">{stmt.WaitStats.Sum(w => w.WaitTimeMs):N0} ms</span>");
-        sb.AppendLine("</h3>");
+        sb.AppendLine("</summary>");
         sb.AppendLine("<div class=\"card-body\">");
         if (stmt.WaitStats.Count > 0)
         {
@@ -464,7 +470,7 @@ pre.query-text, pre.text-output {
             sb.AppendLine($"<div class=\"card-empty\">{(hasActualStats ? "No waits recorded" : "Estimated plan — no wait stats")}</div>");
         }
         sb.AppendLine("</div>");
-        sb.AppendLine("</div>");
+        sb.AppendLine("</details>");
     }
 
     private static void WriteWarnings(StringBuilder sb, StatementResult stmt)
