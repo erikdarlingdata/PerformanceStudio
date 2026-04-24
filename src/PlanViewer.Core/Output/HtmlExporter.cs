@@ -335,6 +335,13 @@ pre.query-text, pre.text-output {
             var spillTag = hasSpill ? " <span class=\"spill-tag\" title=\"Operators spilled to tempdb\">⚠ spill</span>" : "";
             sb.AppendLine($"<div class=\"row\"><span class=\"label\">Used</span><span class=\"value {effClass}\">{FormatKB(stmt.MemoryGrant.MaxUsedKB)} ({pctUsed:N0}%){spillTag}</span></div>");
         }
+        else if (isEstimated && stmt.MemoryGrant != null && stmt.MemoryGrant.DesiredKB > 0)
+        {
+            // #215 E6: estimated plans — show the optimizer's pre-execution desired grant
+            WriteRow(sb, "Memory (estimated)", FormatKB(stmt.MemoryGrant.DesiredKB) + " desired");
+            if (stmt.MemoryGrant.SerialRequiredKB > 0 && stmt.MemoryGrant.SerialRequiredKB != stmt.MemoryGrant.DesiredKB)
+                WriteRow(sb, "Serial required", FormatKB(stmt.MemoryGrant.SerialRequiredKB));
+        }
         if (stmt.OptimizationLevel != null)
             WriteRow(sb, "Optimization", Encode(stmt.OptimizationLevel));
         if (stmt.CardinalityEstimationModel > 0)

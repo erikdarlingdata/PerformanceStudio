@@ -215,6 +215,20 @@ else
                         </span>
                     </div>
                 }
+                else if (isEstimatedRuntime && ActiveStmt!.MemoryGrant != null && ActiveStmt!.MemoryGrant.DesiredKB > 0)
+                {
+                    <div class="insight-row">
+                        <span class="insight-label">Memory (estimated)</span>
+                        <span class="insight-value">@FormatKB(ActiveStmt!.MemoryGrant.DesiredKB) desired</span>
+                    </div>
+                    @if (ActiveStmt!.MemoryGrant.SerialRequiredKB > 0 && ActiveStmt!.MemoryGrant.SerialRequiredKB != ActiveStmt!.MemoryGrant.DesiredKB)
+                    {
+                        <div class="insight-row">
+                            <span class="insight-label">Serial required</span>
+                            <span class="insight-value">@FormatKB(ActiveStmt!.MemoryGrant.SerialRequiredKB)</span>
+                        </div>
+                    }
+                }
                 @if (ActiveStmt!.OptimizationLevel != null)
                 {
                     <div class="insight-row">
