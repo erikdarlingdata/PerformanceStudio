@@ -105,7 +105,9 @@ public static class ResultMapper
                 MaxUsedKB = stmt.MemoryGrant.MaxUsedMemoryKB,
                 GrantWaitMs = stmt.MemoryGrant.GrantWaitTimeMs,
                 FeedbackAdjusted = stmt.MemoryGrant.IsMemoryGrantFeedbackAdjusted,
-                EstimatedAvailableMemoryGrantKB = stmt.HardwareProperties?.EstimatedAvailableMemoryGrant ?? 0
+                EstimatedAvailableMemoryGrantKB = stmt.HardwareProperties?.EstimatedAvailableMemoryGrant ?? 0,
+                DesiredKB = stmt.MemoryGrant.DesiredMemoryKB,
+                SerialRequiredKB = stmt.MemoryGrant.SerialRequiredMemoryKB
             };
         }
 

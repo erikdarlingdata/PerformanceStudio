@@ -167,6 +167,20 @@ public class MemoryGrantResult
 
     [JsonPropertyName("estimated_available_memory_grant_kb")]
     public long EstimatedAvailableMemoryGrantKB { get; set; }
+
+    /// <summary>
+    /// Optimizer's pre-execution "desired" grant (parallel-adjusted).
+    /// Non-zero on estimated plans; pairs with DesiredKB serial-required as fallback
+    /// when no runtime-granted memory exists (#215 E6).
+    /// </summary>
+    [JsonPropertyName("desired_kb")]
+    public long DesiredKB { get; set; }
+
+    /// <summary>
+    /// Optimizer's pre-execution serial-required grant (memory minimum before DOP scaling).
+    /// </summary>
+    [JsonPropertyName("serial_required_kb")]
+    public long SerialRequiredKB { get; set; }
 }
 
 public class QueryTimeResult
