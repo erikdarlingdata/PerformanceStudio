@@ -144,22 +144,19 @@ else
     <div class="insights-panel">
 
         @* Runtime Summary *@
+        @{
+            var isEstimatedRuntime = ActiveStmt!.QueryTime == null;
+            var hasAnySpill = HasSpillInTree(ActiveStmt!.OperatorTree);
+        }
         <div class="insight-card runtime">
-            <h4>Runtime</h4>
+            <h4>@(isEstimatedRuntime ? "Predicted Runtime" : "Runtime")</h4>
             <div class="insight-body">
-                <div class="insight-row">
-                    <span class="insight-label">Cost</span>
-                    <span class="insight-value">@ActiveStmt!.EstimatedCost.ToString("N2")</span>
-                </div>
+                @* Order per Joe #215 E11: Elapsed → CPU:Elapsed → DOP → CPU → Compile → Memory → Used → Optimization → CE Model → Cost *@
                 @if (ActiveStmt!.QueryTime != null)
                 {
                     <div class="insight-row">
                         <span class="insight-label">Elapsed</span>
                         <span class="insight-value">@ActiveStmt!.QueryTime.ElapsedTimeMs.ToString("N0") ms</span>
-                    </div>
-                    <div class="insight-row">
-                        <span class="insight-label">CPU</span>
-                        <span class="insight-value">@ActiveStmt!.QueryTime.CpuTimeMs.ToString("N0") ms</span>
                     </div>
                     @if (ActiveStmt!.QueryTime.ElapsedTimeMs > 0)
                     {
@@ -170,13 +167,6 @@ else
                             <span class="insight-value">@ratio.ToString("N2")</span>
                         </div>
                     }
-                }
-                @if (ActiveStmt!.CompileTimeMs > 0)
-                {
-                    <div class="insight-row">
-                        <span class="insight-label">Compile</span>
-                        <span class="insight-value">@ActiveStmt!.CompileTimeMs.ToString("N0") ms</span>
-                    </div>
                 }
                 @if (ActiveStmt!.DegreeOfParallelism > 0)
                 {
@@ -192,18 +182,52 @@ else
                         <span class="insight-value">@ActiveStmt!.NonParallelReason</span>
                     </div>
                 }
+                @if (ActiveStmt!.QueryTime != null)
+                {
+                    <div class="insight-row">
+                        <span class="insight-label">CPU</span>
+                        <span class="insight-value">@ActiveStmt!.QueryTime.CpuTimeMs.ToString("N0") ms</span>
+                    </div>
+                }
+                @if (ActiveStmt!.CompileTimeMs > 0)
+                {
+                    <div class="insight-row">
+                        <span class="insight-label">Compile</span>
+                        <span class="insight-value">@ActiveStmt!.CompileTimeMs.ToString("N0") ms</span>
+                    </div>
+                }
                 @if (ActiveStmt!.MemoryGrant != null && ActiveStmt!.MemoryGrant.GrantedKB > 0)
                 {
                     var pctUsed = (double)ActiveStmt!.MemoryGrant.MaxUsedKB / ActiveStmt!.MemoryGrant.GrantedKB * 100;
-                    var effClass = pctUsed >= 40 ? "eff-good" : pctUsed >= 20 ? "eff-warn" : "eff-bad";
+                    var effClass = GetMemoryGrantColorClass(pctUsed, hasAnySpill);
                     <div class="insight-row">
                         <span class="insight-label">Memory</span>
                         <span class="insight-value">@FormatKB(ActiveStmt!.MemoryGrant.GrantedKB) granted</span>
                     </div>
                     <div class="insight-row">
                         <span class="insight-label">Used</span>
-                        <span class="insight-value @effClass">@FormatKB(ActiveStmt!.MemoryGrant.MaxUsedKB) (@pctUsed.ToString("N0")%)</span>
+                        <span class="insight-value @effClass">
+                            @FormatKB(ActiveStmt!.MemoryGrant.MaxUsedKB) (@pctUsed.ToString("N0")%)
+                            @if (hasAnySpill)
+                            {
+                                <span class="spill-tag" title="Operators spilled to tempdb">⚠ spill</span>
+                            }
+                        </span>
                     </div>
+                }
+                else if (isEstimatedRuntime && ActiveStmt!.MemoryGrant != null && ActiveStmt!.MemoryGrant.DesiredKB > 0)
+                {
+                    <div class="insight-row">
+                        <span class="insight-label">Memory (estimated)</span>
+                        <span class="insight-value">@FormatKB(ActiveStmt!.MemoryGrant.DesiredKB) desired</span>
+                    </div>
+                    @if (ActiveStmt!.MemoryGrant.SerialRequiredKB > 0 && ActiveStmt!.MemoryGrant.SerialRequiredKB != ActiveStmt!.MemoryGrant.DesiredKB)
+                    {
+                        <div class="insight-row">
+                            <span class="insight-label">Serial required</span>
+                            <span class="insight-value">@FormatKB(ActiveStmt!.MemoryGrant.SerialRequiredKB)</span>
+                        </div>
+                    }
                 }
                 @if (ActiveStmt!.OptimizationLevel != null)
                 {
@@ -219,6 +243,10 @@ else
                         <span class="insight-value">@ActiveStmt!.CardinalityEstimationModel</span>
                     </div>
                 }
+                <div class="insight-row">
+                    <span class="insight-label">Cost</span>
+                    <span class="insight-value">@ActiveStmt!.EstimatedCost.ToString("N2")</span>
+                </div>
             </div>
         </div>
 
@@ -285,14 +313,14 @@ else
             </div>
         </div>
 
-        @* Wait Stats *@
-        <div class="insight-card waits @(ActiveStmt!.WaitStats.Count > 0 ? "has-items" : "")">
-            <h4>Wait Stats
+        @* Wait Stats — collapsible (#215 E12): default-closed so it doesn't push improvement items below the fold *@
+        <details class="insight-card waits @(ActiveStmt!.WaitStats.Count > 0 ? "has-items" : "")">
+            <summary>Wait Stats
                 @if (ActiveStmt!.WaitStats.Count > 0)
                 {
                     <span class="insight-count">@ActiveStmt!.WaitStats.Sum(w => w.WaitTimeMs).ToString("N0") ms</span>
                 }
-            </h4>
+            </summary>
             <div class="insight-body">
                 @if (ActiveStmt!.WaitStats.Count > 0)
                 {
@@ -322,7 +350,7 @@ else
                     <div class="insight-empty">@(result.Summary.HasActualStats ? "No waits recorded" : "Estimated plan — no wait stats")</div>
                 }
             </div>
-        </div>
+        </details>
     </div>
 
     @* Warnings strip *@
@@ -1682,6 +1710,27 @@ else
     {
         var v = typeof(Index).Assembly.GetName().Version;
         return v == null ? "?" : $"v{v.Major}.{v.Minor}.{v.Build}";
+    }
+
+    // Memory grant color tiers (#215 C1 + E8 + E9):
+    // > 100%: over-used grant (red). Spill in plan: orange. Otherwise: tier by utilization.
+    private static string GetMemoryGrantColorClass(double pctUsed, bool hasSpill)
+    {
+        if (pctUsed > 100) return "eff-bad";
+        if (hasSpill) return "eff-warn";
+        if (pctUsed >= 40) return "eff-good";
+        if (pctUsed >= 20) return "eff-warn";
+        return "eff-bad";
+    }
+
+    private static bool HasSpillInTree(OperatorResult? node)
+    {
+        if (node == null) return false;
+        foreach (var w in node.Warnings)
+            if (w.Type.EndsWith(" Spill", StringComparison.Ordinal)) return true;
+        foreach (var child in node.Children)
+            if (HasSpillInTree(child)) return true;
+        return false;
     }
 
     private string activeTab = "paste";

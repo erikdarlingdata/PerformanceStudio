@@ -109,10 +109,15 @@ main { max-width: 1200px; margin: 0 auto; padding: 1rem 2rem; }
 /* Insights grid */
 .insights { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 0.75rem; margin-bottom: 0.75rem; }
 .card { border-radius: 6px; border: 1px solid var(--border); overflow: hidden; }
-.card h3 {
+.card h3, .card > summary {
     padding: 0.4rem 0.75rem; font-size: 0.8rem; font-weight: 500;
     border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 0.5rem;
+    list-style: none; cursor: pointer;
 }
+.card > summary::-webkit-details-marker { display: none; }
+.card > summary::before { content: ""\25B8""; font-size: 0.7rem; color: var(--text-muted); width: 0.7rem; }
+details.card[open] > summary::before { content: ""\25BE""; }
+.card.waits summary { color: #2a4365; }
 .card-body { padding: 0.5rem 0.75rem; font-size: 0.8rem; }
 .card.runtime { background: var(--card-runtime); border-color: var(--card-runtime-border); }
 .card.runtime h3 { color: #2c5282; }
@@ -189,6 +194,7 @@ pre.mi-create {
 .warn-msg { font-size: 0.8rem; color: var(--text); flex-basis: 100%; }
 .warn-legacy { font-size: 0.65rem; font-weight: 600; color: var(--text-muted); padding: 0.05rem 0.3rem; border-radius: 3px; background: rgba(0,0,0,0.08); text-transform: uppercase; letter-spacing: 0.05em; }
 .warn-fix { font-size: 0.75rem; color: var(--text-secondary); font-style: italic; flex-basis: 100%; border-left: 2px solid var(--border); padding-left: 0.5rem; margin-top: 0.15rem; }
+.spill-tag { font-size: 0.75rem; font-weight: 600; color: var(--orange); margin-left: 0.4rem; }
 
 /* Query text */
 details { margin-bottom: 0.75rem; }
@@ -294,14 +300,18 @@ pre.query-text, pre.text-output {
 
     private static void WriteRuntimeCard(StringBuilder sb, StatementResult stmt)
     {
+        var isEstimated = stmt.QueryTime == null;
+        var hasSpill = HasSpillInTree(stmt.OperatorTree);
         sb.AppendLine("<div class=\"card runtime\">");
-        sb.AppendLine("<h3>Runtime</h3>");
+        sb.AppendLine($"<h3>{(isEstimated ? "Predicted Runtime" : "Runtime")}</h3>");
         sb.AppendLine("<div class=\"card-body\">");
-        WriteRow(sb, "Cost", stmt.EstimatedCost.ToString("N2"));
+
+        // Order per Joe (#215 E11): Elapsed → CPU:Elapsed → DOP → CPU → Compile →
+        // Memory → Used → Optimization → CE Model → Cost. Puts the important
+        // measurements on top and groups related metrics together.
         if (stmt.QueryTime != null)
         {
             WriteRow(sb, "Elapsed", $"{stmt.QueryTime.ElapsedTimeMs:N0} ms");
-            WriteRow(sb, "CPU", $"{stmt.QueryTime.CpuTimeMs:N0} ms");
             if (stmt.QueryTime.ElapsedTimeMs > 0)
             {
                 var effectiveCpu = Math.Max(0, stmt.QueryTime.CpuTimeMs - stmt.QueryTime.ExternalWaitMs);
@@ -309,25 +319,66 @@ pre.query-text, pre.text-output {
                 WriteRow(sb, "CPU:Elapsed", ratio.ToString("N2"));
             }
         }
-        if (stmt.CompileTimeMs > 0)
-            WriteRow(sb, "Compile", $"{stmt.CompileTimeMs:N0} ms");
         if (stmt.DegreeOfParallelism > 0)
             WriteRow(sb, "DOP", stmt.DegreeOfParallelism.ToString());
         if (stmt.NonParallelReason != null)
             WriteRow(sb, "Serial", Encode(stmt.NonParallelReason));
+        if (stmt.QueryTime != null)
+            WriteRow(sb, "CPU", $"{stmt.QueryTime.CpuTimeMs:N0} ms");
+        if (stmt.CompileTimeMs > 0)
+            WriteRow(sb, "Compile", $"{stmt.CompileTimeMs:N0} ms");
         if (stmt.MemoryGrant != null && stmt.MemoryGrant.GrantedKB > 0)
         {
             var pctUsed = (double)stmt.MemoryGrant.MaxUsedKB / stmt.MemoryGrant.GrantedKB * 100;
-            var effClass = pctUsed >= 40 ? "eff-good" : pctUsed >= 20 ? "eff-warn" : "eff-bad";
+            var effClass = GetMemoryGrantColorClass(pctUsed, hasSpill);
             WriteRow(sb, "Memory", FormatKB(stmt.MemoryGrant.GrantedKB) + " granted");
-            sb.AppendLine($"<div class=\"row\"><span class=\"label\">Used</span><span class=\"value {effClass}\">{FormatKB(stmt.MemoryGrant.MaxUsedKB)} ({pctUsed:N0}%)</span></div>");
+            var spillTag = hasSpill ? " <span class=\"spill-tag\" title=\"Operators spilled to tempdb\">⚠ spill</span>" : "";
+            sb.AppendLine($"<div class=\"row\"><span class=\"label\">Used</span><span class=\"value {effClass}\">{FormatKB(stmt.MemoryGrant.MaxUsedKB)} ({pctUsed:N0}%){spillTag}</span></div>");
+        }
+        else if (isEstimated && stmt.MemoryGrant != null && stmt.MemoryGrant.DesiredKB > 0)
+        {
+            // #215 E6: estimated plans — show the optimizer's pre-execution desired grant
+            WriteRow(sb, "Memory (estimated)", FormatKB(stmt.MemoryGrant.DesiredKB) + " desired");
+            if (stmt.MemoryGrant.SerialRequiredKB > 0 && stmt.MemoryGrant.SerialRequiredKB != stmt.MemoryGrant.DesiredKB)
+                WriteRow(sb, "Serial required", FormatKB(stmt.MemoryGrant.SerialRequiredKB));
         }
         if (stmt.OptimizationLevel != null)
             WriteRow(sb, "Optimization", Encode(stmt.OptimizationLevel));
         if (stmt.CardinalityEstimationModel > 0)
             WriteRow(sb, "CE Model", stmt.CardinalityEstimationModel.ToString());
+        WriteRow(sb, "Cost", stmt.EstimatedCost.ToString("N2"));
         sb.AppendLine("</div>");
         sb.AppendLine("</div>");
+    }
+
+    /// <summary>
+    /// Memory grant color tiers (#215 C1 + E8 + E9):
+    /// - > 100% used: eff-bad (grant was too small, may have thrashed memory)
+    /// - any operator spilled: eff-warn (grant was nominally enough but something spilled)
+    /// - >= 40% used: eff-good (healthy utilization)
+    /// - 20-39%: eff-warn (some over-grant)
+    /// - < 20%: eff-bad (significant over-grant)
+    /// </summary>
+    private static string GetMemoryGrantColorClass(double pctUsed, bool hasSpill)
+    {
+        if (pctUsed > 100) return "eff-bad";
+        if (hasSpill) return "eff-warn";
+        if (pctUsed >= 40) return "eff-good";
+        if (pctUsed >= 20) return "eff-warn";
+        return "eff-bad";
+    }
+
+    private static bool HasSpillInTree(OperatorResult? node)
+    {
+        if (node == null) return false;
+        foreach (var w in node.Warnings)
+        {
+            if (w.Type.EndsWith(" Spill", StringComparison.Ordinal))
+                return true;
+        }
+        foreach (var child in node.Children)
+            if (HasSpillInTree(child)) return true;
+        return false;
     }
 
     private static void WriteMissingIndexCard(StringBuilder sb, StatementResult stmt)
@@ -393,11 +444,12 @@ pre.query-text, pre.text-output {
 
     private static void WriteWaitStatsCard(StringBuilder sb, StatementResult stmt, bool hasActualStats)
     {
-        sb.AppendLine("<div class=\"card waits\">");
-        sb.Append("<h3>Wait Stats");
+        // Collapsible (#215 E12): default-closed so improvement items aren't pushed below the fold.
+        sb.AppendLine("<details class=\"card waits\">");
+        sb.Append("<summary>Wait Stats");
         if (stmt.WaitStats.Count > 0)
             sb.Append($" <span class=\"card-count\">{stmt.WaitStats.Sum(w => w.WaitTimeMs):N0} ms</span>");
-        sb.AppendLine("</h3>");
+        sb.AppendLine("</summary>");
         sb.AppendLine("<div class=\"card-body\">");
         if (stmt.WaitStats.Count > 0)
         {
@@ -425,7 +477,7 @@ pre.query-text, pre.text-output {
             sb.AppendLine($"<div class=\"card-empty\">{(hasActualStats ? "No waits recorded" : "Estimated plan — no wait stats")}</div>");
         }
         sb.AppendLine("</div>");
-        sb.AppendLine("</div>");
+        sb.AppendLine("</details>");
     }
 
     private static void WriteWarnings(StringBuilder sb, StatementResult stmt)

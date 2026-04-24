@@ -541,7 +541,8 @@ textarea::placeholder {
     overflow: hidden;
 }
 
-.insight-card h4 {
+.insight-card h4,
+.insight-card > summary {
     padding: 0.4rem 0.75rem;
     font-size: 0.8rem;
     font-weight: 500;
@@ -549,7 +550,23 @@ textarea::placeholder {
     display: flex;
     align-items: center;
     gap: 0.5rem;
+    list-style: none;
+    cursor: pointer;
 }
+
+.insight-card > summary::-webkit-details-marker { display: none; }
+
+.insight-card > summary::before {
+    content: "\25B8";
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    transition: transform 0.15s ease;
+    width: 0.7rem;
+}
+
+.insight-card[open] > summary::before { content: "\25BE"; }
+
+details.insight-card:not([open]) { border-bottom: 1px solid var(--border); }
 
 .insight-body {
     padding: 0.5rem 0.75rem;
@@ -832,6 +849,13 @@ textarea::placeholder {
     border-radius: 3px;
     background: rgba(0, 0, 0, 0.05);
     margin-right: 0.4rem;
+}
+
+.spill-tag {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--warning-color);
+    margin-left: 0.4rem;
 }
 
 .warn-legacy {
