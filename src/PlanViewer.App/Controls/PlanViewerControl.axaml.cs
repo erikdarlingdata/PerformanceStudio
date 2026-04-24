@@ -804,6 +804,15 @@ public partial class PlanViewerControl : UserControl
     private static string FormatBenefitPercent(double pct) =>
         pct >= 100 ? $"{pct:N0}" : $"{pct:N1}";
 
+    private static bool HasSpillInPlanTree(PlanNode node)
+    {
+        foreach (var w in node.Warnings)
+            if (w.WarningType.EndsWith(" Spill", StringComparison.Ordinal)) return true;
+        foreach (var child in node.Children)
+            if (HasSpillInPlanTree(child)) return true;
+        return false;
+    }
+
     #endregion
 
     #region Node Selection & Properties Panel
@@ -2809,37 +2818,42 @@ public partial class PlanViewerControl : UserControl
         static string EfficiencyColor(double pct) => pct >= 40 ? "#E4E6EB"
             : pct >= 20 ? "#FFB347" : "#E57373";
 
-        // Runtime stats (actual plans)
+        // Memory grant color tiers (#215 C1 + E8 + E9): over-used grant (red),
+        // any operator spilled (orange), otherwise tier by utilization.
+        static string MemoryGrantColor(double pctUsed, bool hasSpill)
+        {
+            if (pctUsed > 100) return "#E57373";
+            if (hasSpill) return "#FFB347";
+            if (pctUsed >= 40) return "#E4E6EB";
+            if (pctUsed >= 20) return "#FFB347";
+            return "#E57373";
+        }
+
+        // E7: rename the panel title for estimated plans
+        var isEstimated = statement.QueryTimeStats == null;
+        RuntimeSummaryTitle.Text = isEstimated ? "Predicted Runtime" : "Runtime Summary";
+
+        var hasSpillInTree = statement.RootNode != null && HasSpillInPlanTree(statement.RootNode);
+
+        // E11: order — Elapsed → CPU:Elapsed → DOP → CPU → Compile → Memory → Used → Optimization → CE Model → Cost.
+        // Extra Avalonia-only rows (threads, UDF, cached plan size) kept near their logical neighbors.
+
         if (statement.QueryTimeStats != null)
         {
             AddRow("Elapsed", $"{statement.QueryTimeStats.ElapsedTimeMs:N0}ms");
-            AddRow("CPU", $"{statement.QueryTimeStats.CpuTimeMs:N0}ms");
-            if (statement.QueryUdfCpuTimeMs > 0)
-                AddRow("UDF CPU", $"{statement.QueryUdfCpuTimeMs:N0}ms");
-            if (statement.QueryUdfElapsedTimeMs > 0)
-                AddRow("UDF elapsed", $"{statement.QueryUdfElapsedTimeMs:N0}ms");
+            if (statement.QueryTimeStats.ElapsedTimeMs > 0)
+            {
+                long externalWaitMs = 0;
+                foreach (var w in statement.WaitStats)
+                    if (BenefitScorer.IsExternalWait(w.WaitType))
+                        externalWaitMs += w.WaitTimeMs;
+                var effectiveCpu = Math.Max(0L, statement.QueryTimeStats.CpuTimeMs - externalWaitMs);
+                var ratio = (double)effectiveCpu / statement.QueryTimeStats.ElapsedTimeMs;
+                AddRow("CPU:Elapsed", ratio.ToString("N2"));
+            }
         }
 
-        // Compile time — plan-level property (category B). Show regardless of
-        // threshold so it's always visible, not just when Rule 19 fires.
-        if (statement.CompileTimeMs > 0)
-            AddRow("Compile", $"{statement.CompileTimeMs:N0}ms");
-
-        // Memory grant — color by utilization percentage
-        if (statement.MemoryGrant != null)
-        {
-            var mg = statement.MemoryGrant;
-            var grantPct = mg.GrantedMemoryKB > 0
-                ? (double)mg.MaxUsedMemoryKB / mg.GrantedMemoryKB * 100 : 100;
-            var grantColor = EfficiencyColor(grantPct);
-            AddRow("Memory grant",
-                $"{TextFormatter.FormatMemoryGrantKB(mg.GrantedMemoryKB)} granted, {TextFormatter.FormatMemoryGrantKB(mg.MaxUsedMemoryKB)} used ({grantPct:N0}%)",
-                grantColor);
-            if (mg.GrantWaitTimeMs > 0)
-                AddRow("Grant wait", $"{mg.GrantWaitTimeMs:N0}ms", "#E57373");
-        }
-
-        // DOP + parallelism efficiency — color by efficiency
+        // DOP + parallelism efficiency
         if (statement.DegreeOfParallelism > 0)
         {
             var dopText = statement.DegreeOfParallelism.ToString();
@@ -2849,9 +2863,6 @@ public partial class PlanViewerControl : UserControl
                 statement.QueryTimeStats.CpuTimeMs > 0 &&
                 statement.DegreeOfParallelism > 1)
             {
-                // Speedup ratio: CPU/elapsed = 1.0 means serial, = DOP means perfect parallelism.
-                // Subtract external/preemptive wait time from CPU — those waits are CPU-busy
-                // in kernel and inflate the ratio without representing real query work.
                 long externalWaitMs = 0;
                 foreach (var w in statement.WaitStats)
                     if (BenefitScorer.IsExternalWait(w.WaitType))
@@ -2868,7 +2879,37 @@ public partial class PlanViewerControl : UserControl
         else if (statement.NonParallelPlanReason != null)
             AddRow("Serial", statement.NonParallelPlanReason);
 
-        // Thread stats — color by utilization
+        if (statement.QueryTimeStats != null)
+        {
+            AddRow("CPU", $"{statement.QueryTimeStats.CpuTimeMs:N0}ms");
+            if (statement.QueryUdfCpuTimeMs > 0)
+                AddRow("UDF CPU", $"{statement.QueryUdfCpuTimeMs:N0}ms");
+            if (statement.QueryUdfElapsedTimeMs > 0)
+                AddRow("UDF elapsed", $"{statement.QueryUdfElapsedTimeMs:N0}ms");
+        }
+
+        // Compile stats (category B plan-level property)
+        if (statement.CompileTimeMs > 0)
+            AddRow("Compile", $"{statement.CompileTimeMs:N0}ms");
+        if (statement.CachedPlanSizeKB > 0)
+            AddRow("Cached plan size", $"{statement.CachedPlanSizeKB:N0} KB");
+
+        // Memory grant — color per new tiers, spill indicator if any operator spilled
+        if (statement.MemoryGrant != null)
+        {
+            var mg = statement.MemoryGrant;
+            var grantPct = mg.GrantedMemoryKB > 0
+                ? (double)mg.MaxUsedMemoryKB / mg.GrantedMemoryKB * 100 : 100;
+            var grantColor = MemoryGrantColor(grantPct, hasSpillInTree);
+            var spillTag = hasSpillInTree ? " ⚠ spill" : "";
+            AddRow("Memory grant",
+                $"{TextFormatter.FormatMemoryGrantKB(mg.GrantedMemoryKB)} granted, {TextFormatter.FormatMemoryGrantKB(mg.MaxUsedMemoryKB)} used ({grantPct:N0}%){spillTag}",
+                grantColor);
+            if (mg.GrantWaitTimeMs > 0)
+                AddRow("Grant wait", $"{mg.GrantWaitTimeMs:N0}ms", "#E57373");
+        }
+
+        // Thread stats
         if (statement.ThreadStats != null)
         {
             var ts = statement.ThreadStats;
@@ -2889,21 +2930,13 @@ public partial class PlanViewerControl : UserControl
             }
         }
 
-        // CE model
-        if (statement.CardinalityEstimationModelVersion > 0)
-            AddRow("CE model", statement.CardinalityEstimationModelVersion.ToString());
-
-        // Compile stats (always available)
-        if (statement.CompileTimeMs > 0)
-            AddRow("Compile time", $"{statement.CompileTimeMs:N0}ms");
-        if (statement.CachedPlanSizeKB > 0)
-            AddRow("Cached plan size", $"{statement.CachedPlanSizeKB:N0} KB");
-
-        // Optimization level
+        // Optimization + CE model
         if (!string.IsNullOrEmpty(statement.StatementOptmLevel))
             AddRow("Optimization", statement.StatementOptmLevel);
         if (!string.IsNullOrEmpty(statement.StatementOptmEarlyAbortReason))
             AddRow("Early abort", statement.StatementOptmEarlyAbortReason);
+        if (statement.CardinalityEstimationModelVersion > 0)
+            AddRow("CE model", statement.CardinalityEstimationModelVersion.ToString());
 
         if (grid.Children.Count > 0)
         {

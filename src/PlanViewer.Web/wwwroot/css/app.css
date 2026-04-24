@@ -834,6 +834,13 @@ textarea::placeholder {
     margin-right: 0.4rem;
 }
 
+.spill-tag {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--warning-color);
+    margin-left: 0.4rem;
+}
+
 .warn-legacy {
     font-size: 0.65rem;
     font-weight: 600;
