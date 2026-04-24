@@ -433,6 +433,49 @@ public static class PlanAnalyzer
             });
         }
 
+        // Rule 36: Dynamic cursor (#215 E1). Dynamic cursors can prevent index usage
+        // because they must tolerate underlying data changes between fetches, forcing
+        // scans and extra work per fetch. Switching to FAST_FORWARD, STATIC, or KEYSET
+        // often delivers a dramatic improvement.
+        if (!cfg.IsRuleDisabled(36)
+            && string.Equals(stmt.CursorActualType, "Dynamic", StringComparison.OrdinalIgnoreCase))
+        {
+            var cursorLabel = string.IsNullOrEmpty(stmt.CursorName) ? "Cursor" : $"Cursor \"{stmt.CursorName}\"";
+            stmt.PlanWarnings.Add(new PlanWarning
+            {
+                WarningType = "Dynamic Cursor",
+                Message = $"{cursorLabel} is a dynamic cursor. Dynamic cursors tolerate underlying data changes between fetches, which prevents many index uses and forces extra work per fetch. If you don't need that semantic, switching to FAST_FORWARD (or STATIC / KEYSET, depending on requirements) typically gives a large performance improvement.",
+                Severity = PlanWarningSeverity.Warning
+            });
+        }
+
+        // Rule 37: CURSOR declaration without LOCAL (#215 E3). Default cursor scope
+        // is GLOBAL in SQL Server, which puts cursors in a shared namespace and can
+        // bloat the plan cache (Erik's writeup:
+        // https://erikdarling.com/cursor-declarations-that-use-openjson-can-bloat-your-plan-cache/).
+        if (!cfg.IsRuleDisabled(37) && !string.IsNullOrEmpty(stmt.StatementText))
+        {
+            // DECLARE <name> [qualifier(s)] CURSOR ... FOR
+            // Flags the declaration if LOCAL isn't among the qualifiers before CURSOR.
+            var cursorDeclMatch = Regex.Match(
+                stmt.StatementText,
+                @"\bDECLARE\s+\w+\s+((?:\w+\s+)*)CURSOR\b",
+                RegexOptions.IgnoreCase | RegexOptions.Singleline);
+            if (cursorDeclMatch.Success)
+            {
+                var qualifiers = cursorDeclMatch.Groups[1].Value;
+                if (!Regex.IsMatch(qualifiers, @"\bLOCAL\b", RegexOptions.IgnoreCase))
+                {
+                    stmt.PlanWarnings.Add(new PlanWarning
+                    {
+                        WarningType = "Cursor Missing LOCAL",
+                        Message = "CURSOR declaration is missing the LOCAL keyword. Default cursor scope is GLOBAL, which puts the cursor in a shared namespace and can bloat the plan cache (see https://erikdarling.com/cursor-declarations-that-use-openjson-can-bloat-your-plan-cache/). Adding LOCAL is cheap and usually right.",
+                        Severity = PlanWarningSeverity.Warning
+                    });
+                }
+            }
+        }
+
         // Rules 25 (Ineffective Parallelism) and 31 (Parallel Wait Bottleneck) were removed.
         // The CPU:Elapsed ratio is now shown in the runtime summary, and wait stats speak
         // for themselves — no need for meta-warnings guessing at causes.
@@ -883,7 +926,16 @@ public static class PlanAnalyzer
             var message = "Scan with residual predicate — SQL Server is reading every row and filtering after the fact.";
             if (!string.IsNullOrEmpty(details.Summary))
                 message += $" {details.Summary}";
-            message += " Check that you have appropriate indexes.";
+
+            // #215 E2: if the statement is executing a dynamic cursor, that's usually
+            // the reason an index didn't get used. Call it out so the user looks there
+            // first rather than hunting for a missing index.
+            var isDynamicCursor = string.Equals(stmt.CursorActualType, "Dynamic",
+                StringComparison.OrdinalIgnoreCase);
+            if (isDynamicCursor)
+                message += " This query is running inside a dynamic cursor, which can prevent index usage; changing the cursor type (FAST_FORWARD / STATIC / KEYSET) often fixes scans like this without any indexing change.";
+            else
+                message += " Check that you have appropriate indexes.";
 
             // I/O waits specifically confirm the scan is hitting disk — elevate
             if (HasSignificantIoWaits(stmt.WaitStats) && details.CostPct >= 50
