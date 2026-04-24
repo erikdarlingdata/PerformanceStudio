@@ -1731,6 +1731,14 @@ public static class PlanAnalyzer
         if (child.PhysicalOp == "Parallelism" && child.Children.Count > 0)
             return child.Children.Max(GetEffectiveChildElapsedMs);
 
+        // Batch mode pipelines — each operator's elapsed stands alone rather than
+        // rolling up its descendants the way row-mode does. For a parent computing
+        // self-time above a batch-mode subtree, subtract the whole pipeline's time
+        // (Joe #215 D1: Parallelism gather-streams above three batch operators).
+        var mode = child.ActualExecutionMode ?? child.ExecutionMode;
+        if (mode == "Batch" && child.HasActualStats)
+            return SumBatchSubtreeElapsedMs(child);
+
         // Child has its own stats: use them
         if (child.ActualElapsedMs > 0)
             return child.ActualElapsedMs;
@@ -1742,6 +1750,30 @@ public static class PlanAnalyzer
         var sum = 0L;
         foreach (var grandchild in child.Children)
             sum += GetEffectiveChildElapsedMs(grandchild);
+        return sum;
+    }
+
+    /// <summary>
+    /// Sums ActualElapsedMs across a contiguous batch-mode subtree (stops at
+    /// Parallelism exchange zone boundaries). Batch operators pipeline — elapsed
+    /// times are standalone, not cumulative — so summing gives the total work the
+    /// zone did, which is what a row-mode parent above the zone should subtract
+    /// to get its own self-time.
+    /// </summary>
+    private static long SumBatchSubtreeElapsedMs(PlanNode node)
+    {
+        long sum = node.ActualElapsedMs;
+        foreach (var child in node.Children)
+        {
+            // Zone boundary — stop summing
+            if (child.PhysicalOp == "Parallelism") continue;
+
+            var childMode = child.ActualExecutionMode ?? child.ExecutionMode;
+            if (childMode == "Batch" && child.HasActualStats)
+                sum += SumBatchSubtreeElapsedMs(child);
+            else
+                sum += GetEffectiveChildElapsedMs(child);
+        }
         return sum;
     }
 
