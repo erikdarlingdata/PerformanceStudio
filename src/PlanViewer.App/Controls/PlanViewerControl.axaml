@@ -287,8 +287,8 @@
                         HorizontalAlignment="Left" VerticalAlignment="Top"
                         Margin="4,26,0,0" ZIndex="10"
                         Width="400" Height="400"
-                        Background="#1A1D23"
-                        BorderBrush="#3A3D45" BorderThickness="5"
+                        Background="{DynamicResource BackgroundBrush}"
+                        BorderBrush="{DynamicResource BorderBrush}" BorderThickness="5"
                         CornerRadius="4" ClipToBounds="True">
                     <Grid>
                         <Grid.RowDefinitions>
@@ -296,7 +296,7 @@
                             <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
                         <!-- Minimap header with close button -->
-                        <DockPanel Grid.Row="0" Background="#1A1D23">
+                        <DockPanel Grid.Row="0" Background="{DynamicResource BackgroundBrush}">
                             <Button DockPanel.Dock="Right" Content="&#x2715;" Click="MinimapClose_Click"
                                     Width="18" Height="18" Padding="0" FontSize="10"
                                     VerticalAlignment="Center" Margin="0,0,2,0"
@@ -307,7 +307,7 @@
                         </DockPanel>
                         <!-- Minimap canvas -->
                         <Canvas x:Name="MinimapCanvas" Grid.Row="1" ClipToBounds="True"
-                                Background="#1A1D23"/>
+                                Background="{DynamicResource BackgroundBrush}"/>
                         <!-- Resize grip (bottom-right corner) -->
                         <Border x:Name="MinimapResizeGrip" Grid.Row="1"
                                 Width="14" Height="14"

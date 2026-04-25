@@ -3662,16 +3662,19 @@ public partial class PlanViewerControl : UserControl
         }
     }
 
-    private static readonly SolidColorBrush MinimapNodeBorderBrush = new(Color.FromRgb(0xA0, 0xA4, 0xAB));
-
     private void RenderMinimapNodes(PlanNode node, double scale)
     {
         var w = PlanLayoutEngine.NodeWidth * scale;
         var h = PlanLayoutEngine.GetNodeHeight(node) * scale;
+        // Use theme background colors with transparency
         var bgBrush = node.IsExpensive
             ? new SolidColorBrush(Color.FromArgb(0x60, 0xE5, 0x73, 0x73))
-            : new SolidColorBrush(Color.FromArgb(0x80, 0x30, 0x34, 0x3F));
-        var borderBrush = node.IsExpensive ? OrangeRedBrush : MinimapNodeBorderBrush;
+            : FindBrushResource("BackgroundLightBrush");
+        var borderBrush = node.IsExpensive
+            ? OrangeRedBrush
+            : FindBrushResource("ForegroundBrush") is SolidColorBrush fg
+                ? new SolidColorBrush(Color.FromArgb(0x80, fg.Color.R, fg.Color.G, fg.Color.B))
+                : (IBrush)FindBrushResource("BorderBrush");
 
         var border = new Border
         {
@@ -3725,8 +3728,11 @@ public partial class PlanViewerControl : UserControl
         var boxX = (PlanScrollViewer.Offset.X / _zoomLevel) * scale;
         var boxY = (PlanScrollViewer.Offset.Y / _zoomLevel) * scale;
 
-        var themeBrush = new SolidColorBrush(Color.FromArgb(0x40, 0x4F, 0xA3, 0xFF));
-        var borderBrush = new SolidColorBrush(Color.FromArgb(0xB0, 0x4F, 0xA3, 0xFF));
+        var accentColor = FindBrushResource("AccentBrush") is SolidColorBrush ab
+            ? ab.Color
+            : Color.FromRgb(0x2E, 0xAE, 0xF1);
+        var themeBrush = new SolidColorBrush(Color.FromArgb(0x40, accentColor.R, accentColor.G, accentColor.B));
+        var borderBrush = new SolidColorBrush(Color.FromArgb(0xB0, accentColor.R, accentColor.G, accentColor.B));
 
         _minimapViewportBox = new Border
         {
@@ -3787,7 +3793,9 @@ public partial class PlanViewerControl : UserControl
         if (_minimapSelectedNode != null)
         {
             var prevNode = _minimapNodeMap.GetValueOrDefault(_minimapSelectedNode);
-            _minimapSelectedNode.BorderBrush = prevNode is { IsExpensive: true } ? OrangeRedBrush : MinimapNodeBorderBrush;
+            _minimapSelectedNode.BorderBrush = prevNode is { IsExpensive: true }
+                ? OrangeRedBrush
+                : FindBrushResource("BorderBrush");
             _minimapSelectedNode.BorderThickness = new Thickness(0.5);
             _minimapSelectedNode = null;
         }
