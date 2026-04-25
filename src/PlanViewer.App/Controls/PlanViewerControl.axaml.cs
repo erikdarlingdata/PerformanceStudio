@@ -144,15 +144,13 @@ public partial class PlanViewerControl : UserControl
         PlanScrollViewer.AddHandler(PointerReleasedEvent, PlanScrollViewer_PointerReleased, Avalonia.Interactivity.RoutingStrategies.Tunnel);
         PlanScrollViewer.ScrollChanged += (_, _) => UpdateMinimapViewportBox();
 
-        // Resolve non-control elements by traversal (Avalonia doesn't support x:Name on these types)
-        // The 5-column Grid in Row 2 is now the grandparent of PlanScrollViewer
-        // (PlanScrollViewer sits inside a minimap wrapper Grid at Column 2).
+        // Resolve ColumnDefinitions from the named 5-column layout Grid.
+        // (x:Name works on Grid but not on ColumnDefinition, so we index into the definitions.)
         //   [0]=Statements(0), [1]=StmtSplitter(0), [2]=Canvas(*), [3]=PropsSplitter(0), [4]=Props(0)
-        var planGrid = (Grid)PlanScrollViewer.Parent!.Parent!;
-        _statementsColumn = planGrid.ColumnDefinitions[0];
-        _statementsSplitterColumn = planGrid.ColumnDefinitions[1];
-        _splitterColumn = planGrid.ColumnDefinitions[3];
-        _propertiesColumn = planGrid.ColumnDefinitions[4];
+        _statementsColumn = PlanGrid.ColumnDefinitions[0];
+        _statementsSplitterColumn = PlanGrid.ColumnDefinitions[1];
+        _splitterColumn = PlanGrid.ColumnDefinitions[3];
+        _propertiesColumn = PlanGrid.ColumnDefinitions[4];
 
         // ScaleTransform is the LayoutTransform of the wrapper around PlanCanvas
         var layoutTransform = this.FindControl<Avalonia.Controls.LayoutTransformControl>("PlanLayoutTransform")!;

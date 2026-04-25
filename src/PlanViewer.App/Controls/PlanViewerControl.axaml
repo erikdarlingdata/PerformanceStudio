@@ -190,7 +190,7 @@
         </Border>
 
         <!-- Statements Panel + Plan Canvas + Properties Panel -->
-        <Grid Grid.Row="2">
+        <Grid x:Name="PlanGrid" Grid.Row="2">
             <Grid.ColumnDefinitions>
                 <!-- Col 0: Statements Panel (hidden by default) -->
                 <ColumnDefinition Width="0"/>
