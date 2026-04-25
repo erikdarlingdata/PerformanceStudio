@@ -1299,11 +1299,10 @@ public partial class MainWindow : Window
                 }
             }
         };
+		dialog.ShowDialog(this);
+	}
 
-            dialog.ShowDialog(this);
-    }
-
-    private async Task CheckForUpdatesOnStartupAsync()
+	private async Task CheckForUpdatesOnStartupAsync()
     {
         try
         {
