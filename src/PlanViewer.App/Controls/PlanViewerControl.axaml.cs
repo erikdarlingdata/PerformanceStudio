@@ -93,6 +93,7 @@ public partial class PlanViewerControl : UserControl
     private static readonly SolidColorBrush PropSeparatorBrush = new(Color.FromRgb(0x2A, 0x2D, 0x35));
     private static readonly SolidColorBrush OrangeRedBrush = new(Colors.OrangeRed);
     private static readonly SolidColorBrush OrangeBrush = new(Colors.Orange);
+    private static readonly SolidColorBrush MinimapExpensiveNodeBgBrush = new(Color.FromArgb(0x60, 0xE5, 0x73, 0x73));
 
 
     // Track all property section grids for synchronized column resize
@@ -3674,7 +3675,7 @@ public partial class PlanViewerControl : UserControl
         var h = PlanLayoutEngine.GetNodeHeight(node) * scale;
         // Use theme background colors with transparency
         var bgBrush = node.IsExpensive
-            ? new SolidColorBrush(Color.FromArgb(0x60, 0xE5, 0x73, 0x73))
+            ? MinimapExpensiveNodeBgBrush
             : FindBrushResource("BackgroundLightBrush");
         var borderBrush = node.IsExpensive ? OrangeRedBrush : _minimapNodeBorderBrushCache;
 
