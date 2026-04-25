@@ -119,9 +119,9 @@ public partial class PlanViewerControl : UserControl
     private double _panStartOffsetY;
 
     // Minimap state
-    private static double _minimapWidth = 300;
-    private static double _minimapHeight = 300;
-    private const double MinimapDefaultSize = 300;
+    private static double _minimapWidth = 400;
+    private static double _minimapHeight = 400;
+    private const double MinimapDefaultSize = 400;
     private const double MinimapMinSize = 200;
     private const double MinimapMaxSize = 500;
     private bool _minimapDragging;
@@ -159,6 +159,11 @@ public partial class PlanViewerControl : UserControl
         _zoomTransform = (ScaleTransform)layoutTransform.LayoutTransform!;
 
         Helpers.DataGridBehaviors.Attach(StatementsGrid);
+
+        // Wire minimap resize grip (defined in AXAML, not in canvas)
+        MinimapResizeGrip.PointerPressed += MinimapResizeGrip_PointerPressed;
+        MinimapResizeGrip.PointerMoved += MinimapResizeGrip_PointerMoved;
+        MinimapResizeGrip.PointerReleased += MinimapResizeGrip_PointerReleased;
     }
 
     /// <summary>
@@ -3553,21 +3558,6 @@ public partial class PlanViewerControl : UserControl
         // Render viewport indicator
         RenderMinimapViewportBox(scale);
 
-        // Attach resize via bottom-right 8px drag area
-        var resizeGrip = new Border
-        {
-            Width = 10,
-            Height = 10,
-            Background = Brushes.Transparent,
-            Cursor = new Cursor(StandardCursorType.BottomRightCorner)
-        };
-        Canvas.SetLeft(resizeGrip, canvasW - 10);
-        Canvas.SetTop(resizeGrip, canvasH - 10);
-        resizeGrip.PointerPressed += MinimapResizeGrip_PointerPressed;
-        resizeGrip.PointerMoved += MinimapResizeGrip_PointerMoved;
-        resizeGrip.PointerReleased += MinimapResizeGrip_PointerReleased;
-        MinimapCanvas.Children.Add(resizeGrip);
-
         // Attach interaction handlers to the canvas
         MinimapCanvas.PointerPressed -= MinimapCanvas_PointerPressed;
         MinimapCanvas.PointerMoved -= MinimapCanvas_PointerMoved;
@@ -3658,6 +3648,8 @@ public partial class PlanViewerControl : UserControl
         }
     }
 
+    private static readonly SolidColorBrush MinimapNodeBorderBrush = new(Color.FromRgb(0xA0, 0xA4, 0xAB));
+
     private void RenderMinimapNodes(PlanNode node, double scale)
     {
         var w = PlanLayoutEngine.NodeWidth * scale;
@@ -3665,17 +3657,36 @@ public partial class PlanViewerControl : UserControl
         var bgBrush = node.IsExpensive
             ? new SolidColorBrush(Color.FromArgb(0x60, 0xE5, 0x73, 0x73))
             : new SolidColorBrush(Color.FromArgb(0x80, 0x30, 0x34, 0x3F));
-        var borderBrush = node.IsExpensive ? OrangeRedBrush : EdgeBrush;
+        var borderBrush = node.IsExpensive ? OrangeRedBrush : MinimapNodeBorderBrush;
 
         var border = new Border
         {
-            Width = Math.Max(2, w),
-            Height = Math.Max(2, h),
+            Width = Math.Max(4, w),
+            Height = Math.Max(4, h),
             Background = bgBrush,
             BorderBrush = borderBrush,
             BorderThickness = new Thickness(0.5),
             CornerRadius = new CornerRadius(1)
         };
+
+        // Show a small icon inside the node if space allows
+        var iconBitmap = IconHelper.LoadIcon(node.IconName);
+        if (iconBitmap != null)
+        {
+            var iconSize = Math.Min(Math.Min(w * 0.7, h * 0.7), 16);
+            if (iconSize >= 6)
+            {
+                border.Child = new Image
+                {
+                    Source = iconBitmap,
+                    Width = iconSize,
+                    Height = iconSize,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+            }
+        }
+
         Canvas.SetLeft(border, node.X * scale);
         Canvas.SetTop(border, node.Y * scale);
         MinimapCanvas.Children.Add(border);
