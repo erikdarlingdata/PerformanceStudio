@@ -1,8 +1,10 @@
+using System.Runtime.Versioning;
 using Meziantou.Framework.Win32;
 using PlanViewer.Core.Interfaces;
 
 namespace PlanViewer.Core.Services;
 
+[SupportedOSPlatform("windows5.1.2600")]
 public class WindowsCredentialService : ICredentialService
 {
     private const string Prefix = "planview:";
