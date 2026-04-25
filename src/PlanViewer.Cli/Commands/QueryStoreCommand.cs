@@ -25,73 +25,111 @@ public static class QueryStoreCommand
 
     public static Command Create(ICredentialService? credentialService = null)
     {
-        var serverOption = new Option<string>(
-            "--server", "SQL Server instance name") { IsRequired = true };
-        serverOption.AddAlias("-s");
+        var serverOption = new Option<string>("--server", "-s")
+        {
+            Description = "SQL Server instance name",
+            Required = true
+        };
 
-        var databaseOption = new Option<string>(
-            "--database", "Database with Query Store enabled") { IsRequired = true };
-        databaseOption.AddAlias("-d");
+        var databaseOption = new Option<string>("--database", "-d")
+        {
+            Description = "Database with Query Store enabled",
+            Required = true
+        };
 
-        var topOption = new Option<int>(
-            "--top", getDefaultValue: () => 25,
-            description: "Number of top queries to analyze");
+        var topOption = new Option<int>("--top")
+        {
+            Description = "Number of top queries to analyze",
+            DefaultValueFactory = _ => 25
+        };
 
-        var orderByOption = new Option<string>(
-            "--order-by", getDefaultValue: () => "cpu",
-            description: "Ranking metric (total or avg): cpu, avg-cpu, duration, avg-duration, reads, avg-reads, writes, avg-writes, physical-reads, avg-physical-reads, memory, avg-memory, executions");
+        var orderByOption = new Option<string>("--order-by")
+        {
+            Description = "Ranking metric (total or avg): cpu, avg-cpu, duration, avg-duration, reads, avg-reads, writes, avg-writes, physical-reads, avg-physical-reads, memory, avg-memory, executions",
+            DefaultValueFactory = _ => "cpu"
+        };
 
-        var hoursBackOption = new Option<int>(
-            "--hours-back", getDefaultValue: () => 24,
-            description: "Hours of history to analyze");
+        var hoursBackOption = new Option<int>("--hours-back")
+        {
+            Description = "Hours of history to analyze",
+            DefaultValueFactory = _ => 24
+        };
 
-        var outputDirOption = new Option<DirectoryInfo?>(
-            "--output-dir", "Directory for output files (default: current directory)");
+        var outputDirOption = new Option<DirectoryInfo?>("--output-dir")
+        {
+            Description = "Directory for output files (default: current directory)"
+        };
 
-        var outputOption = new Option<string>(
-            "--output", getDefaultValue: () => "text",
-            description: "Output format: json or text");
-        outputOption.AddAlias("-o");
+        var outputOption = new Option<string>("--output", "-o")
+        {
+            Description = "Output format: json or text",
+            DefaultValueFactory = _ => "text"
+        };
 
-        var compactOption = new Option<bool>(
-            "--compact", "Compact JSON output");
+        var compactOption = new Option<bool>("--compact")
+        {
+            Description = "Compact JSON output"
+        };
 
-        var warningsOnlyOption = new Option<bool>(
-            "--warnings-only", "Skip operator tree in output");
+        var warningsOnlyOption = new Option<bool>("--warnings-only")
+        {
+            Description = "Skip operator tree in output"
+        };
 
-        var configOption = new Option<string?>(
-            "--config", "Path to .planview.json config file");
+        var configOption = new Option<string?>("--config")
+        {
+            Description = "Path to .planview.json config file"
+        };
 
-        var authOption = new Option<string?>(
-            "--auth", "Authentication: windows, sql, entra");
+        var authOption = new Option<string?>("--auth")
+        {
+            Description = "Authentication: windows, sql, entra"
+        };
 
-        var trustCertOption = new Option<bool>(
-            "--trust-cert", "Trust the server certificate");
+        var trustCertOption = new Option<bool>("--trust-cert")
+        {
+            Description = "Trust the server certificate"
+        };
 
-        var loginOption = new Option<string?>(
-            "--login", "SQL Server login (bypasses credential store)");
+        var loginOption = new Option<string?>("--login")
+        {
+            Description = "SQL Server login (bypasses credential store)"
+        };
 
-        var passwordOption = new Option<string?>(
-            "--password", "SQL Server password. Visible in process listings — prefer --password-stdin.");
+        var passwordOption = new Option<string?>("--password")
+        {
+            Description = "SQL Server password. Visible in process listings — prefer --password-stdin."
+        };
 
-        var passwordStdinOption = new Option<bool>(
-            "--password-stdin",
-            "Read the SQL Server password from stdin (avoids process-listing exposure). Mutually exclusive with --password.");
+        var passwordStdinOption = new Option<bool>("--password-stdin")
+        {
+            Description = "Read the SQL Server password from stdin (avoids process-listing exposure). Mutually exclusive with --password."
+        };
 
-        var queryIdOption = new Option<long?>(
-            "--query-id", "Filter by Query Store query ID");
+        var queryIdOption = new Option<long?>("--query-id")
+        {
+            Description = "Filter by Query Store query ID"
+        };
 
-        var planIdOption = new Option<long?>(
-            "--plan-id", "Filter by Query Store plan ID");
+        var planIdOption = new Option<long?>("--plan-id")
+        {
+            Description = "Filter by Query Store plan ID"
+        };
 
-        var queryHashOption = new Option<string?>(
-            "--query-hash", "Filter by query hash (hex, e.g. 0x1AB2C3D4)");
+        var queryHashOption = new Option<string?>("--query-hash")
+        {
+            Description = "Filter by query hash (hex, e.g. 0x1AB2C3D4)"
+        };
 
-        var planHashOption = new Option<string?>(
-            "--plan-hash", "Filter by query plan hash (hex, e.g. 0x1AB2C3D4)");
+        var planHashOption = new Option<string?>("--plan-hash")
+        {
+            Description = "Filter by query plan hash (hex, e.g. 0x1AB2C3D4)"
+        };
 
-        var moduleOption = new Option<string?>(
-            "--module", "Filter by module name (schema.name, supports % wildcards)");
+        var moduleOption = new Option<string?>("--module")
+        {
+            Description = "Filter by module name (schema.name, supports % wildcards)"
+        };
 
         var cmd = new Command("query-store", "Analyze top queries from Query Store")
         {
@@ -101,28 +139,28 @@ public static class QueryStoreCommand
             queryIdOption, planIdOption, queryHashOption, planHashOption, moduleOption
         };
 
-        cmd.SetHandler(async (ctx) =>
+        cmd.SetAction(async (parseResult, ct) =>
         {
-            var server = ctx.ParseResult.GetValueForOption(serverOption)!;
-            var database = ctx.ParseResult.GetValueForOption(databaseOption)!;
-            var top = ctx.ParseResult.GetValueForOption(topOption);
-            var orderBy = ctx.ParseResult.GetValueForOption(orderByOption) ?? "cpu";
-            var hoursBack = ctx.ParseResult.GetValueForOption(hoursBackOption);
-            var outputDir = ctx.ParseResult.GetValueForOption(outputDirOption);
-            var output = ctx.ParseResult.GetValueForOption(outputOption) ?? "text";
-            var compact = ctx.ParseResult.GetValueForOption(compactOption);
-            var warningsOnly = ctx.ParseResult.GetValueForOption(warningsOnlyOption);
-            var configPath = ctx.ParseResult.GetValueForOption(configOption);
-            var auth = ctx.ParseResult.GetValueForOption(authOption);
-            var trustCert = ctx.ParseResult.GetValueForOption(trustCertOption);
-            var login = ctx.ParseResult.GetValueForOption(loginOption);
-            var passwordInline = ctx.ParseResult.GetValueForOption(passwordOption);
-            var passwordStdin = ctx.ParseResult.GetValueForOption(passwordStdinOption);
-            var filterQueryId = ctx.ParseResult.GetValueForOption(queryIdOption);
-            var filterPlanId = ctx.ParseResult.GetValueForOption(planIdOption);
-            var filterQueryHash = ctx.ParseResult.GetValueForOption(queryHashOption);
-            var filterPlanHash = ctx.ParseResult.GetValueForOption(planHashOption);
-            var filterModule = ctx.ParseResult.GetValueForOption(moduleOption);
+            var server = parseResult.GetValue(serverOption)!;
+            var database = parseResult.GetValue(databaseOption)!;
+            var top = parseResult.GetValue(topOption);
+            var orderBy = parseResult.GetValue(orderByOption) ?? "cpu";
+            var hoursBack = parseResult.GetValue(hoursBackOption);
+            var outputDir = parseResult.GetValue(outputDirOption);
+            var output = parseResult.GetValue(outputOption) ?? "text";
+            var compact = parseResult.GetValue(compactOption);
+            var warningsOnly = parseResult.GetValue(warningsOnlyOption);
+            var configPath = parseResult.GetValue(configOption);
+            var auth = parseResult.GetValue(authOption);
+            var trustCert = parseResult.GetValue(trustCertOption);
+            var login = parseResult.GetValue(loginOption);
+            var passwordInline = parseResult.GetValue(passwordOption);
+            var passwordStdin = parseResult.GetValue(passwordStdinOption);
+            var filterQueryId = parseResult.GetValue(queryIdOption);
+            var filterPlanId = parseResult.GetValue(planIdOption);
+            var filterQueryHash = parseResult.GetValue(queryHashOption);
+            var filterPlanHash = parseResult.GetValue(planHashOption);
+            var filterModule = parseResult.GetValue(moduleOption);
 
             // Load .env file if present (CLI args take precedence)
             var env = ConnectionHelper.LoadEnvFile();

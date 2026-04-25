@@ -1,5 +1,4 @@
 using System.CommandLine;
-using System.CommandLine.Invocation;
 using System.Diagnostics;
 using System.Text.Json;
 using Microsoft.Data.SqlClient;
@@ -27,83 +26,94 @@ public static class AnalyzeCommand
 
     public static Command Create(ICredentialService? credentialService = null)
     {
-        var fileArg = new Argument<FileInfo?>(
-            "file",
-            description: "Path to a .sqlplan file, .sql file, or directory of .sql files")
+        var fileArg = new Argument<FileInfo?>("file")
         {
+            Description = "Path to a .sqlplan file, .sql file, or directory of .sql files",
             Arity = ArgumentArity.ZeroOrOne
         };
 
-        var stdinOption = new Option<bool>(
-            "--stdin",
-            "Read plan XML from stdin");
+        var stdinOption = new Option<bool>("--stdin")
+        {
+            Description = "Read plan XML from stdin"
+        };
 
-        var outputOption = new Option<string>(
-            "--output",
-            getDefaultValue: () => "json",
-            description: "Output format: json or text");
-        outputOption.AddAlias("-o");
+        var outputOption = new Option<string>("--output", "-o")
+        {
+            Description = "Output format: json or text",
+            DefaultValueFactory = _ => "json"
+        };
 
-        var compactOption = new Option<bool>(
-            "--compact",
-            "Compact JSON output (no indentation)");
+        var compactOption = new Option<bool>("--compact")
+        {
+            Description = "Compact JSON output (no indentation)"
+        };
 
-        var warningsOnlyOption = new Option<bool>(
-            "--warnings-only",
-            "Only output warnings and missing indexes, skip operator tree");
+        var warningsOnlyOption = new Option<bool>("--warnings-only")
+        {
+            Description = "Only output warnings and missing indexes, skip operator tree"
+        };
 
         // Live execution options
-        var serverOption = new Option<string?>(
-            "--server",
-            "Server name (matches credential store key)");
-        serverOption.AddAlias("-s");
+        var serverOption = new Option<string?>("--server", "-s")
+        {
+            Description = "Server name (matches credential store key)"
+        };
 
-        var databaseOption = new Option<string?>(
-            "--database",
-            "Database context for execution");
-        databaseOption.AddAlias("-d");
+        var databaseOption = new Option<string?>("--database", "-d")
+        {
+            Description = "Database context for execution"
+        };
 
-        var queryOption = new Option<string?>(
-            "--query",
-            "Inline SQL text to execute");
-        queryOption.AddAlias("-q");
+        var queryOption = new Option<string?>("--query", "-q")
+        {
+            Description = "Inline SQL text to execute"
+        };
 
-        var outputDirOption = new Option<DirectoryInfo?>(
-            "--output-dir",
-            "Directory for output files (default: current directory)");
+        var outputDirOption = new Option<DirectoryInfo?>("--output-dir")
+        {
+            Description = "Directory for output files (default: current directory)"
+        };
 
-        var estimatedOption = new Option<bool>(
-            "--estimated",
-            "Use estimated plan (SET SHOWPLAN XML ON) instead of actual plan");
+        var estimatedOption = new Option<bool>("--estimated")
+        {
+            Description = "Use estimated plan (SET SHOWPLAN XML ON) instead of actual plan"
+        };
 
-        var authOption = new Option<string?>(
-            "--auth",
-            "Authentication type: windows, sql, entra (default: auto-detect)");
+        var authOption = new Option<string?>("--auth")
+        {
+            Description = "Authentication type: windows, sql, entra (default: auto-detect)"
+        };
 
-        var trustCertOption = new Option<bool>(
-            "--trust-cert",
-            "Trust the server certificate (for dev/test environments)");
+        var trustCertOption = new Option<bool>("--trust-cert")
+        {
+            Description = "Trust the server certificate (for dev/test environments)"
+        };
 
-        var timeoutOption = new Option<int>(
-            "--timeout",
-            getDefaultValue: () => 60,
-            description: "Query timeout in seconds");
+        var timeoutOption = new Option<int>("--timeout")
+        {
+            Description = "Query timeout in seconds",
+            DefaultValueFactory = _ => 60
+        };
 
-        var loginOption = new Option<string?>(
-            "--login",
-            "SQL Server login name (bypasses credential store)");
+        var loginOption = new Option<string?>("--login")
+        {
+            Description = "SQL Server login name (bypasses credential store)"
+        };
 
-        var passwordOption = new Option<string?>(
-            "--password",
-            "SQL Server password (bypasses credential store). Visible in process listings — prefer --password-stdin.");
+        var passwordOption = new Option<string?>("--password")
+        {
+            Description = "SQL Server password (bypasses credential store). Visible in process listings — prefer --password-stdin."
+        };
 
-        var passwordStdinOption = new Option<bool>(
-            "--password-stdin",
-            "Read the SQL Server password from stdin (avoids process-listing exposure). Mutually exclusive with --password.");
+        var passwordStdinOption = new Option<bool>("--password-stdin")
+        {
+            Description = "Read the SQL Server password from stdin (avoids process-listing exposure). Mutually exclusive with --password."
+        };
 
-        var configOption = new Option<string?>(
-            "--config",
-            "Path to .planview.json config file (overrides auto-discovery)");
+        var configOption = new Option<string?>("--config")
+        {
+            Description = "Path to .planview.json config file (overrides auto-discovery)"
+        };
 
         var cmd = new Command("analyze", "Analyze a SQL Server execution plan")
         {
@@ -126,25 +136,25 @@ public static class AnalyzeCommand
             configOption
         };
 
-        cmd.SetHandler(async (ctx) =>
+        cmd.SetAction(async (parseResult, ct) =>
         {
-            var file = ctx.ParseResult.GetValueForArgument(fileArg);
-            var stdin = ctx.ParseResult.GetValueForOption(stdinOption);
-            var output = ctx.ParseResult.GetValueForOption(outputOption) ?? "json";
-            var compact = ctx.ParseResult.GetValueForOption(compactOption);
-            var warningsOnly = ctx.ParseResult.GetValueForOption(warningsOnlyOption);
-            var server = ctx.ParseResult.GetValueForOption(serverOption);
-            var database = ctx.ParseResult.GetValueForOption(databaseOption);
-            var query = ctx.ParseResult.GetValueForOption(queryOption);
-            var outputDir = ctx.ParseResult.GetValueForOption(outputDirOption);
-            var estimated = ctx.ParseResult.GetValueForOption(estimatedOption);
-            var auth = ctx.ParseResult.GetValueForOption(authOption);
-            var trustCert = ctx.ParseResult.GetValueForOption(trustCertOption);
-            var timeout = ctx.ParseResult.GetValueForOption(timeoutOption);
-            var login = ctx.ParseResult.GetValueForOption(loginOption);
-            var passwordInline = ctx.ParseResult.GetValueForOption(passwordOption);
-            var passwordStdin = ctx.ParseResult.GetValueForOption(passwordStdinOption);
-            var configPath = ctx.ParseResult.GetValueForOption(configOption);
+            var file = parseResult.GetValue(fileArg);
+            var stdin = parseResult.GetValue(stdinOption);
+            var output = parseResult.GetValue(outputOption) ?? "json";
+            var compact = parseResult.GetValue(compactOption);
+            var warningsOnly = parseResult.GetValue(warningsOnlyOption);
+            var server = parseResult.GetValue(serverOption);
+            var database = parseResult.GetValue(databaseOption);
+            var query = parseResult.GetValue(queryOption);
+            var outputDir = parseResult.GetValue(outputDirOption);
+            var estimated = parseResult.GetValue(estimatedOption);
+            var auth = parseResult.GetValue(authOption);
+            var trustCert = parseResult.GetValue(trustCertOption);
+            var timeout = parseResult.GetValue(timeoutOption);
+            var login = parseResult.GetValue(loginOption);
+            var passwordInline = parseResult.GetValue(passwordOption);
+            var passwordStdin = parseResult.GetValue(passwordStdinOption);
+            var configPath = parseResult.GetValue(configOption);
 
             // Load analyzer config
             var analyzerConfig = ConfigLoader.Load(configPath);

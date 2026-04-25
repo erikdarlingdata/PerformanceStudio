@@ -11,28 +11,40 @@ public static class CredentialCommand
     {
         var cmd = new Command("credential", "Manage stored server credentials");
 
-        cmd.AddCommand(CreateAddCommand(credentialService));
-        cmd.AddCommand(CreateListCommand(credentialService));
-        cmd.AddCommand(CreateRemoveCommand(credentialService));
+        cmd.Subcommands.Add(CreateAddCommand(credentialService));
+        cmd.Subcommands.Add(CreateListCommand(credentialService));
+        cmd.Subcommands.Add(CreateRemoveCommand(credentialService));
 
         return cmd;
     }
 
     private static Command CreateAddCommand(ICredentialService credentialService)
     {
-        var serverArg = new Argument<string>("server-name", "Server name to store credentials for");
-        var userOption = new Option<string>("--user", "Username") { IsRequired = true };
-        userOption.AddAlias("-u");
-        var passwordOption = new Option<string?>("--password", "Password (if omitted, prompts interactively)");
-        passwordOption.AddAlias("-p");
+        var serverArg = new Argument<string>("server-name")
+        {
+            Description = "Server name to store credentials for"
+        };
+        var userOption = new Option<string>("--user", "-u")
+        {
+            Description = "Username",
+            Required = true
+        };
+        var passwordOption = new Option<string?>("--password", "-p")
+        {
+            Description = "Password (if omitted, prompts interactively)"
+        };
 
         var cmd = new Command("add", "Add or update credentials for a server")
         {
             serverArg, userOption, passwordOption
         };
 
-        cmd.SetHandler((string server, string user, string? passwordArg) =>
+        cmd.SetAction(parseResult =>
         {
+            var server = parseResult.GetValue(serverArg)!;
+            var user = parseResult.GetValue(userOption)!;
+            var passwordArg = parseResult.GetValue(passwordOption);
+
             string password;
             if (!string.IsNullOrEmpty(passwordArg))
             {
@@ -66,7 +78,7 @@ public static class CredentialCommand
                 Console.Error.WriteLine($"Failed to save credential for {server}");
                 Environment.ExitCode = 1;
             }
-        }, serverArg, userOption, passwordOption);
+        });
 
         return cmd;
     }
@@ -75,7 +87,7 @@ public static class CredentialCommand
     {
         var cmd = new Command("list", "List stored credentials");
 
-        cmd.SetHandler(() =>
+        cmd.SetAction(_ =>
         {
             IReadOnlyList<(string ServerName, string Username)>? creds = null;
             // CA1416: WindowsCredentialService is gated on OperatingSystem.IsWindows().
@@ -110,15 +122,19 @@ public static class CredentialCommand
 
     private static Command CreateRemoveCommand(ICredentialService credentialService)
     {
-        var serverArg = new Argument<string>("server-name", "Server name to remove credentials for");
+        var serverArg = new Argument<string>("server-name")
+        {
+            Description = "Server name to remove credentials for"
+        };
 
         var cmd = new Command("remove", "Remove stored credentials for a server")
         {
             serverArg
         };
 
-        cmd.SetHandler((string server) =>
+        cmd.SetAction(parseResult =>
         {
+            var server = parseResult.GetValue(serverArg)!;
             if (credentialService.CredentialExists(server))
             {
                 credentialService.DeleteCredential(server);
@@ -129,7 +145,7 @@ public static class CredentialCommand
                 Console.Error.WriteLine($"No credential found for {server}");
                 Environment.ExitCode = 1;
             }
-        }, serverArg);
+        });
 
         return cmd;
     }
