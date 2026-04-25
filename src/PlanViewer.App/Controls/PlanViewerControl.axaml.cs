@@ -121,11 +121,9 @@ public partial class PlanViewerControl : UserControl
     // Minimap state
     private static double _minimapWidth = 400;
     private static double _minimapHeight = 400;
-    private const double MinimapDefaultSize = 400;
     private const double MinimapMinSize = 200;
     private const double MinimapMaxSize = 500;
     private bool _minimapDragging;
-    private Point _minimapDragStart;
     private Border? _minimapViewportBox;
     private bool _minimapResizing;
     private Point _minimapResizeStart;
@@ -166,6 +164,11 @@ public partial class PlanViewerControl : UserControl
         MinimapResizeGrip.PointerPressed += MinimapResizeGrip_PointerPressed;
         MinimapResizeGrip.PointerMoved += MinimapResizeGrip_PointerMoved;
         MinimapResizeGrip.PointerReleased += MinimapResizeGrip_PointerReleased;
+
+        // Wire minimap canvas interaction handlers once
+        MinimapCanvas.PointerPressed += MinimapCanvas_PointerPressed;
+        MinimapCanvas.PointerMoved += MinimapCanvas_PointerMoved;
+        MinimapCanvas.PointerReleased += MinimapCanvas_PointerReleased;
     }
 
     /// <summary>
@@ -358,6 +361,7 @@ public partial class PlanViewerControl : UserControl
         _currentStatement = null;
         _queryText = null;
         _selectedNodeBorder = null;
+        _selectedNode = null;
         EmptyState.IsVisible = true;
         PlanScrollViewer.IsVisible = false;
         InsightsPanel.IsVisible = false;
@@ -383,6 +387,7 @@ public partial class PlanViewerControl : UserControl
         PlanCanvas.Children.Clear();
         _nodeBorderMap.Clear();
         _selectedNodeBorder = null;
+        _selectedNode = null;
 
         if (statement.RootNode == null) return;
 
@@ -3535,6 +3540,9 @@ public partial class PlanViewerControl : UserControl
         _minimapViewportBox = null;
         _minimapSelectedNode = null;
 
+        // Guard: don't render if the panel was closed between a deferred post and execution
+        if (!MinimapPanel.IsVisible) return;
+
         if (_currentStatement?.RootNode == null || PlanCanvas.Width <= 0 || PlanCanvas.Height <= 0)
             return;
 
@@ -3551,6 +3559,11 @@ public partial class PlanViewerControl : UserControl
         var scaleY = canvasH / PlanCanvas.Height;
         var scale = Math.Min(scaleX, scaleY);
 
+        // Cache the non-expensive node border brush for this render cycle
+        _minimapNodeBorderBrushCache = FindBrushResource("ForegroundBrush") is SolidColorBrush fg
+            ? new SolidColorBrush(Color.FromArgb(0x80, fg.Color.R, fg.Color.G, fg.Color.B))
+            : FindBrushResource("BorderBrush");
+
         // Render branch areas with transparent colored backgrounds
         RenderMinimapBranches(_currentStatement.RootNode, scale);
 
@@ -3566,35 +3579,27 @@ public partial class PlanViewerControl : UserControl
         // Re-apply selection highlight if a node is selected
         if (_selectedNode != null)
             UpdateMinimapSelection(_selectedNode);
-
-        // Attach interaction handlers to the canvas
-        MinimapCanvas.PointerPressed -= MinimapCanvas_PointerPressed;
-        MinimapCanvas.PointerMoved -= MinimapCanvas_PointerMoved;
-        MinimapCanvas.PointerReleased -= MinimapCanvas_PointerReleased;
-        MinimapCanvas.PointerPressed += MinimapCanvas_PointerPressed;
-        MinimapCanvas.PointerMoved += MinimapCanvas_PointerMoved;
-        MinimapCanvas.PointerReleased += MinimapCanvas_PointerReleased;
     }
+
+    private static readonly Color[] MinimapBranchColors =
+    {
+        Color.FromArgb(0x30, 0x4F, 0xA3, 0xFF), // blue
+        Color.FromArgb(0x30, 0x7B, 0xCF, 0x7B), // green
+        Color.FromArgb(0x30, 0xFF, 0xB3, 0x47), // orange
+        Color.FromArgb(0x30, 0xE5, 0x73, 0x73), // red
+        Color.FromArgb(0x30, 0xCF, 0x7B, 0xCF), // purple
+        Color.FromArgb(0x30, 0x7B, 0xCF, 0xCF), // teal
+        Color.FromArgb(0x30, 0xFF, 0xE0, 0x4F), // yellow
+        Color.FromArgb(0x30, 0xFF, 0x7B, 0xA5), // pink
+    };
 
     private void RenderMinimapBranches(PlanNode root, double scale)
     {
-        // Assign unique branch colors to each child subtree of the root
-        var branchColors = new[]
-        {
-            Color.FromArgb(0x30, 0x4F, 0xA3, 0xFF), // blue
-            Color.FromArgb(0x30, 0x7B, 0xCF, 0x7B), // green
-            Color.FromArgb(0x30, 0xFF, 0xB3, 0x47), // orange
-            Color.FromArgb(0x30, 0xE5, 0x73, 0x73), // red
-            Color.FromArgb(0x30, 0xCF, 0x7B, 0xCF), // purple
-            Color.FromArgb(0x30, 0x7B, 0xCF, 0xCF), // teal
-            Color.FromArgb(0x30, 0xFF, 0xE0, 0x4F), // yellow
-            Color.FromArgb(0x30, 0xFF, 0x7B, 0xA5), // pink
-        };
 
         for (int i = 0; i < root.Children.Count; i++)
         {
             var child = root.Children[i];
-            var color = branchColors[i % branchColors.Length];
+            var color = MinimapBranchColors[i % MinimapBranchColors.Length];
 
             // Collect bounds of all nodes in this subtree
             double minX = double.MaxValue, minY = double.MaxValue;
@@ -3662,6 +3667,9 @@ public partial class PlanViewerControl : UserControl
         }
     }
 
+    // Cached per render cycle in RenderMinimap() to avoid per-node brush creation
+    private IBrush _minimapNodeBorderBrushCache = Brushes.Gray;
+
     private void RenderMinimapNodes(PlanNode node, double scale)
     {
         var w = PlanLayoutEngine.NodeWidth * scale;
@@ -3670,11 +3678,7 @@ public partial class PlanViewerControl : UserControl
         var bgBrush = node.IsExpensive
             ? new SolidColorBrush(Color.FromArgb(0x60, 0xE5, 0x73, 0x73))
             : FindBrushResource("BackgroundLightBrush");
-        var borderBrush = node.IsExpensive
-            ? OrangeRedBrush
-            : FindBrushResource("ForegroundBrush") is SolidColorBrush fg
-                ? new SolidColorBrush(Color.FromArgb(0x80, fg.Color.R, fg.Color.G, fg.Color.B))
-                : (IBrush)FindBrushResource("BorderBrush");
+        var borderBrush = node.IsExpensive ? OrangeRedBrush : _minimapNodeBorderBrushCache;
 
         var border = new Border
         {
@@ -3795,7 +3799,7 @@ public partial class PlanViewerControl : UserControl
             var prevNode = _minimapNodeMap.GetValueOrDefault(_minimapSelectedNode);
             _minimapSelectedNode.BorderBrush = prevNode is { IsExpensive: true }
                 ? OrangeRedBrush
-                : FindBrushResource("BorderBrush");
+                : _minimapNodeBorderBrushCache;
             _minimapSelectedNode.BorderThickness = new Thickness(0.5);
             _minimapSelectedNode = null;
         }
@@ -3848,7 +3852,6 @@ public partial class PlanViewerControl : UserControl
 
         // Start viewport box drag
         _minimapDragging = true;
-        _minimapDragStart = pos;
 
         // Move viewport center to click position
         ScrollPlanViewerToMinimapPoint(pos, scale);
