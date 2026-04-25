@@ -1300,10 +1300,7 @@ public partial class MainWindow : Window
             }
         };
 
-        if (IsVisible)
             dialog.ShowDialog(this);
-        else
-            dialog.Show();
     }
 
     private async Task CheckForUpdatesOnStartupAsync()
