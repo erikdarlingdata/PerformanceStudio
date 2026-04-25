@@ -26,5 +26,5 @@ if (credentialService != null)
 // System.CommandLine's InvokeAsync returns 0 for successful dispatch even when a
 // handler set Environment.ExitCode = 1 to signal a validation error. Honor either
 // signal so scripts can tell success from failure.
-var code = await root.InvokeAsync(args);
+var code = await root.Parse(args).InvokeAsync();
 return code != 0 ? code : Environment.ExitCode;
