@@ -482,9 +482,9 @@ public static class PlanAnalyzer
         if (!cfg.IsRuleDisabled(38) && stmt.DegreeOfParallelism == 2 && stmt.RootNode != null
             && HasBatchModeNode(stmt.RootNode))
         {
-            if (serverMetadata != null
-                && !string.IsNullOrEmpty(serverMetadata.Edition)
-                && serverMetadata.Edition.Contains("Standard", StringComparison.OrdinalIgnoreCase))
+            var editionKnown = !string.IsNullOrEmpty(serverMetadata?.Edition);
+            if (editionKnown
+                && serverMetadata!.Edition!.Contains("Standard", StringComparison.OrdinalIgnoreCase))
             {
                 // Server context confirms Standard Edition — check MAXDOP
                 if (serverMetadata.MaxDop > 2)
@@ -497,9 +497,9 @@ public static class PlanAnalyzer
                     });
                 }
             }
-            else if (serverMetadata == null)
+            else if (!editionKnown)
             {
-                // No server context (e.g. .sqlplan file) — suspect the limitation
+                // No server context, or edition unknown (e.g. collection failure) — suspect the limitation
                 stmt.PlanWarnings.Add(new PlanWarning
                 {
                     WarningType = "Standard Edition DOP Limitation",
