@@ -15,6 +15,15 @@ public static class PlanTestHelper
     /// </summary>
     public static ParsedPlan LoadAndAnalyze(string planFileName)
     {
+        return LoadAndAnalyze(planFileName, serverMetadata: null);
+    }
+
+    /// <summary>
+    /// Loads a .sqlplan file from the Plans directory, parses it, and runs the analyzer
+    /// with optional server metadata (for rules that depend on server context).
+    /// </summary>
+    public static ParsedPlan LoadAndAnalyze(string planFileName, ServerMetadata? serverMetadata)
+    {
         var path = Path.Combine("Plans", planFileName);
         Assert.True(File.Exists(path), $"Test plan not found: {path}");
 
@@ -23,7 +32,7 @@ public static class PlanTestHelper
         // File.ReadAllText auto-detects BOM, but XDocument.Parse chokes on the declaration.
         xml = xml.Replace("encoding=\"utf-16\"", "encoding=\"utf-8\"");
         var plan = ShowPlanParser.Parse(xml);
-        PlanAnalyzer.Analyze(plan);
+        PlanAnalyzer.Analyze(plan, serverMetadata: serverMetadata);
         BenefitScorer.Score(plan);
         return plan;
     }

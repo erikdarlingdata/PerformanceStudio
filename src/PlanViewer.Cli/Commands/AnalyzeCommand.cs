@@ -377,6 +377,18 @@ public static class AnalyzeCommand
         var isAzure = IsAzureSqlDb(server);
         var planType = estimated ? "estimated" : "actual";
         Console.Error.WriteLine($"Capturing {planType} plans from {server}/{database}");
+
+        // Fetch server metadata for Rule 38 (Standard Edition DOP limitation)
+        ServerMetadata? serverMetadata = null;
+        try
+        {
+            serverMetadata = await ServerMetadataService.FetchServerMetadataAsync(connectionString, isAzure);
+        }
+        catch
+        {
+            // Non-fatal: analysis continues without server context
+        }
+
         Console.Error.WriteLine();
 
         // Process each SQL input sequentially
@@ -424,7 +436,7 @@ public static class AnalyzeCommand
 
                 // Parse, analyze, map result
                 var plan = ShowPlanParser.Parse(planXml);
-                PlanAnalyzer.Analyze(plan, analyzerConfig);
+                PlanAnalyzer.Analyze(plan, analyzerConfig, serverMetadata);
                 BenefitScorer.Score(plan);
                 var result = ResultMapper.Map(plan, $"{name}.sql");
 

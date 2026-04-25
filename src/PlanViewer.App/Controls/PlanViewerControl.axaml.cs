@@ -273,7 +273,7 @@ public partial class PlanViewerControl : UserControl
         // separate expander — it's already visible in the Statements grid.
 
         _currentPlan = ShowPlanParser.Parse(planXml);
-        PlanAnalyzer.Analyze(_currentPlan, ConfigLoader.Load());
+        PlanAnalyzer.Analyze(_currentPlan, ConfigLoader.Load(), _serverMetadata);
         BenefitScorer.Score(_currentPlan);
 
         var allStatements = _currentPlan.Batches

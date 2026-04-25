@@ -293,6 +293,19 @@ public static class QueryStoreCommand
         Console.Error.WriteLine($"{plans.Count} plans");
         Console.Error.WriteLine();
 
+        // Fetch server metadata for Rule 38 (Standard Edition DOP limitation)
+        ServerMetadata? serverMetadata = null;
+        try
+        {
+            var isAzure = server.Contains(".database.windows.net", StringComparison.OrdinalIgnoreCase) ||
+                          server.Contains(".database.azure.com", StringComparison.OrdinalIgnoreCase);
+            serverMetadata = await ServerMetadataService.FetchServerMetadataAsync(connectionString, isAzure);
+        }
+        catch
+        {
+            // Non-fatal: analysis continues without server context
+        }
+
         // Resolve output directory
         var outDir = outputDir?.FullName ?? Directory.GetCurrentDirectory();
         Directory.CreateDirectory(outDir);
@@ -322,7 +335,7 @@ public static class QueryStoreCommand
 
                 // Parse, analyze, map
                 var plan = ShowPlanParser.Parse(qsPlan.PlanXml);
-                PlanAnalyzer.Analyze(plan, analyzerConfig);
+                PlanAnalyzer.Analyze(plan, analyzerConfig, serverMetadata);
                 BenefitScorer.Score(plan);
                 var result = ResultMapper.Map(plan, $"{label}.sqlplan");
 
