@@ -1299,7 +1299,11 @@ public partial class MainWindow : Window
                 }
             }
         };
-        dialog.ShowDialog(this);
+
+        if (IsVisible)
+            dialog.ShowDialog(this);
+        else
+            dialog.Show();
     }
 
     private async Task CheckForUpdatesOnStartupAsync()
