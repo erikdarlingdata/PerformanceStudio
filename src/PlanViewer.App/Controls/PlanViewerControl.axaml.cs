@@ -132,6 +132,8 @@ public partial class PlanViewerControl : UserControl
     private double _minimapResizeStartW;
     private double _minimapResizeStartH;
     private readonly Dictionary<Border, PlanNode> _minimapNodeMap = new();
+    private Border? _minimapSelectedNode;
+    private PlanNode? _selectedNode;
 
     public PlanViewerControl()
     {
@@ -871,7 +873,9 @@ public partial class PlanViewerControl : UserControl
         border.BorderBrush = SelectionBrush;
         border.BorderThickness = new Thickness(2);
 
+        _selectedNode = node;
         ShowPropertiesPanel(node);
+        UpdateMinimapSelection(node);
     }
 
     private ContextMenu BuildNodeContextMenu(PlanNode node)
@@ -3529,6 +3533,7 @@ public partial class PlanViewerControl : UserControl
         MinimapCanvas.Children.Clear();
         _minimapNodeMap.Clear();
         _minimapViewportBox = null;
+        _minimapSelectedNode = null;
 
         if (_currentStatement?.RootNode == null || PlanCanvas.Width <= 0 || PlanCanvas.Height <= 0)
             return;
@@ -3557,6 +3562,10 @@ public partial class PlanViewerControl : UserControl
 
         // Render viewport indicator
         RenderMinimapViewportBox(scale);
+
+        // Re-apply selection highlight if a node is selected
+        if (_selectedNode != null)
+            UpdateMinimapSelection(_selectedNode);
 
         // Attach interaction handlers to the canvas
         MinimapCanvas.PointerPressed -= MinimapCanvas_PointerPressed;
@@ -3628,6 +3637,11 @@ public partial class PlanViewerControl : UserControl
             var childCenterY = (child.Y + PlanLayoutEngine.GetNodeHeight(child) / 2) * scale;
             var midX = (parentRight + childLeft) / 2;
 
+            // Proportional thickness matching the plan viewer (logarithmic, scaled down)
+            var rows = child.HasActualStats ? child.ActualRows : child.EstimateRows;
+            var fullThickness = Math.Max(2, Math.Min(Math.Floor(Math.Log(Math.Max(1, rows))), 12));
+            var thickness = Math.Max(0.5, fullThickness * scale);
+
             var geometry = new PathGeometry();
             var figure = new PathFigure { StartPoint = new Point(parentRight, parentCenterY), IsClosed = false };
             figure.Segments!.Add(new LineSegment { Point = new Point(midX, parentCenterY) });
@@ -3639,7 +3653,7 @@ public partial class PlanViewerControl : UserControl
             {
                 Data = geometry,
                 Stroke = EdgeBrush,
-                StrokeThickness = 1,
+                StrokeThickness = thickness,
                 StrokeJoin = PenLineJoin.Round
             };
             MinimapCanvas.Children.Add(path);
@@ -3763,6 +3777,32 @@ public partial class PlanViewerControl : UserControl
         var canvasH = MinimapCanvas.Bounds.Height;
         if (canvasW <= 0 || canvasH <= 0) return 1;
         return Math.Min(canvasW / PlanCanvas.Width, canvasH / PlanCanvas.Height);
+    }
+
+    private void UpdateMinimapSelection(PlanNode node)
+    {
+        if (!MinimapPanel.IsVisible) return;
+
+        // Reset previous selection highlight
+        if (_minimapSelectedNode != null)
+        {
+            var prevNode = _minimapNodeMap.GetValueOrDefault(_minimapSelectedNode);
+            _minimapSelectedNode.BorderBrush = prevNode is { IsExpensive: true } ? OrangeRedBrush : MinimapNodeBorderBrush;
+            _minimapSelectedNode.BorderThickness = new Thickness(0.5);
+            _minimapSelectedNode = null;
+        }
+
+        // Find and highlight the new node
+        foreach (var (border, n) in _minimapNodeMap)
+        {
+            if (n == node)
+            {
+                border.BorderBrush = SelectionBrush;
+                border.BorderThickness = new Thickness(2);
+                _minimapSelectedNode = border;
+                break;
+            }
+        }
     }
 
     private void MinimapCanvas_PointerPressed(object? sender, PointerPressedEventArgs e)
