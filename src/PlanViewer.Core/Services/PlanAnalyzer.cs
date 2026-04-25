@@ -403,7 +403,7 @@ public static class PlanAnalyzer
 
             if (unsnifffedParams.Count > 0)
             {
-                var hasRecompile = stmt.StatementText.Contains("RECOMPILE", StringComparison.OrdinalIgnoreCase);
+                var hasRecompile = stmt.StatementText?.Contains("RECOMPILE", StringComparison.OrdinalIgnoreCase) == true;
                 if (!hasRecompile)
                 {
                     var names = string.Join(", ", unsnifffedParams.Select(p => p.Name));
@@ -1321,7 +1321,7 @@ public static class PlanAnalyzer
         // Rule 28: Row Count Spool — NOT IN with nullable column
         // Pattern: Row Count Spool with high rewinds, child scan has IS NULL predicate,
         // and statement text contains NOT IN
-        if (!cfg.IsRuleDisabled(28) && node.PhysicalOp.Contains("Row Count Spool"))
+        if (!cfg.IsRuleDisabled(28) && node.PhysicalOp?.Contains("Row Count Spool") == true)
         {
             var rewinds = node.HasActualStats ? (double)node.ActualRewinds : node.EstimateRewinds;
             if (rewinds > 10000 && HasNotInPattern(node, stmt))

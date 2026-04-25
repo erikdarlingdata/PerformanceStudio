@@ -7,7 +7,6 @@ using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
-using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.VisualTree;
 using PlanViewer.Core.Models;
@@ -111,9 +110,9 @@ public partial class QueryStoreHistoryWindow : Window
 
         // Select initial metric in the combo box
         var metricTag = initialMetricTag;
-        foreach (ComboBoxItem item in MetricSelector.Items)
+        foreach (var entry in MetricSelector.Items)
         {
-            if (item.Tag?.ToString() == metricTag)
+            if (entry is ComboBoxItem item && item.Tag?.ToString() == metricTag)
             {
                 MetricSelector.SelectedItem = item;
                 break;
@@ -759,7 +758,7 @@ public partial class QueryStoreHistoryWindow : Window
 
     private void OnHighlightLoadingRow(object? sender, DataGridRowEventArgs e)
     {
-        var idx = e.Row.GetIndex();
+        var idx = e.Row.Index;
         if (_selectedRowIndices.Contains(idx))
         {
             e.Row.Background = new SolidColorBrush(Avalonia.Media.Color.FromArgb(60, 79, 195, 247));

@@ -77,12 +77,15 @@ public static class CredentialCommand
 
         cmd.SetHandler(() =>
         {
-            IReadOnlyList<(string ServerName, string Username)>? creds = credentialService switch
-            {
-                WindowsCredentialService win => win.ListAll(),
-                KeychainCredentialService mac => mac.ListAll(),
-                _ => null
-            };
+            IReadOnlyList<(string ServerName, string Username)>? creds = null;
+            // CA1416: WindowsCredentialService is gated on OperatingSystem.IsWindows().
+            // .NET 8 won't run below Windows 10, so the underlying "windows5.1.2600" requirement is always met.
+#pragma warning disable CA1416
+            if (OperatingSystem.IsWindows() && credentialService is WindowsCredentialService win)
+                creds = win.ListAll();
+#pragma warning restore CA1416
+            if (OperatingSystem.IsMacOS() && credentialService is KeychainCredentialService mac)
+                creds = mac.ListAll();
 
             if (creds == null)
             {
