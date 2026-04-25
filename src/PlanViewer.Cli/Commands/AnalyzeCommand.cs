@@ -9,8 +9,6 @@ using PlanViewer.Core.Services;
 
 namespace PlanViewer.Cli.Commands;
 
-using PlanViewer.Cli;
-
 public static class AnalyzeCommand
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
