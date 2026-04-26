@@ -409,7 +409,7 @@ public partial class PlanViewerControl : UserControl
         // Render nodes — pass total warning count to root node for badge
         var allWarnings = new List<PlanWarning>();
         CollectWarnings(statement.RootNode, allWarnings);
-        RenderNodes(statement.RootNode, allWarnings.Count);
+        RenderNodes(statement.RootNode, divergenceLimit, allWarnings.Count);
 
         // Update banners
         ShowMissingIndexes(statement.MissingIndexes);
@@ -434,18 +434,18 @@ public partial class PlanViewerControl : UserControl
 
     #region Node Rendering
 
-    private void RenderNodes(PlanNode node, int totalWarningCount = -1)
+    private void RenderNodes(PlanNode node, double divergenceLimit, int totalWarningCount = -1)
     {
-        var visual = CreateNodeVisual(node, totalWarningCount);
+        var visual = CreateNodeVisual(node, divergenceLimit, totalWarningCount);
         Canvas.SetLeft(visual, node.X);
         Canvas.SetTop(visual, node.Y);
         PlanCanvas.Children.Add(visual);
 
         foreach (var child in node.Children)
-            RenderNodes(child);
+            RenderNodes(child, divergenceLimit);
     }
 
-    private Border CreateNodeVisual(PlanNode node, int totalWarningCount = -1)
+    private Border CreateNodeVisual(PlanNode node, double divergenceLimit, int totalWarningCount = -1)
     {
         var isExpensive = node.IsExpensive;
 
@@ -660,8 +660,7 @@ public partial class PlanViewerControl : UserControl
             // Actual rows of Estimated rows (accuracy %) -- red if off by divergence limit
             var estRows = node.EstimateRows;
             var accuracyRatio = estRows > 0 ? node.ActualRows / estRows : (node.ActualRows > 0 ? double.MaxValue : 1.0);
-            var nodeDivLimit = Math.Max(2.0, AppSettingsService.Load().AccuracyRatioDivergenceLimit);
-            IBrush rowBrush = (accuracyRatio < 1.0 / nodeDivLimit || accuracyRatio > nodeDivLimit) ? OrangeRedBrush : fgBrush;
+            IBrush rowBrush = (accuracyRatio < 1.0 / divergenceLimit || accuracyRatio > divergenceLimit) ? OrangeRedBrush : fgBrush;
             var accuracy = estRows > 0
                 ? $" ({accuracyRatio * 100:F0}%)"
                 : "";
