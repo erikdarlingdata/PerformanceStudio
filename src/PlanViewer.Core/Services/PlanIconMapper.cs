@@ -179,10 +179,23 @@ public static class PlanIconMapper
     /// <summary>
     /// Returns the icon file name (without extension) for a given physical operator.
     /// When <paramref name="storageType"/> is "ColumnStore" on a *Index Scan,
-    /// routes to the columnstore variant.
+    /// routes to the columnstore variant. When <paramref name="physicalOp"/> is
+    /// "Parallelism" and <paramref name="logicalOp"/> identifies a stream subtype,
+    /// routes to the matching subtype icon.
     /// </summary>
-    public static string GetIconName(string physicalOp, string? storageType = null)
+    public static string GetIconName(string physicalOp, string? storageType = null, string? logicalOp = null)
     {
+        // Parallelism subtypes: PhysicalOp="Parallelism" + LogicalOp identifies which.
+        if (string.Equals(physicalOp, "Parallelism", StringComparison.Ordinal) && logicalOp != null)
+        {
+            switch (logicalOp)
+            {
+                case "Repartition Streams": return "parallelism_repartition_streams";
+                case "Distribute Streams":  return "parallelism_distribute_streams";
+                case "Gather Streams":      return "parallelism_gather_streams";
+            }
+        }
+
         // Columnstore scans surface as PhysicalOp="Clustered Index Scan" / "Index Scan"
         // with Storage="ColumnStore" on the Object element. Route to the columnstore icon.
         if (string.Equals(storageType, "ColumnStore", StringComparison.OrdinalIgnoreCase))
