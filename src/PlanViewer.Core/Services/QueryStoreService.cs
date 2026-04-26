@@ -86,23 +86,29 @@ FROM sys.database_query_store_options;";
         };
 
         // Build optional WHERE clauses from filter (parameterized for safety).
+        // Filters are applied in Phase 3 (BEFORE TOP N) so the user's target
+        // query isn't excluded just because it's not in the top N by CPU.
+        // Aliases here reference Phase 3's CTE: ps (#plan_stats),
+        // p (sys.query_store_plan), q (sys.query_store_query).
         var filterClauses = new List<string>();
         var parameters = new List<SqlParameter>();
+        var needsQueryJoin = false;
 
         if (filter?.QueryId != null)
         {
-            filterClauses.Add("AND q.query_id = @filterQueryId");
+            filterClauses.Add("AND p.query_id = @filterQueryId");
             parameters.Add(new SqlParameter("@filterQueryId", filter.QueryId.Value));
         }
         if (filter?.PlanId != null)
         {
-            filterClauses.Add("AND tp.plan_id = @filterPlanId");
+            filterClauses.Add("AND ps.plan_id = @filterPlanId");
             parameters.Add(new SqlParameter("@filterPlanId", filter.PlanId.Value));
         }
         if (!string.IsNullOrWhiteSpace(filter?.QueryHash))
         {
             filterClauses.Add("AND q.query_hash = CONVERT(binary(8), @filterQueryHash, 1)");
             parameters.Add(new SqlParameter("@filterQueryHash", filter.QueryHash.Trim()));
+            needsQueryJoin = true;
         }
         if (!string.IsNullOrWhiteSpace(filter?.QueryPlanHash))
         {
@@ -122,11 +128,15 @@ FROM sys.database_query_store_options;";
                 filterClauses.Add("AND OBJECT_SCHEMA_NAME(q.object_id) + N'.' + OBJECT_NAME(q.object_id) = @filterModule");
             }
             parameters.Add(new SqlParameter("@filterModule", moduleVal));
+            needsQueryJoin = true;
         }
 
         var rnClause = filter?.PlanId != null ? "" : "AND r.rn = 1";
         var filterSql = filterClauses.Count > 0
-            ? "\n" + string.Join("\n", filterClauses)
+            ? "\n        " + string.Join("\n        ", filterClauses)
+            : "";
+        var phase3QueryJoin = needsQueryJoin
+            ? "    JOIN sys.query_store_query AS q ON p.query_id = q.query_id\n"
             : "";
 
         // Time-range filter: always filter on interval start_time (indexed).
@@ -241,6 +251,7 @@ WITH ranked AS (
         ROW_NUMBER() OVER (PARTITION BY p.query_id ORDER BY {orderClause} DESC) AS rn
     FROM #plan_stats AS ps
     JOIN sys.query_store_plan AS p ON ps.plan_id = p.plan_id
+{phase3QueryJoin}    WHERE 1 = 1{filterSql}
 )
 SELECT TOP ({topN})
     r.query_id,
@@ -295,7 +306,6 @@ FROM #top_plans AS tp
 JOIN sys.query_store_plan AS p ON tp.plan_id = p.plan_id
 JOIN sys.query_store_query AS q ON p.query_id = q.query_id
 JOIN sys.query_store_query_text AS qt ON q.query_text_id = qt.query_text_id
-WHERE 1 = 1{filterSql}
 ORDER BY {outerOrder} DESC;";
 
         var plans = new List<QueryStorePlan>();
