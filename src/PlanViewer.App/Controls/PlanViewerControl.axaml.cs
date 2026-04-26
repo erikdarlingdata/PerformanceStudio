@@ -3698,10 +3698,13 @@ public partial class PlanViewerControl : UserControl
             figure.Segments.Add(new LineSegment { Point = new Point(childLeft, childCenterY) });
             geometry.Figures!.Add(figure);
 
+            var settings = AppSettingsService.Load();
+            var linkBrush = GetLinkColorBrush(child, settings.AccuracyRatioDivergenceLimit);
+
             var path = new AvaloniaPath
             {
                 Data = geometry,
-                Stroke = EdgeBrush,
+                Stroke = linkBrush,
                 StrokeThickness = thickness,
                 StrokeJoin = PenLineJoin.Round
             };
