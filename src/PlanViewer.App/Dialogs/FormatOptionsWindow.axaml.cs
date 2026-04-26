@@ -5,6 +5,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
+using System.Text;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
@@ -44,6 +45,19 @@ public partial class FormatOptionsWindow : Window
         "NewLineBeforeWhereClause", "NewLineBeforeWindowClause",
     ];
 
+    private static string SplitPascalCase(string name)
+    {
+        var sb = new StringBuilder(name.Length + 8);
+        for (int i = 0; i < name.Length; i++)
+        {
+            var c = name[i];
+            if (i > 0 && char.IsUpper(c) && !char.IsUpper(name[i - 1]))
+                sb.Append(' ');
+            sb.Append(c);
+        }
+        return sb.ToString();
+    }
+
     private static readonly Dictionary<string, string[]> ChoiceOptionsMap = new()
     {
         ["KeywordCasing"] = ["Uppercase", "Lowercase", "PascalCase"],
@@ -73,7 +87,7 @@ public partial class FormatOptionsWindow : Window
 
             _rows.Add(new FormatOptionRow
             {
-                Name = prop.Name,
+                Name = SplitPascalCase(prop.Name),
                 CurrentValue = currentVal?.ToString() ?? "",
                 DefaultValue = defaultVal?.ToString() ?? "",
                 IsBool = isBool,
@@ -289,6 +303,7 @@ public class FormatOptionRow : INotifyPropertyChanged
         get => _boolValue;
         set
         {
+            if (_boolValue == value) return;
             _boolValue = value;
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(BoolValue)));
             // Keep CurrentValue in sync for serialization
@@ -313,6 +328,7 @@ public class FormatOptionRow : INotifyPropertyChanged
         get => _currentValue;
         set
         {
+            if (_currentValue == value) return;
             _currentValue = value;
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CurrentValue)));
         }
