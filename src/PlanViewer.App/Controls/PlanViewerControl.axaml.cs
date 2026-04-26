@@ -403,7 +403,8 @@ public partial class PlanViewerControl : UserControl
         PlanCanvas.Height = height;
 
         // Render edges first (behind nodes)
-        RenderEdges(statement.RootNode);
+        var divergenceLimit = Math.Max(2.0, AppSettingsService.Load().AccuracyRatioDivergenceLimit);
+        RenderEdges(statement.RootNode, divergenceLimit);
 
         // Render nodes — pass total warning count to root node for badge
         var allWarnings = new List<PlanWarning>();
@@ -656,10 +657,11 @@ public partial class PlanViewerControl : UserControl
                 HorizontalAlignment = HorizontalAlignment.Center
             });
 
-            // Actual rows of Estimated rows (accuracy %) -- red if off by 10x+
+            // Actual rows of Estimated rows (accuracy %) -- red if off by divergence limit
             var estRows = node.EstimateRows;
             var accuracyRatio = estRows > 0 ? node.ActualRows / estRows : (node.ActualRows > 0 ? double.MaxValue : 1.0);
-            IBrush rowBrush = (accuracyRatio < 0.1 || accuracyRatio > 10.0) ? OrangeRedBrush : fgBrush;
+            var nodeDivLimit = Math.Max(2.0, AppSettingsService.Load().AccuracyRatioDivergenceLimit);
+            IBrush rowBrush = (accuracyRatio < 1.0 / nodeDivLimit || accuracyRatio > nodeDivLimit) ? OrangeRedBrush : fgBrush;
             var accuracy = estRows > 0
                 ? $" ({accuracyRatio * 100:F0}%)"
                 : "";
@@ -727,14 +729,14 @@ public partial class PlanViewerControl : UserControl
 
     #region Edge Rendering
 
-    private void RenderEdges(PlanNode node)
+    private void RenderEdges(PlanNode node, double divergenceLimit)
     {
         foreach (var child in node.Children)
         {
-            var path = CreateElbowConnector(node, child);
+            var path = CreateElbowConnector(node, child, divergenceLimit);
             PlanCanvas.Children.Add(path);
 
-            RenderEdges(child);
+            RenderEdges(child, divergenceLimit);
         }
     }
 
@@ -747,6 +749,7 @@ public partial class PlanViewerControl : UserControl
         if (!child.HasActualStats)
             return EdgeBrush;
 
+        divergenceLimit = Math.Max(2.0, divergenceLimit);
         var estRows = child.EstimateRows;
         var accuracyRatio = estRows > 0
             ? child.ActualRows / estRows
@@ -774,7 +777,7 @@ public partial class PlanViewerControl : UserControl
         return LinkBlueBrush;
     }
 
-    private AvaloniaPath CreateElbowConnector(PlanNode parent, PlanNode child)
+    private AvaloniaPath CreateElbowConnector(PlanNode parent, PlanNode child, double divergenceLimit)
     {
         var parentRight = parent.X + PlanLayoutEngine.NodeWidth;
         var parentCenterY = parent.Y + PlanLayoutEngine.GetNodeHeight(parent) / 2;
@@ -798,8 +801,7 @@ public partial class PlanViewerControl : UserControl
         figure.Segments.Add(new LineSegment { Point = new Point(childLeft, childCenterY) });
         geometry.Figures!.Add(figure);
 
-        var settings = AppSettingsService.Load();
-        var linkBrush = GetLinkColorBrush(child, settings.AccuracyRatioDivergenceLimit);
+        var linkBrush = GetLinkColorBrush(child, divergenceLimit);
 
         var path = new AvaloniaPath
         {
@@ -3612,7 +3614,8 @@ public partial class PlanViewerControl : UserControl
         RenderMinimapBranches(_currentStatement.RootNode, scale);
 
         // Render edges
-        RenderMinimapEdges(_currentStatement.RootNode, scale);
+        var minimapDivergenceLimit = Math.Max(2.0, AppSettingsService.Load().AccuracyRatioDivergenceLimit);
+        RenderMinimapEdges(_currentStatement.RootNode, scale, minimapDivergenceLimit);
 
         // Render nodes
         RenderMinimapNodes(_currentStatement.RootNode, scale);
@@ -3676,7 +3679,7 @@ public partial class PlanViewerControl : UserControl
             CollectSubtreeBounds(child, ref minX, ref minY, ref maxX, ref maxY);
     }
 
-    private void RenderMinimapEdges(PlanNode node, double scale)
+    private void RenderMinimapEdges(PlanNode node, double scale, double divergenceLimit)
     {
         foreach (var child in node.Children)
         {
@@ -3698,8 +3701,7 @@ public partial class PlanViewerControl : UserControl
             figure.Segments.Add(new LineSegment { Point = new Point(childLeft, childCenterY) });
             geometry.Figures!.Add(figure);
 
-            var settings = AppSettingsService.Load();
-            var linkBrush = GetLinkColorBrush(child, settings.AccuracyRatioDivergenceLimit);
+            var linkBrush = GetLinkColorBrush(child, divergenceLimit);
 
             var path = new AvaloniaPath
             {
@@ -3710,7 +3712,7 @@ public partial class PlanViewerControl : UserControl
             };
             MinimapCanvas.Children.Add(path);
 
-            RenderMinimapEdges(child, scale);
+            RenderMinimapEdges(child, scale, divergenceLimit);
         }
     }
 
