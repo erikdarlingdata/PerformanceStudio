@@ -178,9 +178,36 @@ public static class PlanIconMapper
 
     /// <summary>
     /// Returns the icon file name (without extension) for a given physical operator.
+    /// When <paramref name="storageType"/> is "ColumnStore" on a *Index Scan,
+    /// routes to the columnstore variant.
     /// </summary>
-    public static string GetIconName(string physicalOp)
+    public static string GetIconName(string physicalOp, string? storageType = null)
     {
+        // Columnstore scans surface as PhysicalOp="Clustered Index Scan" / "Index Scan"
+        // with Storage="ColumnStore" on the Object element. Route to the columnstore icon.
+        if (string.Equals(storageType, "ColumnStore", StringComparison.OrdinalIgnoreCase))
+        {
+            switch (physicalOp)
+            {
+                case "Clustered Index Scan":
+                case "Index Scan":
+                case "Columnstore Index Scan":
+                    return "columnstore_index_scan";
+                case "Clustered Index Delete":
+                case "Index Delete":
+                    return "columnstore_index_delete";
+                case "Clustered Index Insert":
+                case "Index Insert":
+                    return "columnstore_index_insert";
+                case "Clustered Index Update":
+                case "Index Update":
+                    return "columnstore_index_update";
+                case "Clustered Index Merge":
+                case "Index Merge":
+                    return "columnstore_index_merge";
+            }
+        }
+
         if (IconMap.TryGetValue(physicalOp, out var iconName))
             return iconName;
 
