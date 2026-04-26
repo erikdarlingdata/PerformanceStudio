@@ -495,45 +495,13 @@ public partial class PlanViewerControl : UserControl
         var iconBitmap = IconHelper.LoadIcon(node.IconName);
         if (iconBitmap != null)
         {
-            var iconImage = new Image
+            iconRow.Children.Add(new Image
             {
                 Source = iconBitmap,
                 Width = 32,
                 Height = 32,
                 Margin = new Thickness(0, 0, 0, 2)
-            };
-
-            // Distinguish Parallelism subtypes (Repartition / Distribute / Gather Streams)
-            // by overlaying a small letter on the shared parallelism.png icon.
-            var parallelismGlyph = GetParallelismGlyph(node);
-            if (parallelismGlyph != null)
-            {
-                var iconGrid = new Grid { Margin = new Thickness(0, 0, 0, 2) };
-                iconGrid.Children.Add(iconImage);
-                iconImage.Margin = default;
-                iconGrid.Children.Add(new Border
-                {
-                    Width = 14, Height = 14,
-                    HorizontalAlignment = HorizontalAlignment.Right,
-                    VerticalAlignment = VerticalAlignment.Bottom,
-                    Background = new SolidColorBrush(Color.FromRgb(0x33, 0x33, 0x33)),
-                    CornerRadius = new CornerRadius(7),
-                    Child = new TextBlock
-                    {
-                        Text = parallelismGlyph,
-                        FontSize = 9,
-                        FontWeight = FontWeight.Bold,
-                        Foreground = Brushes.White,
-                        HorizontalAlignment = HorizontalAlignment.Center,
-                        VerticalAlignment = VerticalAlignment.Center
-                    }
-                });
-                iconRow.Children.Add(iconGrid);
-            }
-            else
-            {
-                iconRow.Children.Add(iconImage);
-            }
+            });
         }
 
         // Warning indicator badge (orange triangle with !)
@@ -3092,24 +3060,6 @@ public partial class PlanViewerControl : UserControl
     {
         InsightsPanel.IsVisible = true;
         InsightsHeader.Text = "  Plan Insights";
-    }
-
-    /// <summary>
-    /// For Parallelism nodes, returns a single-letter glyph distinguishing
-    /// the three subtypes: R(epartition) / D(istribute) / G(ather) Streams.
-    /// Returns null for non-parallelism operators.
-    /// </summary>
-    private static string? GetParallelismGlyph(PlanNode node)
-    {
-        if (!string.Equals(node.PhysicalOp, "Parallelism", StringComparison.Ordinal))
-            return null;
-        return node.LogicalOp switch
-        {
-            "Repartition Streams" => "R",
-            "Distribute Streams" => "D",
-            "Gather Streams" => "G",
-            _ => null
-        };
     }
 
     private static string GetWaitCategory(string waitType)
