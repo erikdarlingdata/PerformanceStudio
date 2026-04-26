@@ -119,4 +119,11 @@ internal sealed class AppSettings
     /// </summary>
     [JsonPropertyName("query_store_slicer_days")]
     public int QueryStoreSlicerDays { get; set; } = 30;
+
+    /// <summary>
+    /// Divergence limit for accuracy ratio coloring on plan links. Default 10.
+    /// Links with accuracy ratio between 1/limit and limit keep the default edge color.
+    /// </summary>
+    [JsonPropertyName("accuracy_ratio_divergence_limit")]
+    public double AccuracyRatioDivergenceLimit { get; set; } = 10;
 }
