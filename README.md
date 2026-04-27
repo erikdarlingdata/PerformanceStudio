@@ -312,7 +312,7 @@ Features:
 - **Advice for Robots** — one-click JSON export designed for LLMs and automation
 - **Plan Comparison** — compare two plans side-by-side (cost, runtime, I/O, memory, wait stats)
 - **Copy Repro Script** — extracts parameters, SET options, and query text into a runnable `sp_executesql` script
-- **Get Actual Plan** — connect to a server and re-execute the query to capture runtime stats 
+- **Get Actual Plan** — connect to a server and re-execute the query to capture runtime stats
 - **Query Store Analysis** — connect to a server and analyze top queries by CPU, duration, or reads
 - **Query History** — view a history of executed queries with their plans along the timeline and metrics from query store
 - **MCP Server** — built-in Model Context Protocol server for AI-assisted plan analysis (opt-in)
