@@ -24,14 +24,14 @@ public static class PlanAnalyzer
         @"\bCASE\s+(WHEN\b|$)",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-    public static void Analyze(ParsedPlan plan, AnalyzerConfig? config = null)
+    public static void Analyze(ParsedPlan plan, AnalyzerConfig? config = null, ServerMetadata? serverMetadata = null)
     {
         var cfg = config ?? AnalyzerConfig.Default;
         foreach (var batch in plan.Batches)
         {
             foreach (var stmt in batch.Statements)
             {
-                AnalyzeStatement(stmt, cfg);
+                AnalyzeStatement(stmt, cfg, serverMetadata);
 
                 if (stmt.RootNode != null)
                     AnalyzeNodeTree(stmt.RootNode, stmt, cfg);
@@ -114,7 +114,8 @@ public static class PlanAnalyzer
         [29] = "Implicit Conversion", [30] = "Wide Index Suggestion",
         [31] = "Parallel Wait Bottleneck",
         [32] = "Scan Cardinality Misestimate",
-        [33] = "Estimated Plan CE Guess"
+        [33] = "Estimated Plan CE Guess",
+        [38] = "Standard Edition DOP Limitation"
     };
 
     // Reverse lookup: WarningType → rule number
@@ -173,7 +174,7 @@ public static class PlanAnalyzer
             warning.Severity = severity;
     }
 
-    private static void AnalyzeStatement(PlanStatement stmt, AnalyzerConfig cfg)
+    private static void AnalyzeStatement(PlanStatement stmt, AnalyzerConfig cfg, ServerMetadata? serverMetadata = null)
     {
         // Rule 3: Serial plan with reason
         // Skip: cost < 1 (CTFP is an integer so cost < 1 can never go parallel),
@@ -403,7 +404,7 @@ public static class PlanAnalyzer
 
             if (unsnifffedParams.Count > 0)
             {
-                var hasRecompile = stmt.StatementText.Contains("RECOMPILE", StringComparison.OrdinalIgnoreCase);
+                var hasRecompile = stmt.StatementText?.Contains("RECOMPILE", StringComparison.OrdinalIgnoreCase) == true;
                 if (!hasRecompile)
                 {
                     var names = string.Join(", ", unsnifffedParams.Select(p => p.Name));
@@ -473,6 +474,38 @@ public static class PlanAnalyzer
                         Severity = PlanWarningSeverity.Warning
                     });
                 }
+            }
+        }
+
+        // Rule 38: Standard Edition DOP 2 limitation with batch mode
+        // SQL Server Standard Edition limits DOP to 2 when batch mode operators are present.
+        if (!cfg.IsRuleDisabled(38) && stmt.DegreeOfParallelism == 2 && stmt.RootNode != null
+            && HasBatchModeNode(stmt.RootNode))
+        {
+            var editionKnown = !string.IsNullOrEmpty(serverMetadata?.Edition);
+            if (editionKnown
+                && serverMetadata!.Edition!.Contains("Standard", StringComparison.OrdinalIgnoreCase))
+            {
+                // Server context confirms Standard Edition — check MAXDOP
+                if (serverMetadata.MaxDop > 2)
+                {
+                    stmt.PlanWarnings.Add(new PlanWarning
+                    {
+                        WarningType = "Standard Edition DOP Limitation",
+                        Message = $"DOP is limited to 2 because SQL Server Standard Edition caps parallelism at 2 when batch mode operators are present, even though MAXDOP is set to {serverMetadata.MaxDop}. Developer or Enterprise Edition would allow higher DOP in the same conditions.",
+                        Severity = PlanWarningSeverity.Warning
+                    });
+                }
+            }
+            else if (!editionKnown)
+            {
+                // No server context, or edition unknown (e.g. collection failure) — suspect the limitation
+                stmt.PlanWarnings.Add(new PlanWarning
+                {
+                    WarningType = "Standard Edition DOP Limitation",
+                    Message = "DOP is limited to 2 and the plan uses batch mode operators. This may be caused by the SQL Server Standard Edition limitation, which caps parallelism at 2 when batch mode is in use. If this server runs Standard Edition, Developer or Enterprise Edition would allow higher DOP.",
+                    Severity = PlanWarningSeverity.Info
+                });
             }
         }
 
@@ -571,6 +604,19 @@ public static class PlanAnalyzer
                 });
             }
         }
+    }
+
+    private static bool HasBatchModeNode(PlanNode node)
+    {
+        var mode = node.ActualExecutionMode ?? node.ExecutionMode;
+        if (string.Equals(mode, "Batch", StringComparison.OrdinalIgnoreCase))
+            return true;
+        foreach (var child in node.Children)
+        {
+            if (HasBatchModeNode(child))
+                return true;
+        }
+        return false;
     }
 
     private static void CheckForTableVariables(PlanNode node, bool isModification,
@@ -1321,7 +1367,7 @@ public static class PlanAnalyzer
         // Rule 28: Row Count Spool — NOT IN with nullable column
         // Pattern: Row Count Spool with high rewinds, child scan has IS NULL predicate,
         // and statement text contains NOT IN
-        if (!cfg.IsRuleDisabled(28) && node.PhysicalOp.Contains("Row Count Spool"))
+        if (!cfg.IsRuleDisabled(28) && node.PhysicalOp?.Contains("Row Count Spool") == true)
         {
             var rewinds = node.HasActualStats ? (double)node.ActualRewinds : node.EstimateRewinds;
             if (rewinds > 10000 && HasNotInPattern(node, stmt))

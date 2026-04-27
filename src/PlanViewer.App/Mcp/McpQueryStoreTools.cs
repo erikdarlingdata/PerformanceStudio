@@ -112,6 +112,19 @@ public sealed class McpQueryStoreTools
             if (plans.Count == 0)
                 return $"No Query Store data found in [{database}] for the last {hours_back} hours.";
 
+            // Fetch server metadata for Rule 38 (Standard Edition DOP limitation)
+            ServerMetadata? serverMetadata = null;
+            try
+            {
+                var isAzure = conn.ServerName.Contains(".database.windows.net", StringComparison.OrdinalIgnoreCase) ||
+                              conn.ServerName.Contains(".database.azure.com", StringComparison.OrdinalIgnoreCase);
+                serverMetadata = await ServerMetadataService.FetchServerMetadataAsync(connectionString, isAzure);
+            }
+            catch
+            {
+                // Non-fatal: analysis continues without server context
+            }
+
             // Parse and register each plan with PlanSessionManager
             var results = plans.Select(qsPlan =>
             {
@@ -123,7 +136,7 @@ public sealed class McpQueryStoreTools
                     var xml = qsPlan.PlanXml
                         .Replace("encoding=\"utf-16\"", "encoding=\"utf-8\"");
                     var parsed = ShowPlanParser.Parse(xml);
-                    PlanAnalyzer.Analyze(parsed);
+                    PlanAnalyzer.Analyze(parsed, serverMetadata: serverMetadata);
                     BenefitScorer.Score(parsed);
 
                     var allStatements = parsed.Batches.SelectMany(b => b.Statements).ToList();

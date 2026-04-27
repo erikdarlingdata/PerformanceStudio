@@ -190,7 +190,7 @@
         </Border>
 
         <!-- Statements Panel + Plan Canvas + Properties Panel -->
-        <Grid Grid.Row="2">
+        <Grid x:Name="PlanGrid" Grid.Row="2">
             <Grid.ColumnDefinitions>
                 <!-- Col 0: Statements Panel (hidden by default) -->
                 <ColumnDefinition Width="0"/>
@@ -255,21 +255,77 @@
                           Background="{DynamicResource BorderBrush}"
                           IsVisible="False"/>
 
-            <!-- Plan Canvas -->
-            <ScrollViewer Grid.Column="2" x:Name="PlanScrollViewer"
-                          HorizontalScrollBarVisibility="Auto"
-                          VerticalScrollBarVisibility="Auto"
-                          HorizontalContentAlignment="Left"
-                          VerticalContentAlignment="Top"
-                          Background="{DynamicResource BackgroundBrush}">
-                <LayoutTransformControl x:Name="PlanLayoutTransform"
-                                        HorizontalAlignment="Left" VerticalAlignment="Top">
-                    <LayoutTransformControl.LayoutTransform>
-                        <ScaleTransform ScaleX="1" ScaleY="1"/>
-                    </LayoutTransformControl.LayoutTransform>
-                    <Canvas x:Name="PlanCanvas" ClipToBounds="False"/>
-                </LayoutTransformControl>
-            </ScrollViewer>
+            <!-- Plan Canvas + Minimap overlay -->
+            <Grid Grid.Column="2">
+                <ScrollViewer x:Name="PlanScrollViewer"
+                              HorizontalScrollBarVisibility="Auto"
+                              VerticalScrollBarVisibility="Auto"
+                              HorizontalContentAlignment="Left"
+                              VerticalContentAlignment="Top"
+                              Background="{DynamicResource BackgroundBrush}">
+                    <LayoutTransformControl x:Name="PlanLayoutTransform"
+                                            HorizontalAlignment="Left" VerticalAlignment="Top">
+                        <LayoutTransformControl.LayoutTransform>
+                            <ScaleTransform ScaleX="1" ScaleY="1"/>
+                        </LayoutTransformControl.LayoutTransform>
+                        <Canvas x:Name="PlanCanvas" ClipToBounds="False"/>
+                    </LayoutTransformControl>
+                </ScrollViewer>
+
+                <!-- Minimap toggle button (top-left, always visible) -->
+                <Button x:Name="MinimapToggleButton" Content="minimap"
+                        Click="MinimapToggle_Click"
+                        HorizontalAlignment="Left" VerticalAlignment="Top"
+                        Margin="4,4,0,0" Padding="4,1" FontSize="9"
+                        Height="18" MinWidth="0" MinHeight="0"
+                        Opacity="0.8" ZIndex="10"
+                        Theme="{StaticResource AppButton}"
+                        ToolTip.Tip="Show/hide minimap"/>
+
+                <!-- Minimap panel -->
+                <Border x:Name="MinimapPanel" IsVisible="False"
+                        HorizontalAlignment="Left" VerticalAlignment="Top"
+                        Margin="4,26,0,0" ZIndex="10"
+                        Width="400" Height="400"
+                        Background="{DynamicResource BackgroundBrush}"
+                        BorderBrush="{DynamicResource BorderBrush}" BorderThickness="5"
+                        CornerRadius="4" ClipToBounds="True">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <!-- Minimap header with close button -->
+                        <DockPanel Grid.Row="0" Background="{DynamicResource BackgroundBrush}">
+                            <Button DockPanel.Dock="Right" Content="&#x2715;" Click="MinimapClose_Click"
+                                    Width="18" Height="18" Padding="0" FontSize="10"
+                                    VerticalAlignment="Center" Margin="0,0,2,0"
+                                    Theme="{StaticResource AppButton}" ToolTip.Tip="Close minimap"/>
+                            <TextBlock Text="Minimap" FontSize="10" VerticalAlignment="Center"
+                                       Margin="4,1,0,1"
+                                       Foreground="{DynamicResource ForegroundBrush}"/>
+                        </DockPanel>
+                        <!-- Minimap canvas -->
+                        <Canvas x:Name="MinimapCanvas" Grid.Row="1" ClipToBounds="True"
+                                Background="{DynamicResource BackgroundBrush}"/>
+                        <!-- Resize grip (bottom-right corner) -->
+                        <Border x:Name="MinimapResizeGrip" Grid.Row="1"
+                                Width="14" Height="14"
+                                HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                                Background="Transparent"
+                                Cursor="BottomRightCorner">
+                            <Canvas Width="10" Height="10" Margin="1,1,3,3">
+                                <Line StartPoint="6,10" EndPoint="10,6"
+                                      Stroke="{DynamicResource ForegroundBrush}" StrokeThickness="1" Opacity="0.5"/>
+                                <Line StartPoint="3,10" EndPoint="10,3"
+                                      Stroke="{DynamicResource ForegroundBrush}" StrokeThickness="1" Opacity="0.5"/>
+                                <Line StartPoint="0,10" EndPoint="10,0"
+                                      Stroke="{DynamicResource ForegroundBrush}" StrokeThickness="1" Opacity="0.5"/>
+                            </Canvas>
+                        </Border>
+                    </Grid>
+                </Border>
+            </Grid>
 
             <!-- Empty State -->
             <StackPanel x:Name="EmptyState" Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Center">

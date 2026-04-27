@@ -57,7 +57,11 @@ Side-by-side comparison of two plans showing cost, runtime, I/O, memory, and wai
 ### Query Store Integration
 Fetch top queries by CPU, duration, logical reads, physical reads, writes, memory, or executions from Query Store and load their plans directly into the analyzer.
 
-![Query Store Integration](screenshots/Query%20Store%20Integration.png)
+![Query Store Integration](screenshots/performance_studio_querystore_analysis_top_cpu_by_query_hash.png)
+
+### Minimap and colored links by accuracy ratio divergence
+The minimap provides a high-level overview of the entire plan, allowing you to quickly navigate to areas of interest. Colored links between operators indicate accuracy ratio divergence, helping you identify where estimates are most off from actuals.
+![Minimap and Colored Links](screenshots/minimap_and_planviewer_colored_actual_plan.png)
 
 ### MCP Integration
 Ask Claude Code to analyze loaded plans, identify warnings, suggest indexes, and compare plans — all through the built-in MCP server.
@@ -299,6 +303,8 @@ Features:
 - Warning badge on root node showing total warning count
 - Plan Insights panel — three-column view with runtime summary, missing indexes, and wait stats visualization
 - Zoom and pan (mouse wheel + middle-click drag)
+- Minimap for quick navigation of large plans
+- Color-coded links between operators based on accuracy ratio divergence (estimates vs actuals)
 - Click any operator to see full properties (30 sections)
 - Statement grid with sortable columns (cost, rows, DOP, warnings)
 - Tooltips on hover with key operator metrics
@@ -308,6 +314,7 @@ Features:
 - **Copy Repro Script** — extracts parameters, SET options, and query text into a runnable `sp_executesql` script
 - **Get Actual Plan** — connect to a server and re-execute the query to capture runtime stats
 - **Query Store Analysis** — connect to a server and analyze top queries by CPU, duration, or reads
+- **Query History** — view a history of executed queries with their plans along the timeline and metrics from query store
 - **MCP Server** — built-in Model Context Protocol server for AI-assisted plan analysis (opt-in)
 - Dark theme
 

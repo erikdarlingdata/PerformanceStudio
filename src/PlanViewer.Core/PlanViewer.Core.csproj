@@ -13,9 +13,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Data.SqlClient" Version="6.0.1" />
-    <PackageReference Include="Meziantou.Framework.Win32.CredentialManager" Version="1.7.17" />
-    <PackageReference Include="Microsoft.SqlServer.TransactSql.ScriptDom" Version="170.191.0" />
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="7.0.1" />
+    <PackageReference Include="Meziantou.Framework.Win32.CredentialManager" Version="1.7.18" />
+    <PackageReference Include="Microsoft.SqlServer.TransactSql.ScriptDom" Version="180.6.0" />
   </ItemGroup>
 
   <ItemGroup>

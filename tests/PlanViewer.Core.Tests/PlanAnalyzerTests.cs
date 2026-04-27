@@ -892,4 +892,102 @@ public class PlanAnalyzerTests
         Assert.NotEmpty(warnings);
         Assert.All(warnings, w => Assert.Equal(PlanWarningSeverity.Warning, w.Severity));
     }
+
+    #region Rule 38 — Standard Edition DOP Limitation
+
+    private static PlanStatement BuildBatchModeDop2Statement()
+    {
+        var batchNode = new PlanNode
+        {
+            NodeId = 1,
+            PhysicalOp = "Hash Match",
+            LogicalOp = "Inner Join",
+            ExecutionMode = "Batch"
+        };
+        var root = new PlanNode
+        {
+            NodeId = 0,
+            PhysicalOp = "Columnstore Index Scan",
+            LogicalOp = "Columnstore Index Scan",
+            ExecutionMode = "Batch",
+            Children = { batchNode }
+        };
+        return new PlanStatement
+        {
+            RootNode = root,
+            DegreeOfParallelism = 2,
+            StatementSubTreeCost = 10.0
+        };
+    }
+
+    [Fact]
+    public void Rule38_StandardEdition_Dop2_BatchMode_MaxDopAbove2_EmitsWarning()
+    {
+        var stmt = BuildBatchModeDop2Statement();
+        var plan = BuildSyntheticPlan(stmt);
+        var metadata = new ServerMetadata
+        {
+            Edition = "Standard Edition (64-bit)",
+            MaxDop = 8
+        };
+        PlanAnalyzer.Analyze(plan, serverMetadata: metadata);
+
+        var warnings = stmt.PlanWarnings
+            .Where(w => w.WarningType == "Standard Edition DOP Limitation").ToList();
+        Assert.Single(warnings);
+        Assert.Equal(PlanWarningSeverity.Warning, warnings[0].Severity);
+        Assert.Contains("MAXDOP is set to 8", warnings[0].Message);
+    }
+
+    [Fact]
+    public void Rule38_StandardEdition_Dop2_BatchMode_MaxDop2_NoWarning()
+    {
+        // MAXDOP=2 means the limitation isn't biting — DOP matches MAXDOP
+        var stmt = BuildBatchModeDop2Statement();
+        var plan = BuildSyntheticPlan(stmt);
+        var metadata = new ServerMetadata
+        {
+            Edition = "Standard Edition (64-bit)",
+            MaxDop = 2
+        };
+        PlanAnalyzer.Analyze(plan, serverMetadata: metadata);
+
+        var warnings = stmt.PlanWarnings
+            .Where(w => w.WarningType == "Standard Edition DOP Limitation").ToList();
+        Assert.Empty(warnings);
+    }
+
+    [Fact]
+    public void Rule38_NoServerMetadata_Dop2_BatchMode_EmitsInfo()
+    {
+        var stmt = BuildBatchModeDop2Statement();
+        var plan = BuildSyntheticPlan(stmt);
+        PlanAnalyzer.Analyze(plan);
+
+        var warnings = stmt.PlanWarnings
+            .Where(w => w.WarningType == "Standard Edition DOP Limitation").ToList();
+        Assert.Single(warnings);
+        Assert.Equal(PlanWarningSeverity.Info, warnings[0].Severity);
+    }
+
+    [Fact]
+    public void Rule38_ServerMetadataWithNullEdition_Dop2_BatchMode_EmitsInfo()
+    {
+        // Edge case: serverMetadata present but Edition is null (collection failure)
+        var stmt = BuildBatchModeDop2Statement();
+        var plan = BuildSyntheticPlan(stmt);
+        var metadata = new ServerMetadata
+        {
+            Edition = null,
+            MaxDop = 8
+        };
+        PlanAnalyzer.Analyze(plan, serverMetadata: metadata);
+
+        var warnings = stmt.PlanWarnings
+            .Where(w => w.WarningType == "Standard Edition DOP Limitation").ToList();
+        Assert.Single(warnings);
+        Assert.Equal(PlanWarningSeverity.Info, warnings[0].Severity);
+    }
+
+    #endregion
 }
