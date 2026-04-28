@@ -8,6 +8,10 @@
     <SolidColorBrush x:Key="BorderBrush" Color="#3A3D45"/>
     <SolidColorBrush x:Key="AccentBrush" Color="#2eaef1"/>
 
+    <!-- Insight card surfaces (lifted from BackgroundDarkBrush so cards visibly float) -->
+    <SolidColorBrush x:Key="InsightCardBackgroundBrush" Color="#1E2228"/>
+    <SolidColorBrush x:Key="InsightCardBorderBrush" Color="#353942"/>
+
     <!-- Fluent theme accent override: TabItem selected underline, focus rings, etc. -->
     <Color x:Key="SystemAccentColor">#2eaef1</Color>
     <Color x:Key="SystemAccentColorDark1">#2596d4</Color>
