@@ -79,11 +79,11 @@
         </StackPanel>
 
         <!-- Test Connection + Status -->
-        <StackPanel Grid.Row="7" Orientation="Horizontal" Margin="0,0,0,12" Spacing="8">
+        <StackPanel Grid.Row="7" Margin="0,0,0,12" Spacing="6">
             <Button x:Name="TestButton" Content="Test Connection" Click="TestConnection_Click"
-                    Height="32" Padding="12,0" FontSize="12"
+                    Height="32" Padding="12,0" FontSize="12" HorizontalAlignment="Left"
                     Theme="{StaticResource AppButton}"/>
-            <TextBlock x:Name="StatusText" VerticalAlignment="Center" FontSize="12"
+            <TextBlock x:Name="StatusText" FontSize="12" TextWrapping="Wrap"
                        Foreground="{DynamicResource ForegroundBrush}"/>
         </StackPanel>
 

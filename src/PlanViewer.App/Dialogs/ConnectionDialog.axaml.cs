@@ -158,7 +158,7 @@ public partial class ConnectionDialog : Window
         }
         catch (Exception ex)
         {
-            StatusText.Text = ex.Message.Length > 80 ? ex.Message[..80] + "..." : ex.Message;
+            StatusText.Text = ex.Message;
             StatusText.Foreground = Avalonia.Media.Brushes.OrangeRed;
             DatabaseBox.IsEnabled = false;
             ConnectButton.IsEnabled = false;
