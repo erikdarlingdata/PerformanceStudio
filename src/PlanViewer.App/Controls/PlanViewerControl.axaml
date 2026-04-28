@@ -2,6 +2,22 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="PlanViewer.App.Controls.PlanViewerControl"
              Background="{DynamicResource BackgroundBrush}">
+    <UserControl.Styles>
+        <Style Selector="Border.InsightCard">
+            <Setter Property="Background" Value="{DynamicResource InsightCardBackgroundBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource InsightCardBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="BoxShadow" Value="0 4 12 0 #60000000"/>
+            <Setter Property="Padding" Value="12,8,12,10"/>
+            <Setter Property="Margin" Value="0,0,8,0"/>
+        </Style>
+        <Style Selector="TextBlock.InsightHeader">
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Margin" Value="0,0,0,8"/>
+        </Style>
+    </UserControl.Styles>
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -74,7 +90,7 @@
                                FontWeight="SemiBold"
                                Foreground="{DynamicResource ForegroundBrush}"/>
                 </Expander.Header>
-                <Grid MaxHeight="220" HorizontalAlignment="Stretch">
+                <Grid MaxHeight="240" Margin="8,4,8,8" HorizontalAlignment="Stretch">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" MinWidth="0"/>
                         <ColumnDefinition Width="Auto" MinWidth="180"/>
@@ -84,18 +100,14 @@
                     </Grid.ColumnDefinitions>
 
                     <!-- Server Context (first, placeholder when no metadata) -->
-                    <Border x:Name="ServerContextBorder" Grid.Column="0" Padding="10,4,10,8"
-                            Background="#1A1A2D"
-                            BorderBrush="#3A3A5A" BorderThickness="0,0,1,0"
+                    <Border x:Name="ServerContextBorder" Grid.Column="0" Classes="InsightCard"
                             IsVisible="False">
                         <ScrollViewer VerticalScrollBarVisibility="Auto"
                                       HorizontalScrollBarVisibility="Disabled">
                             <StackPanel>
-                                <TextBlock Text="Server Context"
-                                           FontSize="13"
-                                           FontWeight="SemiBold"
-                                           Foreground="#9B9BFF"
-                                           Margin="0,0,0,6"/>
+                                <TextBlock Classes="InsightHeader"
+                                           Text="Server Context"
+                                           Foreground="#9B9BFF"/>
                                 <StackPanel x:Name="ServerContextContent"/>
                                 <TextBlock x:Name="ServerContextEmpty"
                                            Text="Run Repro Script to capture server context"
@@ -106,16 +118,12 @@
                     </Border>
 
                     <!-- Runtime Summary -->
-                    <Border Grid.Column="1" Padding="10,4,10,8"
-                            Background="{DynamicResource BackgroundDarkBrush}"
-                            BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,1,0">
+                    <Border Grid.Column="1" Classes="InsightCard">
                         <StackPanel>
                             <TextBlock x:Name="RuntimeSummaryTitle"
+                                       Classes="InsightHeader"
                                        Text="Runtime Summary"
-                                       FontSize="13"
-                                       FontWeight="SemiBold"
-                                       Foreground="{DynamicResource ForegroundBrush}"
-                                       Margin="0,0,0,4"/>
+                                       Foreground="{DynamicResource ForegroundBrush}"/>
                             <StackPanel x:Name="RuntimeSummaryContent"/>
                             <TextBlock x:Name="RuntimeSummaryEmpty"
                                        Text="Estimated plan — no runtime stats"
@@ -125,17 +133,14 @@
                     </Border>
 
                     <!-- Missing Indexes (center) -->
-                    <Border Grid.Column="2" Padding="10,4,10,8"
-                            Background="#3D2A0E"
-                            BorderBrush="#7A5A1E" BorderThickness="0,0,1,0">
+                    <Border Grid.Column="2" Classes="InsightCard">
                         <ScrollViewer VerticalScrollBarVisibility="Auto"
                                       HorizontalScrollBarVisibility="Disabled">
                             <StackPanel>
                                 <TextBlock x:Name="MissingIndexHeader"
+                                           Classes="InsightHeader"
                                            Text="Missing Index Suggestions"
-                                           FontSize="13"
-                                           FontWeight="SemiBold" Foreground="#FFB347"
-                                           Margin="0,0,0,6"/>
+                                           Foreground="#FFB347"/>
                                 <StackPanel x:Name="MissingIndexContent"/>
                                 <TextBlock x:Name="MissingIndexEmpty"
                                            Text="No missing index suggestions"
@@ -146,17 +151,14 @@
                     </Border>
 
                     <!-- Parameters -->
-                    <Border Grid.Column="3" Padding="10,4,10,8"
-                            Background="#1A2D1A"
-                            BorderBrush="#3A5A3A" BorderThickness="0,0,1,0">
+                    <Border Grid.Column="3" Classes="InsightCard">
                         <ScrollViewer VerticalScrollBarVisibility="Auto"
                                       HorizontalScrollBarVisibility="Disabled">
                             <StackPanel>
                                 <TextBlock x:Name="ParametersHeader"
+                                           Classes="InsightHeader"
                                            Text="Parameters"
-                                           FontSize="13"
-                                           FontWeight="SemiBold" Foreground="#7BCF7B"
-                                           Margin="0,0,0,6"/>
+                                           Foreground="#7BCF7B"/>
                                 <StackPanel x:Name="ParametersContent"/>
                                 <TextBlock x:Name="ParametersEmpty"
                                            Text="No parameters"
@@ -167,16 +169,14 @@
                     </Border>
 
                     <!-- Wait Stats (right, fills remaining space) -->
-                    <Border Grid.Column="4" Padding="10,4,10,8"
-                            Background="#1A2A3D">
+                    <Border Grid.Column="4" Classes="InsightCard" Margin="0">
                         <ScrollViewer VerticalScrollBarVisibility="Auto"
                                       HorizontalScrollBarVisibility="Auto">
                             <StackPanel>
                                 <TextBlock x:Name="WaitStatsHeader"
+                                           Classes="InsightHeader"
                                            Text="Wait Stats"
-                                           FontSize="13"
-                                           FontWeight="SemiBold" Foreground="#4FA3FF"
-                                           Margin="0,0,0,6"/>
+                                           Foreground="#4FA3FF"/>
                                 <StackPanel x:Name="WaitStatsContent"/>
                                 <TextBlock x:Name="WaitStatsEmpty"
                                            Text="No wait stats (estimated plan)"
