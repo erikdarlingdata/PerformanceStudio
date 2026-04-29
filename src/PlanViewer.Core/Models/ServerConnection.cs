@@ -16,6 +16,7 @@ public class ServerConnection
     public bool IsFavorite { get; set; }
     public string EncryptMode { get; set; } = "Mandatory";
     public bool TrustServerCertificate { get; set; } = false;
+    public bool ApplicationIntentReadOnly { get; set; } = false;
 
     [JsonIgnore]
     public string AuthenticationDisplay => AuthenticationType switch
@@ -39,7 +40,10 @@ public class ServerConnection
                 "Optional" => SqlConnectionEncryptOption.Optional,
                 "Strict" => SqlConnectionEncryptOption.Strict,
                 _ => SqlConnectionEncryptOption.Mandatory
-            }
+            },
+            ApplicationIntent = ApplicationIntentReadOnly
+                ? ApplicationIntent.ReadOnly
+                : ApplicationIntent.ReadWrite
         };
 
         if (!string.IsNullOrEmpty(databaseName))

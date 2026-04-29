@@ -78,6 +78,7 @@ public partial class ConnectionDialog : Window
         }
 
         TrustCertBox.IsChecked = saved.TrustServerCertificate;
+        ReadOnlyIntentCheckBox.IsChecked = saved.ApplicationIntentReadOnly;
 
         // Load stored credentials
         var cred = _credentialService.GetCredential(saved.Id);
@@ -217,7 +218,8 @@ public partial class ConnectionDialog : Window
             DisplayName = serverName,
             AuthenticationType = GetSelectedAuthType(),
             TrustServerCertificate = TrustCertBox.IsChecked == true,
-            EncryptMode = GetSelectedEncryptMode()
+            EncryptMode = GetSelectedEncryptMode(),
+            ApplicationIntentReadOnly = ReadOnlyIntentCheckBox.IsChecked == true
         };
     }
 
@@ -249,7 +251,10 @@ public partial class ConnectionDialog : Window
                 "Optional" => SqlConnectionEncryptOption.Optional,
                 "Strict" => SqlConnectionEncryptOption.Strict,
                 _ => SqlConnectionEncryptOption.Mandatory
-            }
+            },
+            ApplicationIntent = connection.ApplicationIntentReadOnly
+                ? ApplicationIntent.ReadOnly
+                : ApplicationIntent.ReadWrite
         };
 
         switch (connection.AuthenticationType)
