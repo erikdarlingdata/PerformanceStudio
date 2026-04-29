@@ -79,7 +79,7 @@
         </StackPanel>
 
         <!-- Test Connection + Status -->
-        <StackPanel Grid.Row="7" Margin="0,0,0,12" Spacing="6">
+        <StackPanel Grid.Row="7" Margin="0,0,0,12" Spacing="8">
             <Button x:Name="TestButton" Content="Test Connection" Click="TestConnection_Click"
                     Height="32" Padding="12,0" FontSize="12" HorizontalAlignment="Left"
                     Theme="{StaticResource AppButton}"/>
