@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Microsoft.Data.SqlClient;
@@ -133,7 +132,10 @@ public partial class ConnectionDialog : Window
         try
         {
             var connection = BuildServerConnection();
-            var connectionString = BuildConnectionString(connection);
+            var connectionString = connection.GetConnectionString(
+                LoginBox.Text?.Trim(),
+                PasswordBox.Text,
+                "master");
 
             await using var conn = new SqlConnection(connectionString);
             await conn.OpenAsync();
@@ -237,42 +239,4 @@ public partial class ConnectionDialog : Window
         return "Mandatory";
     }
 
-    private string BuildConnectionString(ServerConnection connection)
-    {
-        var builder = new SqlConnectionStringBuilder
-        {
-            DataSource = connection.ServerName,
-            InitialCatalog = "master",
-            ApplicationName = "PlanViewer",
-            ConnectTimeout = 15,
-            TrustServerCertificate = connection.TrustServerCertificate,
-            Encrypt = connection.EncryptMode switch
-            {
-                "Optional" => SqlConnectionEncryptOption.Optional,
-                "Strict" => SqlConnectionEncryptOption.Strict,
-                _ => SqlConnectionEncryptOption.Mandatory
-            },
-            ApplicationIntent = connection.ApplicationIntentReadOnly
-                ? ApplicationIntent.ReadOnly
-                : ApplicationIntent.ReadWrite
-        };
-
-        switch (connection.AuthenticationType)
-        {
-            case AuthenticationTypes.SqlServer:
-                builder.UserID = LoginBox.Text?.Trim() ?? "";
-                builder.Password = PasswordBox.Text ?? "";
-                break;
-            case AuthenticationTypes.EntraMFA:
-                builder.Authentication = SqlAuthenticationMethod.ActiveDirectoryInteractive;
-                if (!string.IsNullOrEmpty(LoginBox.Text?.Trim()))
-                    builder.UserID = LoginBox.Text!.Trim();
-                break;
-            default:
-                builder.IntegratedSecurity = true;
-                break;
-        }
-
-        return builder.ConnectionString;
-    }
 }

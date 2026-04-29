@@ -810,7 +810,7 @@ public partial class QuerySessionControl : UserControl
             _connectionString = _serverConnection.GetConnectionString(_credentialService, _selectedDatabase);
 
             ServerLabel.Text = _serverConnection.ApplicationIntentReadOnly
-                ? $"{_serverConnection.ServerName} (Secondary)"
+                ? $"{_serverConnection.ServerName} (Read-only)"
                 : _serverConnection.ServerName;
             ServerLabel.Foreground = Brushes.LimeGreen;
             ConnectButton.Content = "Reconnect";

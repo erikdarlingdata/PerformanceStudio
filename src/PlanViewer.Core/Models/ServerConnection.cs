@@ -28,6 +28,32 @@ public class ServerConnection
 
     public string GetConnectionString(ICredentialService credentialService, string? databaseName = null)
     {
+        string? username = null;
+        string? password = null;
+
+        switch (AuthenticationType)
+        {
+            case AuthenticationTypes.EntraMFA:
+                var mfaCred = credentialService.GetCredential(Id);
+                if (mfaCred.HasValue)
+                    username = mfaCred.Value.Username;
+                break;
+
+            case AuthenticationTypes.SqlServer:
+                var cred = credentialService.GetCredential(Id);
+                if (!cred.HasValue)
+                    throw new InvalidOperationException(
+                        $"SQL Server authentication credentials are missing for server '{ServerName}'. Please configure credentials before connecting.");
+                username = cred.Value.Username;
+                password = cred.Value.Password;
+                break;
+        }
+
+        return GetConnectionString(username, password, databaseName);
+    }
+
+    public string GetConnectionString(string? username, string? password, string? databaseName = null)
+    {
         var builder = new SqlConnectionStringBuilder
         {
             DataSource = ServerName,
@@ -53,18 +79,13 @@ public class ServerConnection
         {
             case AuthenticationTypes.EntraMFA:
                 builder.Authentication = SqlAuthenticationMethod.ActiveDirectoryInteractive;
-                var mfaCred = credentialService.GetCredential(Id);
-                if (mfaCred.HasValue && !string.IsNullOrEmpty(mfaCred.Value.Username))
-                    builder.UserID = mfaCred.Value.Username;
+                if (!string.IsNullOrEmpty(username))
+                    builder.UserID = username;
                 break;
 
             case AuthenticationTypes.SqlServer:
-                var cred = credentialService.GetCredential(Id);
-                if (!cred.HasValue)
-                    throw new InvalidOperationException(
-                        $"SQL Server authentication credentials are missing for server '{ServerName}'. Please configure credentials before connecting.");
-                builder.UserID = cred.Value.Username;
-                builder.Password = cred.Value.Password;
+                builder.UserID = username ?? "";
+                builder.Password = password ?? "";
                 break;
 
             default: // Windows
