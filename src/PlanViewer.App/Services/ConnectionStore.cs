@@ -53,6 +53,7 @@ public class ConnectionStore
             existing.AuthenticationType = connection.AuthenticationType;
             existing.EncryptMode = connection.EncryptMode;
             existing.TrustServerCertificate = connection.TrustServerCertificate;
+            existing.ApplicationIntentReadOnly = connection.ApplicationIntentReadOnly;
             existing.DisplayName = connection.DisplayName;
             existing.LastConnected = DateTime.Now;
         }
