@@ -26,7 +26,7 @@
     <Compile Include="..\PlanViewer.Core\Services\ShowPlanParser.cs" Link="Core\Services\ShowPlanParser.cs" />
     <Compile Include="..\PlanViewer.Core\Services\PlanAnalyzer.cs" Link="Core\Services\PlanAnalyzer.cs" />
     <Compile Include="..\PlanViewer.Core\Services\BenefitScorer.cs" Link="Core\Services\BenefitScorer.cs" />
-    <Compile Include="..\PlanViewer.Core\Services\WaitStatsKnowledge.cs" Link="Core\Services\WaitStatsKnowledge.cs" />
+    <Compile Include="..\PlanViewer.Core\Services\WaitStatsConfig.cs" Link="Core\Services\WaitStatsConfig.cs" />
     <Compile Include="..\PlanViewer.Core\Services\PlanIconMapper.cs" Link="Core\Services\PlanIconMapper.cs" />
     <Compile Include="..\PlanViewer.Core\Services\PlanLayoutEngine.cs" Link="Core\Services\PlanLayoutEngine.cs" />
     <Compile Include="..\PlanViewer.Core\Services\TimeDisplayHelper.cs" Link="Core\Services\TimeDisplayHelper.cs" />
@@ -34,6 +34,10 @@
     <Compile Include="..\PlanViewer.Core\Output\ResultMapper.cs" Link="Core\Output\ResultMapper.cs" />
     <Compile Include="..\PlanViewer.Core\Output\TextFormatter.cs" Link="Core\Output\TextFormatter.cs" />
     <Compile Include="..\PlanViewer.Core\Output\HtmlExporter.cs" Link="Core\Output\HtmlExporter.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="..\PlanViewer.Core\Resources\WaitStats.json" Link="Core\Resources\WaitStats.json" />
   </ItemGroup>
 
 </Project>

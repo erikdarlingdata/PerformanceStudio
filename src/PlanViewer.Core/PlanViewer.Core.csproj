@@ -21,6 +21,7 @@
 
   <ItemGroup>
     <EmbeddedResource Include="Resources\PlanIcons\*.png" />
+    <EmbeddedResource Include="Resources\WaitStats.json" />
   </ItemGroup>
 
 </Project>
