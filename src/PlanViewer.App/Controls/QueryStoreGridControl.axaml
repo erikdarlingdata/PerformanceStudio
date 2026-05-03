@@ -70,7 +70,7 @@
                 <StackPanel Spacing="4">
                     <TextBlock Text="Group by" Foreground="{DynamicResource ForegroundBrush}" FontSize="11"/>
                     <ComboBox x:Name="GroupByBox" Width="130" Height="36" FontSize="13"
-                              SelectedIndex="0" SelectionChanged="GroupBy_SelectionChanged">
+                              SelectedIndex="1" SelectionChanged="GroupBy_SelectionChanged">
                         <ComboBoxItem Content="None" Tag="none"/>
                         <ComboBoxItem Content="Query Hash" Tag="query-hash"/>
                         <ComboBoxItem Content="Module" Tag="module"/>
@@ -150,7 +150,7 @@
                 </ContextMenu>
             </DataGrid.ContextMenu>
             <DataGrid.Columns>
-                <DataGridTemplateColumn Header="" Width="220" IsVisible="False">
+                <DataGridTemplateColumn Header="" Width="220" IsVisible="True">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate x:DataType="local:QueryStoreRow">
                             <StackPanel Orientation="Horizontal" Margin="{Binding IndentMargin}"

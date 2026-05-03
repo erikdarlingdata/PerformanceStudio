@@ -44,7 +44,7 @@ public partial class QueryStoreGridControl : UserControl
     private bool _waitStatsSupported;  // false until version + capture mode confirmed
     private bool _waitStatsEnabled = true;
     private bool _waitPercentMode;
-    private QueryStoreGroupBy _groupByMode = QueryStoreGroupBy.None;
+    private QueryStoreGroupBy _groupByMode = QueryStoreGroupBy.QueryHash;
     private List<QueryStoreRow> _groupedRootRows = new(); // top-level rows for grouped mode
 
     public event EventHandler<List<QueryStorePlan>>? PlansSelected;
@@ -89,6 +89,7 @@ public partial class QueryStoreGridControl : UserControl
         // Auto-fetch with default settings on connect
         Avalonia.Threading.Dispatcher.UIThread.Post(() =>
         {
+            ReorderColumnsForGroupBy();
             Fetch_Click(null, new RoutedEventArgs());
             _initialOrderByLoaded = true;
         }, Avalonia.Threading.DispatcherPriority.Loaded);
@@ -311,12 +312,7 @@ public partial class QueryStoreGridControl : UserControl
         LoadButton.IsEnabled = true;
         SelectToggleButton.Content = "Select All";
 
-        // Auto-expand the first root row to the deepest level
-        if (rootRows.Count > 0)
-        {
-            var first = rootRows[0];
-            ExpandRowRecursive(first);
-        }
+
 
         UpdateStatusText();
         UpdateBarRatios();
