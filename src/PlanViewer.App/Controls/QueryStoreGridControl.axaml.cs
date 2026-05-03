@@ -5,12 +5,10 @@ using System.ComponentModel;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
-using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Interactivity;
 using Avalonia.Media;
-using Microsoft.Data.SqlClient;
 using PlanViewer.Core.Interfaces;
 using PlanViewer.Core.Models;
 using PlanViewer.App.Dialogs;
@@ -312,37 +310,12 @@ public partial class QueryStoreGridControl : UserControl
         LoadButton.IsEnabled = true;
         SelectToggleButton.Content = "Select All";
 
-
-
         UpdateStatusText();
         UpdateBarRatios();
 
         // Fetch per-plan wait stats for leaf rows, then consolidate upward
         if (_waitStatsSupported && _waitStatsEnabled && _slicerStartUtc.HasValue && _slicerEndUtc.HasValue)
             _ = FetchGroupedWaitStatsAsync(_slicerStartUtc.Value, _slicerEndUtc.Value, ct);
-    }
-
-    /// <summary>
-    /// Recursively expands a row and all its children, inserting them into _filteredRows.
-    /// </summary>
-    private void ExpandRowRecursive(QueryStoreRow row)
-    {
-        if (!row.HasChildren) return;
-        row.IsExpanded = true;
-
-        var idx = _filteredRows.IndexOf(row);
-        if (idx < 0) return;
-
-        var insertAt = idx + 1;
-        foreach (var child in row.Children)
-        {
-            _filteredRows.Insert(insertAt, child);
-            insertAt++;
-        }
-
-        // Recurse into each child that has children
-        foreach (var child in row.Children)
-            ExpandRowRecursive(child);
     }
 
     /// <summary>
