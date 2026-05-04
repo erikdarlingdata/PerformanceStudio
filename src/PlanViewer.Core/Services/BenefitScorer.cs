@@ -47,7 +47,7 @@ public static class BenefitScorer
 
     /// <summary>
     /// Emits a PlanWarning per wait stat entry, merging the per-wait benefit %
-    /// from ScoreWaitStats with the descriptive content from WaitStatsKnowledge.
+    /// from ScoreWaitStats with display flags from WaitStatsConfig.
     /// The existing wait-stats chart/card stays as a complementary view.
     /// </summary>
     private static void EmitWaitStatWarnings(PlanStatement stmt)
@@ -61,19 +61,16 @@ public static class BenefitScorer
         {
             if (wait.WaitTimeMs <= 0) continue;
 
-            var entry = WaitStatsKnowledge.Lookup(wait.WaitType);
             double? benefitPct = benefitByType.TryGetValue(wait.WaitType, out var b) ? b : null;
 
             var msg = new System.Text.StringBuilder();
             msg.Append(wait.WaitType);
-            if (!string.IsNullOrEmpty(entry.Description))
-                msg.Append(": ").Append(entry.Description);
             msg.Append(" Observed ").Append(wait.WaitTimeMs.ToString("N0")).Append(" ms");
             if (wait.WaitCount > 0)
                 msg.Append(" across ").Append(wait.WaitCount.ToString("N0")).Append(" wait").Append(wait.WaitCount == 1 ? "" : "s");
             msg.Append('.');
 
-            if (entry.ShowEffectiveLatency && wait.WaitCount > 0)
+            if (WaitStatsConfig.ShowAverageWaitTime(wait.WaitType) && wait.WaitCount > 0)
             {
                 var effLatency = (double)wait.WaitTimeMs / wait.WaitCount;
                 msg.Append(" Effective latency: ")
@@ -94,7 +91,7 @@ public static class BenefitScorer
                 Message = msg.ToString(),
                 Severity = severity,
                 MaxBenefitPercent = benefitPct,
-                ActionableFix = string.IsNullOrEmpty(entry.HowToFix) ? null : entry.HowToFix
+                ActionableFix = null
             });
         }
     }
@@ -627,14 +624,12 @@ public static class BenefitScorer
     /// External / preemptive waits where the worker is CPU-busy in kernel rather than
     /// descheduled. Their wait time counts toward the query's CPU time, so the usual
     /// (elapsed - cpu) per-thread wait math misses them entirely.
+    ///
+    /// Per #215, classification lives in Resources/WaitStats.json. Lookup misses
+    /// fall back to false, matching the prior default for unrecognized waits.
     /// </summary>
     public static bool IsExternalWait(string waitType)
-    {
-        if (string.IsNullOrEmpty(waitType)) return false;
-        var wt = waitType.ToUpperInvariant();
-        return wt.Contains("MEMORY_ALLOCATION")
-            || wt.StartsWith("PREEMPTIVE_");
-    }
+        => WaitStatsConfig.IsExternal(waitType);
 
     /// <summary>
     /// Determines if an operator is relevant for a given wait category.

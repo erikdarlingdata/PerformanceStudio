@@ -5,12 +5,10 @@ using System.ComponentModel;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
-using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Interactivity;
 using Avalonia.Media;
-using Microsoft.Data.SqlClient;
 using PlanViewer.Core.Interfaces;
 using PlanViewer.Core.Models;
 using PlanViewer.App.Dialogs;
@@ -44,7 +42,7 @@ public partial class QueryStoreGridControl : UserControl
     private bool _waitStatsSupported;  // false until version + capture mode confirmed
     private bool _waitStatsEnabled = true;
     private bool _waitPercentMode;
-    private QueryStoreGroupBy _groupByMode = QueryStoreGroupBy.None;
+    private QueryStoreGroupBy _groupByMode = QueryStoreGroupBy.QueryHash;
     private List<QueryStoreRow> _groupedRootRows = new(); // top-level rows for grouped mode
 
     public event EventHandler<List<QueryStorePlan>>? PlansSelected;
@@ -89,6 +87,7 @@ public partial class QueryStoreGridControl : UserControl
         // Auto-fetch with default settings on connect
         Avalonia.Threading.Dispatcher.UIThread.Post(() =>
         {
+            ReorderColumnsForGroupBy();
             Fetch_Click(null, new RoutedEventArgs());
             _initialOrderByLoaded = true;
         }, Avalonia.Threading.DispatcherPriority.Loaded);
@@ -311,42 +310,12 @@ public partial class QueryStoreGridControl : UserControl
         LoadButton.IsEnabled = true;
         SelectToggleButton.Content = "Select All";
 
-        // Auto-expand the first root row to the deepest level
-        if (rootRows.Count > 0)
-        {
-            var first = rootRows[0];
-            ExpandRowRecursive(first);
-        }
-
         UpdateStatusText();
         UpdateBarRatios();
 
         // Fetch per-plan wait stats for leaf rows, then consolidate upward
         if (_waitStatsSupported && _waitStatsEnabled && _slicerStartUtc.HasValue && _slicerEndUtc.HasValue)
             _ = FetchGroupedWaitStatsAsync(_slicerStartUtc.Value, _slicerEndUtc.Value, ct);
-    }
-
-    /// <summary>
-    /// Recursively expands a row and all its children, inserting them into _filteredRows.
-    /// </summary>
-    private void ExpandRowRecursive(QueryStoreRow row)
-    {
-        if (!row.HasChildren) return;
-        row.IsExpanded = true;
-
-        var idx = _filteredRows.IndexOf(row);
-        if (idx < 0) return;
-
-        var insertAt = idx + 1;
-        foreach (var child in row.Children)
-        {
-            _filteredRows.Insert(insertAt, child);
-            insertAt++;
-        }
-
-        // Recurse into each child that has children
-        foreach (var child in row.Children)
-            ExpandRowRecursive(child);
     }
 
     /// <summary>

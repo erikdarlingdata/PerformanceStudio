@@ -482,30 +482,38 @@ public static class PlanAnalyzer
         if (!cfg.IsRuleDisabled(38) && stmt.DegreeOfParallelism == 2 && stmt.RootNode != null
             && HasBatchModeNode(stmt.RootNode))
         {
-            var editionKnown = !string.IsNullOrEmpty(serverMetadata?.Edition);
-            if (editionKnown
-                && serverMetadata!.Edition!.Contains("Standard", StringComparison.OrdinalIgnoreCase))
+            // Suppress when the user explicitly set MAXDOP 2 as a query hint — the DOP
+            // cap is intentional, not the Standard Edition batch-mode limitation.
+            var hasMaxdop2Hint = !string.IsNullOrEmpty(stmt.StatementText)
+                && Regex.IsMatch(stmt.StatementText, @"MAXDOP\s+2\b", RegexOptions.IgnoreCase);
+
+            if (!hasMaxdop2Hint)
             {
-                // Server context confirms Standard Edition — check MAXDOP
-                if (serverMetadata.MaxDop > 2)
+                var editionKnown = !string.IsNullOrEmpty(serverMetadata?.Edition);
+                if (editionKnown
+                    && serverMetadata!.Edition!.Contains("Standard", StringComparison.OrdinalIgnoreCase))
                 {
+                    // Server context confirms Standard Edition — check MAXDOP
+                    if (serverMetadata.MaxDop > 2)
+                    {
+                        stmt.PlanWarnings.Add(new PlanWarning
+                        {
+                            WarningType = "Standard Edition DOP Limitation",
+                            Message = $"DOP is limited to 2 because SQL Server Standard Edition caps parallelism at 2 when batch mode operators are present, even though MAXDOP is set to {serverMetadata.MaxDop}. Developer or Enterprise Edition would allow higher DOP in the same conditions.",
+                            Severity = PlanWarningSeverity.Warning
+                        });
+                    }
+                }
+                else if (!editionKnown)
+                {
+                    // No server context, or edition unknown (e.g. collection failure) — suspect the limitation
                     stmt.PlanWarnings.Add(new PlanWarning
                     {
                         WarningType = "Standard Edition DOP Limitation",
-                        Message = $"DOP is limited to 2 because SQL Server Standard Edition caps parallelism at 2 when batch mode operators are present, even though MAXDOP is set to {serverMetadata.MaxDop}. Developer or Enterprise Edition would allow higher DOP in the same conditions.",
-                        Severity = PlanWarningSeverity.Warning
+                        Message = "DOP is limited to 2 and the plan uses batch mode operators. This may be caused by the SQL Server Standard Edition limitation, which caps parallelism at 2 when batch mode is in use. If this server runs Standard Edition, Developer or Enterprise Edition would allow higher DOP.",
+                        Severity = PlanWarningSeverity.Info
                     });
                 }
-            }
-            else if (!editionKnown)
-            {
-                // No server context, or edition unknown (e.g. collection failure) — suspect the limitation
-                stmt.PlanWarnings.Add(new PlanWarning
-                {
-                    WarningType = "Standard Edition DOP Limitation",
-                    Message = "DOP is limited to 2 and the plan uses batch mode operators. This may be caused by the SQL Server Standard Edition limitation, which caps parallelism at 2 when batch mode is in use. If this server runs Standard Edition, Developer or Enterprise Edition would allow higher DOP.",
-                    Severity = PlanWarningSeverity.Info
-                });
             }
         }
 

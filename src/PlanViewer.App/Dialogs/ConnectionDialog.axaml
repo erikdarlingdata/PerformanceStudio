@@ -68,22 +68,31 @@
         </StackPanel>
 
         <!-- Connection Options -->
-        <StackPanel Grid.Row="6" Orientation="Horizontal" Margin="0,0,0,12" Spacing="16">
-            <CheckBox x:Name="TrustCertBox" Content="Trust server certificate"
-                      Foreground="{DynamicResource ForegroundBrush}" FontSize="12"/>
-            <ComboBox x:Name="EncryptBox" Height="28" FontSize="11" Width="140">
-                <ComboBoxItem Content="Encrypt: Mandatory" Tag="Mandatory" IsSelected="True"/>
-                <ComboBoxItem Content="Encrypt: Optional" Tag="Optional"/>
-                <ComboBoxItem Content="Encrypt: Strict" Tag="Strict"/>
-            </ComboBox>
+        <StackPanel Grid.Row="6" Margin="0,0,0,12" Spacing="8">
+            <StackPanel Orientation="Horizontal" Spacing="16">
+                <CheckBox x:Name="TrustCertBox" Content="Trust server certificate"
+                          Foreground="{DynamicResource ForegroundBrush}" FontSize="12"/>
+                <ComboBox x:Name="EncryptBox" Height="28" FontSize="11" Width="140">
+                    <ComboBoxItem Content="Encrypt: Mandatory" Tag="Mandatory" IsSelected="True"/>
+                    <ComboBoxItem Content="Encrypt: Optional" Tag="Optional"/>
+                    <ComboBoxItem Content="Encrypt: Strict" Tag="Strict"/>
+                </ComboBox>
+            </StackPanel>
+
+            <!-- Read-Only Intent -->
+            <CheckBox x:Name="ReadOnlyIntentCheckBox"
+                      Content="Read-only intent (for AG listeners and readable replicas - including Query Store on secondary replicas)"
+                      Foreground="{DynamicResource ForegroundBrush}"
+                      ToolTip.Tip="Sets ApplicationIntent=ReadOnly. Required when connecting via an AG listener or Azure failover group endpoint to route to a readable secondary (including Query Store on secondary replicas)."
+                      FontSize="12"/>
         </StackPanel>
 
         <!-- Test Connection + Status -->
-        <StackPanel Grid.Row="7" Orientation="Horizontal" Margin="0,0,0,12" Spacing="8">
+        <StackPanel Grid.Row="7" Margin="0,0,0,12" Spacing="8">
             <Button x:Name="TestButton" Content="Test Connection" Click="TestConnection_Click"
-                    Height="32" Padding="12,0" FontSize="12"
+                    Height="32" Padding="12,0" FontSize="12" HorizontalAlignment="Left"
                     Theme="{StaticResource AppButton}"/>
-            <TextBlock x:Name="StatusText" VerticalAlignment="Center" FontSize="12"
+            <TextBlock x:Name="StatusText" FontSize="12" TextWrapping="Wrap"
                        Foreground="{DynamicResource ForegroundBrush}"/>
         </StackPanel>
 

@@ -15,11 +15,13 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.SqlClient" Version="7.0.1" />
     <PackageReference Include="Meziantou.Framework.Win32.CredentialManager" Version="1.7.18" />
+    <PackageReference Include="Microsoft.Data.SqlClient.Extensions.Azure" Version="1.0.0" />
     <PackageReference Include="Microsoft.SqlServer.TransactSql.ScriptDom" Version="180.6.0" />
   </ItemGroup>
 
   <ItemGroup>
     <EmbeddedResource Include="Resources\PlanIcons\*.png" />
+    <EmbeddedResource Include="Resources\WaitStats.json" />
   </ItemGroup>
 
 </Project>

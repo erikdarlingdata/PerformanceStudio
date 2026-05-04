@@ -989,5 +989,38 @@ public class PlanAnalyzerTests
         Assert.Equal(PlanWarningSeverity.Info, warnings[0].Severity);
     }
 
+    [Fact]
+    public void Rule38_StandardEdition_Dop2_BatchMode_MaxDop2QueryHint_NoWarning()
+    {
+        // User explicitly set OPTION (MAXDOP 2) — DOP cap is intentional, not the SE limit
+        var stmt = BuildBatchModeDop2Statement();
+        stmt.StatementText = "SELECT * FROM dbo.Fact OPTION (MAXDOP 2)";
+        var plan = BuildSyntheticPlan(stmt);
+        var metadata = new ServerMetadata
+        {
+            Edition = "Standard Edition (64-bit)",
+            MaxDop = 8
+        };
+        PlanAnalyzer.Analyze(plan, serverMetadata: metadata);
+
+        var warnings = stmt.PlanWarnings
+            .Where(w => w.WarningType == "Standard Edition DOP Limitation").ToList();
+        Assert.Empty(warnings);
+    }
+
+    [Fact]
+    public void Rule38_NoServerMetadata_Dop2_BatchMode_MaxDop2QueryHint_NoWarning()
+    {
+        // Same suppression applies when we don't know the edition either
+        var stmt = BuildBatchModeDop2Statement();
+        stmt.StatementText = "SELECT * FROM dbo.Fact OPTION (MAXDOP 2)";
+        var plan = BuildSyntheticPlan(stmt);
+        PlanAnalyzer.Analyze(plan);
+
+        var warnings = stmt.PlanWarnings
+            .Where(w => w.WarningType == "Standard Edition DOP Limitation").ToList();
+        Assert.Empty(warnings);
+    }
+
     #endregion
 }
