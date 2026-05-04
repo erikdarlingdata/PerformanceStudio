@@ -1,0 +1,44 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="PlanViewer.App.Controls.QueryStoreOverviewControl">
+    <Grid x:Name="RootGrid" Background="{DynamicResource BackgroundBrush}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Row 0: Donut + TimeSlicer + WaitStats -->
+        <Grid Grid.Row="0" Margin="10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="2*"/>
+                <ColumnDefinition Width="2*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Donut chart area -->
+            <Border Grid.Column="0" Background="{DynamicResource BackgroundLightBrush}"
+                    CornerRadius="4" Margin="0,0,5,0" ClipToBounds="True">
+                <Canvas x:Name="DonutCanvas"/>
+            </Border>
+
+            <!-- Time slicer (consolidated) -->
+            <Border Grid.Column="1" Background="{DynamicResource BackgroundLightBrush}"
+                    CornerRadius="4" Margin="5,0,5,0" ClipToBounds="True">
+                <Canvas x:Name="SlicerCanvas"/>
+            </Border>
+
+            <!-- Wait stats ribbon (consolidated) -->
+            <Border Grid.Column="2" Background="{DynamicResource BackgroundLightBrush}"
+                    CornerRadius="4" Margin="5,0,0,0" ClipToBounds="True">
+                <Canvas x:Name="WaitStatsCanvas"/>
+            </Border>
+        </Grid>
+
+        <!-- Row 1: Total metrics bar cards -->
+        <Grid x:Name="TotalMetricsGrid" Grid.Row="1" Margin="10"/>
+
+        <!-- Row 2: Avg metrics bar cards -->
+        <Grid x:Name="AvgMetricsGrid" Grid.Row="2" Margin="10"/>
+    </Grid>
+</UserControl>

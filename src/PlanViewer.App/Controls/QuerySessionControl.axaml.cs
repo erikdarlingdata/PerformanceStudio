@@ -1389,6 +1389,76 @@ public partial class QuerySessionControl : UserControl
 
     public void TriggerQueryStore() => QueryStore_Click(null, new RoutedEventArgs());
 
+    private async void QueryStoreOverview_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_serverConnection == null || _connectionString == null)
+        {
+            await ShowConnectionDialogAsync();
+            if (_serverConnection == null || _connectionString == null)
+                return;
+        }
+
+        SetStatus("Loading Query Store Overview...");
+
+        var overview = new QueryStoreOverviewControl(_serverConnection, _credentialService);
+        overview.DrillDownRequested += (_, db) =>
+        {
+            // Open a single-database Query Store tab
+            _selectedDatabase = db;
+            _connectionString = _serverConnection!.GetConnectionString(_credentialService, db);
+            QueryStore_Click(null, new RoutedEventArgs());
+        };
+
+        var headerText = new TextBlock
+        {
+            Text = "QS Overview",
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            FontSize = 12
+        };
+
+        var closeBtn = new Button
+        {
+            Content = "\u2715",
+            MinWidth = 22, MinHeight = 22, Width = 22, Height = 22,
+            Padding = new Avalonia.Thickness(0),
+            FontSize = 11,
+            Margin = new Avalonia.Thickness(6, 0, 0, 0),
+            Background = Brushes.Transparent,
+            BorderThickness = new Avalonia.Thickness(0),
+            Foreground = new SolidColorBrush(Color.FromRgb(0xE4, 0xE6, 0xEB)),
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center
+        };
+
+        var header = new StackPanel
+        {
+            Orientation = Avalonia.Layout.Orientation.Horizontal,
+            Children = { headerText, closeBtn }
+        };
+
+        var tab = new TabItem { Header = header, Content = overview };
+        closeBtn.Tag = tab;
+        closeBtn.Click += (s, _) =>
+        {
+            if (s is Button btn && btn.Tag is TabItem t)
+                SubTabControl.Items.Remove(t);
+        };
+
+        SubTabControl.Items.Add(tab);
+        SubTabControl.SelectedItem = tab;
+
+        try
+        {
+            await overview.LoadAsync();
+            SetStatus("");
+        }
+        catch (Exception ex)
+        {
+            SetStatus(ex.Message.Length > 80 ? ex.Message[..80] + "..." : ex.Message, autoClear: false);
+        }
+    }
+
     private async void QueryStore_Click(object? sender, RoutedEventArgs e)
     {
         // If a QS tab already exists, always show connection dialog for a fresh tab
