@@ -10,7 +10,8 @@ public enum QueryStoreState
 {
     Off,
     ReadOnly,
-    ReadWrite
+    ReadWrite,
+    Error
 }
 
 /// <summary>
@@ -20,6 +21,7 @@ public class DatabaseQueryStoreState
 {
     public string DatabaseName { get; set; } = "";
     public QueryStoreState State { get; set; }
+    public string? ErrorMessage { get; set; }
 }
 
 /// <summary>
@@ -61,25 +63,13 @@ public class DatabaseTimeSlice
 }
 
 /// <summary>
-/// Wait stats time slice tagged with the source database name.
-/// </summary>
-public class DatabaseWaitCategoryTimeSlice
-{
-    public string DatabaseName { get; set; } = "";
-    public DateTime IntervalStartUtc { get; set; }
-    public int WaitCategory { get; set; }
-    public string WaitCategoryDesc { get; set; } = "";
-    public double WaitRatio { get; set; }
-}
-
-/// <summary>
-/// Wait alount time slice tagged with the source database name.
+/// Wait amount time slice tagged with the source database name.
 /// </summary>
 public class DatabaseWaitAmountTimeSlice
 {
     public string DatabaseName { get; set; } = "";
     public DateTime IntervalStartUtc { get; set; }
-	public double WaitRatio { get; set; }
+	public double WaitAmountHours { get; set; }
 }
 
 

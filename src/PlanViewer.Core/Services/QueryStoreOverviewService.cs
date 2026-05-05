@@ -34,9 +34,9 @@ public static class QueryStoreOverviewService
                 var state = await GetQueryStoreStateAsync(masterConnectionString, db, ct);
                 results.Add(new DatabaseQueryStoreState { DatabaseName = db, State = state });
             }
-            catch
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                results.Add(new DatabaseQueryStoreState { DatabaseName = db, State = QueryStoreState.Off });
+                results.Add(new DatabaseQueryStoreState { DatabaseName = db, State = QueryStoreState.Error, ErrorMessage = ex.Message });
             }
             finally
             {
@@ -70,7 +70,7 @@ public static class QueryStoreOverviewService
                 var metrics = await FetchDatabaseMetricsAsync(masterConnectionString, db, startUtc, endUtc, ct);
                 results.Add(metrics);
             }
-            catch
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 results.Add(new DatabaseMetrics { DatabaseName = db });
             }
@@ -106,7 +106,7 @@ public static class QueryStoreOverviewService
                 foreach (var s in slices)
                     results.Add(s);
             }
-            catch { /* skip database on error */ }
+            catch (Exception) when (!ct.IsCancellationRequested) { /* skip database on error */ }
             finally
             {
                 semaphore.Release();
@@ -140,7 +140,7 @@ public static class QueryStoreOverviewService
                 foreach (var s in slices)
                     results.Add(s);
             }
-            catch { /* skip database on error */ }
+            catch (Exception) when (!ct.IsCancellationRequested) { /* skip database on error */ }
             finally
             {
                 semaphore.Release();
@@ -329,49 +329,6 @@ ORDER BY bucket_hour;";
         return rows;
     }
 
-    private static async Task<List<DatabaseWaitCategoryTimeSlice>> FetchDatabaseWaitStatsAsync(
-        string masterConnectionString, string database,
-        DateTime startUtc, DateTime endUtc, CancellationToken ct)
-    {
-        var connStr = BuildDbConnectionString(masterConnectionString, database);
-        const string sql = @"
-SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
-SELECT
-    DATEADD(HOUR, DATEDIFF(HOUR, 0, rsi.start_time), 0) AS bucket_hour,
-    ws.wait_category,
-    ws.wait_category_desc,
-    cast(1.0 * SUM(ws.total_query_wait_time_ms) / (3600.0 * 1000.0) AS float) AS wait_ratio
-FROM sys.query_store_wait_stats ws
-JOIN sys.query_store_runtime_stats_interval rsi
-    ON ws.runtime_stats_interval_id = rsi.runtime_stats_interval_id
-WHERE rsi.start_time >= @start AND rsi.start_time < @end
-AND   ws.execution_type = 0
-GROUP BY DATEADD(HOUR, DATEDIFF(HOUR, 0, rsi.start_time), 0),
-         ws.wait_category, ws.wait_category_desc
-ORDER BY bucket_hour, wait_ratio DESC;";
-
-        var rows = new List<DatabaseWaitCategoryTimeSlice>();
-        await using var conn = new SqlConnection(connStr);
-        await conn.OpenAsync(ct);
-        await using var cmd = new SqlCommand(sql, conn) { CommandTimeout = 120 };
-        cmd.Parameters.Add(new SqlParameter("@start", startUtc));
-        cmd.Parameters.Add(new SqlParameter("@end", endUtc));
-        await using var reader = await cmd.ExecuteReaderAsync(ct);
-
-        while (await reader.ReadAsync(ct))
-        {
-            rows.Add(new DatabaseWaitCategoryTimeSlice
-            {
-                DatabaseName = database,
-                IntervalStartUtc = DateTime.SpecifyKind(reader.GetDateTime(0), DateTimeKind.Utc),
-                WaitCategory = reader.GetInt16(1),
-                WaitCategoryDesc = reader.GetString(2),
-                WaitRatio = reader.GetDouble(3),
-            });
-        }
-        return rows;
-    }
-
 	private static async Task<List<DatabaseWaitAmountTimeSlice>> FetchDatabaseWaitAmountAsync(
 		string masterConnectionString, string database,
 		DateTime startUtc, DateTime endUtc, CancellationToken ct)
@@ -404,7 +361,7 @@ ORDER BY bucket_hour, wait_ratio;";
 			{
 				DatabaseName = database,
 				IntervalStartUtc = DateTime.SpecifyKind(reader.GetDateTime(0), DateTimeKind.Utc),
-				WaitRatio = reader.GetDouble(1),
+				WaitAmountHours = reader.GetDouble(1),
 			});
 		}
 		return rows;

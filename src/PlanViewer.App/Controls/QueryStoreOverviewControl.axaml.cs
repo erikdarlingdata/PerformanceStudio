@@ -57,6 +57,7 @@ public partial class QueryStoreOverviewControl : UserControl
     private static readonly Color ReadWriteColor = Color.Parse("#2EAEF1");  // light blue
     private static readonly Color ReadOnlyColor = Color.Parse("#1A5276");   // dark blue
     private static readonly Color OffColor = Color.Parse("#666666");        // grey
+    private static readonly Color ErrorColor = Color.Parse("#E74C3C");      // red
 
     public class DrillDownEventArgs(string database, DateTime startUtc, DateTime endUtc) : EventArgs
     {
@@ -88,11 +89,19 @@ public partial class QueryStoreOverviewControl : UserControl
         };
 
         OverviewTimeSlicer.RangeChanged += OnSlicerRangeChanged;
+
+        this.DetachedFromVisualTree += (_, _) =>
+        {
+            _cts?.Cancel();
+            _cts?.Dispose();
+            _cts = null;
+        };
     }
 
     public async Task LoadAsync()
     {
         _cts?.Cancel();
+        _cts?.Dispose();
         _cts = new CancellationTokenSource();
         var ct = _cts.Token;
 
@@ -108,7 +117,7 @@ public partial class QueryStoreOverviewControl : UserControl
 
             // Phase 2: Get time slices for active databases (cache the list)
             _activeDbs = _states
-                .Where(s => s.State != QueryStoreState.Off)
+                .Where(s => s.State == QueryStoreState.ReadWrite || s.State == QueryStoreState.ReadOnly)
                 .Select(s => s.DatabaseName).ToList();
 
             if (_activeDbs.Count == 0) return;
@@ -230,6 +239,7 @@ public partial class QueryStoreOverviewControl : UserControl
         int rwCount = _states.Count(s => s.State == QueryStoreState.ReadWrite);
         int roCount = _states.Count(s => s.State == QueryStoreState.ReadOnly);
         int offCount = _states.Count(s => s.State == QueryStoreState.Off);
+        int errCount = _states.Count(s => s.State == QueryStoreState.Error);
         int total = _states.Count;
         int activeCount = rwCount + roCount;
 
@@ -237,6 +247,7 @@ public partial class QueryStoreOverviewControl : UserControl
         if (rwCount > 0) segmentInfos.Add((rwCount, "Read Write", QueryStoreState.ReadWrite, ReadWriteColor));
         if (roCount > 0) segmentInfos.Add((roCount, "Read Only", QueryStoreState.ReadOnly, ReadOnlyColor));
         if (offCount > 0) segmentInfos.Add((offCount, "OFF", QueryStoreState.Off, OffColor));
+        if (errCount > 0) segmentInfos.Add((errCount, "Error", QueryStoreState.Error, ErrorColor));
 
         double startAngle = -Math.PI / 2;
         foreach (var (count, label, state, color) in segmentInfos)
@@ -305,6 +316,7 @@ public partial class QueryStoreOverviewControl : UserControl
         DrawLegendItem(DonutCanvas, 4, legendY, ReadWriteColor, $"RW: {rwCount}");
         DrawLegendItem(DonutCanvas, 4, legendY + 16, ReadOnlyColor, $"RO: {roCount}");
         DrawLegendItem(DonutCanvas, 4, legendY + 32, OffColor, $"OFF: {offCount}");
+        if (errCount > 0) DrawLegendItem(DonutCanvas, 4, legendY + 48, ErrorColor, $"Err: {errCount}");
     }
 
     private void ShowDonutPopup(QueryStoreState state)
@@ -314,6 +326,7 @@ public partial class QueryStoreOverviewControl : UserControl
         {
             QueryStoreState.ReadWrite => "Read Write",
             QueryStoreState.ReadOnly => "Read Only",
+            QueryStoreState.Error => "Error",
             _ => "OFF"
         };
 
@@ -329,11 +342,15 @@ public partial class QueryStoreOverviewControl : UserControl
 
         foreach (var db in dbs)
         {
+            var text = db.DatabaseName;
+            if (db.State == QueryStoreState.Error && !string.IsNullOrEmpty(db.ErrorMessage))
+                text += $" — {db.ErrorMessage}";
             stack.Children.Add(new TextBlock
             {
-                Text = db.DatabaseName,
+                Text = text,
                 FontSize = 11,
                 Foreground = new SolidColorBrush(Color.Parse("#E4E6EB")),
+                TextWrapping = Avalonia.Media.TextWrapping.Wrap,
             });
         }
 
@@ -422,6 +439,7 @@ public partial class QueryStoreOverviewControl : UserControl
         _slicerEndUtc = e.EndUtc;
 
         _cts?.Cancel();
+        _cts?.Dispose();
         _cts = new CancellationTokenSource();
         try
         {
@@ -451,6 +469,8 @@ public partial class QueryStoreOverviewControl : UserControl
             return;
         }
 
+        if (_dbColorMap.Count == 0) return; // not yet initialized by DrawBarCards
+
         var w = WaitStatsBorder.Bounds.Width;
         var h = WaitStatsBorder.Bounds.Height;
         if (w < 10 || h < 10) return;
@@ -463,7 +483,7 @@ public partial class QueryStoreOverviewControl : UserControl
         // Consolidate: sum ALL wait ratios per database per hour (ignore wait category)
         var dbHourData = _waitSlices
             .GroupBy(s => new { s.DatabaseName, s.IntervalStartUtc })
-            .Select(g => (Db: g.Key.DatabaseName, Hour: g.Key.IntervalStartUtc, Total: g.Sum(x => x.WaitRatio)))
+            .Select(g => (Db: g.Key.DatabaseName, Hour: g.Key.IntervalStartUtc, Total: g.Sum(x => x.WaitAmountHours)))
             .ToList();
 
         if (dbHourData.Count == 0) return;
