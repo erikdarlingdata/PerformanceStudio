@@ -483,11 +483,15 @@ public partial class QueryStoreOverviewControl : UserControl
 
         // Find max stacked total for Y scaling
         double maxTotal = 0;
+        double totalWaitSum = 0;
+        int bucketsWithData = 0;
         foreach (var hour in allHours)
         {
             if (!hourLookup.TryGetValue(hour, out var items)) continue;
             var total = items.Sum(x => x.Total);
             if (total > maxTotal) maxTotal = total;
+            totalWaitSum += total;
+            bucketsWithData++;
         }
         if (maxTotal <= 0) maxTotal = 1;
 
@@ -579,6 +583,43 @@ public partial class QueryStoreOverviewControl : UserControl
                 Canvas.SetLeft(tb, xDay + 2);
                 Canvas.SetTop(tb, h - paddingBottom + 1);
                 WaitStatsCanvas.Children.Add(tb);
+            }
+        }
+
+        // ── Horizontal dashed average line ─────────────────────────────────
+        if (bucketsWithData > 0)
+        {
+            var avgWait = totalWaitSum / bucketsWithData;
+            if (avgWait > 0 && avgWait <= maxTotal)
+            {
+                var avgY = paddingTop + chartH - (avgWait / maxTotal) * chartH;
+                var dashBrush = new SolidColorBrush(Color.Parse("#E4E6EB"));
+                var avgLine = new Line
+                {
+                    StartPoint = new Point(0, avgY),
+                    EndPoint = new Point(w, avgY),
+                    Stroke = dashBrush,
+                    StrokeThickness = 1,
+                    StrokeDashArray = [6, 3],
+                    Opacity = 0.7,
+                };
+                WaitStatsCanvas.Children.Add(avgLine);
+
+                var avgLabel = new Border
+                {
+                    Background = new SolidColorBrush(Color.Parse("#B0D0D0D0")),
+                    CornerRadius = new CornerRadius(3),
+                    Padding = new Thickness(4, 1),
+                    Child = new TextBlock
+                    {
+                        Text = $"avg:{WaitRatioFormatter.Format(avgWait)}",
+                        FontSize = 10,
+                        Foreground = Brushes.Black,
+                    },
+                };
+                Canvas.SetLeft(avgLabel, 2);
+                Canvas.SetTop(avgLabel, Math.Max(0, avgY - 16));
+                WaitStatsCanvas.Children.Add(avgLabel);
             }
         }
     }
