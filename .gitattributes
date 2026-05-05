@@ -1,0 +1,49 @@
+# Auto-detect text files and normalize line endings to LF in the repo.
+# Working-tree EOLs are decided per-pattern below.
+* text=auto
+
+# Source and config — normalize to LF in repo, check out as-is on each platform
+*.cs            text eol=lf
+*.csproj        text eol=lf
+*.sln           text eol=lf -crlf
+*.props         text eol=lf
+*.targets       text eol=lf
+*.json          text eol=lf
+*.xml           text eol=lf
+*.config        text eol=lf
+*.md            text eol=lf
+*.yml           text eol=lf
+*.yaml          text eol=lf
+*.editorconfig  text eol=lf
+*.gitattributes text eol=lf
+*.gitignore     text eol=lf
+
+# Shell scripts must stay LF
+*.sh            text eol=lf
+
+# Windows-only scripts must stay CRLF
+*.ps1           text eol=crlf
+*.psm1          text eol=crlf
+*.psd1          text eol=crlf
+*.cmd           text eol=crlf
+*.bat           text eol=crlf
+
+# Web assets
+*.js            text eol=lf
+*.ts            text eol=lf
+*.css           text eol=lf
+*.html          text eol=lf
+*.razor         text eol=lf
+*.cshtml        text eol=lf
+
+# Binary assets — never touch
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.pdf  binary
+*.zip  binary
+*.dll  binary
+*.exe  binary
+*.snk  binary
