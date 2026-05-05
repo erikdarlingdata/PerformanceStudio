@@ -57,6 +57,11 @@
                             Height="28" Padding="8,0" FontSize="12"
                             Theme="{StaticResource AppButton}"
                             ToolTip.Tip="Analyze top queries from Query Store"/>
+                    <Button x:Name="QueryStoreOverviewButton" Content="&#x1F4CA; QS Overview"
+                            Click="QueryStoreOverview_Click"
+                            Height="28" Padding="8,0" FontSize="12"
+                            Theme="{StaticResource AppButton}"
+                            ToolTip.Tip="Query Stores Overview across all databases"/>
                     <TextBlock Text="|" VerticalAlignment="Center"
                                Foreground="{DynamicResource ForegroundBrush}" Margin="2,0"/>
                     <Button x:Name="CopyReproButton" Content="&#x1F4CB; Copy Repro"
