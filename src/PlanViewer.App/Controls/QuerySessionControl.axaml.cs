@@ -1400,13 +1400,15 @@ public partial class QuerySessionControl : UserControl
 
         SetStatus("Loading Query Store Overview...");
 
-        var overview = new QueryStoreOverviewControl(_serverConnection, _credentialService);
-        overview.DrillDownRequested += (_, db) =>
+        var supportsWaitStats = _serverMetadata?.SupportsQueryStoreWaitStats ?? false;
+        var overview = new QueryStoreOverviewControl(_serverConnection, _credentialService,
+            supportsWaitStats: supportsWaitStats);
+        overview.DrillDownRequested += async (_, args) =>
         {
-            // Open a single-database Query Store tab
-            _selectedDatabase = db;
-            _connectionString = _serverConnection!.GetConnectionString(_credentialService, db);
-            QueryStore_Click(null, new RoutedEventArgs());
+            // Open a single-database Query Store tab directly (no connection dialog)
+            _selectedDatabase = args.Database;
+            _connectionString = _serverConnection!.GetConnectionString(_credentialService, args.Database);
+            await OpenQueryStoreForDatabaseAsync(args.Database, args.StartUtc, args.EndUtc);
         };
 
         var headerText = new TextBlock
@@ -1457,6 +1459,89 @@ public partial class QuerySessionControl : UserControl
         {
             SetStatus(ex.Message.Length > 80 ? ex.Message[..80] + "..." : ex.Message, autoClear: false);
         }
+    }
+
+    private async Task OpenQueryStoreForDatabaseAsync(string database, DateTime? initialStartUtc = null, DateTime? initialEndUtc = null)
+    {
+        var connStr = _serverConnection!.GetConnectionString(_credentialService, database);
+
+        // Check if Query Store is enabled
+        SetStatus($"Checking Query Store on {database}...");
+        try
+        {
+            var (enabled, state) = await QueryStoreService.CheckEnabledAsync(connStr);
+            if (!enabled)
+            {
+                SetStatus($"Query Store not enabled on {database} ({state ?? "unknown"})");
+                return;
+            }
+        }
+        catch (Exception ex)
+        {
+            SetStatus(ex.Message.Length > 80 ? ex.Message[..80] + "..." : ex.Message, autoClear: false);
+            return;
+        }
+
+        SetStatus("");
+
+        // Check if wait stats are supported
+        var supportsWaitStats = _serverMetadata?.SupportsQueryStoreWaitStats ?? false;
+        if (supportsWaitStats)
+        {
+            try
+            {
+                supportsWaitStats = await QueryStoreService.IsWaitStatsCaptureEnabledAsync(connStr);
+            }
+            catch { supportsWaitStats = false; }
+        }
+
+        var databases = DatabaseBox.Items.OfType<string>().ToList();
+
+        var grid = new QueryStoreGridControl(_serverConnection!, _credentialService,
+            database, databases, supportsWaitStats);
+        if (initialStartUtc.HasValue && initialEndUtc.HasValue)
+            grid.SetInitialTimeRange(initialStartUtc.Value, initialEndUtc.Value);
+        grid.PlansSelected += OnQueryStorePlansSelected;
+
+        var headerText = new TextBlock
+        {
+            Text = $"Query Store — {database}",
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            FontSize = 12
+        };
+        grid.DatabaseChanged += (_, db) => headerText.Text = $"Query Store — {db}";
+
+        var closeBtn = new Button
+        {
+            Content = "\u2715",
+            MinWidth = 22, MinHeight = 22, Width = 22, Height = 22,
+            Padding = new Avalonia.Thickness(0),
+            FontSize = 11,
+            Margin = new Avalonia.Thickness(6, 0, 0, 0),
+            Background = Brushes.Transparent,
+            BorderThickness = new Avalonia.Thickness(0),
+            Foreground = new SolidColorBrush(Color.FromRgb(0xE4, 0xE6, 0xEB)),
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center
+        };
+
+        var header = new StackPanel
+        {
+            Orientation = Avalonia.Layout.Orientation.Horizontal,
+            Children = { headerText, closeBtn }
+        };
+
+        var tab = new TabItem { Header = header, Content = grid };
+        closeBtn.Tag = tab;
+        closeBtn.Click += (s, _) =>
+        {
+            if (s is Button btn && btn.Tag is TabItem t)
+                SubTabControl.Items.Remove(t);
+        };
+
+        SubTabControl.Items.Add(tab);
+        SubTabControl.SelectedItem = tab;
     }
 
     private async void QueryStore_Click(object? sender, RoutedEventArgs e)

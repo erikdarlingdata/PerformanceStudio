@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Shapes;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -24,6 +25,7 @@ public partial class QueryStoreOverviewControl : UserControl
     private readonly string _masterConnectionString;
     private readonly int _maxDop;
     private readonly int _topN;
+    private readonly bool _supportsWaitStats;
     private CancellationTokenSource? _cts;
 
     private List<DatabaseQueryStoreState> _states = new();
@@ -55,16 +57,24 @@ public partial class QueryStoreOverviewControl : UserControl
     private static readonly Color ReadOnlyColor = Color.Parse("#1A5276");   // dark blue
     private static readonly Color OffColor = Color.Parse("#666666");        // grey
 
-    public event EventHandler<string>? DrillDownRequested;
+    public class DrillDownEventArgs(string database, DateTime startUtc, DateTime endUtc) : EventArgs
+    {
+        public string Database { get; } = database;
+        public DateTime StartUtc { get; } = startUtc;
+        public DateTime EndUtc { get; } = endUtc;
+    }
+
+    public event EventHandler<DrillDownEventArgs>? DrillDownRequested;
 
     public QueryStoreOverviewControl(ServerConnection serverConnection,
-        ICredentialService credentialService, int maxDop = 8, int topN = 2)
+        ICredentialService credentialService, int maxDop = 8, int topN = 4, bool supportsWaitStats = true)
     {
         _serverConnection = serverConnection;
         _credentialService = credentialService;
         _masterConnectionString = serverConnection.GetConnectionString(credentialService, "master");
         _maxDop = maxDop;
         _topN = topN;
+        _supportsWaitStats = supportsWaitStats;
         _slicerEndUtc = DateTime.UtcNow;
         _slicerStartUtc = _slicerEndUtc.AddHours(-24);
 
@@ -73,9 +83,10 @@ public partial class QueryStoreOverviewControl : UserControl
         this.SizeChanged += (_, _) =>
         {
             DrawDonut();
-            DrawSlicer();
-            DrawWaitStats();
+            DrawWaitStatsChart();
         };
+
+        OverviewTimeSlicer.RangeChanged += OnSlicerRangeChanged;
     }
 
     public async Task LoadAsync()
@@ -84,26 +95,53 @@ public partial class QueryStoreOverviewControl : UserControl
         _cts = new CancellationTokenSource();
         var ct = _cts.Token;
 
-        // Phase 1: Get states
-        _states = await QueryStoreOverviewService.FetchAllStatesAsync(
-            _masterConnectionString, _maxDop, ct);
+        await Dispatcher.UIThread.InvokeAsync(() => LoadingBar.IsVisible = true);
 
-        await Dispatcher.UIThread.InvokeAsync(DrawDonut);
+        try
+        {
+            // Phase 1: Get states
+            _states = await QueryStoreOverviewService.FetchAllStatesAsync(
+                _masterConnectionString, _maxDop, ct);
 
-        // Phase 2: Get time slices for active databases
-        var activeDbs = _states
-            .Where(s => s.State != QueryStoreState.Off)
-            .Select(s => s.DatabaseName).ToList();
+            await Dispatcher.UIThread.InvokeAsync(DrawDonut);
 
-        if (activeDbs.Count == 0) return;
+            // Phase 2: Get time slices for active databases
+            var activeDbs = _states
+                .Where(s => s.State != QueryStoreState.Off)
+                .Select(s => s.DatabaseName).ToList();
 
-        _timeSlices = await QueryStoreOverviewService.FetchAllTimeSlicesAsync(
-            _masterConnectionString, activeDbs, _daysBack, _maxDop, ct);
+            if (activeDbs.Count == 0) return;
 
-        await Dispatcher.UIThread.InvokeAsync(DrawSlicer);
+            _timeSlices = await QueryStoreOverviewService.FetchAllTimeSlicesAsync(
+                _masterConnectionString, activeDbs, _daysBack, _maxDop, ct);
 
-        // Phase 3: Metrics and wait stats for selected time range
-        await RefreshMetricsAndWaitStatsAsync(ct);
+            // Consolidate time slices across databases into QueryStoreTimeSlice for the slicer
+            var consolidated = _timeSlices
+                .GroupBy(s => s.IntervalStartUtc)
+                .Select(g => new QueryStoreTimeSlice
+                {
+                    IntervalStartUtc = g.Key,
+                    TotalCpu = g.Sum(x => x.TotalCpu),
+                    TotalDuration = g.Sum(x => x.TotalDuration),
+                    TotalReads = g.Sum(x => x.TotalReads),
+                    TotalWrites = g.Sum(x => x.TotalWrites),
+                    TotalPhysicalReads = g.Sum(x => x.TotalPhysicalReads),
+                    TotalMemory = g.Sum(x => x.TotalMemory),
+                    TotalExecutions = g.Sum(x => x.TotalExecutions),
+                })
+                .OrderBy(x => x.IntervalStartUtc)
+                .ToList();
+
+            await Dispatcher.UIThread.InvokeAsync(() =>
+                OverviewTimeSlicer.LoadData(consolidated, "cpu"));
+
+            // Phase 3: Metrics and wait stats for selected time range
+            await RefreshMetricsAndWaitStatsAsync(ct);
+        }
+        finally
+        {
+            await Dispatcher.UIThread.InvokeAsync(() => LoadingBar.IsVisible = false);
+        }
     }
 
     private async Task RefreshMetricsAndWaitStatsAsync(CancellationToken ct)
@@ -114,17 +152,32 @@ public partial class QueryStoreOverviewControl : UserControl
 
         if (activeDbs.Count == 0) return;
 
-        _metrics = await QueryStoreOverviewService.FetchAllMetricsAsync(
-            _masterConnectionString, activeDbs, _slicerStartUtc, _slicerEndUtc, _maxDop, ct);
-
-        _waitSlices = await QueryStoreOverviewService.FetchAllWaitStatsAsync(
-            _masterConnectionString, activeDbs, _slicerStartUtc, _slicerEndUtc, _maxDop, ct);
-
-        await Dispatcher.UIThread.InvokeAsync(() =>
+        await Dispatcher.UIThread.InvokeAsync(() => LoadingBar.IsVisible = true);
+        try
         {
-            DrawWaitStats();
-            DrawBarCards();
-        });
+            _metrics = await QueryStoreOverviewService.FetchAllMetricsAsync(
+            _masterConnectionString, activeDbs, _slicerStartUtc, _slicerEndUtc, _maxDop, ct);
+
+            if (_supportsWaitStats)
+            {
+                _waitSlices = await QueryStoreOverviewService.FetchAllWaitStatsAsync(
+                    _masterConnectionString, activeDbs, _slicerStartUtc, _slicerEndUtc, _maxDop, ct);
+            }
+            else
+            {
+                _waitSlices.Clear();
+            }
+
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                DrawBarCards();
+                DrawWaitStatsChart();
+            });
+        }
+        finally
+        {
+            await Dispatcher.UIThread.InvokeAsync(() => LoadingBar.IsVisible = false);
+        }
     }
 
     // ── Donut Chart ──────────────────────────────────────────────────────────
@@ -149,17 +202,55 @@ public partial class QueryStoreOverviewControl : UserControl
         int total = _states.Count;
         int activeCount = rwCount + roCount;
 
-        var segments = new List<(double fraction, Color color)>();
-        if (rwCount > 0) segments.Add(((double)rwCount / total, ReadWriteColor));
-        if (roCount > 0) segments.Add(((double)roCount / total, ReadOnlyColor));
-        if (offCount > 0) segments.Add(((double)offCount / total, OffColor));
+        var segmentInfos = new List<(int count, string label, QueryStoreState state, Color color)>();
+        if (rwCount > 0) segmentInfos.Add((rwCount, "Read Write", QueryStoreState.ReadWrite, ReadWriteColor));
+        if (roCount > 0) segmentInfos.Add((roCount, "Read Only", QueryStoreState.ReadOnly, ReadOnlyColor));
+        if (offCount > 0) segmentInfos.Add((offCount, "OFF", QueryStoreState.Off, OffColor));
 
         double startAngle = -Math.PI / 2;
-        foreach (var (fraction, color) in segments)
+        foreach (var (count, label, state, color) in segmentInfos)
         {
+            var fraction = (double)count / total;
             var sweepAngle = fraction * 2 * Math.PI;
             var path = CreateArcPath(cx, cy, radius, innerRadius, startAngle, startAngle + sweepAngle, color);
+
+            // Tooltip with details
+            var pct = fraction * 100;
+            var tipText = $"{label}: {count} database{(count != 1 ? "s" : "")} ({pct:F0}%)";
+            ToolTip.SetTip(path, tipText);
+            ToolTip.SetShowDelay(path, 200);
+
+            // Click → popup with database list
+            var capturedState = state;
+            path.Cursor = new Cursor(StandardCursorType.Hand);
+            path.PointerPressed += (_, e) =>
+            {
+                e.Handled = true;
+                ShowDonutPopup(capturedState);
+            };
+
             DonutCanvas.Children.Add(path);
+
+            // Percentage label on the arc midpoint
+            if (fraction > 0.05) // only show label if segment is large enough
+            {
+                var midAngle = startAngle + sweepAngle / 2;
+                var labelR = (radius + innerRadius) / 2;
+                var lx = cx + labelR * Math.Cos(midAngle);
+                var ly = cy + labelR * Math.Sin(midAngle);
+                var pctLabel = new TextBlock
+                {
+                    Text = $"{pct:F0}%",
+                    FontSize = 10,
+                    FontWeight = FontWeight.SemiBold,
+                    Foreground = Brushes.White,
+                };
+                pctLabel.Measure(Size.Infinity);
+                Canvas.SetLeft(pctLabel, lx - pctLabel.DesiredSize.Width / 2);
+                Canvas.SetTop(pctLabel, ly - pctLabel.DesiredSize.Height / 2);
+                DonutCanvas.Children.Add(pctLabel);
+            }
+
             startAngle += sweepAngle;
         }
 
@@ -183,6 +274,63 @@ public partial class QueryStoreOverviewControl : UserControl
         DrawLegendItem(DonutCanvas, 4, legendY, ReadWriteColor, $"RW: {rwCount}");
         DrawLegendItem(DonutCanvas, 4, legendY + 16, ReadOnlyColor, $"RO: {roCount}");
         DrawLegendItem(DonutCanvas, 4, legendY + 32, OffColor, $"OFF: {offCount}");
+    }
+
+    private void ShowDonutPopup(QueryStoreState state)
+    {
+        var dbs = _states.Where(s => s.State == state).OrderBy(s => s.DatabaseName).ToList();
+        var stateLabel = state switch
+        {
+            QueryStoreState.ReadWrite => "Read Write",
+            QueryStoreState.ReadOnly => "Read Only",
+            _ => "OFF"
+        };
+
+        var stack = new StackPanel { Spacing = 2, Margin = new Thickness(4) };
+        stack.Children.Add(new TextBlock
+        {
+            Text = $"{stateLabel} ({dbs.Count})",
+            FontSize = 12,
+            FontWeight = FontWeight.Bold,
+            Foreground = new SolidColorBrush(Color.Parse("#E4E6EB")),
+            Margin = new Thickness(0, 0, 0, 4)
+        });
+
+        foreach (var db in dbs)
+        {
+            stack.Children.Add(new TextBlock
+            {
+                Text = db.DatabaseName,
+                FontSize = 11,
+                Foreground = new SolidColorBrush(Color.Parse("#E4E6EB")),
+            });
+        }
+
+        var popup = new Popup
+        {
+            PlacementTarget = DonutCanvas,
+            Placement = PlacementMode.Pointer,
+            IsLightDismissEnabled = true,
+            Child = new Border
+            {
+                Background = this.FindResource("BackgroundLightBrush") as IBrush ?? new SolidColorBrush(Color.Parse("#22252D")),
+                BorderBrush = this.FindResource("BorderBrush") as IBrush ?? new SolidColorBrush(Color.Parse("#3A3D45")),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(6),
+                Padding = new Thickness(10),
+                MinWidth = 180,
+                MaxHeight = 300,
+                Child = new ScrollViewer { Content = stack }
+            }
+        };
+
+        // Add popup to the visual tree temporarily
+        if (DonutCanvas.Parent is Panel parentPanel)
+        {
+            parentPanel.Children.Add(popup);
+            popup.IsOpen = true;
+            popup.Closed += (_, _) => parentPanel.Children.Remove(popup);
+        }
     }
 
     private void DrawLegendItem(Canvas canvas, double x, double y, Color color, string text)
@@ -235,161 +383,197 @@ public partial class QueryStoreOverviewControl : UserControl
         return new Path { Data = geo, Fill = new SolidColorBrush(fill) };
     }
 
-    // ── Time Slicer (consolidated) ──────────────────────────────────────────
+    // ── Time Slicer (delegates to TimeRangeSlicerControl) ──────────────────
 
-    private void DrawSlicer()
+    private async void OnSlicerRangeChanged(object? sender, TimeRangeChangedEventArgs e)
     {
-        SlicerCanvas.Children.Clear();
-        if (_timeSlices.Count == 0) return;
+        _slicerStartUtc = e.StartUtc;
+        _slicerEndUtc = e.EndUtc;
 
-        var w = SlicerCanvas.Bounds.Width;
-        var h = SlicerCanvas.Bounds.Height;
-        if (w < 10 || h < 10) return;
-
-        // Consolidate across databases by hour
-        var consolidated = _timeSlices
-            .GroupBy(s => s.IntervalStartUtc)
-            .Select(g => new { Hour = g.Key, Total = g.Sum(x => x.TotalCpu) })
-            .OrderBy(x => x.Hour)
-            .ToList();
-
-        if (consolidated.Count == 0) return;
-
-        var maxVal = consolidated.Max(c => c.Total);
-        if (maxVal <= 0) maxVal = 1;
-
-        var barW = w / consolidated.Count;
-        var chartBrush = new SolidColorBrush(Color.Parse("#332EAEF1"));
-        var lineBrush = new SolidColorBrush(Color.Parse("#2EAEF1"));
-
-        for (int i = 0; i < consolidated.Count; i++)
+        _cts?.Cancel();
+        _cts = new CancellationTokenSource();
+        try
         {
-            var barH = (consolidated[i].Total / maxVal) * (h - 20);
-            var rect = new Rectangle
-            {
-                Width = Math.Max(1, barW - 1),
-                Height = barH,
-                Fill = chartBrush,
-            };
-            Canvas.SetLeft(rect, i * barW);
-            Canvas.SetTop(rect, h - barH - 10);
-            SlicerCanvas.Children.Add(rect);
+            await RefreshMetricsAndWaitStatsAsync(_cts.Token);
         }
-
-        // Selection overlay for the current time range
-        if (consolidated.Count > 0)
-        {
-            var minTime = consolidated.First().Hour;
-            var maxTime = consolidated.Last().Hour;
-            var totalSpan = (maxTime - minTime).TotalHours;
-            if (totalSpan > 0)
-            {
-                var startNorm = Math.Max(0, (_slicerStartUtc - minTime).TotalHours / totalSpan);
-                var endNorm = Math.Min(1, (_slicerEndUtc - minTime).TotalHours / totalSpan);
-                var selRect = new Rectangle
-                {
-                    Width = (endNorm - startNorm) * w,
-                    Height = h,
-                    Fill = new SolidColorBrush(Color.Parse("#442EAEF1")),
-                };
-                Canvas.SetLeft(selRect, startNorm * w);
-                Canvas.SetTop(selRect, 0);
-                SlicerCanvas.Children.Add(selRect);
-            }
-        }
-
-        // Label
-        var label = new TextBlock
-        {
-            Text = "Consolidated CPU (all DBs)",
-            FontSize = 10,
-            Foreground = new SolidColorBrush(Color.Parse("#E4E6EB"))
-        };
-        Canvas.SetLeft(label, 4);
-        Canvas.SetTop(label, 2);
-        SlicerCanvas.Children.Add(label);
+        catch (OperationCanceledException) { }
+        catch { /* swallow errors from refresh */ }
     }
 
-    // ── Wait Stats (consolidated) ───────────────────────────────────────────
+    // ── Wait Stats Chart (stacked by database) ──────────────────────────────
 
-    private void DrawWaitStats()
+    private void DrawWaitStatsChart()
     {
         WaitStatsCanvas.Children.Clear();
-        if (_waitSlices.Count == 0) return;
+        if (_waitSlices.Count == 0)
+        {
+            var msg = new TextBlock
+            {
+                Text = _supportsWaitStats ? "No wait stats data" : "Wait stats not supported (SQL 2017+ required)",
+                FontSize = 10,
+                Foreground = new SolidColorBrush(Color.Parse("#888888")),
+                TextWrapping = Avalonia.Media.TextWrapping.Wrap,
+            };
+            Canvas.SetLeft(msg, 10);
+            Canvas.SetTop(msg, 20);
+            WaitStatsCanvas.Children.Add(msg);
+            return;
+        }
 
-        var w = WaitStatsCanvas.Bounds.Width;
-        var h = WaitStatsCanvas.Bounds.Height;
+        var w = WaitStatsBorder.Bounds.Width;
+        var h = WaitStatsBorder.Bounds.Height;
         if (w < 10 || h < 10) return;
 
-        // Consolidate: sum wait ratios across databases by hour+category
-        var consolidated = _waitSlices
-            .GroupBy(s => new { s.IntervalStartUtc, s.WaitCategoryDesc })
-            .Select(g => new WaitCategoryTimeSlice
-            {
-                IntervalStartUtc = g.Key.IntervalStartUtc,
-                WaitCategoryDesc = g.Key.WaitCategoryDesc,
-                WaitCategory = g.First().WaitCategory,
-                WaitRatio = g.Sum(x => x.WaitRatio)
-            })
-            .OrderBy(x => x.IntervalStartUtc)
+        const double paddingTop = 4;
+        const double paddingBottom = 16;
+        var chartH = h - paddingTop - paddingBottom;
+        if (chartH <= 0) return;
+
+        // Consolidate: sum ALL wait ratios per database per hour (ignore wait category)
+        var dbHourData = _waitSlices
+            .GroupBy(s => new { s.DatabaseName, s.IntervalStartUtc })
+            .Select(g => (Db: g.Key.DatabaseName, Hour: g.Key.IntervalStartUtc, Total: g.Sum(x => x.WaitRatio)))
             .ToList();
 
-        // Use the existing ribbon painting logic (simplified)
-        var hours = consolidated.Select(x => x.IntervalStartUtc).Distinct().OrderBy(x => x).ToList();
-        var categories = consolidated.GroupBy(x => x.WaitCategoryDesc)
-            .OrderByDescending(g => g.Sum(x => x.WaitRatio))
-            .Select(g => g.Key).Take(5).ToList();
+        if (dbHourData.Count == 0) return;
 
-        if (hours.Count == 0) return;
+        // Build complete hourly timeline
+        var allHours = dbHourData.Select(x => x.Hour).Distinct().OrderBy(x => x).ToList();
+        var n = allHours.Count;
+        if (n == 0) return;
 
-        var maxPerHour = hours.Select(hr =>
-            consolidated.Where(c => c.IntervalStartUtc == hr).Sum(c => c.WaitRatio)).Max();
-        if (maxPerHour <= 0) maxPerHour = 1;
+        // Use the same top-N databases + Others as the bar cards
+        var topDbs = _dbColorMap.Keys.ToList();
 
-        var barW = w / hours.Count;
-        var waitColors = new[] { "#EB5757", "#F2994A", "#F2C94C", "#27AE60", "#2EAEF1" };
+        // Compute per-hour totals for each database group
+        var hourLookup = dbHourData
+            .GroupBy(x => x.Hour)
+            .ToDictionary(g => g.Key, g => g.ToList());
 
-        for (int hi = 0; hi < hours.Count; hi++)
+        // Find max stacked total for Y scaling
+        double maxTotal = 0;
+        foreach (var hour in allHours)
         {
-            double yOffset = 0;
-            var hourData = consolidated.Where(c => c.IntervalStartUtc == hours[hi]).ToList();
-            for (int ci = 0; ci < categories.Count && ci < waitColors.Length; ci++)
+            if (!hourLookup.TryGetValue(hour, out var items)) continue;
+            var total = items.Sum(x => x.Total);
+            if (total > maxTotal) maxTotal = total;
+        }
+        if (maxTotal <= 0) maxTotal = 1;
+
+        var stepX = w / n;
+        var barGap = Math.Min(2.0, Math.Max(0.5, stepX * 0.1));
+
+        for (int i = 0; i < n; i++)
+        {
+            var hour = allHours[i];
+            if (!hourLookup.TryGetValue(hour, out var items)) continue;
+
+            // Aggregate per database
+            var dbTotals = new Dictionary<string, double>();
+            double othersTotal = 0;
+            foreach (var item in items)
             {
-                var val = hourData.FirstOrDefault(c => c.WaitCategoryDesc == categories[ci])?.WaitRatio ?? 0;
-                var barH = (val / maxPerHour) * (h - 20);
+                if (topDbs.Contains(item.Db))
+                    dbTotals[item.Db] = dbTotals.GetValueOrDefault(item.Db) + item.Total;
+                else
+                    othersTotal += item.Total;
+            }
+
+            double y = paddingTop + chartH; // bottom
+            var x = i * stepX;
+
+            // Draw stacked bars: top databases first, then others
+            foreach (var db in topDbs)
+            {
+                var val = dbTotals.GetValueOrDefault(db);
+                if (val <= 0) continue;
+                var segH = (val / maxTotal) * chartH;
+                y -= segH;
+
+                var color = _dbColorMap.GetValueOrDefault(db, OthersColor);
                 var rect = new Rectangle
                 {
-                    Width = Math.Max(1, barW - 1),
-                    Height = barH,
-                    Fill = new SolidColorBrush(Color.Parse(waitColors[ci]))
+                    Width = Math.Max(1, stepX - barGap),
+                    Height = Math.Max(0.5, segH),
+                    Fill = new SolidColorBrush(color),
                 };
-                Canvas.SetLeft(rect, hi * barW);
-                Canvas.SetTop(rect, h - 10 - yOffset - barH);
+                Canvas.SetLeft(rect, x);
+                Canvas.SetTop(rect, y);
                 WaitStatsCanvas.Children.Add(rect);
-                yOffset += barH;
+
+                ToolTip.SetTip(rect, $"{db}: {WaitRatioFormatter.Format(val)}");
+                ToolTip.SetShowDelay(rect, 200);
+            }
+
+            if (othersTotal > 0)
+            {
+                var segH = (othersTotal / maxTotal) * chartH;
+                y -= segH;
+                var rect = new Rectangle
+                {
+                    Width = Math.Max(1, stepX - barGap),
+                    Height = Math.Max(0.5, segH),
+                    Fill = new SolidColorBrush(OthersColor),
+                };
+                Canvas.SetLeft(rect, x);
+                Canvas.SetTop(rect, y);
+                WaitStatsCanvas.Children.Add(rect);
+                ToolTip.SetTip(rect, $"Others: {WaitRatioFormatter.Format(othersTotal)}");
+                ToolTip.SetShowDelay(rect, 200);
             }
         }
 
-        var label = new TextBlock
+        // X-axis labels at day boundaries
+        var labelBrush = new SolidColorBrush(Color.Parse("#E4E6EB"));
+        for (int i = 0; i < n; i++)
         {
-            Text = "Wait Stats (all DBs)",
-            FontSize = 10,
-            Foreground = new SolidColorBrush(Color.Parse("#E4E6EB"))
-        };
-        Canvas.SetLeft(label, 4);
-        Canvas.SetTop(label, 2);
-        WaitStatsCanvas.Children.Add(label);
+            if (allHours[i].Hour == 0)
+            {
+                var xDay = i * stepX;
+                WaitStatsCanvas.Children.Add(new Line
+                {
+                    StartPoint = new Point(xDay, paddingTop),
+                    EndPoint = new Point(xDay, paddingTop + chartH),
+                    Stroke = labelBrush,
+                    StrokeThickness = 1,
+                    StrokeDashArray = [4, 4],
+                    Opacity = 0.3,
+                });
+                var tb = new TextBlock
+                {
+                    Text = TimeDisplayHelper.FormatForDisplay(allHours[i], "MM/dd"),
+                    FontSize = 8,
+                    Foreground = labelBrush,
+                };
+                Canvas.SetLeft(tb, xDay + 2);
+                Canvas.SetTop(tb, h - paddingBottom + 1);
+                WaitStatsCanvas.Children.Add(tb);
+            }
+        }
     }
 
     // ── Bar Chart Cards ─────────────────────────────────────────────────────
 
+    /// <summary>Unified color map: same database → same color across all cards.</summary>
+    private Dictionary<string, Color> _dbColorMap = new();
+
     private void DrawBarCards()
     {
-        DrawMetricRow(TotalMetricsGrid, isTotal: true);
-        DrawMetricRow(AvgMetricsGrid, isTotal: false);
+        // Build a single color map based on top-N by total CPU (union across all databases)
+        _dbColorMap.Clear();
+        var ranked = _metrics
+            .OrderByDescending(m => m.TotalCpu)
+            .Select(m => m.DatabaseName)
+            .ToList();
+        var topDbs = ranked.Take(_topN).ToList();
+        for (int i = 0; i < topDbs.Count && i < Palette.Length; i++)
+            _dbColorMap[topDbs[i]] = Palette[i];
+
+        DrawMetricRow(TotalMetricsGrid, isTotal: true, topDbs);
+        DrawMetricRow(AvgMetricsGrid, isTotal: false, topDbs);
     }
 
-    private void DrawMetricRow(Grid grid, bool isTotal)
+    private void DrawMetricRow(Grid grid, bool isTotal, List<string> topDbs)
     {
         grid.Children.Clear();
         grid.ColumnDefinitions.Clear();
@@ -401,30 +585,13 @@ public partial class QueryStoreOverviewControl : UserControl
         for (int i = 0; i < metricNames.Length; i++)
             grid.ColumnDefinitions.Add(new ColumnDefinition(1, GridUnitType.Star));
 
-        // Get top N databases + others
-        var ranked = GetRankedDatabases(isTotal);
-        var topDbs = ranked.Take(_topN).Select(r => r.db).ToList();
-        var dbColors = new Dictionary<string, Color>();
-        for (int i = 0; i < topDbs.Count && i < Palette.Length; i++)
-            dbColors[topDbs[i]] = Palette[i];
-
         for (int mi = 0; mi < metricNames.Length; mi++)
         {
-            var card = CreateBarCard(metricNames[mi], mi, isTotal, topDbs, dbColors);
+            var card = CreateBarCard(metricNames[mi], mi, isTotal, topDbs, _dbColorMap);
             Grid.SetColumn(card, mi);
             card.Margin = new Thickness(mi == 0 ? 0 : 5, 0, mi == metricNames.Length - 1 ? 0 : 5, 0);
             grid.Children.Add(card);
         }
-    }
-
-    private List<(string db, double total)> GetRankedDatabases(bool isTotal)
-    {
-        if (_metrics.Count == 0) return new();
-        // Rank by total CPU
-        return _metrics
-            .Select(m => (m.DatabaseName, isTotal ? m.TotalCpu : m.AvgCpu))
-            .OrderByDescending(x => x.Item2)
-            .ToList();
     }
 
     private Border CreateBarCard(string title, int metricIndex, bool isTotal,
@@ -505,7 +672,7 @@ public partial class QueryStoreOverviewControl : UserControl
                 var menu = new ContextMenu();
                 var menuItem = new MenuItem { Header = "Drill Down to DB Query Store" };
                 var dbName = db;
-                menuItem.Click += (_, _) => DrillDownRequested?.Invoke(this, dbName);
+                menuItem.Click += (_, _) => DrillDownRequested?.Invoke(this, new DrillDownEventArgs(dbName, _slicerStartUtc, _slicerEndUtc));
                 menu.Items.Add(menuItem);
                 barContainer.ContextMenu = menu;
             }

@@ -95,6 +95,16 @@ public partial class QueryStoreGridControl : UserControl
         }, Avalonia.Threading.DispatcherPriority.Loaded);
     }
 
+    /// <summary>
+    /// Sets the initial slicer time range (e.g. from overview drill-down).
+    /// Must be called before the control is loaded to take effect on the first fetch.
+    /// </summary>
+    public void SetInitialTimeRange(DateTime startUtc, DateTime endUtc)
+    {
+        _slicerStartUtc = startUtc;
+        _slicerEndUtc = endUtc;
+    }
+
     private void PopulateDatabaseBox(List<string> databases, string selectedDatabase)
     {
         QsDatabaseBox.ItemsSource = databases;
