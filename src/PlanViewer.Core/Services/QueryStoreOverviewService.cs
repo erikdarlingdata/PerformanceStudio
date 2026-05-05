@@ -340,7 +340,7 @@ SELECT
     DATEADD(HOUR, DATEDIFF(HOUR, 0, rsi.start_time), 0) AS bucket_hour,
     ws.wait_category,
     ws.wait_category_desc,
-    1.0 * SUM(ws.total_query_wait_time_ms) / (3600.0 * 1000.0) AS wait_ratio
+    cast(1.0 * SUM(ws.total_query_wait_time_ms) / (3600.0 * 1000.0) AS float) AS wait_ratio
 FROM sys.query_store_wait_stats ws
 JOIN sys.query_store_runtime_stats_interval rsi
     ON ws.runtime_stats_interval_id = rsi.runtime_stats_interval_id
@@ -381,7 +381,7 @@ ORDER BY bucket_hour, wait_ratio DESC;";
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 SELECT
     DATEADD(HOUR, DATEDIFF(HOUR, 0, rsi.start_time), 0) AS bucket_hour,
-    1.0 * SUM(ws.total_query_wait_time_ms) / (3600.0 * 1000.0) AS wait_ratio
+    cast(1.0 * SUM(ws.total_query_wait_time_ms) / (3600.0 * 1000.0) AS float) AS wait_ratio
 FROM sys.query_store_wait_stats ws
 JOIN sys.query_store_runtime_stats_interval rsi
     ON ws.runtime_stats_interval_id = rsi.runtime_stats_interval_id
@@ -404,7 +404,7 @@ ORDER BY bucket_hour, wait_ratio;";
 			{
 				DatabaseName = database,
 				IntervalStartUtc = DateTime.SpecifyKind(reader.GetDateTime(0), DateTimeKind.Utc),
-				WaitRatio = reader.GetDouble(3),
+				WaitRatio = reader.GetDouble(1),
 			});
 		}
 		return rows;
