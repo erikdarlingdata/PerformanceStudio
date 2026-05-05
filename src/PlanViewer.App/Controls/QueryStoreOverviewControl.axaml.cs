@@ -31,7 +31,8 @@ public partial class QueryStoreOverviewControl : UserControl
     private List<DatabaseQueryStoreState> _states = new();
     private List<DatabaseMetrics> _metrics = new();
     private List<DatabaseTimeSlice> _timeSlices = new();
-    private List<DatabaseWaitCategoryTimeSlice> _waitSlices = new();
+    private List<DatabaseWaitAmountTimeSlice> _waitSlices = new();
+    private List<string> _activeDbs = new();
 
     private DateTime _slicerStartUtc;
     private DateTime _slicerEndUtc;
@@ -95,7 +96,7 @@ public partial class QueryStoreOverviewControl : UserControl
         _cts = new CancellationTokenSource();
         var ct = _cts.Token;
 
-        await Dispatcher.UIThread.InvokeAsync(() => LoadingBar.IsVisible = true);
+        await Dispatcher.UIThread.InvokeAsync(() => LoadingBar.IsIndeterminate = true);
 
         try
         {
@@ -105,15 +106,15 @@ public partial class QueryStoreOverviewControl : UserControl
 
             await Dispatcher.UIThread.InvokeAsync(DrawDonut);
 
-            // Phase 2: Get time slices for active databases
-            var activeDbs = _states
+            // Phase 2: Get time slices for active databases (cache the list)
+            _activeDbs = _states
                 .Where(s => s.State != QueryStoreState.Off)
                 .Select(s => s.DatabaseName).ToList();
 
-            if (activeDbs.Count == 0) return;
+            if (_activeDbs.Count == 0) return;
 
             _timeSlices = await QueryStoreOverviewService.FetchAllTimeSlicesAsync(
-                _masterConnectionString, activeDbs, _daysBack, _maxDop, ct);
+                _masterConnectionString, _activeDbs, _daysBack, _maxDop, ct);
 
             // Consolidate time slices across databases into QueryStoreTimeSlice for the slicer
             var consolidated = _timeSlices
@@ -140,28 +141,31 @@ public partial class QueryStoreOverviewControl : UserControl
         }
         finally
         {
-            await Dispatcher.UIThread.InvokeAsync(() => LoadingBar.IsVisible = false);
+            await Dispatcher.UIThread.InvokeAsync(() => LoadingBar.IsIndeterminate = false);
         }
     }
 
     private async Task RefreshMetricsAndWaitStatsAsync(CancellationToken ct)
     {
-        var activeDbs = _states
-            .Where(s => s.State != QueryStoreState.Off)
-            .Select(s => s.DatabaseName).ToList();
+        if (_activeDbs.Count == 0) return;
 
-        if (activeDbs.Count == 0) return;
-
-        await Dispatcher.UIThread.InvokeAsync(() => LoadingBar.IsVisible = true);
+        await Dispatcher.UIThread.InvokeAsync(() => LoadingBar.IsIndeterminate = true);
         try
         {
             _metrics = await QueryStoreOverviewService.FetchAllMetricsAsync(
-            _masterConnectionString, activeDbs, _slicerStartUtc, _slicerEndUtc, _maxDop, ct);
+                _masterConnectionString, _activeDbs, _slicerStartUtc, _slicerEndUtc, _maxDop, ct);
 
             if (_supportsWaitStats)
             {
-                _waitSlices = await QueryStoreOverviewService.FetchAllWaitStatsAsync(
-                    _masterConnectionString, activeDbs, _slicerStartUtc, _slicerEndUtc, _maxDop, ct);
+                var (slices, errors) = await QueryStoreOverviewService.FetchAllWaitStatsWithErrorsAsync(
+                    _masterConnectionString, _activeDbs, _slicerStartUtc, _slicerEndUtc, _maxDop, ct);
+                _waitSlices = slices;
+
+                if (errors.Count > 0)
+                {
+                    await Dispatcher.UIThread.InvokeAsync(() =>
+                        ShowWaitStatsErrors(errors));
+                }
             }
             else
             {
@@ -176,8 +180,35 @@ public partial class QueryStoreOverviewControl : UserControl
         }
         finally
         {
-            await Dispatcher.UIThread.InvokeAsync(() => LoadingBar.IsVisible = false);
+            await Dispatcher.UIThread.InvokeAsync(() => LoadingBar.IsIndeterminate = false);
         }
+    }
+
+    private void ShowWaitStatsErrors(List<(string Database, string Error)> errors)
+    {
+        var msg = string.Join("\n", errors.Select(e => $"[{e.Database}] {e.Error}"));
+        var window = new Avalonia.Controls.Window
+        {
+            Title = "Wait Stats Errors",
+            Width = 600,
+            Height = 300,
+            Content = new ScrollViewer
+            {
+                Content = new TextBlock
+                {
+                    Text = msg,
+                    TextWrapping = Avalonia.Media.TextWrapping.Wrap,
+                    Margin = new Thickness(10),
+                    Foreground = new SolidColorBrush(Color.Parse("#E4E6EB")),
+                    FontSize = 12,
+                }
+            }
+        };
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel is Avalonia.Controls.Window owner)
+            window.ShowDialog(owner);
+        else
+            window.Show();
     }
 
     // ── Donut Chart ──────────────────────────────────────────────────────────

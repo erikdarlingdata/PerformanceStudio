@@ -71,3 +71,16 @@ public class DatabaseWaitCategoryTimeSlice
     public string WaitCategoryDesc { get; set; } = "";
     public double WaitRatio { get; set; }
 }
+
+/// <summary>
+/// Wait alount time slice tagged with the source database name.
+/// </summary>
+public class DatabaseWaitAmountTimeSlice
+{
+    public string DatabaseName { get; set; } = "";
+    public DateTime IntervalStartUtc { get; set; }
+	public double WaitRatio { get; set; }
+}
+
+
+

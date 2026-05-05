@@ -10,9 +10,9 @@
             <RowDefinition Height="2*"/>
         </Grid.RowDefinitions>
 
-        <!-- Row 0: Progress bar -->
-        <ProgressBar x:Name="LoadingBar" Grid.Row="0" IsIndeterminate="True"
-                     Height="3" Margin="0" IsVisible="False"
+        <!-- Row 0: Progress bar (always visible to reserve space, toggle IsIndeterminate) -->
+        <ProgressBar x:Name="LoadingBar" Grid.Row="0" IsIndeterminate="False"
+                     Height="3" Margin="0"
                      Foreground="{DynamicResource AccentBrush}"/>
 
         <!-- Row 1: Donut + TimeSlicer + WaitStats -->

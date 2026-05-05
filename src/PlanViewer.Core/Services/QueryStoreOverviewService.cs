@@ -120,7 +120,7 @@ public static class QueryStoreOverviewService
     /// <summary>
     /// Fetches wait stats ribbon data for active databases in parallel.
     /// </summary>
-    public static async Task<List<DatabaseWaitCategoryTimeSlice>> FetchAllWaitStatsAsync(
+    public static async Task<List<DatabaseWaitAmountTimeSlice>> FetchAllWaitStatsAsync(
         string masterConnectionString,
         List<string> activeDatabases,
         DateTime startUtc,
@@ -128,7 +128,7 @@ public static class QueryStoreOverviewService
         int maxDegreeOfParallelism = 8,
         CancellationToken ct = default)
     {
-        var results = new ConcurrentBag<DatabaseWaitCategoryTimeSlice>();
+        var results = new ConcurrentBag<DatabaseWaitAmountTimeSlice>();
         var semaphore = new SemaphoreSlim(maxDegreeOfParallelism);
 
         var tasks = activeDatabases.Select(async db =>
@@ -136,7 +136,7 @@ public static class QueryStoreOverviewService
             await semaphore.WaitAsync(ct);
             try
             {
-                var slices = await FetchDatabaseWaitStatsAsync(masterConnectionString, db, startUtc, endUtc, ct);
+                var slices = await FetchDatabaseWaitAmountAsync(masterConnectionString, db, startUtc, endUtc, ct);
                 foreach (var s in slices)
                     results.Add(s);
             }
@@ -149,6 +149,44 @@ public static class QueryStoreOverviewService
 
         await Task.WhenAll(tasks);
         return results.OrderBy(r => r.IntervalStartUtc).ToList();
+    }
+
+    /// <summary>
+    /// Fetches wait stats with error reporting per database.
+    /// </summary>
+    public static async Task<(List<DatabaseWaitAmountTimeSlice> Slices, List<(string Database, string Error)> Errors)> FetchAllWaitStatsWithErrorsAsync(
+        string masterConnectionString,
+        List<string> activeDatabases,
+        DateTime startUtc,
+        DateTime endUtc,
+        int maxDegreeOfParallelism = 8,
+        CancellationToken ct = default)
+    {
+        var results = new ConcurrentBag<DatabaseWaitAmountTimeSlice>();
+        var errors = new ConcurrentBag<(string Database, string Error)>();
+        var semaphore = new SemaphoreSlim(maxDegreeOfParallelism);
+
+        var tasks = activeDatabases.Select(async db =>
+        {
+            await semaphore.WaitAsync(ct);
+            try
+            {
+                var slices = await FetchDatabaseWaitAmountAsync(masterConnectionString, db, startUtc, endUtc, ct);
+                foreach (var s in slices)
+                    results.Add(s);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                errors.Add((db, ex.Message));
+            }
+            finally
+            {
+                semaphore.Release();
+            }
+        });
+
+        await Task.WhenAll(tasks);
+        return (results.OrderBy(r => r.IntervalStartUtc).ToList(), errors.ToList());
     }
 
     // ── Private helpers ──────────────────────────────────────────────────────
@@ -333,4 +371,42 @@ ORDER BY bucket_hour, wait_ratio DESC;";
         }
         return rows;
     }
+
+	private static async Task<List<DatabaseWaitAmountTimeSlice>> FetchDatabaseWaitAmountAsync(
+		string masterConnectionString, string database,
+		DateTime startUtc, DateTime endUtc, CancellationToken ct)
+	{
+		var connStr = BuildDbConnectionString(masterConnectionString, database);
+		const string sql = @"
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+SELECT
+    DATEADD(HOUR, DATEDIFF(HOUR, 0, rsi.start_time), 0) AS bucket_hour,
+    1.0 * SUM(ws.total_query_wait_time_ms) / (3600.0 * 1000.0) AS wait_ratio
+FROM sys.query_store_wait_stats ws
+JOIN sys.query_store_runtime_stats_interval rsi
+    ON ws.runtime_stats_interval_id = rsi.runtime_stats_interval_id
+WHERE rsi.start_time >= @start AND rsi.start_time < @end
+AND   ws.execution_type = 0
+GROUP BY DATEADD(HOUR, DATEDIFF(HOUR, 0, rsi.start_time), 0)
+ORDER BY bucket_hour, wait_ratio;";
+
+		var rows = new List<DatabaseWaitAmountTimeSlice>();
+		await using var conn = new SqlConnection(connStr);
+		await conn.OpenAsync(ct);
+		await using var cmd = new SqlCommand(sql, conn) { CommandTimeout = 120 };
+		cmd.Parameters.Add(new SqlParameter("@start", startUtc));
+		cmd.Parameters.Add(new SqlParameter("@end", endUtc));
+		await using var reader = await cmd.ExecuteReaderAsync(ct);
+
+		while (await reader.ReadAsync(ct))
+		{
+			rows.Add(new DatabaseWaitAmountTimeSlice
+			{
+				DatabaseName = database,
+				IntervalStartUtc = DateTime.SpecifyKind(reader.GetDateTime(0), DateTimeKind.Utc),
+				WaitRatio = reader.GetDouble(3),
+			});
+		}
+		return rows;
+	}
 }
