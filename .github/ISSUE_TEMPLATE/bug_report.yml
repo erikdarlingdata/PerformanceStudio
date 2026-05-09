@@ -1,5 +1,5 @@
 name: Bug Report
-description: Report a problem with SQL Performance Studio
+description: Report a problem with Performance Studio
 title: "[BUG] "
 labels: ["bug"]
 
@@ -8,7 +8,7 @@ body:
     id: component
     attributes:
       label: Component
-      description: Which part of SQL Performance Studio is affected?
+      description: Which part of Performance Studio is affected?
       options:
         - Desktop App (Windows)
         - Desktop App (macOS)
@@ -21,7 +21,7 @@ body:
   - type: input
     id: version
     attributes:
-      label: SQL Performance Studio Version
+      label: Performance Studio Version
       description: Check the About dialog or the release you downloaded.
       placeholder: "e.g., 0.7.0"
     validations:

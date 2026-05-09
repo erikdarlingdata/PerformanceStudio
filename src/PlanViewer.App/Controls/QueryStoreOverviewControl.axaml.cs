@@ -170,15 +170,13 @@ public partial class QueryStoreOverviewControl : UserControl
                     _masterConnectionString, _activeDbs, _slicerStartUtc, _slicerEndUtc, _maxDop, ct);
                 _waitSlices = slices;
 
-                if (errors.Count > 0)
-                {
-                    await Dispatcher.UIThread.InvokeAsync(() =>
-                        ShowWaitStatsErrors(errors));
-                }
+                await Dispatcher.UIThread.InvokeAsync(() => UpdateWaitStatsWarning(errors));
             }
             else
             {
                 _waitSlices.Clear();
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                    UpdateWaitStatsWarning(new List<(string Database, string Error)>()));
             }
 
             await Dispatcher.UIThread.InvokeAsync(() =>
@@ -193,31 +191,23 @@ public partial class QueryStoreOverviewControl : UserControl
         }
     }
 
-    private void ShowWaitStatsErrors(List<(string Database, string Error)> errors)
+    private void UpdateWaitStatsWarning(List<(string Database, string Error)> errors)
     {
-        var msg = string.Join("\n", errors.Select(e => $"[{e.Database}] {e.Error}"));
-        var window = new Avalonia.Controls.Window
+        if (errors.Count == 0)
         {
-            Title = "Wait Stats Errors",
-            Width = 600,
-            Height = 300,
-            Content = new ScrollViewer
-            {
-                Content = new TextBlock
-                {
-                    Text = msg,
-                    TextWrapping = Avalonia.Media.TextWrapping.Wrap,
-                    Margin = new Thickness(10),
-                    Foreground = new SolidColorBrush(Color.Parse("#E4E6EB")),
-                    FontSize = 12,
-                }
-            }
-        };
-        var topLevel = TopLevel.GetTopLevel(this);
-        if (topLevel is Avalonia.Controls.Window owner)
-            window.ShowDialog(owner);
-        else
-            window.Show();
+            WaitStatsWarning.IsVisible = false;
+            ToolTip.SetTip(WaitStatsWarning, null);
+            return;
+        }
+
+        var header = errors.Count == 1
+            ? "Wait stats incomplete (1 error):"
+            : $"Wait stats incomplete ({errors.Count} errors):";
+        var msg = string.Join("\n", errors.Select(e => $"[{e.Database}] {e.Error}"));
+
+        ToolTip.SetTip(WaitStatsWarning, $"{header}\n{msg}");
+        ToolTip.SetShowDelay(WaitStatsWarning, 200);
+        WaitStatsWarning.IsVisible = true;
     }
 
     // ── Donut Chart ──────────────────────────────────────────────────────────
@@ -438,15 +428,35 @@ public partial class QueryStoreOverviewControl : UserControl
         _slicerStartUtc = e.StartUtc;
         _slicerEndUtc = e.EndUtc;
 
+        // Don't dispose the previous CTS — the in-flight refresh still holds its token.
+        // Cancel signals the previous run; GC reclaims the source after both runs unwind.
         _cts?.Cancel();
-        _cts?.Dispose();
-        _cts = new CancellationTokenSource();
+        var newCts = new CancellationTokenSource();
+        _cts = newCts;
+
+        ClearRefreshError();
         try
         {
-            await RefreshMetricsAndWaitStatsAsync(_cts.Token);
+            await RefreshMetricsAndWaitStatsAsync(newCts.Token);
         }
         catch (OperationCanceledException) { }
-        catch { /* swallow errors from refresh */ }
+        catch (Exception ex)
+        {
+            ShowRefreshError(ex);
+        }
+    }
+
+    private void ShowRefreshError(Exception ex)
+    {
+        ToolTip.SetTip(RefreshErrorBadge, $"Last refresh failed:\n{ex.Message}");
+        ToolTip.SetShowDelay(RefreshErrorBadge, 200);
+        RefreshErrorBadge.IsVisible = true;
+    }
+
+    private void ClearRefreshError()
+    {
+        RefreshErrorBadge.IsVisible = false;
+        ToolTip.SetTip(RefreshErrorBadge, null);
     }
 
     // ── Wait Stats Chart (stacked by database) ──────────────────────────────
@@ -460,7 +470,7 @@ public partial class QueryStoreOverviewControl : UserControl
             {
                 Text = _supportsWaitStats ? "No wait stats data" : "Wait stats not supported (SQL 2017+ required)",
                 FontSize = 10,
-                Foreground = new SolidColorBrush(Color.Parse("#888888")),
+                Foreground = this.FindResource("ForegroundMutedBrush") as IBrush ?? new SolidColorBrush(Color.Parse("#B0B6C0")),
                 TextWrapping = Avalonia.Media.TextWrapping.Wrap,
             };
             Canvas.SetLeft(msg, 10);

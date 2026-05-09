@@ -1,5 +1,5 @@
 @echo off
-REM Installs the SQL Performance Studio SSMS extension.
+REM Installs the Performance Studio SSMS extension.
 REM For SSMS 22, this must be run from an elevated (admin) command prompt.
 
 setlocal
@@ -14,7 +14,7 @@ if not exist "%VSIX%" (
     exit /b 1
 )
 
-echo Installing SQL Performance Studio SSMS extension...
+echo Installing Performance Studio SSMS extension...
 echo VSIX: %VSIX%
 echo.
 
