@@ -21,4 +21,15 @@
     <Product>Performance Studio</Product>
     <Copyright>Copyright (c) 2026 Erik Darling, Darling Data LLC</Copyright>
   </PropertyGroup>
+
+  <!--
+    Silence AVLN3001 ("XAML resource won't be reachable via runtime loader,
+    no public constructor was found"). All flagged controls take typed
+    constructor dependencies (ServerConnection, ICredentialService, ...) and
+    are instantiated directly in code-behind — they're never loaded via
+    AvaloniaXamlLoader.Load() and the IDE previewer isn't used.
+  -->
+  <PropertyGroup>
+    <NoWarn>$(NoWarn);AVLN3001</NoWarn>
+  </PropertyGroup>
 </Project>
