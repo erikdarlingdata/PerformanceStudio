@@ -5,6 +5,19 @@ on:
     branches: [main]
   pull_request:
     branches: [main, dev]
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE'
+      - '.gitattributes'
+      - '.gitignore'
+      - 'CITATION.cff'
+      - 'llms.txt'
+      - '.github/ISSUE_TEMPLATE/**'
+      - 'docs/**'
+      - 'screenshots/**'
+      - 'server/**'
+      - 'src/PlanViewer.Ssms/**'
+      - 'src/PlanViewer.Ssms.Installer/**'
 
 jobs:
   build-and-test:
