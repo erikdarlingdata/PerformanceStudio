@@ -18,7 +18,7 @@
         <Parent guid="guidCmdSet" id="AnalyzePlanGroupId"/>
         <Icon guid="guidImages" id="bmpAnalyze"/>
         <Strings>
-          <ButtonText>Open in SQL Performance Studio</ButtonText>
+          <ButtonText>Open in Performance Studio</ButtonText>
         </Strings>
       </Button>
     </Buttons>

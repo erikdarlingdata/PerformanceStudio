@@ -6,11 +6,6 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>EDD.ico</ApplicationIcon>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
-    <Version>1.10.0</Version>
-    <Authors>Erik Darling</Authors>
-    <Company>Darling Data LLC</Company>
-    <Product>Performance Studio</Product>
-    <Copyright>Copyright (c) 2026 Erik Darling, Darling Data LLC</Copyright>
   </PropertyGroup>
 
   <ItemGroup>

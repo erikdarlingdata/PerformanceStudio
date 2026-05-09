@@ -5,11 +5,6 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <RootNamespace>PlanViewer.Web</RootNamespace>
-    <Version>1.7.3</Version>
-    <Authors>Erik Darling</Authors>
-    <Company>Darling Data LLC</Company>
-    <Product>SQL Performance Studio</Product>
-    <Copyright>Copyright (c) 2026 Erik Darling, Darling Data LLC</Copyright>
     <PublishTrimmed>true</PublishTrimmed>
   </PropertyGroup>
 

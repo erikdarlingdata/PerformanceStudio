@@ -10,10 +10,18 @@
             <RowDefinition Height="2*"/>
         </Grid.RowDefinitions>
 
-        <!-- Row 0: Progress bar (always visible to reserve space, toggle IsIndeterminate) -->
-        <ProgressBar x:Name="LoadingBar" Grid.Row="0" IsIndeterminate="False"
-                     Height="3" Margin="0"
-                     Foreground="{DynamicResource AccentBrush}"/>
+        <!-- Row 0: Progress bar + refresh-error badge -->
+        <Grid Grid.Row="0">
+            <ProgressBar x:Name="LoadingBar" IsIndeterminate="False"
+                         Height="3" Margin="0"
+                         VerticalAlignment="Top"
+                         Foreground="{DynamicResource AccentBrush}"/>
+            <TextBlock x:Name="RefreshErrorBadge" Text="⚠ refresh failed"
+                       FontSize="10" FontWeight="SemiBold"
+                       Foreground="#F2C94C"
+                       HorizontalAlignment="Right" VerticalAlignment="Top"
+                       Margin="0,2,10,0" IsVisible="False" Cursor="Hand"/>
+        </Grid>
 
         <!-- Row 1: Donut + TimeSlicer + WaitStats -->
         <Grid Grid.Row="1" Margin="10">
@@ -43,9 +51,15 @@
             <Border Grid.Column="2" Background="{DynamicResource BackgroundLightBrush}"
                     CornerRadius="4" Margin="5,0,0,0" ClipToBounds="True">
                 <Grid RowDefinitions="Auto,*">
-                    <TextBlock Grid.Row="0" Text="Wait Stats by Database" FontSize="11" FontWeight="SemiBold"
-                               Foreground="{DynamicResource ForegroundBrush}"
-                               HorizontalAlignment="Center" Margin="0,4,0,0"/>
+                    <Grid Grid.Row="0">
+                        <TextBlock Text="Wait Stats by Database" FontSize="11" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource ForegroundBrush}"
+                                   HorizontalAlignment="Center" Margin="0,4,0,0"/>
+                        <TextBlock x:Name="WaitStatsWarning" Text="⚠" FontSize="12"
+                                   Foreground="#F2C94C"
+                                   HorizontalAlignment="Right" VerticalAlignment="Center"
+                                   Margin="0,4,8,0" IsVisible="False" Cursor="Hand"/>
+                    </Grid>
                     <Border x:Name="WaitStatsBorder" Grid.Row="1" ClipToBounds="True">
                         <Canvas x:Name="WaitStatsCanvas" Background="Transparent"/>
                     </Border>
