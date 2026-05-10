@@ -78,7 +78,7 @@
                 </StackPanel>
                 <StackPanel Spacing="4">
                     <TextBlock Text="Search by" Foreground="{DynamicResource ForegroundBrush}" FontSize="11"/>
-                    <ComboBox x:Name="SearchTypeBox" Width="120" Height="36" FontSize="13"
+                    <ComboBox x:Name="SearchTypeBox" Width="140" Height="36" FontSize="13"
                               SelectedIndex="0" SelectionChanged="SearchType_SelectionChanged">
                         <ComboBoxItem Content="(none)" Tag=""/>
                         <ComboBoxItem Content="Query ID" Tag="query-id"/>
