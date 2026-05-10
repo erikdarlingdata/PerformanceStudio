@@ -18,6 +18,26 @@ public class QueryStoreFilter
     /// Single value → equality predicate; multiple values (e.g. "Aborted","Exception" for "Failed") → IN predicate.
     /// </summary>
     public string[]? ExecutionTypeDescs { get; set; }
+
+    /// <summary>
+    /// Parses a user-friendly execution-type string into the matching SQL execution_type_desc values.
+    /// Accepts (case-insensitive): regular, aborted, exception, failed (= aborted + exception), any.
+    /// Returns null when input is null, empty, or "any". Throws ArgumentException for unknown values.
+    /// </summary>
+    public static string[]? ParseExecutionType(string? input)
+    {
+        if (string.IsNullOrWhiteSpace(input)) return null;
+        return input.Trim().ToLowerInvariant() switch
+        {
+            "any" => null,
+            "regular" => ["Regular"],
+            "aborted" => ["Aborted"],
+            "exception" => ["Exception"],
+            "failed" => ["Aborted", "Exception"],
+            _ => throw new ArgumentException(
+                $"Unknown execution type '{input}'. Valid values: regular, aborted, exception, failed, any."),
+        };
+    }
 }
 
 public class QueryStorePlan
