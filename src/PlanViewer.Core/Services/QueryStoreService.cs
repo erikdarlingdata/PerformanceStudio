@@ -179,8 +179,8 @@ FROM sys.database_query_store_options;";
         //          into #top_plans. Still no nvarchar(max) columns.
         //
         // Phase 4: Final SELECT — join only the TOP N winners to query_text, plan
-        //          XML, and query metadata. Uses OUTER APPLY + TRY_CONVERT for
-        //          safe plan XML retrieval.
+        //          XML, and query metadata. query_plan is nvarchar(max) on the
+        //          catalog view, so it's referenced directly without conversion.
         //
         // OPTION (RECOMPILE) on aggregation phases prevents parameter sniffing on
         // date range parameters producing bad plans for different time windows.
@@ -299,7 +299,7 @@ SELECT
     tp.query_id,
     tp.plan_id,
     qt.query_sql_text,
-    TRY_CONVERT(nvarchar(max), p.query_plan) AS query_plan,
+    p.query_plan,
     tp.avg_cpu_us,
     tp.avg_duration_us,
     tp.avg_reads,
@@ -980,7 +980,7 @@ r.plan_hash,
 r.query_id, 
 r.plan_id, 
 qt.query_sql_text, 
-TRY_CONVERT(nvarchar(max), p.query_plan) AS plan_xml,
+p.query_plan AS plan_xml,
 r.module_name, 
 r.total_cpu_us, 
 r.total_duration_us, 
@@ -1283,7 +1283,7 @@ SELECT
     r.query_id, 
     r.plan_id, 
     qt.query_sql_text, 
-    TRY_CONVERT(nvarchar(max), p.query_plan) AS plan_xml,
+    p.query_plan AS plan_xml,
     r.total_cpu_us, 
     r.total_duration_us, 
     r.total_reads, 
