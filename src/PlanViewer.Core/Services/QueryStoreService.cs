@@ -139,10 +139,14 @@ FROM sys.database_query_store_options;";
             ? "    JOIN sys.query_store_query AS q ON p.query_id = q.query_id\n"
             : "";
         var phase2ExecutionTypeClause = "";
-        if (!string.IsNullOrWhiteSpace(filter?.ExecutionTypeDesc))
+        if (filter?.ExecutionTypeDescs?.Length > 0)
         {
-            phase2ExecutionTypeClause = "\nAND rs.execution_type_desc = @executionTypeDesc";
-            parameters.Add(new SqlParameter("@executionTypeDesc", filter.ExecutionTypeDesc.Trim()));
+            var etParamNames = filter.ExecutionTypeDescs
+                .Select((_, i) => $"@executionType{i}")
+                .ToList();
+            phase2ExecutionTypeClause = $"\nAND rs.execution_type_desc IN ({string.Join(", ", etParamNames)})";
+            for (var i = 0; i < filter.ExecutionTypeDescs.Length; i++)
+                parameters.Add(new SqlParameter($"@executionType{i}", filter.ExecutionTypeDescs[i]));
         }
 
         // Time-range filter: always filter on interval start_time (indexed).
@@ -219,7 +223,12 @@ SELECT
     SUM(rs.avg_query_max_used_memory * rs.count_executions),
     SUM(rs.count_executions),
     MAX(rs.last_execution_time),
-    MAX(rs.execution_type_desc)
+    -- Pick execution_type_desc from the most-recently-executed interval to avoid
+    -- alphabetical bias: MAX would choose 'Regular' over 'Aborted'.
+    RTRIM(CAST(SUBSTRING(MAX(
+        CONVERT(char(27), CAST(rs.last_execution_time AS datetime2(7)), 121)
+        + CAST(ISNULL(rs.execution_type_desc, '') AS char(60))
+    ), 28, 60) AS nvarchar(60)))
 FROM sys.query_store_runtime_stats AS rs
 WHERE EXISTS
 (
@@ -449,6 +458,7 @@ ORDER BY rsi.start_time, p.plan_id;";
                 MinDop = (int)reader.GetInt64(16),
                 MaxDop = (int)reader.GetInt64(17),
                 LastExecutionUtc = reader.IsDBNull(18) ? null : ((DateTimeOffset)reader.GetValue(18)).UtcDateTime,
+                ExecutionTypeDesc = reader.IsDBNull(19) ? "" : reader.GetString(19),
             });
         }
 
@@ -1022,10 +1032,14 @@ ORDER BY bucket_hour, wait_ratio DESC;";
         }
         var filterSql = filterClauses.Count > 0 ? "\n" + string.Join("\n", filterClauses) : "";
         var phase2ExecutionTypeClause = "";
-        if (!string.IsNullOrWhiteSpace(filter?.ExecutionTypeDesc))
+        if (filter?.ExecutionTypeDescs?.Length > 0)
         {
-            phase2ExecutionTypeClause = "\nAND rs.execution_type_desc = @executionTypeDesc";
-            parameters.Add(new SqlParameter("@executionTypeDesc", filter.ExecutionTypeDesc.Trim()));
+            var etParamNames = filter.ExecutionTypeDescs
+                .Select((_, i) => $"@executionType{i}")
+                .ToList();
+            phase2ExecutionTypeClause = $"\nAND rs.execution_type_desc IN ({string.Join(", ", etParamNames)})";
+            for (var i = 0; i < filter.ExecutionTypeDescs.Length; i++)
+                parameters.Add(new SqlParameter($"@executionType{i}", filter.ExecutionTypeDescs[i]));
         }
 
         var sql = $@"
@@ -1051,7 +1065,8 @@ CREATE TABLE #plan_stats (
     total_physical_reads float NOT NULL,
     total_memory_pages float NOT NULL,
     total_executions bigint NOT NULL,
-    last_execution_time datetimeoffset NOT NULL
+    last_execution_time datetimeoffset NOT NULL,
+    execution_type_desc nvarchar(60) NOT NULL
 );
 INSERT INTO #plan_stats
 SELECT
@@ -1063,7 +1078,11 @@ SELECT
     SUM(rs.avg_physical_io_reads * rs.count_executions),
     SUM(rs.avg_query_max_used_memory * rs.count_executions),
     SUM(rs.count_executions),
-    MAX(rs.last_execution_time)
+    MAX(rs.last_execution_time),
+    RTRIM(CAST(SUBSTRING(MAX(
+        CONVERT(char(27), CAST(rs.last_execution_time AS datetime2(7)), 121)
+        + CAST(ISNULL(rs.execution_type_desc, '') AS char(60))
+    ), 28, 60) AS nvarchar(60)))
 FROM sys.query_store_runtime_stats AS rs
 WHERE EXISTS (SELECT 1 FROM #intervals AS i WHERE i.runtime_stats_interval_id = rs.runtime_stats_interval_id){phase2ExecutionTypeClause}
 GROUP BY rs.plan_id
@@ -1103,6 +1122,7 @@ DROP TABLE IF EXISTS #plan_hash_rows;
         SUM(ps.total_memory_pages) AS total_memory_pages,
         SUM(ps.total_executions) AS total_executions,
         MAX(ps.last_execution_time) AS last_execution_time,
+        MAX(ps.execution_type_desc) AS execution_type_desc,
         ROW_NUMBER() OVER (PARTITION BY q.query_hash ORDER BY SUM(ps.{metricCol}) DESC) AS rnum
     FROM #plan_stats ps
     JOIN sys.query_store_plan p ON ps.plan_id = p.plan_id
@@ -1121,7 +1141,8 @@ SELECT query_hash, plan_hash, module_name,
        CAST(total_physical_reads AS bigint) AS total_physical_reads,
        CAST(total_memory_pages AS bigint) AS total_memory_pages,
        total_executions,
-       last_execution_time
+       last_execution_time,
+       execution_type_desc
 INTO #plan_hash_rows
 FROM ph WHERE rnum <= 5;
 
@@ -1144,6 +1165,7 @@ FROM ph WHERE rnum <= 5;
         CAST(ps.total_memory_pages AS bigint) AS total_memory_pages,
         ps.total_executions,
         ps.last_execution_time,
+        ps.execution_type_desc,
         ROW_NUMBER() OVER (PARTITION BY q.query_hash, p.query_plan_hash ORDER BY ps.{metricCol} DESC) AS rn_top,
         ROW_NUMBER() OVER (PARTITION BY q.query_hash, p.query_plan_hash ORDER BY ps.{metricCol} ASC) AS rn_bottom
     FROM #plan_stats ps
@@ -1175,7 +1197,8 @@ r.total_physical_reads,
 r.total_memory_pages, 
 r.total_executions, 
 r.last_execution_time,
-CASE WHEN r.rn_top = 1 THEN 1 ELSE 0 END AS is_top
+CASE WHEN r.rn_top = 1 THEN 1 ELSE 0 END AS is_top,
+r.execution_type_desc
 FROM #ranked_light r
 JOIN sys.query_store_query_text qt ON r.query_text_id = qt.query_text_id
 JOIN sys.query_store_plan p ON r.plan_id = p.plan_id;
@@ -1212,6 +1235,7 @@ SELECT * FROM #plan_hash_rows ORDER BY query_hash, total_executions DESC;
                 CountExecutions = reader.GetInt64(13),
                 LastExecutedUtc = ((DateTimeOffset)reader.GetValue(14)).UtcDateTime,
                 IsTopRepresentative = reader.GetInt32(15) == 1,
+                ExecutionTypeDesc = reader.IsDBNull(16) ? "" : reader.GetString(16),
             });
         }
 
@@ -1233,14 +1257,9 @@ SELECT * FROM #plan_hash_rows ORDER BY query_hash, total_executions DESC;
                     TotalMemoryGrantPages = reader.GetInt64(8),
                     CountExecutions = reader.GetInt64(9),
                     LastExecutedUtc = ((DateTimeOffset)reader.GetValue(10)).UtcDateTime,
+                    ExecutionTypeDesc = reader.IsDBNull(11) ? "" : reader.GetString(11),
                 });
             }
-        }
-
-        if (!string.IsNullOrWhiteSpace(filter?.ExecutionTypeDesc))
-        {
-            foreach (var r in result.LeafRows) r.ExecutionTypeDesc = filter.ExecutionTypeDesc!;
-            foreach (var r in result.IntermediateRows) r.ExecutionTypeDesc = filter.ExecutionTypeDesc!;
         }
 
         return result;
@@ -1293,10 +1312,14 @@ SELECT * FROM #plan_hash_rows ORDER BY query_hash, total_executions DESC;
         }
         var filterSql = filterClauses.Count > 0 ? "\n" + string.Join("\n", filterClauses) : "";
         var phase2ExecutionTypeClause = "";
-        if (!string.IsNullOrWhiteSpace(filter?.ExecutionTypeDesc))
+        if (filter?.ExecutionTypeDescs?.Length > 0)
         {
-            phase2ExecutionTypeClause = "\nAND rs.execution_type_desc = @executionTypeDesc";
-            parameters.Add(new SqlParameter("@executionTypeDesc", filter.ExecutionTypeDesc.Trim()));
+            var etParamNames = filter.ExecutionTypeDescs
+                .Select((_, i) => $"@executionType{i}")
+                .ToList();
+            phase2ExecutionTypeClause = $"\nAND rs.execution_type_desc IN ({string.Join(", ", etParamNames)})";
+            for (var i = 0; i < filter.ExecutionTypeDescs.Length; i++)
+                parameters.Add(new SqlParameter($"@executionType{i}", filter.ExecutionTypeDescs[i]));
         }
 
         var sql = $@"
@@ -1322,7 +1345,8 @@ CREATE TABLE #plan_stats (
     total_physical_reads float NOT NULL,
     total_memory_pages float NOT NULL,
     total_executions bigint NOT NULL,
-    last_execution_time datetimeoffset NOT NULL
+    last_execution_time datetimeoffset NOT NULL,
+    execution_type_desc nvarchar(60) NOT NULL
 );
 INSERT INTO #plan_stats
 SELECT
@@ -1334,7 +1358,11 @@ SELECT
     SUM(rs.avg_physical_io_reads * rs.count_executions),
     SUM(rs.avg_query_max_used_memory * rs.count_executions),
     SUM(rs.count_executions),
-    MAX(rs.last_execution_time)
+    MAX(rs.last_execution_time),
+    RTRIM(CAST(SUBSTRING(MAX(
+        CONVERT(char(27), CAST(rs.last_execution_time AS datetime2(7)), 121)
+        + CAST(ISNULL(rs.execution_type_desc, '') AS char(60))
+    ), 28, 60) AS nvarchar(60)))
 FROM sys.query_store_runtime_stats AS rs
 WHERE EXISTS (SELECT 1 FROM #intervals AS i WHERE i.runtime_stats_interval_id = rs.runtime_stats_interval_id){phase2ExecutionTypeClause}
 GROUP BY rs.plan_id
@@ -1377,6 +1405,7 @@ DROP TABLE IF EXISTS #qhash_rows;
         SUM(ps.total_memory_pages) AS total_memory_pages,
         SUM(ps.total_executions) AS total_executions,
         MAX(ps.last_execution_time) AS last_execution_time,
+        MAX(ps.execution_type_desc) AS execution_type_desc,
         ROW_NUMBER() OVER (PARTITION BY
             CASE WHEN q.object_id <> 0
                  THEN OBJECT_SCHEMA_NAME(q.object_id) + N'.' + OBJECT_NAME(q.object_id)
@@ -1402,7 +1431,8 @@ SELECT module_name, query_hash,
        CAST(total_physical_reads AS bigint) AS total_physical_reads,
        CAST(total_memory_pages AS bigint) AS total_memory_pages,
        total_executions,
-       last_execution_time
+       last_execution_time,
+       execution_type_desc
 INTO #qhash_rows
 FROM qh WHERE rnum <= 5;
 
@@ -1425,6 +1455,7 @@ FROM qh WHERE rnum <= 5;
         CAST(ps.total_memory_pages AS bigint) AS total_memory_pages,
         ps.total_executions,
         ps.last_execution_time,
+        ps.execution_type_desc,
         ROW_NUMBER() OVER (PARTITION BY
             CASE WHEN q.object_id <> 0
                  THEN OBJECT_SCHEMA_NAME(q.object_id) + N'.' + OBJECT_NAME(q.object_id)
@@ -1468,7 +1499,8 @@ SELECT
     r.total_memory_pages, 
     r.total_executions, 
     r.last_execution_time,
-    CASE WHEN r.rn_top = 1 THEN 1 ELSE 0 END AS is_top
+    CASE WHEN r.rn_top = 1 THEN 1 ELSE 0 END AS is_top,
+    r.execution_type_desc
 FROM #ranked_light r
 JOIN sys.query_store_query_text qt ON r.query_text_id = qt.query_text_id
 JOIN sys.query_store_plan p ON r.plan_id = p.plan_id;
@@ -1505,6 +1537,7 @@ SELECT * FROM #qhash_rows ORDER BY module_name, total_executions DESC;
                 CountExecutions = reader.GetInt64(13),
                 LastExecutedUtc = ((DateTimeOffset)reader.GetValue(14)).UtcDateTime,
                 IsTopRepresentative = reader.GetInt32(15) == 1,
+                ExecutionTypeDesc = reader.IsDBNull(16) ? "" : reader.GetString(16),
             });
         }
 
@@ -1525,14 +1558,9 @@ SELECT * FROM #qhash_rows ORDER BY module_name, total_executions DESC;
                     TotalMemoryGrantPages = reader.GetInt64(7),
                     CountExecutions = reader.GetInt64(8),
                     LastExecutedUtc = ((DateTimeOffset)reader.GetValue(9)).UtcDateTime,
+                    ExecutionTypeDesc = reader.IsDBNull(10) ? "" : reader.GetString(10),
                 });
             }
-        }
-
-        if (!string.IsNullOrWhiteSpace(filter?.ExecutionTypeDesc))
-        {
-            foreach (var r in result.LeafRows) r.ExecutionTypeDesc = filter.ExecutionTypeDesc!;
-            foreach (var r in result.IntermediateRows) r.ExecutionTypeDesc = filter.ExecutionTypeDesc!;
         }
 
         return result;

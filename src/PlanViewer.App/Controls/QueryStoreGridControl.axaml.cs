@@ -603,6 +603,7 @@ public partial class QueryStoreGridControl : UserControl
             AvgPhysicalIoReads = (double)totalPhysReads / safeExecs,
             AvgMemoryGrantPages = (double)totalMem / safeExecs,
             LastExecutedUtc = lastExec,
+            ExecutionTypeDesc = rows.FirstOrDefault()?.ExecutionTypeDesc ?? "",
         };
     }
 
@@ -626,8 +627,14 @@ public partial class QueryStoreGridControl : UserControl
 
         if (searchType == "execution-type")
         {
-            var execType = (ExecutionTypeBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "Regular";
-            return new QueryStoreFilter { ExecutionTypeDesc = execType };
+            var tag = (ExecutionTypeBox.SelectedItem as ComboBoxItem)?.Tag?.ToString();
+            // "any" tag (first item) means no filter
+            if (string.IsNullOrEmpty(tag) || tag == "any")
+                return null;
+            // "Failed" bundles Aborted + Exception into an IN predicate
+            if (tag == "Failed")
+                return new QueryStoreFilter { ExecutionTypeDescs = ["Aborted", "Exception"] };
+            return new QueryStoreFilter { ExecutionTypeDescs = [tag] };
         }
 
         var searchValue = SearchValueBox.Text?.Trim();
@@ -901,6 +908,7 @@ public partial class QueryStoreGridControl : UserControl
     {
         SearchTypeBox.SelectedIndex = 0;
         SearchValueBox.Text = "";
+        // Resetting SearchTypeBox triggers SearchType_SelectionChanged which hides ExecutionTypePanel.
         ExecutionTypeBox.SelectedIndex = 0;
     }
 

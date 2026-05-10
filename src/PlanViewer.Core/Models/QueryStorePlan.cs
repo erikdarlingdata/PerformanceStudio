@@ -13,7 +13,11 @@ public class QueryStoreFilter
     public string? QueryHash { get; set; }
     public string? QueryPlanHash { get; set; }
     public string? ModuleName { get; set; }
-    public string? ExecutionTypeDesc { get; set; }
+    /// <summary>
+    /// One or more execution_type_desc values to filter by.
+    /// Single value → equality predicate; multiple values (e.g. "Aborted","Exception" for "Failed") → IN predicate.
+    /// </summary>
+    public string[]? ExecutionTypeDescs { get; set; }
 }
 
 public class QueryStorePlan
