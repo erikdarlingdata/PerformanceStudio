@@ -27,6 +27,7 @@ public class QueryStoreHistoryRow
 	public int MinDop { get; set; }
     public int MaxDop { get; set; }
     public DateTime? LastExecutionUtc { get; set; }
+    public string ExecutionTypeDesc { get; set; } = "";
 
     // Display-formatted properties (2 decimal places)
     public string AvgDurationMsDisplay => AvgDurationMs.ToString("N2");

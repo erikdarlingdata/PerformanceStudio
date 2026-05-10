@@ -147,6 +147,7 @@
                 <DataGridTextColumn Header="Min DOP" Binding="{ReflectionBinding MinDop}" Width="70"/>
                 <DataGridTextColumn Header="Max DOP" Binding="{ReflectionBinding MaxDop}" Width="70"/>
                 <DataGridTextColumn Header="Last Execution" Binding="{ReflectionBinding LastExecutionLocal}" Width="140"/>
+                <DataGridTextColumn Header="Execution Type" Binding="{ReflectionBinding ExecutionTypeDesc}" Width="110"/>
             </DataGrid.Columns>
         </DataGrid>
 
