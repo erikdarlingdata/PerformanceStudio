@@ -848,6 +848,16 @@ public partial class MainWindow : Window
         closeBtn.Tag = tab;
         closeBtn.Click += CloseTab_Click;
 
+        header.PointerPressed += (_, e) =>
+        {
+            if (e.GetCurrentPoint(null).Properties.PointerUpdateKind == PointerUpdateKind.MiddleButtonPressed)
+            {
+                MainTabControl.Items.Remove(tab);
+                UpdateEmptyOverlay();
+                e.Handled = true;
+            }
+        };
+
         // Right-click context menu
         var copyPathItem = new MenuItem { Header = "Copy Path", Tag = tab };
         // Only visible when tab content has a file path
