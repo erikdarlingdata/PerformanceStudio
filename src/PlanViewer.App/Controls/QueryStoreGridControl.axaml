@@ -96,7 +96,7 @@
                              KeyDown="SearchValue_KeyDown"/>
                 </StackPanel>
                 <StackPanel x:Name="ExecutionTypePanel" Spacing="4" IsVisible="False">
-                    <TextBlock Text=" " FontSize="11"/>
+                    <TextBlock Text="Execution Type" Foreground="{DynamicResource ForegroundBrush}" FontSize="11"/>
                     <ComboBox x:Name="ExecutionTypeBox" Width="120" Height="36" FontSize="13"
                               SelectedIndex="0">
                         <ComboBoxItem Content="Regular" Tag="Regular"/>
