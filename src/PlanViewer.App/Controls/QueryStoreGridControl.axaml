@@ -360,6 +360,7 @@
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
+                <DataGridTextColumn Header="Execution Type" Binding="{ReflectionBinding ExecutionTypeDesc}" SortMemberPath="ExecutionTypeDesc" Width="110"/>
             </DataGrid.Columns>
         </DataGrid>
         <!-- Loading overlay -->

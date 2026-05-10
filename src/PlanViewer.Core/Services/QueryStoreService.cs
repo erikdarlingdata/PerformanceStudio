@@ -205,7 +205,8 @@ CREATE TABLE #plan_stats (
     total_physical_reads float NOT NULL,
     total_memory_pages float NOT NULL,
     total_executions bigint NOT NULL,
-    last_execution_time datetimeoffset NOT NULL
+    last_execution_time datetimeoffset NOT NULL,
+    execution_type_desc nvarchar(60) NOT NULL
 );
 INSERT INTO #plan_stats
 SELECT
@@ -217,7 +218,8 @@ SELECT
     SUM(rs.avg_physical_io_reads * rs.count_executions),
     SUM(rs.avg_query_max_used_memory * rs.count_executions),
     SUM(rs.count_executions),
-    MAX(rs.last_execution_time)
+    MAX(rs.last_execution_time),
+    MAX(rs.execution_type_desc)
 FROM sys.query_store_runtime_stats AS rs
 WHERE EXISTS
 (
@@ -242,6 +244,7 @@ WITH ranked AS (
         ps.total_memory_pages,
         ps.total_executions,
         ps.last_execution_time,
+        ps.execution_type_desc,
         CASE WHEN ps.total_executions > 0
              THEN ps.total_cpu_us / ps.total_executions ELSE 0 END AS avg_cpu_us,
         CASE WHEN ps.total_executions > 0
@@ -275,7 +278,8 @@ SELECT TOP ({topN})
     CAST(r.total_writes AS bigint) AS total_writes,
     CAST(r.total_physical_reads AS bigint) AS total_physical_reads,
     CAST(r.total_memory_pages AS bigint) AS total_memory_pages,
-    r.last_execution_time
+    r.last_execution_time,
+    r.execution_type_desc
 INTO #top_plans
 FROM ranked AS r
 WHERE 1 = 1 {rnClause}
@@ -307,7 +311,8 @@ SELECT
         WHEN q.object_id <> 0
         THEN OBJECT_SCHEMA_NAME(q.object_id) + N'.' + OBJECT_NAME(q.object_id)
         ELSE N''
-    END
+    END,
+    tp.execution_type_desc
 FROM #top_plans AS tp
 JOIN sys.query_store_plan AS p ON tp.plan_id = p.plan_id
 JOIN sys.query_store_query AS q ON p.query_id = q.query_id
@@ -352,6 +357,7 @@ ORDER BY {outerOrder} DESC;";
                 QueryHash = reader.IsDBNull(18) ? "" : reader.GetString(18),
                 QueryPlanHash = reader.IsDBNull(19) ? "" : reader.GetString(19),
                 ModuleName = reader.IsDBNull(20) ? "" : reader.GetString(20),
+                ExecutionTypeDesc = reader.IsDBNull(21) ? "" : reader.GetString(21),
             });
         }
 
@@ -398,7 +404,8 @@ SELECT
     SUM(rs.avg_physical_io_reads * rs.count_executions),
     MIN(rs.min_dop),
     MAX(rs.max_dop),
-    MAX(rs.last_execution_time)
+    MAX(rs.last_execution_time),
+    MAX(rs.execution_type_desc)
 FROM sys.query_store_runtime_stats rs
 JOIN sys.query_store_runtime_stats_interval rsi
     ON rs.runtime_stats_interval_id = rsi.runtime_stats_interval_id
@@ -510,7 +517,8 @@ SELECT
     SUM(rs.avg_physical_io_reads * rs.count_executions),
     MIN(rs.min_dop),
     MAX(rs.max_dop),
-    MAX(rs.last_execution_time)
+    MAX(rs.last_execution_time),
+    MAX(rs.execution_type_desc)
 FROM sys.query_store_runtime_stats rs
 JOIN sys.query_store_runtime_stats_interval rsi
     ON rs.runtime_stats_interval_id = rsi.runtime_stats_interval_id
@@ -555,6 +563,7 @@ ORDER BY rsi.start_time, p.plan_id;";
                 MinDop = (int)reader.GetInt64(16),
                 MaxDop = (int)reader.GetInt64(17),
                 LastExecutionUtc = reader.IsDBNull(18) ? null : ((DateTimeOffset)reader.GetValue(18)).UtcDateTime,
+                ExecutionTypeDesc = reader.IsDBNull(19) ? "" : reader.GetString(19),
             });
         }
 
@@ -625,7 +634,8 @@ SELECT
     MIN(rs.min_dop),
     MAX(rs.max_dop),
     MAX(rs.last_execution_time),
-    SUM(rs.avg_query_max_used_memory * rs.count_executions)
+    SUM(rs.avg_query_max_used_memory * rs.count_executions),
+    MAX(rs.execution_type_desc)
 FROM sys.query_store_runtime_stats rs
 JOIN sys.query_store_runtime_stats_interval rsi
     ON rs.runtime_stats_interval_id = rsi.runtime_stats_interval_id
@@ -670,6 +680,7 @@ ORDER BY rsi.start_time, p.query_plan_hash;";
                 MaxDop = (int)reader.GetInt64(16),
                 LastExecutionUtc = reader.IsDBNull(17) ? null : ((DateTimeOffset)reader.GetValue(17)).UtcDateTime,
                 TotalMemoryMb = reader.GetDouble(18),
+                ExecutionTypeDesc = reader.IsDBNull(19) ? "" : reader.GetString(19),
 			});
         }
 
@@ -1226,6 +1237,12 @@ SELECT * FROM #plan_hash_rows ORDER BY query_hash, total_executions DESC;
             }
         }
 
+        if (!string.IsNullOrWhiteSpace(filter?.ExecutionTypeDesc))
+        {
+            foreach (var r in result.LeafRows) r.ExecutionTypeDesc = filter.ExecutionTypeDesc!;
+            foreach (var r in result.IntermediateRows) r.ExecutionTypeDesc = filter.ExecutionTypeDesc!;
+        }
+
         return result;
     }
 
@@ -1510,6 +1527,12 @@ SELECT * FROM #qhash_rows ORDER BY module_name, total_executions DESC;
                     LastExecutedUtc = ((DateTimeOffset)reader.GetValue(9)).UtcDateTime,
                 });
             }
+        }
+
+        if (!string.IsNullOrWhiteSpace(filter?.ExecutionTypeDesc))
+        {
+            foreach (var r in result.LeafRows) r.ExecutionTypeDesc = filter.ExecutionTypeDesc!;
+            foreach (var r in result.IntermediateRows) r.ExecutionTypeDesc = filter.ExecutionTypeDesc!;
         }
 
         return result;

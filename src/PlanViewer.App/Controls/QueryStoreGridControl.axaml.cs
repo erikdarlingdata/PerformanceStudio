@@ -556,6 +556,7 @@ public partial class QueryStoreGridControl : UserControl
             QueryText = row.QueryText,
             PlanXml = row.PlanXml,
             CountExecutions = row.CountExecutions,
+            ExecutionTypeDesc = row.ExecutionTypeDesc,
             TotalCpuTimeUs = row.TotalCpuTimeUs,
             TotalDurationUs = row.TotalDurationUs,
             TotalLogicalIoReads = row.TotalLogicalIoReads,
@@ -1886,6 +1887,7 @@ public class QueryStoreRow : INotifyPropertyChanged
     public string QueryHash => Plan.QueryHash;
     public string QueryPlanHash => Plan.QueryPlanHash;
     public string ModuleName => Plan.ModuleName;
+    public string ExecutionTypeDesc => Plan.ExecutionTypeDesc;
 
     public string ExecsDisplay => Plan.CountExecutions.ToString("N0");
     public string TotalCpuDisplay => (Plan.TotalCpuTimeUs / 1000.0).ToString("N0");

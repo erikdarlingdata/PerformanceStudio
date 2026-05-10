@@ -23,6 +23,7 @@ public class QueryStorePlan
     public string QueryHash { get; set; } = "";
     public string QueryPlanHash { get; set; } = "";
     public string ModuleName { get; set; } = "";
+    public string ExecutionTypeDesc { get; set; } = "";
     public string QueryText { get; set; } = "";
     public string PlanXml { get; set; } = "";
 
