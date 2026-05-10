@@ -133,6 +133,7 @@
                   Background="{DynamicResource BackgroundDarkBrush}"
                   BorderThickness="0"
                   Sorting="ResultsGrid_Sorting"
+                  DoubleTapped="ResultsGrid_DoubleTapped"
                   ScrollViewer.HorizontalScrollBarVisibility="Auto">
             <DataGrid.ContextMenu>
                 <ContextMenu Opening="ContextMenu_Opening">

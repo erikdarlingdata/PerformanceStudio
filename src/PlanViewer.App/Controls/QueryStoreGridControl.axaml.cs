@@ -5,9 +5,12 @@ using System.ComponentModel;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
+using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.VisualTree;
 using Avalonia.Media;
 using PlanViewer.Core.Interfaces;
 using PlanViewer.Core.Models;
@@ -758,6 +761,21 @@ public partial class QueryStoreGridControl : UserControl
     {
         if (sender is not Button btn) return;
         if (btn.DataContext is not QueryStoreRow row) return;
+        ToggleRowExpansion(row);
+    }
+
+    private void ResultsGrid_DoubleTapped(object? sender, TappedEventArgs e)
+    {
+        if (e.Source is not Visual v) return;
+        if (v.FindAncestorOfType<Button>() != null) return;
+        if (v.FindAncestorOfType<DataGridRow>() == null) return;
+        if (ResultsGrid.SelectedItem is not QueryStoreRow row) return;
+        if (!row.HasChildren) return;
+        ToggleRowExpansion(row);
+    }
+
+    private void ToggleRowExpansion(QueryStoreRow row)
+    {
         if (!row.HasChildren) return;
 
         row.IsExpanded = !row.IsExpanded;

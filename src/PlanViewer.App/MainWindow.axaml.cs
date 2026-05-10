@@ -92,6 +92,23 @@ public partial class MainWindow : Window
                             e.Handled = true;
                         }
                         break;
+                    case Key.Tab:
+                        var tabCount = MainTabControl.Items.Count;
+                        if (tabCount > 1)
+                        {
+                            MainTabControl.SelectedIndex = (MainTabControl.SelectedIndex + 1) % tabCount;
+                            e.Handled = true;
+                        }
+                        break;
+                }
+            }
+            else if (e.KeyModifiers == (KeyModifiers.Control | KeyModifiers.Shift) && e.Key == Key.Tab)
+            {
+                var tabCount = MainTabControl.Items.Count;
+                if (tabCount > 1)
+                {
+                    MainTabControl.SelectedIndex = (MainTabControl.SelectedIndex - 1 + tabCount) % tabCount;
+                    e.Handled = true;
                 }
             }
         }, RoutingStrategies.Tunnel);
@@ -824,12 +841,23 @@ public partial class MainWindow : Window
         var header = new StackPanel
         {
             Orientation = Orientation.Horizontal,
+            Background = Brushes.Transparent,
             Children = { headerText, closeBtn }
         };
 
         var tab = new TabItem { Header = header, Content = content };
         closeBtn.Tag = tab;
         closeBtn.Click += CloseTab_Click;
+
+        header.PointerPressed += (_, e) =>
+        {
+            if (e.GetCurrentPoint(null).Properties.PointerUpdateKind == PointerUpdateKind.MiddleButtonPressed)
+            {
+                MainTabControl.Items.Remove(tab);
+                UpdateEmptyOverlay();
+                e.Handled = true;
+            }
+        };
 
         // Right-click context menu
         var copyPathItem = new MenuItem { Header = "Copy Path", Tag = tab };
