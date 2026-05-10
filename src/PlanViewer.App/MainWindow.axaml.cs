@@ -92,6 +92,23 @@ public partial class MainWindow : Window
                             e.Handled = true;
                         }
                         break;
+                    case Key.Tab:
+                        var tabCount = MainTabControl.Items.Count;
+                        if (tabCount > 1)
+                        {
+                            MainTabControl.SelectedIndex = (MainTabControl.SelectedIndex + 1) % tabCount;
+                            e.Handled = true;
+                        }
+                        break;
+                }
+            }
+            else if (e.KeyModifiers == (KeyModifiers.Control | KeyModifiers.Shift) && e.Key == Key.Tab)
+            {
+                var tabCount = MainTabControl.Items.Count;
+                if (tabCount > 1)
+                {
+                    MainTabControl.SelectedIndex = (MainTabControl.SelectedIndex - 1 + tabCount) % tabCount;
+                    e.Handled = true;
                 }
             }
         }, RoutingStrategies.Tunnel);
