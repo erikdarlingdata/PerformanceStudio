@@ -138,6 +138,12 @@ FROM sys.database_query_store_options;";
         var phase3QueryJoin = needsQueryJoin
             ? "    JOIN sys.query_store_query AS q ON p.query_id = q.query_id\n"
             : "";
+        var phase2ExecutionTypeClause = "";
+        if (!string.IsNullOrWhiteSpace(filter?.ExecutionTypeDesc))
+        {
+            phase2ExecutionTypeClause = "\nAND rs.execution_type_desc = @executionTypeDesc";
+            parameters.Add(new SqlParameter("@executionTypeDesc", filter.ExecutionTypeDesc.Trim()));
+        }
 
         // Time-range filter: always filter on interval start_time (indexed).
         // The hoursBack fallback also uses interval start_time instead of
@@ -218,7 +224,7 @@ WHERE EXISTS
     SELECT 1
     FROM #intervals AS i
     WHERE i.runtime_stats_interval_id = rs.runtime_stats_interval_id
-)
+){phase2ExecutionTypeClause}
 GROUP BY rs.plan_id
 OPTION (RECOMPILE);
 
@@ -1004,6 +1010,12 @@ ORDER BY bucket_hour, wait_ratio DESC;";
             parameters.Add(new SqlParameter("@filterModule", moduleVal));
         }
         var filterSql = filterClauses.Count > 0 ? "\n" + string.Join("\n", filterClauses) : "";
+        var phase2ExecutionTypeClause = "";
+        if (!string.IsNullOrWhiteSpace(filter?.ExecutionTypeDesc))
+        {
+            phase2ExecutionTypeClause = "\nAND rs.execution_type_desc = @executionTypeDesc";
+            parameters.Add(new SqlParameter("@executionTypeDesc", filter.ExecutionTypeDesc.Trim()));
+        }
 
         var sql = $@"
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
@@ -1042,7 +1054,7 @@ SELECT
     SUM(rs.count_executions),
     MAX(rs.last_execution_time)
 FROM sys.query_store_runtime_stats AS rs
-WHERE EXISTS (SELECT 1 FROM #intervals AS i WHERE i.runtime_stats_interval_id = rs.runtime_stats_interval_id)
+WHERE EXISTS (SELECT 1 FROM #intervals AS i WHERE i.runtime_stats_interval_id = rs.runtime_stats_interval_id){phase2ExecutionTypeClause}
 GROUP BY rs.plan_id
 OPTION (RECOMPILE);
 
@@ -1263,6 +1275,12 @@ SELECT * FROM #plan_hash_rows ORDER BY query_hash, total_executions DESC;
             parameters.Add(new SqlParameter("@filterQueryHash", filter.QueryHash.Trim()));
         }
         var filterSql = filterClauses.Count > 0 ? "\n" + string.Join("\n", filterClauses) : "";
+        var phase2ExecutionTypeClause = "";
+        if (!string.IsNullOrWhiteSpace(filter?.ExecutionTypeDesc))
+        {
+            phase2ExecutionTypeClause = "\nAND rs.execution_type_desc = @executionTypeDesc";
+            parameters.Add(new SqlParameter("@executionTypeDesc", filter.ExecutionTypeDesc.Trim()));
+        }
 
         var sql = $@"
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
@@ -1301,7 +1319,7 @@ SELECT
     SUM(rs.count_executions),
     MAX(rs.last_execution_time)
 FROM sys.query_store_runtime_stats AS rs
-WHERE EXISTS (SELECT 1 FROM #intervals AS i WHERE i.runtime_stats_interval_id = rs.runtime_stats_interval_id)
+WHERE EXISTS (SELECT 1 FROM #intervals AS i WHERE i.runtime_stats_interval_id = rs.runtime_stats_interval_id){phase2ExecutionTypeClause}
 GROUP BY rs.plan_id
 OPTION (RECOMPILE);
 

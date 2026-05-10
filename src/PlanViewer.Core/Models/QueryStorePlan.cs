@@ -13,6 +13,7 @@ public class QueryStoreFilter
     public string? QueryHash { get; set; }
     public string? QueryPlanHash { get; set; }
     public string? ModuleName { get; set; }
+    public string? ExecutionTypeDesc { get; set; }
 }
 
 public class QueryStorePlan

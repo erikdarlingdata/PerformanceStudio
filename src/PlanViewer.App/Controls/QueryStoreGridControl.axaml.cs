@@ -605,12 +605,32 @@ public partial class QueryStoreGridControl : UserControl
         };
     }
 
+    private void SearchType_SelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (SearchValuePanel is null || ExecutionTypePanel is null)
+            return;
+
+        var tag = (SearchTypeBox.SelectedItem as ComboBoxItem)?.Tag?.ToString();
+        var isExecutionType = tag == "execution-type";
+        SearchValuePanel.IsVisible = !isExecutionType;
+        ExecutionTypePanel.IsVisible = isExecutionType;
+    }
+
     private QueryStoreFilter? BuildSearchFilter()
     {
         var searchType = (SearchTypeBox.SelectedItem as ComboBoxItem)?.Tag?.ToString();
-        var searchValue = SearchValueBox.Text?.Trim();
 
-        if (string.IsNullOrEmpty(searchType) || string.IsNullOrEmpty(searchValue))
+        if (string.IsNullOrEmpty(searchType))
+            return null;
+
+        if (searchType == "execution-type")
+        {
+            var execType = (ExecutionTypeBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "Regular";
+            return new QueryStoreFilter { ExecutionTypeDesc = execType };
+        }
+
+        var searchValue = SearchValueBox.Text?.Trim();
+        if (string.IsNullOrEmpty(searchValue))
             return null;
 
         var filter = new QueryStoreFilter();
@@ -880,6 +900,7 @@ public partial class QueryStoreGridControl : UserControl
     {
         SearchTypeBox.SelectedIndex = 0;
         SearchValueBox.Text = "";
+        ExecutionTypeBox.SelectedIndex = 0;
     }
 
     private async System.Threading.Tasks.Task LoadTimeSlicerDataAsync(
