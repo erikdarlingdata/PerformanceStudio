@@ -841,6 +841,7 @@ public partial class MainWindow : Window
         var header = new StackPanel
         {
             Orientation = Orientation.Horizontal,
+            Background = Brushes.Transparent,
             Children = { headerText, closeBtn }
         };
 
