@@ -70,7 +70,8 @@ public sealed class McpQueryStoreTools
         [Description("Filter by Query Store plan ID.")] long? plan_id = null,
         [Description("Filter by query hash (hex, e.g. 0x1AB2C3D4).")] string? query_hash = null,
         [Description("Filter by query plan hash (hex, e.g. 0x1AB2C3D4).")] string? plan_hash = null,
-        [Description("Filter by module name (schema.name, supports % wildcards).")] string? module = null)
+        [Description("Filter by module name (schema.name, supports % wildcards).")] string? module = null,
+        [Description("Filter by execution type: regular, aborted, exception, or failed (= aborted + exception).")] string? execution_type = null)
     {
         try
         {
@@ -84,9 +85,20 @@ public sealed class McpQueryStoreTools
             if (hours_back < 1 || hours_back > 168)
                 return "Invalid hours_back value. Must be between 1 and 168.";
 
+            string[]? executionTypes;
+            try
+            {
+                executionTypes = QueryStoreFilter.ParseExecutionType(execution_type);
+            }
+            catch (ArgumentException ex)
+            {
+                return ex.Message;
+            }
+
             QueryStoreFilter? filter = null;
             if (query_id != null || plan_id != null ||
-                query_hash != null || plan_hash != null || module != null)
+                query_hash != null || plan_hash != null || module != null ||
+                executionTypes != null)
             {
                 filter = new QueryStoreFilter
                 {
@@ -95,6 +107,7 @@ public sealed class McpQueryStoreTools
                     QueryHash = query_hash,
                     QueryPlanHash = plan_hash,
                     ModuleName = module,
+                    ExecutionTypeDescs = executionTypes,
                 };
             }
 

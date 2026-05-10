@@ -129,12 +129,18 @@ public static class QueryStoreCommand
             Description = "Filter by module name (schema.name, supports % wildcards)"
         };
 
+        var executionTypeOption = new Option<string?>("--execution-type")
+        {
+            Description = "Filter by execution type: regular, aborted, exception, or failed (= aborted + exception)"
+        };
+
         var cmd = new Command("query-store", "Analyze top queries from Query Store")
         {
             serverOption, databaseOption, topOption, orderByOption, hoursBackOption,
             outputDirOption, outputOption, compactOption, warningsOnlyOption, configOption,
             authOption, trustCertOption, loginOption, passwordOption, passwordStdinOption,
-            queryIdOption, planIdOption, queryHashOption, planHashOption, moduleOption
+            queryIdOption, planIdOption, queryHashOption, planHashOption, moduleOption,
+            executionTypeOption
         };
 
         cmd.SetAction(async (parseResult, ct) =>
@@ -159,6 +165,7 @@ public static class QueryStoreCommand
             var filterQueryHash = parseResult.GetValue(queryHashOption);
             var filterPlanHash = parseResult.GetValue(planHashOption);
             var filterModule = parseResult.GetValue(moduleOption);
+            var filterExecutionType = parseResult.GetValue(executionTypeOption);
 
             // Load .env file if present (CLI args take precedence)
             var env = ConnectionHelper.LoadEnvFile();
@@ -190,9 +197,22 @@ public static class QueryStoreCommand
                 return;
             }
 
+            string[]? executionTypes;
+            try
+            {
+                executionTypes = QueryStoreFilter.ParseExecutionType(filterExecutionType);
+            }
+            catch (ArgumentException ex)
+            {
+                Console.Error.WriteLine(ex.Message);
+                Environment.ExitCode = 1;
+                return;
+            }
+
             QueryStoreFilter? filter = null;
             if (filterQueryId != null || filterPlanId != null ||
-                filterQueryHash != null || filterPlanHash != null || filterModule != null)
+                filterQueryHash != null || filterPlanHash != null || filterModule != null ||
+                executionTypes != null)
             {
                 filter = new QueryStoreFilter
                 {
@@ -201,6 +221,7 @@ public static class QueryStoreCommand
                     QueryHash = filterQueryHash,
                     QueryPlanHash = filterPlanHash,
                     ModuleName = filterModule,
+                    ExecutionTypeDescs = executionTypes,
                 };
             }
 
