@@ -20,6 +20,11 @@
     <Compile Include="..\PlanViewer.Core\Models\ServerMetadata.cs" Link="Core\Models\ServerMetadata.cs" />
     <Compile Include="..\PlanViewer.Core\Services\ShowPlanParser.cs" Link="Core\Services\ShowPlanParser.cs" />
     <Compile Include="..\PlanViewer.Core\Services\PlanAnalyzer.cs" Link="Core\Services\PlanAnalyzer.cs" />
+    <Compile Include="..\PlanViewer.Core\Services\PlanAnalyzer.Statement.cs" Link="Core\Services\PlanAnalyzer.Statement.cs" />
+    <Compile Include="..\PlanViewer.Core\Services\PlanAnalyzer.Node.cs" Link="Core\Services\PlanAnalyzer.Node.cs" />
+    <Compile Include="..\PlanViewer.Core\Services\PlanAnalyzer.Detection.cs" Link="Core\Services\PlanAnalyzer.Detection.cs" />
+    <Compile Include="..\PlanViewer.Core\Services\PlanAnalyzer.Timing.cs" Link="Core\Services\PlanAnalyzer.Timing.cs" />
+    <Compile Include="..\PlanViewer.Core\Services\PlanAnalyzer.Helpers.cs" Link="Core\Services\PlanAnalyzer.Helpers.cs" />
     <Compile Include="..\PlanViewer.Core\Services\BenefitScorer.cs" Link="Core\Services\BenefitScorer.cs" />
     <Compile Include="..\PlanViewer.Core\Services\WaitStatsConfig.cs" Link="Core\Services\WaitStatsConfig.cs" />
     <Compile Include="..\PlanViewer.Core\Services\PlanIconMapper.cs" Link="Core\Services\PlanIconMapper.cs" />
