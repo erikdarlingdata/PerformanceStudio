@@ -24,6 +24,10 @@
     <Compile Include="..\PlanViewer.Core\Models\AnalyzerConfig.cs" Link="Core\Models\AnalyzerConfig.cs" />
     <Compile Include="..\PlanViewer.Core\Models\ServerMetadata.cs" Link="Core\Models\ServerMetadata.cs" />
     <Compile Include="..\PlanViewer.Core\Services\ShowPlanParser.cs" Link="Core\Services\ShowPlanParser.cs" />
+    <Compile Include="..\PlanViewer.Core\Services\ShowPlanParser.RelOp.cs" Link="Core\Services\ShowPlanParser.RelOp.cs" />
+    <Compile Include="..\PlanViewer.Core\Services\ShowPlanParser.Warnings.cs" Link="Core\Services\ShowPlanParser.Warnings.cs" />
+    <Compile Include="..\PlanViewer.Core\Services\ShowPlanParser.Costs.cs" Link="Core\Services\ShowPlanParser.Costs.cs" />
+    <Compile Include="..\PlanViewer.Core\Services\ShowPlanParser.Helpers.cs" Link="Core\Services\ShowPlanParser.Helpers.cs" />
     <Compile Include="..\PlanViewer.Core\Services\PlanAnalyzer.cs" Link="Core\Services\PlanAnalyzer.cs" />
     <Compile Include="..\PlanViewer.Core\Services\BenefitScorer.cs" Link="Core\Services\BenefitScorer.cs" />
     <Compile Include="..\PlanViewer.Core\Services\WaitStatsConfig.cs" Link="Core\Services\WaitStatsConfig.cs" />
