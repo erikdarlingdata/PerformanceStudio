@@ -489,6 +489,12 @@ public partial class MainWindow : Window
             // Replace loading content with the actual plan
             var actualViewer = new PlanViewerControl();
             actualViewer.Metadata = metadata;
+            // Inherit the connection used to run the repro so schema lookups
+            // (Show Indexes, Show Table Definition) remain available on the
+            // new plan tab.
+            actualViewer.ConnectionString = connectionString;
+            actualViewer.SetConnectionServices(_credentialService, _connectionStore);
+            actualViewer.SetConnectionStatus(dialog.ResultConnection.ServerName, database);
             actualViewer.LoadPlan(actualPlanXml, "Actual Plan", queryText);
 
             tab.Content = CreatePlanTabContent(actualViewer);
