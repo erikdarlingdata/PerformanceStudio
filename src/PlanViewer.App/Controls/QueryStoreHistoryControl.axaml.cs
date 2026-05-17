@@ -99,6 +99,11 @@ public partial class QueryStoreHistoryControl : UserControl
 	public string Database => _database;
 
 	/// <summary>
+	/// Raised when the user requests to load a plan from the context menu.
+	/// </summary>
+	public event EventHandler<HistoryPlanLoadEventArgs>? PlanLoadRequested;
+
+	/// <summary>
 	/// Parameterless constructor required by Avalonia designer.
 	/// </summary>
 	public QueryStoreHistoryControl()
@@ -176,6 +181,8 @@ public partial class QueryStoreHistoryControl : UserControl
 
 		// Disable ScottPlot's built-in left-click-drag pan so our box selection works
 		HistoryChart.UserInputProcessor.LeftClickDragPan(enable: false);
+
+		BuildContextMenu();
 
 		AttachedToVisualTree += async (_, _) =>
 		{
@@ -976,5 +983,79 @@ public partial class QueryStoreHistoryControl : UserControl
 		var window = TopLevel.GetTopLevel(this) as Window;
 		if (window != null && window is not Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime)
 			window.Close();
+	}
+
+	/// <summary>
+	/// Returns the plan hash of the currently selected row(s), or null if none.
+	/// </summary>
+	private string? GetSelectedPlanHash()
+	{
+		// From grid selection
+		if (HistoryDataGrid.SelectedItem is QueryStoreHistoryRow row)
+			return row.QueryPlanHash;
+
+		// From chart selection
+		if (_selectedRowIndices.Count > 0)
+		{
+			var idx = _selectedRowIndices.First();
+			if (idx >= 0 && idx < _historyData.Count)
+				return _historyData[idx].QueryPlanHash;
+		}
+
+		return null;
+	}
+
+	private void BuildContextMenu()
+	{
+		var loadFirstItem = new MenuItem { Header = "Load the First Plan" };
+		var loadLastItem = new MenuItem { Header = "Load the Last Plan" };
+
+		loadFirstItem.Click += (_, _) => LoadPlanFromSelection(oldest: true);
+		loadLastItem.Click += (_, _) => LoadPlanFromSelection(oldest: false);
+
+		var contextMenu = new ContextMenu
+		{
+			Items = { loadFirstItem, loadLastItem }
+		};
+
+		HistoryDataGrid.ContextMenu = contextMenu;
+		HistoryChart.ContextMenu = contextMenu;
+	}
+
+	private async void LoadPlanFromSelection(bool oldest)
+	{
+		var planHash = GetSelectedPlanHash();
+		if (string.IsNullOrEmpty(planHash)) return;
+
+		try
+		{
+			var plan = await QueryStoreService.FetchPlanByHashAsync(
+				_connectionString, planHash, oldest);
+
+			if (plan == null || string.IsNullOrEmpty(plan.PlanXml))
+			{
+				// Could not find plan
+				return;
+			}
+
+			PlanLoadRequested?.Invoke(this, new HistoryPlanLoadEventArgs(plan));
+		}
+		catch
+		{
+			// Silently ignore fetch errors
+		}
+	}
+}
+
+/// <summary>
+/// Event args for when a plan is loaded from the history context menu.
+/// </summary>
+public class HistoryPlanLoadEventArgs : EventArgs
+{
+	public QueryStorePlan Plan { get; }
+
+	public HistoryPlanLoadEventArgs(QueryStorePlan plan)
+	{
+		Plan = plan;
 	}
 }

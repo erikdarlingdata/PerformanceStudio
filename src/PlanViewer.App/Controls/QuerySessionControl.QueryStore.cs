@@ -309,6 +309,9 @@ public partial class QuerySessionControl : UserControl
     /// </summary>
     public void AddHistorySubTab(string label, QueryStoreHistoryControl control)
     {
+        // Wire up plan load from context menu
+        control.PlanLoadRequested += OnHistoryPlanLoadRequested;
+
         var headerText = new TextBlock
         {
             Text = label,
@@ -391,6 +394,13 @@ public partial class QuerySessionControl : UserControl
 
         SubTabControl.Items.Add(tab);
         SubTabControl.SelectedItem = tab;
+    }
+
+    private void OnHistoryPlanLoadRequested(object? sender, HistoryPlanLoadEventArgs e)
+    {
+        var plan = e.Plan;
+        var tabLabel = $"QS {plan.QueryId} / {plan.PlanId}";
+        AddPlanTab(plan.PlanXml, plan.QueryText, estimated: true, labelOverride: tabLabel);
     }
 
     /// <summary>
