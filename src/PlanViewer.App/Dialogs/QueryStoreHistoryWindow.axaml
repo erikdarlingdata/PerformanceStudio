@@ -131,19 +131,19 @@
                 <DataGridTextColumn Header="Plan Hash" Binding="{ReflectionBinding QueryPlanHash}" Width="150"/>
                 <DataGridTextColumn Header="Interval Start" Binding="{ReflectionBinding IntervalStartLocal}" Width="140"/>
                 <DataGridTextColumn Header="Executions" Binding="{ReflectionBinding CountExecutions}" Width="90"/>
-                <DataGridTextColumn Header="Avg Duration (ms)" Binding="{ReflectionBinding AvgDurationMsDisplay}" Width="130"/>
-                <DataGridTextColumn Header="Avg CPU (ms)" Binding="{ReflectionBinding AvgCpuMsDisplay}" Width="110"/>
-                <DataGridTextColumn Header="Avg Reads" Binding="{ReflectionBinding AvgLogicalReadsDisplay}" Width="90"/>
-                <DataGridTextColumn Header="Avg Writes" Binding="{ReflectionBinding AvgLogicalWritesDisplay}" Width="90"/>
-                <DataGridTextColumn Header="Avg Phys Reads" Binding="{ReflectionBinding AvgPhysicalReadsDisplay}" Width="110"/>
-                <DataGridTextColumn Header="Avg Memory (MB)" Binding="{ReflectionBinding AvgMemoryMbDisplay}" Width="120"/>
-                <DataGridTextColumn Header="Avg Rows" Binding="{ReflectionBinding AvgRowcountDisplay}" Width="80"/>
-                <DataGridTextColumn Header="Total Duration (ms)" Binding="{ReflectionBinding TotalDurationMsDisplay}" Width="140"/>
-                <DataGridTextColumn Header="Total CPU (ms)" Binding="{ReflectionBinding TotalCpuMsDisplay}" Width="120"/>
-                <DataGridTextColumn Header="Total Reads" Binding="{ReflectionBinding TotalLogicalReadsDisplay}" Width="100"/>
-                <DataGridTextColumn Header="Total Writes" Binding="{ReflectionBinding TotalLogicalWritesDisplay}" Width="100"/>
-                <DataGridTextColumn Header="Total Phys Reads" Binding="{ReflectionBinding TotalPhysicalReadsDisplay}" Width="120"/>
-                <DataGridTextColumn Header="Total Memory (MB)" Binding="{ReflectionBinding TotalMemoryMbDisplay}" Width="120"/>
+                <DataGridTextColumn Header="Avg Duration (ms)" Binding="{ReflectionBinding AvgDurationMs, StringFormat='{}{0:N2}'}" Width="130"/>
+                <DataGridTextColumn Header="Avg CPU (ms)" Binding="{ReflectionBinding AvgCpuMs, StringFormat='{}{0:N2}'}" Width="110"/>
+                <DataGridTextColumn Header="Avg Reads" Binding="{ReflectionBinding AvgLogicalReads, StringFormat='{}{0:N2}'}" Width="90"/>
+                <DataGridTextColumn Header="Avg Writes" Binding="{ReflectionBinding AvgLogicalWrites, StringFormat='{}{0:N2}'}" Width="90"/>
+                <DataGridTextColumn Header="Avg Phys Reads" Binding="{ReflectionBinding AvgPhysicalReads, StringFormat='{}{0:N2}'}" Width="110"/>
+                <DataGridTextColumn Header="Avg Memory (MB)" Binding="{ReflectionBinding AvgMemoryMb, StringFormat='{}{0:N2}'}" Width="120"/>
+                <DataGridTextColumn Header="Avg Rows" Binding="{ReflectionBinding AvgRowcount, StringFormat='{}{0:N2}'}" Width="80"/>
+                <DataGridTextColumn Header="Total Duration (ms)" Binding="{ReflectionBinding TotalDurationMs, StringFormat='{}{0:N2}'}" Width="140"/>
+                <DataGridTextColumn Header="Total CPU (ms)" Binding="{ReflectionBinding TotalCpuMs, StringFormat='{}{0:N2}'}" Width="120"/>
+                <DataGridTextColumn Header="Total Reads" Binding="{ReflectionBinding TotalLogicalReads, StringFormat='{}{0:N0}'}" Width="100"/>
+                <DataGridTextColumn Header="Total Writes" Binding="{ReflectionBinding TotalLogicalWrites, StringFormat='{}{0:N0}'}" Width="100"/>
+                <DataGridTextColumn Header="Total Phys Reads" Binding="{ReflectionBinding TotalPhysicalReads, StringFormat='{}{0:N0}'}" Width="120"/>
+                <DataGridTextColumn Header="Total Memory (MB)" Binding="{ReflectionBinding TotalMemoryMb, StringFormat='{}{0:N2}'}" Width="120"/>
                 <DataGridTextColumn Header="Min DOP" Binding="{ReflectionBinding MinDop}" Width="70"/>
                 <DataGridTextColumn Header="Max DOP" Binding="{ReflectionBinding MaxDop}" Width="70"/>
                 <DataGridTextColumn Header="Last Execution" Binding="{ReflectionBinding LastExecutionLocal}" Width="140"/>
