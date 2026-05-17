@@ -74,6 +74,10 @@ public partial class MainWindow : Window
         closeBtn.Tag = tab;
         closeBtn.Click += CloseTab_Click;
 
+        // Long-press timer for detaching tab to a free window
+        DispatcherTimer? longPressTimer = null;
+        Point longPressStartPoint = default;
+
         header.PointerPressed += (_, e) =>
         {
             if (e.GetCurrentPoint(null).Properties.PointerUpdateKind == PointerUpdateKind.MiddleButtonPressed)
@@ -81,6 +85,40 @@ public partial class MainWindow : Window
                 MainTabControl.Items.Remove(tab);
                 UpdateEmptyOverlay();
                 e.Handled = true;
+                return;
+            }
+
+            if (e.GetCurrentPoint(null).Properties.IsLeftButtonPressed)
+            {
+                longPressStartPoint = e.GetPosition(header);
+                longPressTimer?.Stop();
+                longPressTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
+                longPressTimer.Tick += (_, _) =>
+                {
+                    longPressTimer.Stop();
+                    longPressTimer = null;
+                    DetachTabToWindow(tab);
+                };
+                longPressTimer.Start();
+            }
+        };
+
+        header.PointerReleased += (_, _) =>
+        {
+            longPressTimer?.Stop();
+            longPressTimer = null;
+        };
+
+        header.PointerMoved += (_, e) =>
+        {
+            if (longPressTimer == null) return;
+            var pos = e.GetPosition(header);
+            var dx = Math.Abs(pos.X - longPressStartPoint.X);
+            var dy = Math.Abs(pos.Y - longPressStartPoint.Y);
+            if (dx > 6 || dy > 6)
+            {
+                longPressTimer.Stop();
+                longPressTimer = null;
             }
         };
 
@@ -241,5 +279,79 @@ public partial class MainWindow : Window
             .Where(t => !string.IsNullOrEmpty(t));
 
         return string.Join(Environment.NewLine, statements);
+    }
+
+    /// <summary>
+    /// Detaches a tab's content into a standalone free-floating window.
+    /// When that window is minimized or closed, the content returns to a tab.
+    /// </summary>
+    private void DetachTabToWindow(TabItem tab)
+    {
+        var content = tab.Content as Control;
+        if (content == null) return;
+
+        var label = GetTabLabel(tab);
+
+        // Remove the tab
+        MainTabControl.Items.Remove(tab);
+        tab.Content = null; // detach the content from the tab
+        UpdateEmptyOverlay();
+
+        // Create a free-floating window
+        var detachedWindow = new Window
+        {
+            Title = label,
+            Width = 1280,
+            Height = 800,
+            MinWidth = 900,
+            MinHeight = 600,
+            WindowStartupLocation = WindowStartupLocation.CenterScreen,
+            Background = (Avalonia.Media.IBrush?)this.FindResource("BackgroundBrush") ?? Brushes.Black,
+            Content = content,
+            Icon = this.Icon
+        };
+
+        if (content is QueryStoreHistoryControl historyControl)
+            historyControl.ShowCloseButton(false);
+
+        // When window is closed or minimized, re-dock to tab
+        bool redocked = false;
+
+        void Redock()
+        {
+            if (redocked) return;
+            redocked = true;
+
+            detachedWindow.Content = null; // detach from window
+
+            if (content is QueryStoreHistoryControl hc)
+                hc.ShowCloseButton(false);
+
+            Dispatcher.UIThread.Post(() =>
+            {
+                var newTab = CreateTab(label, content);
+                MainTabControl.Items.Add(newTab);
+                MainTabControl.SelectedItem = newTab;
+                UpdateEmptyOverlay();
+            });
+        }
+
+        detachedWindow.Closing += (_, _) => Redock();
+
+        // Detect minimize → re-dock
+        detachedWindow.PropertyChanged += (_, args) =>
+        {
+            if (args.Property == Window.WindowStateProperty &&
+                detachedWindow.WindowState == WindowState.Minimized && !redocked)
+            {
+                Dispatcher.UIThread.Post(() =>
+                {
+                    Redock();
+                    detachedWindow.Close();
+                });
+            }
+        };
+
+        detachedWindow.Show();
     }
 }

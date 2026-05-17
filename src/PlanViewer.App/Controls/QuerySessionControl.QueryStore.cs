@@ -302,4 +302,162 @@ public partial class QuerySessionControl : UserControl
         HumanAdviceButton.IsEnabled = true;
         RobotAdviceButton.IsEnabled = true;
     }
+
+    /// <summary>
+    /// Adds a Query Store History control as a sub-tab in this session.
+    /// Supports long-press to detach into a free-floating window.
+    /// </summary>
+    public void AddHistorySubTab(string label, QueryStoreHistoryControl control)
+    {
+        var headerText = new TextBlock
+        {
+            Text = label,
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            FontSize = 12
+        };
+
+        var closeBtn = new Button
+        {
+            Content = "\u2715",
+            MinWidth = 22, MinHeight = 22, Width = 22, Height = 22,
+            Padding = new Avalonia.Thickness(0),
+            FontSize = 11,
+            Margin = new Avalonia.Thickness(6, 0, 0, 0),
+            Background = Brushes.Transparent,
+            BorderThickness = new Avalonia.Thickness(0),
+            Foreground = new SolidColorBrush(Color.FromRgb(0xE4, 0xE6, 0xEB)),
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center
+        };
+
+        var header = new StackPanel
+        {
+            Orientation = Avalonia.Layout.Orientation.Horizontal,
+            Children = { headerText, closeBtn }
+        };
+
+        var tab = new TabItem { Header = header, Content = control };
+        closeBtn.Tag = tab;
+        closeBtn.Click += (s, _) =>
+        {
+            if (s is Button btn && btn.Tag is TabItem t)
+            {
+                if (t.Content is QueryStoreHistoryControl hc)
+                    hc.CancelFetch();
+                SubTabControl.Items.Remove(t);
+            }
+        };
+
+        // Long-press to detach into a free-floating window
+        Avalonia.Threading.DispatcherTimer? longPressTimer = null;
+        Avalonia.Point longPressStartPoint = default;
+
+        header.PointerPressed += (_, e) =>
+        {
+            if (e.GetCurrentPoint(null).Properties.IsLeftButtonPressed)
+            {
+                longPressStartPoint = e.GetPosition(header);
+                longPressTimer?.Stop();
+                longPressTimer = new Avalonia.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
+                longPressTimer.Tick += (_, _) =>
+                {
+                    longPressTimer.Stop();
+                    longPressTimer = null;
+                    DetachHistorySubTabToWindow(tab);
+                };
+                longPressTimer.Start();
+            }
+        };
+
+        header.PointerReleased += (_, _) =>
+        {
+            longPressTimer?.Stop();
+            longPressTimer = null;
+        };
+
+        header.PointerMoved += (_, e) =>
+        {
+            if (longPressTimer == null) return;
+            var pos = e.GetPosition(header);
+            var dx = Math.Abs(pos.X - longPressStartPoint.X);
+            var dy = Math.Abs(pos.Y - longPressStartPoint.Y);
+            if (dx > 6 || dy > 6)
+            {
+                longPressTimer.Stop();
+                longPressTimer = null;
+            }
+        };
+
+        SubTabControl.Items.Add(tab);
+        SubTabControl.SelectedItem = tab;
+    }
+
+    /// <summary>
+    /// Detaches a history sub-tab into a standalone free-floating window.
+    /// When that window is minimized or closed, the content returns to this session's sub-tabs.
+    /// </summary>
+    private void DetachHistorySubTabToWindow(TabItem tab)
+    {
+        var content = tab.Content as QueryStoreHistoryControl;
+        if (content == null) return;
+
+        var tabLabel = "History";
+        if (tab.Header is StackPanel sp && sp.Children.Count > 0 && sp.Children[0] is TextBlock tb)
+            tabLabel = tb.Text ?? "History";
+
+        // Remove from sub-tabs
+        SubTabControl.Items.Remove(tab);
+        tab.Content = null;
+
+        // Create a free-floating window (no owner → independent minimize)
+        var mainWindow = Avalonia.Controls.TopLevel.GetTopLevel(this) as Window;
+        var detachedWindow = new Window
+        {
+            Title = tabLabel,
+            Width = 1280,
+            Height = 800,
+            MinWidth = 900,
+            MinHeight = 600,
+            WindowStartupLocation = WindowStartupLocation.CenterScreen,
+            Background = (Avalonia.Media.IBrush?)this.FindResource("BackgroundBrush") ?? Brushes.Black,
+            Content = content,
+            Icon = mainWindow?.Icon
+        };
+
+        content.ShowCloseButton(false);
+
+        bool redocked = false;
+
+        void Redock()
+        {
+            if (redocked) return;
+            redocked = true;
+
+            detachedWindow.Content = null;
+
+            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            {
+                AddHistorySubTab(tabLabel, content);
+            });
+        }
+
+        detachedWindow.Closing += (_, _) => Redock();
+
+        // Detect minimize → re-dock
+        detachedWindow.PropertyChanged += (_, args) =>
+        {
+            if (args.Property == Window.WindowStateProperty &&
+                detachedWindow.WindowState == WindowState.Minimized && !redocked)
+            {
+                Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                {
+                    Redock();
+                    detachedWindow.Close();
+                });
+            }
+        };
+
+        detachedWindow.Show();
+    }
 }
