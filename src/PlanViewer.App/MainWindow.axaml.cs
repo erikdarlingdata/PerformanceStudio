@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Xml.Linq;
 using Avalonia.Controls;
+using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
@@ -197,6 +198,14 @@ public partial class MainWindow : Window
             _mcpCts.Cancel();
             await _mcpHost.StopAsync(CancellationToken.None);
             _mcpHost = null;
+        }
+
+        // Close all detached free-floating windows
+        if (Avalonia.Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+        {
+            var otherWindows = desktop.Windows.Where(w => w != this).ToList();
+            foreach (var w in otherWindows)
+                w.Close();
         }
 
         base.OnClosed(e);
