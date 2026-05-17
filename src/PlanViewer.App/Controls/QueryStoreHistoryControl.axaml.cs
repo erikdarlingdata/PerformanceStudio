@@ -214,7 +214,7 @@ public partial class QueryStoreHistoryControl : UserControl
 	/// </summary>
 	public static string MapOrderByToMetricTag(string orderBy)
 	{
-		return OrderByToMetricTag.TryGetValue(orderBy?.ToLowerInvariant() ?? "", out var tag)
+		return OrderByToMetricTag.TryGetValue(orderBy.ToLowerInvariant(), out var tag)
 			? tag
 			: "AvgCpuMs";
 	}
@@ -761,13 +761,6 @@ public partial class QueryStoreHistoryControl : UserControl
 
 	private void HighlightGridRows()
 	{
-		if (_selectedRowIndices.Count > 0)
-		{
-			var firstIdx = _selectedRowIndices.Min();
-			if (firstIdx < _historyData.Count)
-				HistoryDataGrid.ScrollIntoView(_historyData[firstIdx], null);
-		}
-
 		HistoryDataGrid.LoadingRow -= OnHighlightLoadingRow;
 		HistoryDataGrid.LoadingRow += OnHighlightLoadingRow;
 
@@ -776,6 +769,14 @@ public partial class QueryStoreHistoryControl : UserControl
 		HistoryDataGrid.ItemsSource = null;
 		HistoryDataGrid.ItemsSource = source;
 		_suppressGridSelectionEvent = false;
+
+		// Scroll after ItemsSource reset so the target row exists
+		if (_selectedRowIndices.Count > 0)
+		{
+			var firstIdx = _selectedRowIndices.Min();
+			if (firstIdx < _historyData.Count)
+				HistoryDataGrid.ScrollIntoView(_historyData[firstIdx], null);
+		}
 	}
 
 	private void OnHighlightLoadingRow(object? sender, DataGridRowEventArgs e)
@@ -804,7 +805,7 @@ public partial class QueryStoreHistoryControl : UserControl
 			{
 				if (item is QueryStoreHistoryRow row)
 				{
-					var idx = _historyData.IndexOf(row);
+					var idx = _historyData.IndexOf(row); // O(n) but list is small (<500 items)
 					if (idx >= 0)
 						_selectedRowIndices.Add(idx);
 				}
@@ -889,7 +890,7 @@ public partial class QueryStoreHistoryControl : UserControl
 				if (_tooltip != null) _tooltip.IsOpen = false;
 			}
 		}
-		catch
+		catch (Exception)
 		{
 			if (_tooltip != null) _tooltip.IsOpen = false;
 		}
@@ -981,7 +982,7 @@ public partial class QueryStoreHistoryControl : UserControl
 	{
 		// When in a detached window, close the window (which will re-dock to tab)
 		var window = TopLevel.GetTopLevel(this) as Window;
-		if (window != null && window is not Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime)
+		if (window != null && window is not PlanViewer.App.MainWindow)
 			window.Close();
 	}
 
@@ -1005,7 +1006,7 @@ public partial class QueryStoreHistoryControl : UserControl
 		return null;
 	}
 
-	private void BuildContextMenu()
+	private ContextMenu CreatePlanContextMenu()
 	{
 		var loadFirstItem = new MenuItem { Header = "Load the First Plan" };
 		var loadLastItem = new MenuItem { Header = "Load the Last Plan" };
@@ -1013,13 +1014,25 @@ public partial class QueryStoreHistoryControl : UserControl
 		loadFirstItem.Click += (_, _) => LoadPlanFromSelection(oldest: true);
 		loadLastItem.Click += (_, _) => LoadPlanFromSelection(oldest: false);
 
-		var contextMenu = new ContextMenu
+		var menu = new ContextMenu
 		{
 			Items = { loadFirstItem, loadLastItem }
 		};
 
-		HistoryDataGrid.ContextMenu = contextMenu;
-		HistoryChart.ContextMenu = contextMenu;
+		menu.Opening += (_, _) =>
+		{
+			var hasSelection = GetSelectedPlanHash() != null;
+			foreach (var item in menu.Items.OfType<MenuItem>())
+				item.IsEnabled = hasSelection;
+		};
+
+		return menu;
+	}
+
+	private void BuildContextMenu()
+	{
+		HistoryDataGrid.ContextMenu = CreatePlanContextMenu();
+		HistoryChart.ContextMenu = CreatePlanContextMenu();
 	}
 
 	private async void LoadPlanFromSelection(bool oldest)
@@ -1027,6 +1040,7 @@ public partial class QueryStoreHistoryControl : UserControl
 		var planHash = GetSelectedPlanHash();
 		if (string.IsNullOrEmpty(planHash)) return;
 
+		StatusText.Text = "Loading plan…";
 		try
 		{
 			var plan = await QueryStoreService.FetchPlanByHashAsync(
@@ -1034,28 +1048,16 @@ public partial class QueryStoreHistoryControl : UserControl
 
 			if (plan == null || string.IsNullOrEmpty(plan.PlanXml))
 			{
-				// Could not find plan
+				StatusText.Text = "Plan not found";
 				return;
 			}
 
+			StatusText.Text = "";
 			PlanLoadRequested?.Invoke(this, new HistoryPlanLoadEventArgs(plan));
 		}
-		catch
+		catch (Exception ex)
 		{
-			// Silently ignore fetch errors
+			StatusText.Text = $"Error loading plan: {ex.Message}";
 		}
-	}
-}
-
-/// <summary>
-/// Event args for when a plan is loaded from the history context menu.
-/// </summary>
-public class HistoryPlanLoadEventArgs : EventArgs
-{
-	public QueryStorePlan Plan { get; }
-
-	public HistoryPlanLoadEventArgs(QueryStorePlan plan)
-	{
-		Plan = plan;
 	}
 }

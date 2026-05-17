@@ -16,6 +16,7 @@ using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using PlanViewer.App.Controls;
+using PlanViewer.App.Helpers;
 using PlanViewer.App.Mcp;
 using PlanViewer.App.Services;
 using PlanViewer.Core.Interfaces;
@@ -74,53 +75,15 @@ public partial class MainWindow : Window
         closeBtn.Tag = tab;
         closeBtn.Click += CloseTab_Click;
 
-        // Long-press timer for detaching tab to a free window
-        DispatcherTimer? longPressTimer = null;
-        Point longPressStartPoint = default;
-
-        header.PointerPressed += (_, e) =>
-        {
-            if (e.GetCurrentPoint(null).Properties.PointerUpdateKind == PointerUpdateKind.MiddleButtonPressed)
+        // Long-press to detach, middle-click to close
+        TabHeaderLongPressBehavior.Attach(
+            header,
+            onLongPress: () => DetachTabToWindow(tab),
+            onMiddleClick: () =>
             {
                 MainTabControl.Items.Remove(tab);
                 UpdateEmptyOverlay();
-                e.Handled = true;
-                return;
-            }
-
-            if (e.GetCurrentPoint(null).Properties.IsLeftButtonPressed)
-            {
-                longPressStartPoint = e.GetPosition(header);
-                longPressTimer?.Stop();
-                longPressTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
-                longPressTimer.Tick += (_, _) =>
-                {
-                    longPressTimer.Stop();
-                    longPressTimer = null;
-                    DetachTabToWindow(tab);
-                };
-                longPressTimer.Start();
-            }
-        };
-
-        header.PointerReleased += (_, _) =>
-        {
-            longPressTimer?.Stop();
-            longPressTimer = null;
-        };
-
-        header.PointerMoved += (_, e) =>
-        {
-            if (longPressTimer == null) return;
-            var pos = e.GetPosition(header);
-            var dx = Math.Abs(pos.X - longPressStartPoint.X);
-            var dy = Math.Abs(pos.Y - longPressStartPoint.Y);
-            if (dx > 6 || dy > 6)
-            {
-                longPressTimer.Stop();
-                longPressTimer = null;
-            }
-        };
+            });
 
         // Right-click context menu
         var copyPathItem = new MenuItem { Header = "Copy Path", Tag = tab };

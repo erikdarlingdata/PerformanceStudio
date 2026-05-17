@@ -19,6 +19,7 @@ using AvaloniaEdit.CodeCompletion;
 using AvaloniaEdit.TextMate;
 using Microsoft.Data.SqlClient;
 using PlanViewer.App.Dialogs;
+using PlanViewer.App.Helpers;
 using PlanViewer.App.Services;
 using PlanViewer.Core.Interfaces;
 using PlanViewer.Core.Models;
@@ -309,7 +310,8 @@ public partial class QuerySessionControl : UserControl
     /// </summary>
     public void AddHistorySubTab(string label, QueryStoreHistoryControl control)
     {
-        // Wire up plan load from context menu
+        // Wire up plan load from context menu (unsubscribe first to prevent leaks on re-dock)
+        control.PlanLoadRequested -= OnHistoryPlanLoadRequested;
         control.PlanLoadRequested += OnHistoryPlanLoadRequested;
 
         var headerText = new TextBlock
@@ -353,44 +355,7 @@ public partial class QuerySessionControl : UserControl
         };
 
         // Long-press to detach into a free-floating window
-        Avalonia.Threading.DispatcherTimer? longPressTimer = null;
-        Avalonia.Point longPressStartPoint = default;
-
-        header.PointerPressed += (_, e) =>
-        {
-            if (e.GetCurrentPoint(null).Properties.IsLeftButtonPressed)
-            {
-                longPressStartPoint = e.GetPosition(header);
-                longPressTimer?.Stop();
-                longPressTimer = new Avalonia.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
-                longPressTimer.Tick += (_, _) =>
-                {
-                    longPressTimer.Stop();
-                    longPressTimer = null;
-                    DetachHistorySubTabToWindow(tab);
-                };
-                longPressTimer.Start();
-            }
-        };
-
-        header.PointerReleased += (_, _) =>
-        {
-            longPressTimer?.Stop();
-            longPressTimer = null;
-        };
-
-        header.PointerMoved += (_, e) =>
-        {
-            if (longPressTimer == null) return;
-            var pos = e.GetPosition(header);
-            var dx = Math.Abs(pos.X - longPressStartPoint.X);
-            var dy = Math.Abs(pos.Y - longPressStartPoint.Y);
-            if (dx > 6 || dy > 6)
-            {
-                longPressTimer.Stop();
-                longPressTimer = null;
-            }
-        };
+        TabHeaderLongPressBehavior.Attach(header, () => DetachHistorySubTabToWindow(tab));
 
         SubTabControl.Items.Add(tab);
         SubTabControl.SelectedItem = tab;
