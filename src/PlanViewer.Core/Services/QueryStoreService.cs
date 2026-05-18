@@ -581,4 +581,52 @@ ORDER BY bucket_hour DESC;";
     }
 
 
+    /// <summary>
+    /// Fetches the plan XML for a given query_plan_hash.
+    /// When <paramref name="oldest"/> is true, returns the plan with the smallest plan_id (first created);
+    /// otherwise returns the one with the largest plan_id (most recent).
+    /// Returns null if no matching plan is found.
+    /// </summary>
+    public static async Task<QueryStorePlan?> FetchPlanByHashAsync(
+        string connectionString, string queryPlanHash, bool oldest,
+        CancellationToken ct = default)
+    {
+        var orderDir = oldest ? "ASC" : "DESC";
+        var sql = $@"
+SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+SELECT TOP 1
+    p.plan_id,
+    q.query_id,
+    CONVERT(varchar(18), q.query_hash, 1),
+    CONVERT(varchar(18), p.query_plan_hash, 1),
+    TRY_CAST(p.query_plan AS nvarchar(max)),
+    qt.query_sql_text
+FROM sys.query_store_plan p
+JOIN sys.query_store_query q ON p.query_id = q.query_id
+JOIN sys.query_store_query_text qt ON q.query_text_id = qt.query_text_id
+WHERE p.query_plan_hash = CONVERT(binary(8), @planHash, 1)
+ORDER BY p.plan_id {orderDir};";
+
+        await using var conn = new SqlConnection(connectionString);
+        await conn.OpenAsync(ct);
+        await using var cmd = new SqlCommand(sql, conn) { CommandTimeout = 60 };
+        cmd.Parameters.Add(new SqlParameter("@planHash", queryPlanHash.Trim()));
+
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        if (!await reader.ReadAsync(ct))
+            return null;
+
+        return new QueryStorePlan
+        {
+            PlanId = reader.GetInt64(0),
+            QueryId = reader.GetInt64(1),
+            QueryHash = reader.IsDBNull(2) ? "" : reader.GetString(2),
+            QueryPlanHash = reader.IsDBNull(3) ? "" : reader.GetString(3),
+            PlanXml = reader.IsDBNull(4) ? "" : reader.GetString(4),
+            QueryText = reader.IsDBNull(5) ? "" : reader.GetString(5),
+        };
+    }
+
+
 }

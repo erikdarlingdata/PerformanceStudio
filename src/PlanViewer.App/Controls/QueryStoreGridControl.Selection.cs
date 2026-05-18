@@ -87,14 +87,14 @@ public partial class QueryStoreGridControl : UserControl
         return plans;
     }
 
-    private async void ViewHistory_Click(object? sender, RoutedEventArgs e)
+    private void ViewHistory_Click(object? sender, RoutedEventArgs e)
     {
         if (ResultsGrid.SelectedItem is not QueryStoreRow row) return;
         if (string.IsNullOrEmpty(row.QueryHash)) return;
 
         var metricTag = QueryStoreHistoryWindow.MapOrderByToMetricTag(_lastFetchedOrderBy);
 
-        var window = new QueryStoreHistoryWindow(
+        var control = new QueryStoreHistoryControl(
             _connectionString,
             row.QueryHash,
             row.FullQueryText,
@@ -104,11 +104,28 @@ public partial class QueryStoreGridControl : UserControl
             slicerEndUtc: _slicerEndUtc,
             slicerDaysBack: _slicerDaysBack);
 
-        var topLevel = Avalonia.Controls.TopLevel.GetTopLevel(this);
-        if (topLevel is Window parentWindow)
-            await window.ShowDialog(parentWindow);
+        var shortHash = row.QueryHash.Length > 8 ? row.QueryHash[..8] + "…" : row.QueryHash;
+
+        // Walk up the visual tree to find the parent QuerySessionControl
+        var session = this.FindAncestorOfType<QuerySessionControl>();
+        if (session != null)
+        {
+            session.AddHistorySubTab($"History: {shortHash}", control);
+        }
         else
+        {
+            // Fallback: open as standalone window
+            var window = new QueryStoreHistoryWindow(
+                _connectionString,
+                row.QueryHash,
+                row.FullQueryText,
+                _database,
+                initialMetricTag: metricTag,
+                slicerStartUtc: _slicerStartUtc,
+                slicerEndUtc: _slicerEndUtc,
+                slicerDaysBack: _slicerDaysBack);
             window.Show();
+        }
     }
 
     private void ContextMenu_Opening(object? sender, System.ComponentModel.CancelEventArgs e)

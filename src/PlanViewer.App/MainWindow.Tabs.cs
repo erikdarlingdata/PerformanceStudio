@@ -16,6 +16,7 @@ using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using PlanViewer.App.Controls;
+using PlanViewer.App.Helpers;
 using PlanViewer.App.Mcp;
 using PlanViewer.App.Services;
 using PlanViewer.Core.Interfaces;
@@ -74,6 +75,7 @@ public partial class MainWindow : Window
         closeBtn.Tag = tab;
         closeBtn.Click += CloseTab_Click;
 
+        // Middle-click to close
         header.PointerPressed += (_, e) =>
         {
             if (e.GetCurrentPoint(null).Properties.PointerUpdateKind == PointerUpdateKind.MiddleButtonPressed)
@@ -96,6 +98,8 @@ public partial class MainWindow : Window
             {
                 new MenuItem { Header = "Rename Tab", Tag = new object[] { header, headerText } },
                 copyPathItem,
+                new Separator(),
+                new MenuItem { Header = "Detach to Window", Tag = tab },
                 new Separator(),
                 new MenuItem { Header = "Close", Tag = tab, InputGesture = new KeyGesture(Key.W, KeyModifiers.Control) },
                 new MenuItem { Header = "Close Other Tabs", Tag = tab },
@@ -164,6 +168,11 @@ public partial class MainWindow : Window
             case "Close All Tabs":
                 MainTabControl.Items.Clear();
                 UpdateEmptyOverlay();
+                break;
+
+            case "Detach to Window":
+                if (item.Tag is TabItem detachTab)
+                    DetachTabToWindow(detachTab);
                 break;
         }
     }
@@ -241,5 +250,47 @@ public partial class MainWindow : Window
             .Where(t => !string.IsNullOrEmpty(t));
 
         return string.Join(Environment.NewLine, statements);
+    }
+
+    /// <summary>
+    /// Detaches a tab's content into a standalone free-floating window.
+    /// The window's Close button closes it permanently.
+    /// A "Re-dock" button in the toolbar allows the user to explicitly return the content to a tab.
+    /// </summary>
+    private void DetachTabToWindow(TabItem tab)
+    {
+        var content = tab.Content as Control;
+        if (content == null) return;
+
+        var label = GetTabLabel(tab);
+
+        // Remove the tab
+        MainTabControl.Items.Remove(tab);
+        tab.Content = null;
+        UpdateEmptyOverlay();
+
+        if (content is QueryStoreHistoryControl historyControl)
+            historyControl.ShowCloseButton(false);
+
+        DetachedWindowHelper.ShowDetached(
+            content,
+            title: label,
+            icon: this.Icon,
+            backgroundBrush: (Avalonia.Media.IBrush?)this.FindResource("BackgroundBrush"),
+            onRedock: c =>
+            {
+                if (!IsShuttingDown)
+                {
+                    var newTab = CreateTab(label, c);
+                    MainTabControl.Items.Add(newTab);
+                    MainTabControl.SelectedItem = newTab;
+                    UpdateEmptyOverlay();
+                }
+            },
+            onClosing: c =>
+            {
+                if (c is QueryStoreHistoryControl hc)
+                    hc.CancelFetch();
+            });
     }
 }
