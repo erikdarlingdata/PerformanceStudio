@@ -48,6 +48,7 @@ public partial class QueryStoreHistoryControl : UserControl
 	// Legend state
 	private bool _legendExpanded;
 	private bool _suppressGridSelectionEvent;
+	private bool _isLoadingPlan;
 
 	// Legend highlight: which plan hash is currently highlighted (null = none)
 	private string? _highlightedPlanHash;
@@ -189,6 +190,8 @@ public partial class QueryStoreHistoryControl : UserControl
 			if (_historyData.Count == 0)
 				await LoadHistoryAsync();
 		};
+
+		DetachedFromVisualTree += (_, _) => CancelFetch();
 	}
 
 	/// <summary>
@@ -1037,9 +1040,11 @@ public partial class QueryStoreHistoryControl : UserControl
 
 	private async void LoadPlanFromSelection(bool oldest)
 	{
+		if (_isLoadingPlan) return;
 		var planHash = GetSelectedPlanHash();
 		if (string.IsNullOrEmpty(planHash)) return;
 
+		_isLoadingPlan = true;
 		StatusText.Text = "Loading plan…";
 		try
 		{
@@ -1058,6 +1063,10 @@ public partial class QueryStoreHistoryControl : UserControl
 		catch (Exception ex)
 		{
 			StatusText.Text = $"Error loading plan: {ex.Message}";
+		}
+		finally
+		{
+			_isLoadingPlan = false;
 		}
 	}
 }

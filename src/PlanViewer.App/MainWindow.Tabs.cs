@@ -282,7 +282,7 @@ public partial class MainWindow : Window
 
         void Redock()
         {
-            if (redocked) return;
+            if (redocked || IsShuttingDown) return;
             redocked = true;
 
             detachedWindow.Content = null; // detach from window
@@ -292,6 +292,7 @@ public partial class MainWindow : Window
 
             Dispatcher.UIThread.Post(() =>
             {
+                if (IsShuttingDown) return;
                 var newTab = CreateTab(label, content);
                 MainTabControl.Items.Add(newTab);
                 MainTabControl.SelectedItem = newTab;

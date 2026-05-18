@@ -3,6 +3,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 
 namespace PlanViewer.App.Helpers;
 
@@ -25,6 +26,12 @@ internal static class TabHeaderLongPressBehavior
 		DispatcherTimer? longPressTimer = null;
 		Point longPressStartPoint = default;
 
+		void StopTimer()
+		{
+			longPressTimer?.Stop();
+			longPressTimer = null;
+		}
+
 		header.PointerPressed += (_, e) =>
 		{
 			if (onMiddleClick != null &&
@@ -38,23 +45,21 @@ internal static class TabHeaderLongPressBehavior
 			if (e.GetCurrentPoint(null).Properties.IsLeftButtonPressed)
 			{
 				longPressStartPoint = e.GetPosition(header);
-				longPressTimer?.Stop();
+				StopTimer();
 				longPressTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
 				longPressTimer.Tick += (_, _) =>
 				{
-					longPressTimer.Stop();
-					longPressTimer = null;
-					onLongPress();
+					StopTimer();
+					if (header.GetVisualRoot() != null) // still attached
+						onLongPress();
 				};
 				longPressTimer.Start();
 			}
 		};
 
-		header.PointerReleased += (_, _) =>
-		{
-			longPressTimer?.Stop();
-			longPressTimer = null;
-		};
+		header.PointerReleased += (_, _) => StopTimer();
+		header.PointerCaptureLost += (_, _) => StopTimer();
+		header.DetachedFromVisualTree += (_, _) => StopTimer();
 
 		header.PointerMoved += (_, e) =>
 		{
@@ -63,10 +68,7 @@ internal static class TabHeaderLongPressBehavior
 			var dx = Math.Abs(pos.X - longPressStartPoint.X);
 			var dy = Math.Abs(pos.Y - longPressStartPoint.Y);
 			if (dx > 6 || dy > 6)
-			{
-				longPressTimer.Stop();
-				longPressTimer = null;
-			}
+				StopTimer();
 		};
 	}
 }

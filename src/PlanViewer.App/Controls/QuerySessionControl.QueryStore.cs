@@ -407,12 +407,15 @@ public partial class QuerySessionControl : UserControl
         void Redock()
         {
             if (redocked) return;
+            // Don't re-dock if the app is shutting down
+            if (mainWindow is MainWindow mw && mw.IsShuttingDown) return;
             redocked = true;
 
             detachedWindow.Content = null;
 
             Avalonia.Threading.Dispatcher.UIThread.Post(() =>
             {
+                if (mainWindow is MainWindow mw2 && mw2.IsShuttingDown) return;
                 AddHistorySubTab(tabLabel, content);
             });
         }

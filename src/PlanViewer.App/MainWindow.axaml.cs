@@ -38,6 +38,12 @@ public partial class MainWindow : Window
     private int _queryCounter;
     private AppSettings _appSettings;
 
+    /// <summary>
+    /// Set to true when the main window is closing. Detached windows check this
+    /// to avoid re-docking into torn-down controls.
+    /// </summary>
+    internal bool IsShuttingDown { get; private set; }
+
     public MainWindow()
     {
         _credentialService = CredentialServiceFactory.Create();
@@ -188,24 +194,33 @@ public partial class MainWindow : Window
 
     protected override async void OnClosed(EventArgs e)
     {
-        // Save the list of currently open file-based plans for session restore
-        SaveOpenPlans();
-
-        _pipeCts.Cancel();
-
-        if (_mcpHost != null && _mcpCts != null)
+        try
         {
-            _mcpCts.Cancel();
-            await _mcpHost.StopAsync(CancellationToken.None);
-            _mcpHost = null;
+            IsShuttingDown = true;
+
+            // Save the list of currently open file-based plans for session restore
+            SaveOpenPlans();
+
+            _pipeCts.Cancel();
+
+            if (_mcpHost != null && _mcpCts != null)
+            {
+                _mcpCts.Cancel();
+                await _mcpHost.StopAsync(CancellationToken.None);
+                _mcpHost = null;
+            }
+
+            // Close all detached free-floating windows
+            if (Avalonia.Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+            {
+                var otherWindows = desktop.Windows.Where(w => w != this).ToList();
+                foreach (var w in otherWindows)
+                    w.Close();
+            }
         }
-
-        // Close all detached free-floating windows
-        if (Avalonia.Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+        catch (Exception)
         {
-            var otherWindows = desktop.Windows.Where(w => w != this).ToList();
-            foreach (var w in otherWindows)
-                w.Close();
+            // Prevent unhandled exceptions from async void during shutdown
         }
 
         base.OnClosed(e);
