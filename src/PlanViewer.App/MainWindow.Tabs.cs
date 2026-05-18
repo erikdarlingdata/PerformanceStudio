@@ -16,7 +16,6 @@ using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using PlanViewer.App.Controls;
-using PlanViewer.App.Helpers;
 using PlanViewer.App.Mcp;
 using PlanViewer.App.Services;
 using PlanViewer.Core.Interfaces;
@@ -75,15 +74,16 @@ public partial class MainWindow : Window
         closeBtn.Tag = tab;
         closeBtn.Click += CloseTab_Click;
 
-        // Long-press to detach, middle-click to close
-        TabHeaderLongPressBehavior.Attach(
-            header,
-            onLongPress: () => DetachTabToWindow(tab),
-            onMiddleClick: () =>
+        // Middle-click to close
+        header.PointerPressed += (_, e) =>
+        {
+            if (e.GetCurrentPoint(null).Properties.PointerUpdateKind == PointerUpdateKind.MiddleButtonPressed)
             {
                 MainTabControl.Items.Remove(tab);
                 UpdateEmptyOverlay();
-            });
+                e.Handled = true;
+            }
+        };
 
         // Right-click context menu
         var copyPathItem = new MenuItem { Header = "Copy Path", Tag = tab };
@@ -97,6 +97,8 @@ public partial class MainWindow : Window
             {
                 new MenuItem { Header = "Rename Tab", Tag = new object[] { header, headerText } },
                 copyPathItem,
+                new Separator(),
+                new MenuItem { Header = "Detach to Window", Tag = tab },
                 new Separator(),
                 new MenuItem { Header = "Close", Tag = tab, InputGesture = new KeyGesture(Key.W, KeyModifiers.Control) },
                 new MenuItem { Header = "Close Other Tabs", Tag = tab },
@@ -165,6 +167,11 @@ public partial class MainWindow : Window
             case "Close All Tabs":
                 MainTabControl.Items.Clear();
                 UpdateEmptyOverlay();
+                break;
+
+            case "Detach to Window":
+                if (item.Tag is TabItem detachTab)
+                    DetachTabToWindow(detachTab);
                 break;
         }
     }
@@ -246,7 +253,8 @@ public partial class MainWindow : Window
 
     /// <summary>
     /// Detaches a tab's content into a standalone free-floating window.
-    /// When that window is minimized or closed, the content returns to a tab.
+    /// The window's Close button closes it permanently.
+    /// A "Re-dock" button in the toolbar allows the user to explicitly return the content to a tab.
     /// </summary>
     private void DetachTabToWindow(TabItem tab)
     {
@@ -260,7 +268,36 @@ public partial class MainWindow : Window
         tab.Content = null; // detach the content from the tab
         UpdateEmptyOverlay();
 
-        // Create a free-floating window
+        if (content is QueryStoreHistoryControl historyControl)
+            historyControl.ShowCloseButton(false);
+
+        // Re-dock button for explicit re-attach
+        var redockBtn = new Button
+        {
+            Content = "📌 Re-dock",
+            FontSize = 12,
+            Padding = new Avalonia.Thickness(8, 4),
+            Margin = new Avalonia.Thickness(4),
+            Background = Brushes.Transparent,
+            Foreground = new SolidColorBrush(Color.FromRgb(0xE4, 0xE6, 0xEB)),
+            BorderThickness = new Avalonia.Thickness(1),
+            BorderBrush = new SolidColorBrush(Color.FromRgb(0x55, 0x55, 0x55)),
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        var toolbar = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Children = { redockBtn }
+        };
+        DockPanel.SetDock(toolbar, Dock.Top);
+
+        var wrapper = new DockPanel
+        {
+            Children = { toolbar, content }
+        };
+
         var detachedWindow = new Window
         {
             Title = label,
@@ -270,50 +307,31 @@ public partial class MainWindow : Window
             MinHeight = 600,
             WindowStartupLocation = WindowStartupLocation.CenterScreen,
             Background = (Avalonia.Media.IBrush?)this.FindResource("BackgroundBrush") ?? Brushes.Black,
-            Content = content,
+            Content = wrapper,
             Icon = this.Icon
         };
 
-        if (content is QueryStoreHistoryControl historyControl)
-            historyControl.ShowCloseButton(false);
-
-        // When window is closed or minimized, re-dock to tab
-        bool redocked = false;
-
-        void Redock()
+        redockBtn.Click += (_, _) =>
         {
-            if (redocked || IsShuttingDown) return;
-            redocked = true;
+            // Remove content from wrapper, re-dock to tab
+            wrapper.Children.Remove(content);
+            detachedWindow.Content = null;
+            detachedWindow.Close();
 
-            detachedWindow.Content = null; // detach from window
-
-            if (content is QueryStoreHistoryControl hc)
-                hc.ShowCloseButton(false);
-
-            Dispatcher.UIThread.Post(() =>
+            if (!IsShuttingDown)
             {
-                if (IsShuttingDown) return;
                 var newTab = CreateTab(label, content);
                 MainTabControl.Items.Add(newTab);
                 MainTabControl.SelectedItem = newTab;
                 UpdateEmptyOverlay();
-            });
-        }
-
-        detachedWindow.Closing += (_, _) => Redock();
-
-        // Detect minimize → re-dock
-        detachedWindow.PropertyChanged += (_, args) =>
-        {
-            if (args.Property == Window.WindowStateProperty &&
-                detachedWindow.WindowState == WindowState.Minimized && !redocked)
-            {
-                Dispatcher.UIThread.Post(() =>
-                {
-                    Redock();
-                    detachedWindow.Close();
-                });
             }
+        };
+
+        // Window close = destroy (cancel history fetch if applicable)
+        detachedWindow.Closing += (_, _) =>
+        {
+            if (content is QueryStoreHistoryControl hc)
+                hc.CancelFetch();
         };
 
         detachedWindow.Show();

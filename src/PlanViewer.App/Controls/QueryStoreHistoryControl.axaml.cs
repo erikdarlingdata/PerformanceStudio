@@ -983,7 +983,8 @@ public partial class QueryStoreHistoryControl : UserControl
 
 	private void Close_Click(object? sender, RoutedEventArgs e)
 	{
-		// When in a detached window, close the window (which will re-dock to tab)
+		// When in a detached window, close it (this destroys the history view)
+		CancelFetch();
 		var window = TopLevel.GetTopLevel(this) as Window;
 		if (window != null && window is not PlanViewer.App.MainWindow)
 			window.Close();

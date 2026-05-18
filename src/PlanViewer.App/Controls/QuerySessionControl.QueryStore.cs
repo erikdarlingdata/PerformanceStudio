@@ -19,7 +19,6 @@ using AvaloniaEdit.CodeCompletion;
 using AvaloniaEdit.TextMate;
 using Microsoft.Data.SqlClient;
 using PlanViewer.App.Dialogs;
-using PlanViewer.App.Helpers;
 using PlanViewer.App.Services;
 using PlanViewer.Core.Interfaces;
 using PlanViewer.Core.Models;
@@ -321,13 +320,30 @@ public partial class QuerySessionControl : UserControl
             FontSize = 12
         };
 
+        var detachBtn = new Button
+        {
+            Content = "↗",  // arrow indicating detach
+            MinWidth = 22, MinHeight = 22, Width = 22, Height = 22,
+            Padding = new Avalonia.Thickness(0),
+            FontSize = 11,
+            Margin = new Avalonia.Thickness(4, 0, 0, 0),
+            Background = Brushes.Transparent,
+            BorderThickness = new Avalonia.Thickness(0),
+            Foreground = new SolidColorBrush(Color.FromRgb(0xA0, 0xA0, 0xA0)),
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center,
+            [!Avalonia.Controls.ToolTip.TipProperty] = new Avalonia.Data.Binding { Source = "Detach to Window" }
+        };
+        Avalonia.Controls.ToolTip.SetTip(detachBtn, "Detach to Window");
+
         var closeBtn = new Button
         {
             Content = "\u2715",
             MinWidth = 22, MinHeight = 22, Width = 22, Height = 22,
             Padding = new Avalonia.Thickness(0),
             FontSize = 11,
-            Margin = new Avalonia.Thickness(6, 0, 0, 0),
+            Margin = new Avalonia.Thickness(2, 0, 0, 0),
             Background = Brushes.Transparent,
             BorderThickness = new Avalonia.Thickness(0),
             Foreground = new SolidColorBrush(Color.FromRgb(0xE4, 0xE6, 0xEB)),
@@ -339,7 +355,7 @@ public partial class QuerySessionControl : UserControl
         var header = new StackPanel
         {
             Orientation = Avalonia.Layout.Orientation.Horizontal,
-            Children = { headerText, closeBtn }
+            Children = { headerText, detachBtn, closeBtn }
         };
 
         var tab = new TabItem { Header = header, Content = control };
@@ -354,8 +370,12 @@ public partial class QuerySessionControl : UserControl
             }
         };
 
-        // Long-press to detach into a free-floating window
-        TabHeaderLongPressBehavior.Attach(header, () => DetachHistorySubTabToWindow(tab));
+        detachBtn.Tag = tab;
+        detachBtn.Click += (s, _) =>
+        {
+            if (s is Button btn && btn.Tag is TabItem t)
+                DetachHistorySubTabToWindow(t);
+        };
 
         SubTabControl.Items.Add(tab);
         SubTabControl.SelectedItem = tab;
@@ -370,7 +390,7 @@ public partial class QuerySessionControl : UserControl
 
     /// <summary>
     /// Detaches a history sub-tab into a standalone free-floating window.
-    /// When that window is minimized or closed, the content returns to this session's sub-tabs.
+    /// Close = destroy. A Re-dock button allows explicit return to sub-tabs.
     /// </summary>
     private void DetachHistorySubTabToWindow(TabItem tab)
     {
@@ -385,8 +405,37 @@ public partial class QuerySessionControl : UserControl
         SubTabControl.Items.Remove(tab);
         tab.Content = null;
 
-        // Create a free-floating window (no owner → independent minimize)
         var mainWindow = Avalonia.Controls.TopLevel.GetTopLevel(this) as Window;
+
+        content.ShowCloseButton(false);
+
+        // Re-dock button
+        var redockBtn = new Button
+        {
+            Content = "📌 Re-dock",
+            FontSize = 12,
+            Padding = new Avalonia.Thickness(8, 4),
+            Margin = new Avalonia.Thickness(4),
+            Background = Brushes.Transparent,
+            Foreground = new SolidColorBrush(Color.FromRgb(0xE4, 0xE6, 0xEB)),
+            BorderThickness = new Avalonia.Thickness(1),
+            BorderBrush = new SolidColorBrush(Color.FromRgb(0x55, 0x55, 0x55)),
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        var toolbar = new StackPanel
+        {
+            Orientation = Avalonia.Layout.Orientation.Horizontal,
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+            Children = { redockBtn }
+        };
+        DockPanel.SetDock(toolbar, Dock.Top);
+
+        var wrapper = new DockPanel
+        {
+            Children = { toolbar, content }
+        };
+
         var detachedWindow = new Window
         {
             Title = tabLabel,
@@ -396,44 +445,24 @@ public partial class QuerySessionControl : UserControl
             MinHeight = 600,
             WindowStartupLocation = WindowStartupLocation.CenterScreen,
             Background = (Avalonia.Media.IBrush?)this.FindResource("BackgroundBrush") ?? Brushes.Black,
-            Content = content,
+            Content = wrapper,
             Icon = mainWindow?.Icon
         };
 
-        content.ShowCloseButton(false);
-
-        bool redocked = false;
-
-        void Redock()
+        redockBtn.Click += (_, _) =>
         {
-            if (redocked) return;
-            // Don't re-dock if the app is shutting down
-            if (mainWindow is MainWindow mw && mw.IsShuttingDown) return;
-            redocked = true;
-
+            wrapper.Children.Remove(content);
             detachedWindow.Content = null;
+            detachedWindow.Close();
 
-            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
-            {
-                if (mainWindow is MainWindow mw2 && mw2.IsShuttingDown) return;
+            if (mainWindow is not MainWindow mw || !mw.IsShuttingDown)
                 AddHistorySubTab(tabLabel, content);
-            });
-        }
+        };
 
-        detachedWindow.Closing += (_, _) => Redock();
-
-        // Detect minimize → re-dock
-        detachedWindow.PropertyChanged += (_, args) =>
+        // Window close = destroy (cancel fetch)
+        detachedWindow.Closing += (_, _) =>
         {
-            if (args.Property == Window.WindowStateProperty &&
-                detachedWindow.WindowState == WindowState.Minimized && !redocked)
-            {
-                Avalonia.Threading.Dispatcher.UIThread.Post(() =>
-                {
-                    Redock();
-                    detachedWindow.Close();
-                });
-            }
+            content.CancelFetch();
         };
 
         detachedWindow.Show();
