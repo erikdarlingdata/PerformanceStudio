@@ -12,21 +12,21 @@ public static class UpdateChecker
     private const string ReleasesApiUrl =
         "https://api.github.com/repos/erikdarlingdata/PerformanceStudio/releases/latest";
 
-    private static readonly HttpClient Http = new()
-    {
-        DefaultRequestHeaders =
-        {
-            { "User-Agent", "PerformanceStudio-UpdateCheck" },
-            { "Accept", "application/vnd.github+json" }
-        },
-        Timeout = TimeSpan.FromSeconds(10)
-    };
-
     public static async Task<UpdateCheckResult> CheckAsync(Version currentVersion)
     {
+        // Build a fresh client per call so proxy-setting changes take effect without
+        // requiring an app restart. The check is rare and the handler is cheap.
+        using var handler = ProxyHttpHandlerFactory.Create(ProxySettings.Load());
+        using var http = new HttpClient(handler)
+        {
+            Timeout = TimeSpan.FromSeconds(10)
+        };
+        http.DefaultRequestHeaders.Add("User-Agent", "PerformanceStudio-UpdateCheck");
+        http.DefaultRequestHeaders.Add("Accept", "application/vnd.github+json");
+
         try
         {
-            var json = await Http.GetStringAsync(ReleasesApiUrl);
+            var json = await http.GetStringAsync(ReleasesApiUrl);
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
 
