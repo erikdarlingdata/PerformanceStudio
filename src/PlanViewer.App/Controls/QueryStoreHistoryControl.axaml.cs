@@ -47,7 +47,6 @@ public partial class QueryStoreHistoryControl : UserControl
 
 	// Legend state
 	private bool _legendExpanded;
-	private bool _suppressGridSelectionEvent;
 	private bool _isLoadingPlan;
 	private string _dataSummaryText = "";
 
@@ -793,7 +792,7 @@ public partial class QueryStoreHistoryControl : UserControl
 		// (which would wipe sort state and scroll position)
 		foreach (var row in HistoryDataGrid.GetVisualDescendants().OfType<DataGridRow>())
 		{
-			var idx = row.GetIndex();
+			var idx = row.Index;
 			row.Background = _selectedRowIndices.Contains(idx)
 				? new SolidColorBrush(Avalonia.Media.Color.FromArgb(60, 79, 195, 247))
 				: Brushes.Transparent;
@@ -829,8 +828,6 @@ public partial class QueryStoreHistoryControl : UserControl
 
 	private void HistoryDataGrid_SelectionChanged(object? sender, SelectionChangedEventArgs e)
 	{
-		if (_suppressGridSelectionEvent) return;
-
 		_selectedRowIndices.Clear();
 		if (HistoryDataGrid.SelectedItems != null)
 		{
