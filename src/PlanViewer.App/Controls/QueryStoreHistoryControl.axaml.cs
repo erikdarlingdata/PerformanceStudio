@@ -49,6 +49,7 @@ public partial class QueryStoreHistoryControl : UserControl
 	private bool _legendExpanded;
 	private bool _suppressGridSelectionEvent;
 	private bool _isLoadingPlan;
+	private string _dataSummaryText = "";
 
 	// Legend highlight: which plan hash is currently highlighted (null = none)
 	private string? _highlightedPlanHash;
@@ -263,6 +264,7 @@ public partial class QueryStoreHistoryControl : UserControl
 				StatusText.Text = $"{_historyData.Count} intervals, {planCount} plan(s), " +
 								  $"{totalExec:N0} total executions | " +
 								  $"{first:MM/dd HH:mm} to {last:MM/dd HH:mm}";
+					_dataSummaryText = StatusText.Text;
 			}
 			else
 			{
@@ -677,21 +679,34 @@ public partial class QueryStoreHistoryControl : UserControl
 
 	private ScottPlot.Coordinates PixelToCoordinates(Point pos)
 	{
-		var scaling = HistoryChart.Bounds.Width > 0
-			? (float)(HistoryChart.Plot.RenderManager.LastRender.FigureRect.Width / HistoryChart.Bounds.Width)
+		var lastRender = HistoryChart.Plot.RenderManager.LastRender.FigureRect;
+		var scaleX = HistoryChart.Bounds.Width > 0
+			? (float)(lastRender.Width / HistoryChart.Bounds.Width)
 			: 1f;
-		var pixel = new ScottPlot.Pixel((float)(pos.X * scaling), (float)(pos.Y * scaling));
+		var scaleY = HistoryChart.Bounds.Height > 0
+			? (float)(lastRender.Height / HistoryChart.Bounds.Height)
+			: 1f;
+		var pixel = new ScottPlot.Pixel((float)(pos.X * scaleX), (float)(pos.Y * scaleY));
 		return HistoryChart.Plot.GetCoordinates(pixel);
+	}
+
+	private ScottPlot.Pixel PointToScaledPixel(Point pos)
+	{
+		var lastRender = HistoryChart.Plot.RenderManager.LastRender.FigureRect;
+		var scaleX = HistoryChart.Bounds.Width > 0
+			? (float)(lastRender.Width / HistoryChart.Bounds.Width)
+			: 1f;
+		var scaleY = HistoryChart.Bounds.Height > 0
+			? (float)(lastRender.Height / HistoryChart.Bounds.Height)
+			: 1f;
+		return new ScottPlot.Pixel((float)(pos.X * scaleX), (float)(pos.Y * scaleY));
 	}
 
 	private void HandleSingleClickSelection(Point clickPoint)
 	{
 		if (_scatters.Count == 0) return;
 
-		var scaling = HistoryChart.Bounds.Width > 0
-			? (float)(HistoryChart.Plot.RenderManager.LastRender.FigureRect.Width / HistoryChart.Bounds.Width)
-			: 1f;
-		var pixel = new ScottPlot.Pixel((float)(clickPoint.X * scaling), (float)(clickPoint.Y * scaling));
+		var pixel = PointToScaledPixel(clickPoint);
 		var mouseCoords = HistoryChart.Plot.GetCoordinates(pixel);
 
 		double bestDist = double.MaxValue;
@@ -764,16 +779,21 @@ public partial class QueryStoreHistoryControl : UserControl
 
 	private void HighlightGridRows()
 	{
+		// Update row backgrounds directly without resetting ItemsSource
+		// (which would wipe sort state and scroll position)
+		foreach (var row in HistoryDataGrid.GetVisualDescendants().OfType<DataGridRow>())
+		{
+			var idx = row.GetIndex();
+			row.Background = _selectedRowIndices.Contains(idx)
+				? new SolidColorBrush(Avalonia.Media.Color.FromArgb(60, 79, 195, 247))
+				: Brushes.Transparent;
+		}
+
+		// Also keep the LoadingRow handler for rows that get virtualized in/out
 		HistoryDataGrid.LoadingRow -= OnHighlightLoadingRow;
 		HistoryDataGrid.LoadingRow += OnHighlightLoadingRow;
 
-		_suppressGridSelectionEvent = true;
-		var source = _historyData;
-		HistoryDataGrid.ItemsSource = null;
-		HistoryDataGrid.ItemsSource = source;
-		_suppressGridSelectionEvent = false;
-
-		// Scroll after ItemsSource reset so the target row exists
+		// Scroll to first selected row
 		if (_selectedRowIndices.Count > 0)
 		{
 			var firstIdx = _selectedRowIndices.Min();
@@ -851,10 +871,7 @@ public partial class QueryStoreHistoryControl : UserControl
 		try
 		{
 			var pos = e.GetPosition(HistoryChart);
-			var scaling = HistoryChart.Bounds.Width > 0
-				? (float)(HistoryChart.Plot.RenderManager.LastRender.FigureRect.Width / HistoryChart.Bounds.Width)
-				: 1f;
-			var pixel = new ScottPlot.Pixel((float)(pos.X * scaling), (float)(pos.Y * scaling));
+			var pixel = PointToScaledPixel(pos);
 			var mouseCoords = HistoryChart.Plot.GetCoordinates(pixel);
 
 			double bestDist = double.MaxValue;
@@ -1012,8 +1029,8 @@ public partial class QueryStoreHistoryControl : UserControl
 
 	private ContextMenu CreatePlanContextMenu()
 	{
-		var loadFirstItem = new MenuItem { Header = "Load the First Plan" };
-		var loadLastItem = new MenuItem { Header = "Load the Last Plan" };
+		var loadFirstItem = new MenuItem { Header = "Load Oldest Plan for This Hash" };
+		var loadLastItem = new MenuItem { Header = "Load Newest Plan for This Hash" };
 
 		loadFirstItem.Click += (_, _) => LoadPlanFromSelection(oldest: true);
 		loadLastItem.Click += (_, _) => LoadPlanFromSelection(oldest: false);
@@ -1058,7 +1075,7 @@ public partial class QueryStoreHistoryControl : UserControl
 				return;
 			}
 
-			StatusText.Text = "";
+			StatusText.Text = _dataSummaryText;
 			PlanLoadRequested?.Invoke(this, new HistoryPlanLoadEventArgs(plan));
 		}
 		catch (Exception ex)

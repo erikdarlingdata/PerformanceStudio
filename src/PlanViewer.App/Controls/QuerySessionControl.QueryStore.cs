@@ -38,6 +38,66 @@ public partial class QuerySessionControl : UserControl
 
     public void TriggerQueryStore() => QueryStore_Click(null, new RoutedEventArgs());
 
+    /// <summary>
+    /// Creates a sub-tab with a standard header (label + optional extra buttons + close button).
+    /// Returns the TabItem. The close button removes the tab from SubTabControl.
+    /// </summary>
+    private TabItem CreateSubTab(string label, Control content, Action<TabItem>? onClose = null, params Button[] extraButtons)
+    {
+        var headerText = new TextBlock
+        {
+            Text = label,
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            FontSize = 12
+        };
+
+        var closeBtn = new Button
+        {
+            Content = "\u2715",
+            MinWidth = 22, MinHeight = 22, Width = 22, Height = 22,
+            Padding = new Avalonia.Thickness(0),
+            FontSize = 11,
+            Margin = new Avalonia.Thickness(2, 0, 0, 0),
+            Background = Brushes.Transparent,
+            BorderThickness = new Avalonia.Thickness(0),
+            Foreground = new SolidColorBrush(Color.FromRgb(0xE4, 0xE6, 0xEB)),
+            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center
+        };
+
+        var header = new StackPanel
+        {
+            Orientation = Avalonia.Layout.Orientation.Horizontal,
+            Background = Brushes.Transparent
+        };
+        header.Children.Add(headerText);
+        foreach (var btn in extraButtons)
+            header.Children.Add(btn);
+        header.Children.Add(closeBtn);
+
+        var tab = new TabItem { Header = header, Content = content };
+        closeBtn.Tag = tab;
+        closeBtn.Click += (s, _) =>
+        {
+            if (s is Button btn && btn.Tag is TabItem t)
+            {
+                onClose?.Invoke(t);
+                SubTabControl.Items.Remove(t);
+            }
+        };
+
+        return tab;
+    }
+
+    /// <summary>Gets the header TextBlock from a sub-tab created via CreateSubTab.</summary>
+    private static TextBlock? GetSubTabHeaderText(TabItem tab)
+    {
+        if (tab.Header is StackPanel sp && sp.Children.Count > 0 && sp.Children[0] is TextBlock tb)
+            return tb;
+        return null;
+    }
+
     private async void QueryStoreOverview_Click(object? sender, RoutedEventArgs e)
     {
         if (_serverConnection == null || _connectionString == null)
@@ -60,42 +120,7 @@ public partial class QuerySessionControl : UserControl
             await OpenQueryStoreForDatabaseAsync(args.Database, args.StartUtc, args.EndUtc);
         };
 
-        var headerText = new TextBlock
-        {
-            Text = "QS Overview",
-            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
-            FontSize = 12
-        };
-
-        var closeBtn = new Button
-        {
-            Content = "\u2715",
-            MinWidth = 22, MinHeight = 22, Width = 22, Height = 22,
-            Padding = new Avalonia.Thickness(0),
-            FontSize = 11,
-            Margin = new Avalonia.Thickness(6, 0, 0, 0),
-            Background = Brushes.Transparent,
-            BorderThickness = new Avalonia.Thickness(0),
-            Foreground = new SolidColorBrush(Color.FromRgb(0xE4, 0xE6, 0xEB)),
-            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
-            HorizontalContentAlignment = HorizontalAlignment.Center,
-            VerticalContentAlignment = VerticalAlignment.Center
-        };
-
-        var header = new StackPanel
-        {
-            Orientation = Avalonia.Layout.Orientation.Horizontal,
-            Children = { headerText, closeBtn }
-        };
-
-        var tab = new TabItem { Header = header, Content = overview };
-        closeBtn.Tag = tab;
-        closeBtn.Click += (s, _) =>
-        {
-            if (s is Button btn && btn.Tag is TabItem t)
-                SubTabControl.Items.Remove(t);
-        };
-
+        var tab = CreateSubTab("QS Overview", overview);
         SubTabControl.Items.Add(tab);
         SubTabControl.SelectedItem = tab;
 
@@ -152,41 +177,11 @@ public partial class QuerySessionControl : UserControl
             grid.SetInitialTimeRange(initialStartUtc.Value, initialEndUtc.Value);
         grid.PlansSelected += OnQueryStorePlansSelected;
 
-        var headerText = new TextBlock
+        var tab = CreateSubTab($"Query Store — {database}", grid);
+        grid.DatabaseChanged += (_, db) =>
         {
-            Text = $"Query Store — {database}",
-            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
-            FontSize = 12
-        };
-        grid.DatabaseChanged += (_, db) => headerText.Text = $"Query Store — {db}";
-
-        var closeBtn = new Button
-        {
-            Content = "\u2715",
-            MinWidth = 22, MinHeight = 22, Width = 22, Height = 22,
-            Padding = new Avalonia.Thickness(0),
-            FontSize = 11,
-            Margin = new Avalonia.Thickness(6, 0, 0, 0),
-            Background = Brushes.Transparent,
-            BorderThickness = new Avalonia.Thickness(0),
-            Foreground = new SolidColorBrush(Color.FromRgb(0xE4, 0xE6, 0xEB)),
-            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
-            HorizontalContentAlignment = HorizontalAlignment.Center,
-            VerticalContentAlignment = VerticalAlignment.Center
-        };
-
-        var header = new StackPanel
-        {
-            Orientation = Avalonia.Layout.Orientation.Horizontal,
-            Children = { headerText, closeBtn }
-        };
-
-        var tab = new TabItem { Header = header, Content = grid };
-        closeBtn.Tag = tab;
-        closeBtn.Click += (s, _) =>
-        {
-            if (s is Button btn && btn.Tag is TabItem t)
-                SubTabControl.Items.Remove(t);
+            if (GetSubTabHeaderText(tab) is TextBlock tb)
+                tb.Text = $"Query Store — {db}";
         };
 
         SubTabControl.Items.Add(tab);
@@ -244,46 +239,12 @@ public partial class QuerySessionControl : UserControl
             _selectedDatabase!, databases, supportsWaitStats);
         grid.PlansSelected += OnQueryStorePlansSelected;
 
-        var headerText = new TextBlock
-        {
-            Text = $"Query Store — {_selectedDatabase}",
-            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
-            FontSize = 12
-        };
-
+        var tab = CreateSubTab($"Query Store — {_selectedDatabase}", grid);
         // Update tab header when database is changed via the grid's picker
         grid.DatabaseChanged += (_, db) =>
         {
-            headerText.Text = $"Query Store — {db}";
-        };
-
-        var closeBtn = new Button
-        {
-            Content = "\u2715",
-            MinWidth = 22, MinHeight = 22, Width = 22, Height = 22,
-            Padding = new Avalonia.Thickness(0),
-            FontSize = 11,
-            Margin = new Avalonia.Thickness(6, 0, 0, 0),
-            Background = Brushes.Transparent,
-            BorderThickness = new Avalonia.Thickness(0),
-            Foreground = new SolidColorBrush(Color.FromRgb(0xE4, 0xE6, 0xEB)),
-            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
-            HorizontalContentAlignment = HorizontalAlignment.Center,
-            VerticalContentAlignment = VerticalAlignment.Center
-        };
-
-        var header = new StackPanel
-        {
-            Orientation = Avalonia.Layout.Orientation.Horizontal,
-            Children = { headerText, closeBtn }
-        };
-
-        var tab = new TabItem { Header = header, Content = grid };
-        closeBtn.Tag = tab;
-        closeBtn.Click += (s, _) =>
-        {
-            if (s is Button btn && btn.Tag is TabItem t)
-                SubTabControl.Items.Remove(t);
+            if (GetSubTabHeaderText(tab) is TextBlock tb)
+                tb.Text = $"Query Store — {db}";
         };
 
         SubTabControl.Items.Add(tab);
@@ -313,16 +274,9 @@ public partial class QuerySessionControl : UserControl
         control.PlanLoadRequested -= OnHistoryPlanLoadRequested;
         control.PlanLoadRequested += OnHistoryPlanLoadRequested;
 
-        var headerText = new TextBlock
-        {
-            Text = label,
-            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
-            FontSize = 12
-        };
-
         var detachBtn = new Button
         {
-            Content = "↗",  // arrow indicating detach
+            Content = "↗",
             MinWidth = 22, MinHeight = 22, Width = 22, Height = 22,
             Padding = new Avalonia.Thickness(0),
             FontSize = 11,
@@ -332,43 +286,13 @@ public partial class QuerySessionControl : UserControl
             Foreground = new SolidColorBrush(Color.FromRgb(0xA0, 0xA0, 0xA0)),
             VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
             HorizontalContentAlignment = HorizontalAlignment.Center,
-            VerticalContentAlignment = VerticalAlignment.Center,
-            [!Avalonia.Controls.ToolTip.TipProperty] = new Avalonia.Data.Binding { Source = "Detach to Window" }
+            VerticalContentAlignment = VerticalAlignment.Center
         };
         Avalonia.Controls.ToolTip.SetTip(detachBtn, "Detach to Window");
 
-        var closeBtn = new Button
-        {
-            Content = "\u2715",
-            MinWidth = 22, MinHeight = 22, Width = 22, Height = 22,
-            Padding = new Avalonia.Thickness(0),
-            FontSize = 11,
-            Margin = new Avalonia.Thickness(2, 0, 0, 0),
-            Background = Brushes.Transparent,
-            BorderThickness = new Avalonia.Thickness(0),
-            Foreground = new SolidColorBrush(Color.FromRgb(0xE4, 0xE6, 0xEB)),
-            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
-            HorizontalContentAlignment = HorizontalAlignment.Center,
-            VerticalContentAlignment = VerticalAlignment.Center
-        };
-
-        var header = new StackPanel
-        {
-            Orientation = Avalonia.Layout.Orientation.Horizontal,
-            Children = { headerText, detachBtn, closeBtn }
-        };
-
-        var tab = new TabItem { Header = header, Content = control };
-        closeBtn.Tag = tab;
-        closeBtn.Click += (s, _) =>
-        {
-            if (s is Button btn && btn.Tag is TabItem t)
-            {
-                if (t.Content is QueryStoreHistoryControl hc)
-                    hc.CancelFetch();
-                SubTabControl.Items.Remove(t);
-            }
-        };
+        var tab = CreateSubTab(label, control,
+            onClose: t => { if (t.Content is QueryStoreHistoryControl hc) hc.CancelFetch(); },
+            detachBtn);
 
         detachBtn.Tag = tab;
         detachBtn.Click += (s, _) =>
@@ -397,9 +321,7 @@ public partial class QuerySessionControl : UserControl
         var content = tab.Content as QueryStoreHistoryControl;
         if (content == null) return;
 
-        var tabLabel = "History";
-        if (tab.Header is StackPanel sp && sp.Children.Count > 0 && sp.Children[0] is TextBlock tb)
-            tabLabel = tb.Text ?? "History";
+        var tabLabel = GetSubTabHeaderText(tab)?.Text ?? "History";
 
         // Remove from sub-tabs
         SubTabControl.Items.Remove(tab);
