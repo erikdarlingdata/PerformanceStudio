@@ -278,7 +278,7 @@ public partial class QueryStoreHistoryControl : UserControl
 		}
 		catch (Exception ex)
 		{
-			StatusText.Text = ex.Message.Length > 80 ? ex.Message[..80] + "..." : ex.Message;
+			StatusText.Text = ex.Message;
 		}
 	}
 

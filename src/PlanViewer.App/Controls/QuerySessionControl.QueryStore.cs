@@ -106,7 +106,7 @@ public partial class QuerySessionControl : UserControl
         }
         catch (Exception ex)
         {
-            SetStatus(ex.Message.Length > 80 ? ex.Message[..80] + "..." : ex.Message, autoClear: false);
+            SetStatus(ex.Message, autoClear: false);
         }
     }
 
@@ -127,7 +127,7 @@ public partial class QuerySessionControl : UserControl
         }
         catch (Exception ex)
         {
-            SetStatus(ex.Message.Length > 80 ? ex.Message[..80] + "..." : ex.Message, autoClear: false);
+            SetStatus(ex.Message, autoClear: false);
             return;
         }
 
