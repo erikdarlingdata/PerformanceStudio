@@ -6,10 +6,8 @@
 
 using System;
 using System.Diagnostics;
-using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
-using System.Text.Json;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Input.Platform;
@@ -25,6 +23,7 @@ public partial class AboutWindow : Window
     private const string GitHubUrl = "https://github.com/erikdarlingdata/PerformanceStudio";
     private const string IssuesUrl = "https://github.com/erikdarlingdata/PerformanceStudio/issues";
     private const string DarlingDataUrl = "https://www.erikdarling.com";
+    private const string ReleasesUrl = "https://github.com/erikdarlingdata/PerformanceStudio/releases/latest";
 
     public AboutWindow()
     {
@@ -34,29 +33,75 @@ public partial class AboutWindow : Window
             VersionText.Text = $"Version {version.Major}.{version.Minor}.{version.Build}";
 
         // Load current MCP settings
-        var settings = McpSettings.Load();
-        McpEnabledCheckBox.IsChecked = settings.Enabled;
-        McpPortInput.Text = settings.Port.ToString();
+        var mcp = McpSettings.Load();
+        McpEnabledCheckBox.IsChecked = mcp.Enabled;
+        McpPortInput.Text = mcp.Port.ToString();
 
         // Save on change
         McpEnabledCheckBox.IsCheckedChanged += (_, _) => SaveMcpSettings();
         McpPortInput.LostFocus += (_, _) => SaveMcpSettings();
+
+        // Load proxy settings. The password is intentionally NOT round-tripped
+        // through the UI — TextBox.PasswordChar only masks the glyph, the cleartext
+        // still lives in the visual/accessibility tree. We surface "(saved — leave
+        // blank to keep)" via the watermark instead, and only update the credential
+        // when the user types a new value.
+        var proxy = ProxySettings.Load();
+        _hasStoredProxyPassword = !string.IsNullOrEmpty(proxy.Password);
+        ProxySystemRadio.IsChecked = proxy.Mode == ProxyMode.System;
+        ProxyManualRadio.IsChecked = proxy.Mode == ProxyMode.Manual;
+        ProxyAddressInput.Text = proxy.Address;
+        ProxyUsernameInput.Text = proxy.Username;
+        ProxyPasswordInput.Watermark = _hasStoredProxyPassword
+            ? "(saved — leave blank to keep)"
+            : "";
+        ProxyManualPanel.IsVisible = proxy.Mode == ProxyMode.Manual;
+
+        // Both radios fire IsCheckedChanged on every selection (one going false,
+        // one going true). Only the now-checked one should drive the save —
+        // otherwise the credential write races itself.
+        void OnProxyRadioChanged(object? sender, RoutedEventArgs _)
+        {
+            if (sender is RadioButton rb && rb.IsChecked == true)
+            {
+                ProxyManualPanel.IsVisible = ProxyManualRadio.IsChecked == true;
+                SaveProxySettings();
+            }
+        }
+        ProxySystemRadio.IsCheckedChanged += OnProxyRadioChanged;
+        ProxyManualRadio.IsCheckedChanged += OnProxyRadioChanged;
+        ProxyAddressInput.LostFocus += (_, _) => SaveProxySettings();
+        ProxyUsernameInput.LostFocus += (_, _) => SaveProxySettings();
+        ProxyPasswordInput.LostFocus += (_, _) => SaveProxySettings();
     }
+
+    private bool _hasStoredProxyPassword;
 
     private void SaveMcpSettings()
     {
-        var settingsDir = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".planview");
-        var settingsFile = Path.Combine(settingsDir, "settings.json");
-
-        var json = JsonSerializer.Serialize(new
+        Services.SettingsFile.Update(o =>
         {
-            mcp_enabled = McpEnabledCheckBox.IsChecked == true,
-            mcp_port = int.TryParse(McpPortInput.Text, out var p) && p >= 1024 && p <= 65535 ? p : 5152
-        }, new JsonSerializerOptions { WriteIndented = true });
+            o["mcp_enabled"] = McpEnabledCheckBox.IsChecked == true;
+            o["mcp_port"] = int.TryParse(McpPortInput.Text, out var p) && p >= 1024 && p <= 65535 ? p : 5152;
+        });
+    }
 
-        Directory.CreateDirectory(settingsDir);
-        Services.AtomicFile.WriteAllText(settingsFile, json);
+    private void SaveProxySettings()
+    {
+        var typedPassword = ProxyPasswordInput.Text ?? "";
+        var settings = new ProxySettings
+        {
+            Mode = ProxyManualRadio.IsChecked == true ? ProxyMode.Manual : ProxyMode.System,
+            Address = ProxyAddressInput.Text ?? "",
+            Username = ProxyUsernameInput.Text ?? "",
+            Password = typedPassword
+        };
+        // Empty textbox + an existing stored password means "keep what's there".
+        // Save() signals "leave the credential alone" with TouchCredential=false.
+        settings.TouchCredential = !(typedPassword.Length == 0 && _hasStoredProxyPassword);
+        settings.Save();
+        if (settings.TouchCredential)
+            _hasStoredProxyPassword = !string.IsNullOrEmpty(typedPassword);
     }
 
     private void GitHubLink_Click(object? sender, PointerPressedEventArgs e) => OpenUrl(GitHubUrl);
@@ -83,15 +128,20 @@ public partial class AboutWindow : Window
         CheckUpdateButton.IsEnabled = false;
         UpdateStatusText.Text = "Checking...";
         UpdateLink.IsVisible = false;
+        ReleasesPageLink.IsVisible = false;
 
-        // Try Velopack first (Windows only, supports download + apply)
+        // Try Velopack first (Windows only, supports download + apply). The custom
+        // downloader routes through the user's proxy + Windows credentials so this
+        // works on corporate networks (issue #314).
+        string? velopackError = null;
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
             try
             {
                 _velopackMgr = new UpdateManager(
                     new Velopack.Sources.GithubSource(
-                        "https://github.com/erikdarlingdata/PerformanceStudio", null, false));
+                        "https://github.com/erikdarlingdata/PerformanceStudio",
+                        null, false, new ProxyAwareDownloader()));
 
                 _velopackUpdate = await _velopackMgr.CheckForUpdatesAsync();
                 if (_velopackUpdate != null)
@@ -103,9 +153,12 @@ public partial class AboutWindow : Window
                     return;
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                // Velopack packages may not exist yet — fall through
+                // Velopack packages may not exist yet — fall through to API check.
+                // Hold onto the message in case the API check also fails (issue #314
+                // is exactly the case where the auth error here is the useful one).
+                velopackError = ex.Message;
             }
         }
 
@@ -115,7 +168,10 @@ public partial class AboutWindow : Window
 
         if (result.Error != null)
         {
-            UpdateStatusText.Text = $"Error: {result.Error}";
+            UpdateStatusText.Text = velopackError != null && velopackError != result.Error
+                ? $"Error: {result.Error} (installer check also failed: {velopackError})"
+                : $"Error: {result.Error}";
+            ReleasesPageLink.IsVisible = true;
         }
         else if (result.UpdateAvailable)
         {
@@ -131,6 +187,8 @@ public partial class AboutWindow : Window
 
         CheckUpdateButton.IsEnabled = true;
     }
+
+    private void ReleasesPageLink_Click(object? sender, PointerPressedEventArgs e) => OpenUrl(ReleasesUrl);
 
     private bool _updateDownloaded;
 
@@ -201,6 +259,7 @@ public partial class AboutWindow : Window
             {
                 UpdateStatusText.Text = $"Update failed: {ex.Message}";
                 UpdateLink.IsVisible = false;
+                ReleasesPageLink.IsVisible = true;
             }
             return;
         }

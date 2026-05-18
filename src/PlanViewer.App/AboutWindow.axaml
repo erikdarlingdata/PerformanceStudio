@@ -2,7 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="PlanViewer.App.AboutWindow"
         Title="About Performance Studio"
-        Width="450" Height="500"
+        Width="480" Height="640"
         CanResize="False"
         WindowStartupLocation="CenterOwner"
         Icon="avares://PlanViewer.App/EDD.ico"
@@ -47,14 +47,22 @@
             <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,6,0,0">
                 <Button x:Name="CheckUpdateButton" Content="Check for Updates"
                         Click="CheckUpdate_Click" Padding="10,4" FontSize="12"/>
-                <TextBlock x:Name="UpdateStatusText" FontSize="12" VerticalAlignment="Center"
-                           Foreground="{DynamicResource ForegroundBrush}"/>
                 <TextBlock x:Name="UpdateLink" FontSize="12" VerticalAlignment="Center"
                            Foreground="{DynamicResource AccentBrush}"
                            Cursor="Hand" IsVisible="False"
                            TextDecorations="Underline"
                            PointerPressed="UpdateLink_Click"/>
             </StackPanel>
+            <TextBlock x:Name="UpdateStatusText" FontSize="12"
+                       Foreground="{DynamicResource ForegroundBrush}"
+                       TextWrapping="Wrap" Margin="0,4,0,0"/>
+            <TextBlock x:Name="ReleasesPageLink" FontSize="12"
+                       Foreground="{DynamicResource AccentBrush}"
+                       Cursor="Hand" IsVisible="False"
+                       Text="Open the releases page in your browser"
+                       TextDecorations="Underline"
+                       PointerPressed="ReleasesPageLink_Click"
+                       Margin="0,4,0,0"/>
         </StackPanel>
 
         <!-- MCP Settings -->
@@ -80,6 +88,42 @@
                 <TextBlock x:Name="McpCopyStatus" FontSize="11" VerticalAlignment="Center"
                            Foreground="{DynamicResource ForegroundBrush}"/>
             </StackPanel>
+
+            <!-- Proxy Settings -->
+            <TextBlock Text="Proxy" FontWeight="SemiBold" FontSize="12"
+                       Foreground="{DynamicResource ForegroundBrush}" Margin="0,16,0,4"/>
+            <StackPanel Orientation="Horizontal" Spacing="12">
+                <RadioButton x:Name="ProxySystemRadio" GroupName="ProxyMode"
+                             Content="Use system proxy (Windows credentials)"
+                             FontSize="12" IsChecked="True"
+                             Foreground="{DynamicResource ForegroundBrush}"/>
+                <RadioButton x:Name="ProxyManualRadio" GroupName="ProxyMode"
+                             Content="Manual"
+                             FontSize="12"
+                             Foreground="{DynamicResource ForegroundBrush}"/>
+            </StackPanel>
+            <Grid x:Name="ProxyManualPanel" IsVisible="False"
+                  ColumnDefinitions="90,*" RowDefinitions="Auto,Auto,Auto"
+                  Margin="0,8,0,0" RowSpacing="6" ColumnSpacing="8">
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="Address:" FontSize="12"
+                           VerticalAlignment="Center"
+                           Foreground="{DynamicResource ForegroundBrush}"/>
+                <TextBox Grid.Row="0" Grid.Column="1" x:Name="ProxyAddressInput"
+                         Watermark="http://proxy.example.com:8080" FontSize="12"
+                         Padding="6,2" Height="28"/>
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="Username:" FontSize="12"
+                           VerticalAlignment="Center"
+                           Foreground="{DynamicResource ForegroundBrush}"/>
+                <TextBox Grid.Row="1" Grid.Column="1" x:Name="ProxyUsernameInput"
+                         Watermark="DOMAIN\user" FontSize="12"
+                         Padding="6,2" Height="28"/>
+                <TextBlock Grid.Row="2" Grid.Column="0" Text="Password:" FontSize="12"
+                           VerticalAlignment="Center"
+                           Foreground="{DynamicResource ForegroundBrush}"/>
+                <TextBox Grid.Row="2" Grid.Column="1" x:Name="ProxyPasswordInput"
+                         PasswordChar="•" FontSize="12"
+                         Padding="6,2" Height="28"/>
+            </Grid>
         </StackPanel>
 
         <!-- Close -->
