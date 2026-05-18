@@ -213,6 +213,11 @@ public partial class QueryStoreHistoryControl : UserControl
 		_fetchCts = null;
 	}
 
+	private void Cancel_Click(object? sender, RoutedEventArgs e)
+	{
+		CancelFetch();
+	}
+
 	/// <summary>
 	/// Maps a grid orderBy tag (e.g. "cpu", "avg-duration") to the history metric tag.
 	/// </summary>
@@ -231,6 +236,7 @@ public partial class QueryStoreHistoryControl : UserControl
 		var ct = _fetchCts.Token;
 
 		StatusText.Text = "Loading...";
+		LoadingPanel.IsVisible = true;
 
 		try
 		{
@@ -281,6 +287,10 @@ public partial class QueryStoreHistoryControl : UserControl
 		catch (Exception ex)
 		{
 			StatusText.Text = ex.Message;
+		}
+		finally
+		{
+			LoadingPanel.IsVisible = false;
 		}
 	}
 

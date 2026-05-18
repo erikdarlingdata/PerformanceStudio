@@ -16,6 +16,7 @@ using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using PlanViewer.App.Controls;
+using PlanViewer.App.Helpers;
 using PlanViewer.App.Mcp;
 using PlanViewer.App.Services;
 using PlanViewer.Core.Interfaces;
@@ -265,75 +266,31 @@ public partial class MainWindow : Window
 
         // Remove the tab
         MainTabControl.Items.Remove(tab);
-        tab.Content = null; // detach the content from the tab
+        tab.Content = null;
         UpdateEmptyOverlay();
 
         if (content is QueryStoreHistoryControl historyControl)
             historyControl.ShowCloseButton(false);
 
-        // Re-dock button for explicit re-attach
-        var redockBtn = new Button
-        {
-            Content = "📌 Re-dock",
-            FontSize = 12,
-            Padding = new Avalonia.Thickness(8, 4),
-            Margin = new Avalonia.Thickness(4),
-            Background = Brushes.Transparent,
-            Foreground = new SolidColorBrush(Color.FromRgb(0xE4, 0xE6, 0xEB)),
-            BorderThickness = new Avalonia.Thickness(1),
-            BorderBrush = new SolidColorBrush(Color.FromRgb(0x55, 0x55, 0x55)),
-            VerticalAlignment = VerticalAlignment.Center
-        };
-
-        var toolbar = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            HorizontalAlignment = HorizontalAlignment.Right,
-            Children = { redockBtn }
-        };
-        DockPanel.SetDock(toolbar, Dock.Top);
-
-        var wrapper = new DockPanel
-        {
-            Children = { toolbar, content }
-        };
-
-        var detachedWindow = new Window
-        {
-            Title = label,
-            Width = 1280,
-            Height = 800,
-            MinWidth = 900,
-            MinHeight = 600,
-            WindowStartupLocation = WindowStartupLocation.CenterScreen,
-            Background = (Avalonia.Media.IBrush?)this.FindResource("BackgroundBrush") ?? Brushes.Black,
-            Content = wrapper,
-            Icon = this.Icon
-        };
-
-        redockBtn.Click += (_, _) =>
-        {
-            // Remove content from wrapper, re-dock to tab
-            wrapper.Children.Remove(content);
-            detachedWindow.Content = null;
-            detachedWindow.Close();
-
-            if (!IsShuttingDown)
+        DetachedWindowHelper.ShowDetached(
+            content,
+            title: label,
+            icon: this.Icon,
+            backgroundBrush: (Avalonia.Media.IBrush?)this.FindResource("BackgroundBrush"),
+            onRedock: c =>
             {
-                var newTab = CreateTab(label, content);
-                MainTabControl.Items.Add(newTab);
-                MainTabControl.SelectedItem = newTab;
-                UpdateEmptyOverlay();
-            }
-        };
-
-        // Window close = destroy (cancel history fetch if applicable)
-        detachedWindow.Closing += (_, _) =>
-        {
-            if (content is QueryStoreHistoryControl hc)
-                hc.CancelFetch();
-        };
-
-        detachedWindow.Show();
+                if (!IsShuttingDown)
+                {
+                    var newTab = CreateTab(label, c);
+                    MainTabControl.Items.Add(newTab);
+                    MainTabControl.SelectedItem = newTab;
+                    UpdateEmptyOverlay();
+                }
+            },
+            onClosing: c =>
+            {
+                if (c is QueryStoreHistoryControl hc)
+                    hc.CancelFetch();
+            });
     }
 }

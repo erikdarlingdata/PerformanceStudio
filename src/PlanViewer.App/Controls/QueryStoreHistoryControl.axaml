@@ -37,7 +37,7 @@
 		<Border Grid.Row="2" Background="{DynamicResource BackgroundDarkBrush}" Padding="8,6"
 				BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1" CornerRadius="3"
 				Margin="0,0,0,8">
-			<Grid ColumnDefinitions="Auto,*">
+			<Grid ColumnDefinitions="Auto,*,Auto">
 				<StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="12">
 					<ComboBox x:Name="MetricSelector" Width="200" Height="32" FontSize="13"
 							  VerticalAlignment="Center"
@@ -69,6 +69,13 @@
 				<TextBlock Grid.Column="1" x:Name="StatusText" VerticalAlignment="Center"
 						   HorizontalAlignment="Right"
 						   FontSize="12" Foreground="{DynamicResource ForegroundBrush}"/>
+				<StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
+							x:Name="LoadingPanel" IsVisible="False" Margin="8,0,0,0">
+					<ProgressBar IsIndeterminate="True" Width="80" Height="6" VerticalAlignment="Center"/>
+					<Button x:Name="CancelButton" Content="Cancel" Click="Cancel_Click"
+							Height="24" Padding="10,0" FontSize="11"
+							Theme="{StaticResource AppButton}"/>
+				</StackPanel>
 			</Grid>
 		</Border>
 
