@@ -12,7 +12,7 @@ Thank you for your interest in contributing to Performance Studio! This guide wi
 
 ### Prerequisites
 
-- [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
+- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
 - Git
 
 ### Build and Test

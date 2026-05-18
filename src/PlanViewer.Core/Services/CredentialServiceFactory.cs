@@ -7,7 +7,7 @@ public static class CredentialServiceFactory
     public static ICredentialService Create()
     {
         // CA1416: the underlying CredentialManager API declares "windows5.1.2600" (XP+);
-        // .NET 8 won't run on anything below Windows 10, so OperatingSystem.IsWindows() is sufficient.
+        // .NET 10 won't run on anything below Windows 10, so OperatingSystem.IsWindows() is sufficient.
 #pragma warning disable CA1416
         if (OperatingSystem.IsWindows())
             return new WindowsCredentialService();
