@@ -22,7 +22,7 @@ jobs:
         id: version
         shell: pwsh
         run: |
-          $version = ([xml](Get-Content src/PlanViewer.App/PlanViewer.App.csproj)).Project.PropertyGroup.Version | Where-Object { $_ }
+          $version = ([xml](Get-Content src/Directory.Build.props)).Project.PropertyGroup.Version | Where-Object { $_ }
           echo "VERSION=$version" >> $env:GITHUB_OUTPUT
 
       - name: Check if release already exists

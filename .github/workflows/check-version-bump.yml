@@ -16,7 +16,7 @@ jobs:
         id: pr
         shell: pwsh
         run: |
-          $version = ([xml](Get-Content src/PlanViewer.App/PlanViewer.App.csproj)).Project.PropertyGroup.Version | Where-Object { $_ }
+          $version = ([xml](Get-Content src/Directory.Build.props)).Project.PropertyGroup.Version | Where-Object { $_ }
           echo "VERSION=$version" >> $env:GITHUB_OUTPUT
           Write-Host "PR version: $version"
 
@@ -30,7 +30,7 @@ jobs:
         id: main
         shell: pwsh
         run: |
-          $version = ([xml](Get-Content main-branch/src/PlanViewer.App/PlanViewer.App.csproj)).Project.PropertyGroup.Version | Where-Object { $_ }
+          $version = ([xml](Get-Content main-branch/src/Directory.Build.props)).Project.PropertyGroup.Version | Where-Object { $_ }
           echo "VERSION=$version" >> $env:GITHUB_OUTPUT
           Write-Host "Main version: $version"
 

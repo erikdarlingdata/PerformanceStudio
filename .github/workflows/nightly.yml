@@ -51,7 +51,7 @@ jobs:
         id: version
         shell: pwsh
         run: |
-          $base = ([xml](Get-Content src/PlanViewer.App/PlanViewer.App.csproj)).Project.PropertyGroup.Version | Where-Object { $_ }
+          $base = ([xml](Get-Content src/Directory.Build.props)).Project.PropertyGroup.Version | Where-Object { $_ }
           $date = Get-Date -Format "yyyyMMdd"
           $nightly = "$base-nightly.$date"
           echo "VERSION=$nightly" >> $env:GITHUB_OUTPUT
