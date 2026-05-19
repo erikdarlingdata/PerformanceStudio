@@ -96,7 +96,7 @@ public static class PlanTestHelper
     /// </summary>
     public static ParsedPlan? LoadFromInternal(string planFileName)
     {
-        // Walk up from bin/Debug/net8.0 to find the repo root
+        // Walk up from bin/Debug/net10.0 to find the repo root
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
         while (dir != null && !Directory.Exists(Path.Combine(dir.FullName, ".internal")))
             dir = dir.Parent;

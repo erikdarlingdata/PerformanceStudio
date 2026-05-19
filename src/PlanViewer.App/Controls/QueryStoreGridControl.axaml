@@ -78,21 +78,33 @@
                 </StackPanel>
                 <StackPanel Spacing="4">
                     <TextBlock Text="Search by" Foreground="{DynamicResource ForegroundBrush}" FontSize="11"/>
-                    <ComboBox x:Name="SearchTypeBox" Width="120" Height="36" FontSize="13"
-                              SelectedIndex="0">
+                    <ComboBox x:Name="SearchTypeBox" Width="140" Height="36" FontSize="13"
+                              SelectedIndex="0" SelectionChanged="SearchType_SelectionChanged">
                         <ComboBoxItem Content="(none)" Tag=""/>
                         <ComboBoxItem Content="Query ID" Tag="query-id"/>
                         <ComboBoxItem Content="Plan ID" Tag="plan-id"/>
                         <ComboBoxItem Content="Query Hash" Tag="query-hash"/>
                         <ComboBoxItem Content="Plan Hash" Tag="plan-hash"/>
                         <ComboBoxItem Content="Module" Tag="module"/>
+                        <ComboBoxItem Content="Execution Type" Tag="execution-type"/>
                     </ComboBox>
                 </StackPanel>
-                <StackPanel Spacing="4">
+                <StackPanel x:Name="SearchValuePanel" Spacing="4">
                     <TextBlock Text=" " FontSize="11"/>
                     <TextBox x:Name="SearchValueBox" Width="200" Height="36" FontSize="13"
                              Watermark="0x1AB2C3, dbo.MyProc"
                              KeyDown="SearchValue_KeyDown"/>
+                </StackPanel>
+                <StackPanel x:Name="ExecutionTypePanel" Spacing="4" IsVisible="False">
+                    <TextBlock Text="Execution Type" Foreground="{DynamicResource ForegroundBrush}" FontSize="11"/>
+                    <ComboBox x:Name="ExecutionTypeBox" Width="120" Height="36" FontSize="13"
+                              SelectedIndex="0">
+                        <ComboBoxItem Content="(any)" Tag="any"/>
+                        <ComboBoxItem Content="Regular" Tag="Regular"/>
+                        <ComboBoxItem Content="Aborted" Tag="Aborted"/>
+                        <ComboBoxItem Content="Exception" Tag="Exception"/>
+                        <ComboBoxItem Content="Failed" Tag="Failed"/>
+                    </ComboBox>
                 </StackPanel>
                 <StackPanel Spacing="4">
                     <TextBlock Text="Time display" Foreground="{DynamicResource ForegroundBrush}" FontSize="11"/>
@@ -133,6 +145,7 @@
                   Background="{DynamicResource BackgroundDarkBrush}"
                   BorderThickness="0"
                   Sorting="ResultsGrid_Sorting"
+                  DoubleTapped="ResultsGrid_DoubleTapped"
                   ScrollViewer.HorizontalScrollBarVisibility="Auto">
             <DataGrid.ContextMenu>
                 <ContextMenu Opening="ContextMenu_Opening">
@@ -350,6 +363,7 @@
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
+                <DataGridTextColumn Header="Execution Type" Binding="{ReflectionBinding ExecutionTypeDesc}" SortMemberPath="ExecutionTypeDesc" Width="110"/>
             </DataGrid.Columns>
         </DataGrid>
         <!-- Loading overlay -->

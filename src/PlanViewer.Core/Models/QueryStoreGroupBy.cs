@@ -44,6 +44,7 @@ public class QueryStoreGroupedPlanRow
     /// for a query_hash/plan_hash pair. Only meaningful for leaf-level (QueryId/PlanId) rows.
     /// </summary>
     public bool IsTopRepresentative { get; set; }
+    public string ExecutionTypeDesc { get; set; } = "";
 }
 
 /// <summary>

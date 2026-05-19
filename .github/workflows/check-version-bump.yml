@@ -10,18 +10,23 @@ jobs:
 
     steps:
       - name: Checkout PR branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Get PR version
         id: pr
         shell: pwsh
         run: |
-          $version = ([xml](Get-Content src/PlanViewer.App/PlanViewer.App.csproj)).Project.PropertyGroup.Version | Where-Object { $_ }
+          # Prefer Directory.Build.props; fall back to App.csproj for branches that
+          # predate the version-unification refactor (PR #315).
+          $ddb = 'src/Directory.Build.props'
+          $app = 'src/PlanViewer.App/PlanViewer.App.csproj'
+          $path = if (Test-Path $ddb) { $ddb } else { $app }
+          $version = ([xml](Get-Content $path)).Project.PropertyGroup.Version | Where-Object { $_ }
           echo "VERSION=$version" >> $env:GITHUB_OUTPUT
-          Write-Host "PR version: $version"
+          Write-Host "PR version: $version (from $path)"
 
       - name: Checkout main
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: main
           path: main-branch
@@ -30,9 +35,12 @@ jobs:
         id: main
         shell: pwsh
         run: |
-          $version = ([xml](Get-Content main-branch/src/PlanViewer.App/PlanViewer.App.csproj)).Project.PropertyGroup.Version | Where-Object { $_ }
+          $ddb = 'main-branch/src/Directory.Build.props'
+          $app = 'main-branch/src/PlanViewer.App/PlanViewer.App.csproj'
+          $path = if (Test-Path $ddb) { $ddb } else { $app }
+          $version = ([xml](Get-Content $path)).Project.PropertyGroup.Version | Where-Object { $_ }
           echo "VERSION=$version" >> $env:GITHUB_OUTPUT
-          Write-Host "Main version: $version"
+          Write-Host "Main version: $version (from $path)"
 
       - name: Compare versions
         env:
@@ -42,7 +50,7 @@ jobs:
           echo "Main version: $MAIN_VERSION"
           echo "PR version:   $PR_VERSION"
           if [ "$PR_VERSION" == "$MAIN_VERSION" ]; then
-            echo "::error::Version in PlanViewer.App.csproj ($PR_VERSION) has not changed from main. Bump the version before merging to main."
+            echo "::error::Version ($PR_VERSION) has not changed from main. Bump the version before merging to main."
             exit 1
           fi
           echo "✅ Version bumped: $MAIN_VERSION → $PR_VERSION"

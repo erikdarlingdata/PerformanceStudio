@@ -7,7 +7,7 @@ using Microsoft.Win32;
 namespace PlanViewer.Ssms
 {
     /// <summary>
-    /// Finds and launches SQL Performance Studio with a plan file.
+    /// Finds and launches Performance Studio with a plan file.
     /// If the app is already running, sends the file via named pipe
     /// so it opens as a new tab instead of a new window.
     /// </summary>
@@ -39,7 +39,7 @@ namespace PlanViewer.Ssms
         }
 
         /// <summary>
-        /// Opens the file in SQL Performance Studio. If the app is already running,
+        /// Opens the file in Performance Studio. If the app is already running,
         /// sends the file path via named pipe (opens as a new tab). Otherwise
         /// launches a new instance.
         /// Returns true if the file was sent or launched successfully.
@@ -172,6 +172,9 @@ namespace PlanViewer.Ssms
                 Path.Combine(localAppData, "Programs", "plan-b", ExeName),
                 Path.Combine(programFiles, "DarlingData", "SQLPerformanceStudio", ExeName),
                 Path.Combine(programFilesX86, "DarlingData", "SQLPerformanceStudio", ExeName),
+                Path.Combine(programFiles, "Performance Studio", ExeName),
+                Path.Combine(programFilesX86, "Performance Studio", ExeName),
+                // Legacy install paths — kept so existing installs still launch:
                 Path.Combine(programFiles, "SQL Performance Studio", ExeName),
                 Path.Combine(programFilesX86, "SQL Performance Studio", ExeName),
             };
@@ -194,8 +197,8 @@ namespace PlanViewer.Ssms
         {
             using (var dialog = new System.Windows.Forms.OpenFileDialog())
             {
-                dialog.Title = "Locate SQL Performance Studio";
-                dialog.Filter = "SQL Performance Studio|PlanViewer.App.exe|All executables|*.exe";
+                dialog.Title = "Locate Performance Studio";
+                dialog.Filter = "Performance Studio|PlanViewer.App.exe|All executables|*.exe";
                 dialog.FileName = ExeName;
 
                 if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK

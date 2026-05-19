@@ -5,37 +5,42 @@ on:
     branches: [main]
   pull_request:
     branches: [main, dev]
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE'
+      - '.gitattributes'
+      - '.gitignore'
+      - 'CITATION.cff'
+      - 'llms.txt'
+      - '.github/ISSUE_TEMPLATE/**'
+      - 'docs/**'
+      - 'screenshots/**'
+      - 'server/**'
+      - 'src/PlanViewer.Ssms/**'
+      - 'src/PlanViewer.Ssms.Installer/**'
 
 jobs:
   build-and-test:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - name: Setup .NET 8.0
-        uses: actions/setup-dotnet@v4
+      - name: Setup .NET 10.0
+        uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: 8.0.x
+          dotnet-version: 10.0.x
+          cache: true
+          cache-dependency-path: '**/*.csproj'
 
       - name: Install WASM workload
         run: dotnet workload install wasm-tools
 
-      - name: Restore dependencies
-        run: |
-          dotnet restore src/PlanViewer.Core/PlanViewer.Core.csproj
-          dotnet restore src/PlanViewer.App/PlanViewer.App.csproj
-          dotnet restore src/PlanViewer.Cli/PlanViewer.Cli.csproj
-          dotnet restore src/PlanViewer.Web/PlanViewer.Web.csproj
-          dotnet restore tests/PlanViewer.Core.Tests/PlanViewer.Core.Tests.csproj
+      - name: Restore solution
+        run: dotnet restore PlanViewer.sln
 
-      - name: Build all projects
-        run: |
-          dotnet build src/PlanViewer.Core/PlanViewer.Core.csproj -c Release --no-restore
-          dotnet build src/PlanViewer.App/PlanViewer.App.csproj -c Release --no-restore
-          dotnet build src/PlanViewer.Cli/PlanViewer.Cli.csproj -c Release --no-restore
-          dotnet build src/PlanViewer.Web/PlanViewer.Web.csproj -c Release --no-restore
-          dotnet build tests/PlanViewer.Core.Tests/PlanViewer.Core.Tests.csproj -c Release --no-restore
+      - name: Build solution
+        run: dotnet build PlanViewer.sln -c Release --no-restore
 
       - name: Run tests
         run: dotnet test tests/PlanViewer.Core.Tests/PlanViewer.Core.Tests.csproj -c Release --no-build --verbosity normal

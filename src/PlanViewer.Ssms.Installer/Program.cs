@@ -16,7 +16,7 @@ namespace PlanViewer.Ssms.Installer
         static int Main(string[] args)
         {
             Console.WriteLine("===========================================");
-            Console.WriteLine(" SQL Performance Studio — SSMS Extension");
+            Console.WriteLine(" Performance Studio — SSMS Extension");
             Console.WriteLine("===========================================");
             Console.WriteLine();
 

@@ -91,7 +91,7 @@ public static class CredentialCommand
         {
             IReadOnlyList<(string ServerName, string Username)>? creds = null;
             // CA1416: WindowsCredentialService is gated on OperatingSystem.IsWindows().
-            // .NET 8 won't run below Windows 10, so the underlying "windows5.1.2600" requirement is always met.
+            // .NET 10 won't run below Windows 10, so the underlying "windows5.1.2600" requirement is always met.
 #pragma warning disable CA1416
             if (OperatingSystem.IsWindows() && credentialService is WindowsCredentialService win)
                 creds = win.ListAll();

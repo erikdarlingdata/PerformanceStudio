@@ -1,0 +1,35 @@
+<Project>
+  <!--
+    Single source of truth for product version + identity across src/ projects.
+
+    Picked up automatically by SDK-style projects in this folder and below:
+      PlanViewer.App, PlanViewer.Core, PlanViewer.Cli, PlanViewer.Web,
+      PlanViewer.Ssms.Installer.
+
+    NOT picked up by PlanViewer.Ssms — it's a legacy non-SDK project.
+    Its version lives in:
+      Properties/AssemblyInfo.cs   (AssemblyVersion + AssemblyFileVersion)
+      source.extension.vsixmanifest (Identity Version="...")
+    Bump those manually when bumping the version here.
+
+    Tests and server/ projects are outside src/ and are unaffected.
+  -->
+  <PropertyGroup>
+    <Version>1.11.0</Version>
+    <Authors>Erik Darling</Authors>
+    <Company>Darling Data LLC</Company>
+    <Product>Performance Studio</Product>
+    <Copyright>Copyright (c) 2026 Erik Darling, Darling Data LLC</Copyright>
+  </PropertyGroup>
+
+  <!--
+    Silence AVLN3001 ("XAML resource won't be reachable via runtime loader,
+    no public constructor was found"). All flagged controls take typed
+    constructor dependencies (ServerConnection, ICredentialService, ...) and
+    are instantiated directly in code-behind — they're never loaded via
+    AvaloniaXamlLoader.Load() and the IDE previewer isn't used.
+  -->
+  <PropertyGroup>
+    <NoWarn>$(NoWarn);AVLN3001</NoWarn>
+  </PropertyGroup>
+</Project>

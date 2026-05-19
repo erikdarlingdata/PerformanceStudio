@@ -8,7 +8,19 @@
         <Border Grid.Row="0" Background="{DynamicResource BackgroundDarkBrush}" Padding="8,6"
                 BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
             <DockPanel>
-                <StackPanel Orientation="Horizontal" DockPanel.Dock="Left" Spacing="4">
+                <TextBlock x:Name="StatusText" DockPanel.Dock="Right"
+                           HorizontalAlignment="Right" VerticalAlignment="Center"
+                           FontSize="11" Foreground="{DynamicResource ForegroundBrush}"
+                           TextTrimming="CharacterEllipsis" Margin="8,0,0,0"/>
+                <WrapPanel Orientation="Horizontal">
+                    <WrapPanel.Styles>
+                        <Style Selector="Button">
+                            <Setter Property="Margin" Value="0,2,4,2"/>
+                        </Style>
+                        <Style Selector="ComboBox">
+                            <Setter Property="Margin" Value="0,2,4,2"/>
+                        </Style>
+                    </WrapPanel.Styles>
                     <Button x:Name="ConnectButton" Content="Connect" Click="Connect_Click"
                             Height="28" Padding="8,0" FontSize="12"
                             Theme="{StaticResource AppButton}"
@@ -57,6 +69,11 @@
                             Height="28" Padding="8,0" FontSize="12"
                             Theme="{StaticResource AppButton}"
                             ToolTip.Tip="Analyze top queries from Query Store"/>
+                    <Button x:Name="QueryStoreOverviewButton" Content="&#x1F4CA; QS Overview"
+                            Click="QueryStoreOverview_Click"
+                            Height="28" Padding="8,0" FontSize="12"
+                            Theme="{StaticResource AppButton}"
+                            ToolTip.Tip="Query Stores Overview across all databases"/>
                     <TextBlock Text="|" VerticalAlignment="Center"
                                Foreground="{DynamicResource ForegroundBrush}" Margin="2,0"/>
                     <Button x:Name="CopyReproButton" Content="&#x1F4CB; Copy Repro"
@@ -79,11 +96,7 @@
                             Height="28" Padding="10,0" FontSize="12"
                             Theme="{StaticResource AppButton}"
                             ToolTip.Tip="Configure SQL formatting options"/>
-                </StackPanel>
-                <TextBlock x:Name="StatusText" DockPanel.Dock="Right"
-                           HorizontalAlignment="Right" VerticalAlignment="Center"
-                           FontSize="11" Foreground="{DynamicResource ForegroundBrush}"
-                           TextTrimming="CharacterEllipsis"/>
+                </WrapPanel>
             </DockPanel>
         </Border>
 

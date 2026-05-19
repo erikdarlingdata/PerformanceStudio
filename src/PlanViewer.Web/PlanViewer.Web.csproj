@@ -1,21 +1,16 @@
 <Project Sdk="Microsoft.NET.Sdk.BlazorWebAssembly">
 
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <RootNamespace>PlanViewer.Web</RootNamespace>
-    <Version>1.7.3</Version>
-    <Authors>Erik Darling</Authors>
-    <Company>Darling Data LLC</Company>
-    <Product>SQL Performance Studio</Product>
-    <Copyright>Copyright (c) 2026 Erik Darling, Darling Data LLC</Copyright>
     <PublishTrimmed>true</PublishTrimmed>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="8.0.12" />
-    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="8.0.12" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.0" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="10.0.0" PrivateAssets="all" />
   </ItemGroup>
 
   <!-- Linked files from PlanViewer.Core — analysis pipeline only, no SqlClient/WASM-incompatible deps -->
@@ -24,7 +19,16 @@
     <Compile Include="..\PlanViewer.Core\Models\AnalyzerConfig.cs" Link="Core\Models\AnalyzerConfig.cs" />
     <Compile Include="..\PlanViewer.Core\Models\ServerMetadata.cs" Link="Core\Models\ServerMetadata.cs" />
     <Compile Include="..\PlanViewer.Core\Services\ShowPlanParser.cs" Link="Core\Services\ShowPlanParser.cs" />
+    <Compile Include="..\PlanViewer.Core\Services\ShowPlanParser.RelOp.cs" Link="Core\Services\ShowPlanParser.RelOp.cs" />
+    <Compile Include="..\PlanViewer.Core\Services\ShowPlanParser.Warnings.cs" Link="Core\Services\ShowPlanParser.Warnings.cs" />
+    <Compile Include="..\PlanViewer.Core\Services\ShowPlanParser.Costs.cs" Link="Core\Services\ShowPlanParser.Costs.cs" />
+    <Compile Include="..\PlanViewer.Core\Services\ShowPlanParser.Helpers.cs" Link="Core\Services\ShowPlanParser.Helpers.cs" />
     <Compile Include="..\PlanViewer.Core\Services\PlanAnalyzer.cs" Link="Core\Services\PlanAnalyzer.cs" />
+    <Compile Include="..\PlanViewer.Core\Services\PlanAnalyzer.Statement.cs" Link="Core\Services\PlanAnalyzer.Statement.cs" />
+    <Compile Include="..\PlanViewer.Core\Services\PlanAnalyzer.Node.cs" Link="Core\Services\PlanAnalyzer.Node.cs" />
+    <Compile Include="..\PlanViewer.Core\Services\PlanAnalyzer.Detection.cs" Link="Core\Services\PlanAnalyzer.Detection.cs" />
+    <Compile Include="..\PlanViewer.Core\Services\PlanAnalyzer.Timing.cs" Link="Core\Services\PlanAnalyzer.Timing.cs" />
+    <Compile Include="..\PlanViewer.Core\Services\PlanAnalyzer.Helpers.cs" Link="Core\Services\PlanAnalyzer.Helpers.cs" />
     <Compile Include="..\PlanViewer.Core\Services\BenefitScorer.cs" Link="Core\Services\BenefitScorer.cs" />
     <Compile Include="..\PlanViewer.Core\Services\WaitStatsConfig.cs" Link="Core\Services\WaitStatsConfig.cs" />
     <Compile Include="..\PlanViewer.Core\Services\PlanIconMapper.cs" Link="Core\Services\PlanIconMapper.cs" />

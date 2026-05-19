@@ -54,9 +54,9 @@ namespace PlanViewer.Ssms
                 {
                     // App not found — ask user to locate it once
                     var result = System.Windows.Forms.MessageBox.Show(
-                        "SQL Performance Studio was not found.\n\n" +
+                        "Performance Studio was not found.\n\n" +
                         "Would you like to locate it? The path will be saved for next time.",
-                        "SQL Performance Studio",
+                        "Performance Studio",
                         System.Windows.Forms.MessageBoxButtons.YesNo,
                         System.Windows.Forms.MessageBoxIcon.Question);
 
@@ -68,7 +68,7 @@ namespace PlanViewer.Ssms
                             // Try again now that the path is saved to registry
                             if (!AppLauncher.LaunchApp(tempFile))
                             {
-                                ShowError("Could not launch SQL Performance Studio from:\n" + appPath);
+                                ShowError("Could not launch Performance Studio from:\n" + appPath);
                             }
                         }
                     }
@@ -76,7 +76,7 @@ namespace PlanViewer.Ssms
             }
             catch (Exception ex)
             {
-                ShowError("Error opening plan in SQL Performance Studio:\n\n" + ex.Message);
+                ShowError("Error opening plan in Performance Studio:\n\n" + ex.Message);
             }
         }
 
@@ -84,7 +84,7 @@ namespace PlanViewer.Ssms
         {
             System.Windows.Forms.MessageBox.Show(
                 message,
-                "SQL Performance Studio",
+                "Performance Studio",
                 System.Windows.Forms.MessageBoxButtons.OK,
                 System.Windows.Forms.MessageBoxIcon.Warning);
         }
