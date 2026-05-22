@@ -3,7 +3,7 @@
                  xmlns:d="http://schemas.microsoft.com/developer/vsx-schema-design/2011">
   <Metadata>
     <Identity Id="PlanViewer.Ssms.64F79022-9D9A-4463-A1AE-4B19426A0CB1"
-              Version="1.11.0"
+              Version="1.11.1"
               Language="en-US"
               Publisher="Darling Data" />
     <DisplayName>Performance Studio for SSMS</DisplayName>

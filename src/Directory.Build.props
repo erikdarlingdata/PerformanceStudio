@@ -15,7 +15,7 @@
     Tests and server/ projects are outside src/ and are unaffected.
   -->
   <PropertyGroup>
-    <Version>1.11.0</Version>
+    <Version>1.11.1</Version>
     <Authors>Erik Darling</Authors>
     <Company>Darling Data LLC</Company>
     <Product>Performance Studio</Product>
