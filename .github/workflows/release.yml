@@ -114,6 +114,19 @@ jobs:
           VERSION: ${{ steps.version.outputs.VERSION }}
         run: gh release upload "v$env:VERSION" releases/PlanViewer.Ssms.vsix releases/InstallSsmsExtension.exe --clobber
 
+      # Publish to the SSMS Gallery (https://ssmsgallery.azurewebsites.net, issue 343).
+      # The gallery extracts version/description from the vsixmanifest, so the
+      # upload filename is irrelevant. continue-on-error: a gallery outage must
+      # never fail the release. bash so `curl` is curl.exe, not the pwsh alias.
+      - name: Publish SSMS extension to SSMS Gallery
+        if: steps.ssms.outputs.BUILT == 'true'
+        continue-on-error: true
+        shell: bash
+        run: |
+          echo "Uploading PlanViewer.Ssms.vsix to the SSMS Gallery..."
+          curl -sS -f "https://ssmsgallery.azurewebsites.net/api/upload" \
+            -F "file=@releases/PlanViewer.Ssms.vsix"
+
       # ── SignPath code signing (Windows only, skipped if secret not configured) ──
       - name: Check if signing is configured
         id: signing
