@@ -63,7 +63,9 @@ public sealed class McpHostService : BackgroundService
                     options.ServerInfo = new()
                     {
                         Name = "PerformanceStudio",
-                        Version = "0.7.0"
+                        /* Derived from the product version in Directory.Build.props
+                           so it never drifts from the actual release. */
+                        Version = typeof(McpHostService).Assembly.GetName().Version?.ToString(3) ?? "1.11.0"
                     };
                     options.ServerInstructions = McpInstructions.Text;
                 })
