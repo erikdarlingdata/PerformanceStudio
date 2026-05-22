@@ -63,11 +63,12 @@ jobs:
           dotnet publish src/PlanViewer.App/PlanViewer.App.csproj -c Release -r osx-x64 --self-contained -o publish/osx-x64
           dotnet publish src/PlanViewer.App/PlanViewer.App.csproj -c Release -r osx-arm64 --self-contained -o publish/osx-arm64
 
-      # ── SSMS extension VSIX (issue #343 — get it into automated builds) ──
+      # ── SSMS extension VSIX (issue 343 — get it into automated builds) ──
       # PlanViewer.Ssms is a legacy non-SDK project and is not in PlanViewer.sln,
       # so the `dotnet build` above never touches it. It needs full MSBuild plus
-      # the VSSDK build targets. continue-on-error keeps a VSIX build failure
-      # from blocking the (critical-path) cross-platform app release.
+      # the VSSDK build targets from the Microsoft.VSSDK.BuildTools package.
+      # The build step never fails the job (it only sets an output on success),
+      # so a VSIX build failure can never block the cross-platform app release.
       - name: Add MSBuild to PATH
         uses: microsoft/setup-msbuild@v2
         continue-on-error: true
@@ -82,32 +83,36 @@ jobs:
           $manifest = 'src/PlanViewer.Ssms/source.extension.vsixmanifest'
           $manifestVersion = ([xml](Get-Content $manifest)).PackageManifest.Metadata.Identity.Version
           if ($manifestVersion -ne $env:VERSION) {
-            Write-Host "::warning::VSIX manifest version ($manifestVersion) != release version ($env:VERSION) — bump source.extension.vsixmanifest and Properties/AssemblyInfo.cs"
+            Write-Host "::warning::VSIX manifest version ($manifestVersion) does not match release version ($env:VERSION) - bump source.extension.vsixmanifest and Properties/AssemblyInfo.cs"
           }
 
-          msbuild src/PlanViewer.Ssms/PlanViewer.Ssms.csproj -t:Restore,Build -p:Configuration=Release -p:DeployExtension=false
+          # Use -restore (not the -t:Restore,Build target list) so the
+          # package-generated props land in a fresh evaluation before Build.
+          # Those props redirect VSToolsPath into the Microsoft.VSSDK.BuildTools
+          # package, which is how the VSSDK targets resolve on a runner that
+          # lacks the Visual Studio extension-development workload.
+          msbuild src/PlanViewer.Ssms/PlanViewer.Ssms.csproj -restore -t:Build -p:Configuration=Release -p:DeployExtension=false
           dotnet build src/PlanViewer.Ssms.Installer/PlanViewer.Ssms.Installer.csproj -c Release
 
           $vsix = 'src/PlanViewer.Ssms/bin/Release/PlanViewer.Ssms.vsix'
           $exe  = 'src/PlanViewer.Ssms.Installer/bin/Release/net472/InstallSsmsExtension.exe'
-          if (-not (Test-Path $vsix)) { throw "VSIX not produced at $vsix" }
-          if (-not (Test-Path $exe))  { throw "Installer not produced at $exe" }
-
-          New-Item -ItemType Directory -Force -Path releases | Out-Null
-          Copy-Item $vsix 'releases/PlanViewer.Ssms.vsix'
-          Copy-Item $exe  'releases/InstallSsmsExtension.exe'
+          if ((Test-Path $vsix) -and (Test-Path $exe)) {
+            New-Item -ItemType Directory -Force -Path releases | Out-Null
+            Copy-Item $vsix 'releases/PlanViewer.Ssms.vsix'
+            Copy-Item $exe  'releases/InstallSsmsExtension.exe'
+            "BUILT=true" >> $env:GITHUB_OUTPUT
+            Write-Host "SSMS extension built: $vsix"
+          } else {
+            Write-Host "::warning::SSMS extension did not produce the expected artifacts - release published without the VSIX (issue 343)"
+          }
 
       - name: Upload SSMS extension to release
-        if: steps.ssms.outcome == 'success'
+        if: steps.ssms.outputs.BUILT == 'true'
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.version.outputs.VERSION }}
         run: gh release upload "v$env:VERSION" releases/PlanViewer.Ssms.vsix releases/InstallSsmsExtension.exe --clobber
-
-      - name: Warn if SSMS extension build failed
-        if: steps.ssms.outcome != 'success'
-        run: echo "::warning::SSMS extension VSIX build failed — release published without it (issue #343)"
 
       # ── SignPath code signing (Windows only, skipped if secret not configured) ──
       - name: Check if signing is configured
