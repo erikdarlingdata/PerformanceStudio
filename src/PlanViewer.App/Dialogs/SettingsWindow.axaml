@@ -34,9 +34,12 @@
 		<Border DockPanel.Dock="Bottom" Background="{DynamicResource BackgroundDarkBrush}"
 				Padding="12,8">
 			<StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
-				<Button x:Name="ResetButton" Content="Reset to Defaults" Click="Reset_Click"
-						Height="32" Padding="16,0" FontSize="12"
-						Theme="{StaticResource AppButton}"/>
+					<Button x:Name="ResetAllButton" Content="Reset All to Defaults" Click="ResetAll_Click"
+							Height="32" Padding="16,0" FontSize="12"
+							Theme="{StaticResource AppButton}"/>
+					<Button x:Name="ResetButton" Content="Reset Section" Click="Reset_Click"
+							Height="32" Padding="16,0" FontSize="12"
+							Theme="{StaticResource AppButton}"/>
 				<Button x:Name="SaveButton" Content="Save" Click="Save_Click"
 						Height="32" Padding="16,0" FontSize="12"
 						Theme="{StaticResource AppButton}"/>

@@ -513,7 +513,9 @@ internal partial class SettingsWindow : Window
 		Value = value,
 		Minimum = min, Maximum = max, FormatString = "0",
 		Width = 120, Height = 32, FontSize = 13,
+		HorizontalAlignment = HorizontalAlignment.Left,
 		HorizontalContentAlignment = HorizontalAlignment.Left,
+		TextAlignment = TextAlignment.Left,
 	};
 
 	private static string GetComboTag(ComboBox? box) =>
@@ -582,9 +584,38 @@ internal partial class SettingsWindow : Window
 
 	private void Reset_Click(object? sender, RoutedEventArgs e)
 	{
+		var fresh = new AppSettings();
+		var section = SectionList.SelectedIndex;
+
+		switch (section)
+		{
+			case 0: // Query Store
+				_settings.QueryStoreSlicerDays = fresh.QueryStoreSlicerDays;
+				_settings.QueryStoreDefaultMetric = fresh.QueryStoreDefaultMetric;
+				_settings.QueryStoreTopLimit = fresh.QueryStoreTopLimit;
+				_settings.QueryStoreDefaultTimeRange = fresh.QueryStoreDefaultTimeRange;
+				_settings.QueryStoreDefaultTimeDisplay = fresh.QueryStoreDefaultTimeDisplay;
+				_settings.QueryStoreDefaultGroupBy = fresh.QueryStoreDefaultGroupBy;
+				_settings.MultiQsTopDbCount = fresh.MultiQsTopDbCount;
+				_settings.MultiQsTopDbColors = [.. AppSettingsService.DefaultTopDbColors];
+				break;
+			case 1: // Query History
+				_settings.QueryHistoryDefaultMetric = fresh.QueryHistoryDefaultMetric;
+				_settings.QueryHistoryMaxPlans = fresh.QueryHistoryMaxPlans;
+				break;
+			case 2: // Script Options
+				_settings.FormatOptions = new SqlFormatSettings();
+				break;
+		}
+
+		_isDirty = true;
+		ShowSection(section);
+	}
+
+	private void ResetAll_Click(object? sender, RoutedEventArgs e)
+	{
 		var fresh = new AppSettings
 		{
-			// Preserve app state that isn't user preferences
 			RecentPlans = _settings.RecentPlans,
 			OpenPlans = _settings.OpenPlans,
 			AccuracyRatioDivergenceLimit = _settings.AccuracyRatioDivergenceLimit
