@@ -57,7 +57,7 @@ internal partial class SettingsWindow : Window
 
 	internal SettingsWindow(AppSettings settings)
 	{
-		_settings = settings;
+		_settings = settings.Clone();
 		InitializeComponent();
 		ShowSection(0);
 	}
@@ -535,6 +535,25 @@ internal partial class SettingsWindow : Window
 
 		// Read Multi QS Overview settings
 		_settings.MultiQsTopDbCount = (int)(_topDbCountBox?.Value ?? 5);
+
+		// Validate hex color inputs before saving
+		var hasInvalidColor = false;
+		foreach (var tb in _colorTextBoxes)
+		{
+			try
+			{
+				Color.Parse(tb.Text ?? "");
+				tb.BorderBrush = null; // reset to default
+			}
+			catch
+			{
+				tb.BorderBrush = Brushes.Red;
+				hasInvalidColor = true;
+			}
+		}
+		if (hasInvalidColor)
+			return;
+
 		_settings.MultiQsTopDbColors = _colorTextBoxes.Select(tb => tb.Text ?? "#555555").ToList();
 
 		// Read Query History settings

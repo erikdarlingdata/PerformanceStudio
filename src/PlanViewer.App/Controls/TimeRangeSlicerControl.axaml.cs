@@ -53,13 +53,14 @@ public partial class TimeRangeSlicerControl : UserControl
     private double _selectRectOriginX;   // canvas-x where drag-select started
     private double _selectRectCurrentX;  // canvas-x of current pointer during drag-select
 
-    private string _activeFilterTag = AppSettingsService.Load().QueryStoreDefaultTimeRange; // tag from user settings
+    private string _activeFilterTag; // tag from user settings
     private DispatcherTimer? _rangeChangedDebounce;
 
     public event EventHandler<TimeRangeChangedEventArgs>? RangeChanged;
 
     public TimeRangeSlicerControl()
     {
+        _activeFilterTag = AppSettingsService.Load().QueryStoreDefaultTimeRange;
         InitializeComponent();
         SlicerBorder.SizeChanged += (_, _) => Redraw();
         SlicerCanvas.Focusable = true;

@@ -252,6 +252,9 @@ public partial class QueryStoreGridControl : UserControl
                 return;
             }
         }
+        // Unknown tag — fall back to the first item so the combo is never empty
+        if (box.Items.Count > 0)
+            box.SelectedIndex = 0;
     }
 
 

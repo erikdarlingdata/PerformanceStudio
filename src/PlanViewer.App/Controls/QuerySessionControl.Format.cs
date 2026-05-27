@@ -145,7 +145,7 @@ public partial class QuerySessionControl : UserControl
         }
         finally
         {
-                    FormatButton.IsEnabled = true;
-                    }
-                }
-            }
+            FormatButton.IsEnabled = true;
+        }
+    }
+}

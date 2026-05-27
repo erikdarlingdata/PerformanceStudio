@@ -18,6 +18,8 @@ internal sealed class AppSettingsService
     private static readonly string SettingsPath;
     private static readonly string OldFormatSettingsPath;
 
+    private static AppSettings? _cached;
+
     static AppSettingsService()
     {
         SettingsDir = Path.Combine(
@@ -34,11 +36,23 @@ internal sealed class AppSettingsService
     };
 
     /// <summary>
+    /// Options used by <see cref="AppSettings.Clone"/> — includes nulls so the roundtrip is lossless.
+    /// </summary>
+    internal static readonly JsonSerializerOptions CloneOptions = new()
+    {
+        WriteIndented = false,
+        DefaultIgnoreCondition = JsonIgnoreCondition.Never
+    };
+
+    /// <summary>
     /// Loads settings from disk. Returns default settings if the file is missing or corrupt.
     /// Migrates legacy format settings from the old standalone file if present.
     /// </summary>
     public static AppSettings Load()
     {
+        if (_cached != null)
+            return _cached;
+
         try
         {
             AppSettings settings;
@@ -59,6 +73,7 @@ internal sealed class AppSettingsService
             settings.MultiQsTopDbCount = Math.Clamp(settings.MultiQsTopDbCount, 2, 20);
             settings.QueryHistoryMaxPlans = Math.Clamp(settings.QueryHistoryMaxPlans, 1, 100);
 
+            _cached = settings;
             return settings;
         }
         catch (Exception ex)
@@ -67,6 +82,11 @@ internal sealed class AppSettingsService
             return new AppSettings();
         }
     }
+
+    /// <summary>
+    /// Clears the in-process settings cache so the next <see cref="Load"/> re-reads from disk.
+    /// </summary>
+    public static void Invalidate() => _cached = null;
 
     /// <summary>
     /// Saves settings to disk. Silently ignores write failures.
@@ -78,6 +98,7 @@ internal sealed class AppSettingsService
             Directory.CreateDirectory(SettingsDir);
             var json = JsonSerializer.Serialize(settings, JsonOptions);
             AtomicFile.WriteAllText(SettingsPath, json);
+            _cached = settings;
         }
         catch
         {
@@ -86,24 +107,32 @@ internal sealed class AppSettingsService
     }
 
     /// <summary>
-    /// If the old perfstudio_format_settings.json exists and FormatOptions is not yet set,
-    /// migrate the old settings into AppSettings and delete the old file.
+    /// If the old perfstudio_format_settings.json exists, migrate it into AppSettings
+    /// (when FormatOptions is not yet set) and delete the old file unconditionally.
+    /// Note: this intentionally calls <see cref="Save"/> inside <see cref="Load"/> as a
+    /// one-time migration step. If Save fails, the old file remains and migration retries
+    /// on the next Load — acceptable because the window is small and self-healing.
     /// </summary>
     private static void MigrateFormatSettings(AppSettings settings)
     {
         try
         {
-            if (settings.FormatOptions != null || !File.Exists(OldFormatSettingsPath))
+            if (!File.Exists(OldFormatSettingsPath))
                 return;
 
-            var json = File.ReadAllText(OldFormatSettingsPath);
-            var legacy = JsonSerializer.Deserialize<SqlFormatSettings>(json, JsonOptions);
-            if (legacy != null)
+            if (settings.FormatOptions == null)
             {
-                settings.FormatOptions = legacy;
-                Save(settings);
-                File.Delete(OldFormatSettingsPath);
+                var json = File.ReadAllText(OldFormatSettingsPath);
+                var legacy = JsonSerializer.Deserialize<SqlFormatSettings>(json, JsonOptions);
+                if (legacy != null)
+                {
+                    settings.FormatOptions = legacy;
+                    Save(settings);
+                }
             }
+
+            // Delete the old file whether we migrated or FormatOptions was already set
+            File.Delete(OldFormatSettingsPath);
         }
         catch (Exception ex)
         {
@@ -242,4 +271,13 @@ internal sealed class AppSettings
     /// </summary>
     [JsonPropertyName("format_options")]
     public SqlFormatSettings? FormatOptions { get; set; }
+
+    /// <summary>
+    /// Creates a deep copy via JSON roundtrip so mutations don't leak to callers.
+    /// </summary>
+    internal AppSettings Clone()
+    {
+        var json = JsonSerializer.Serialize(this, AppSettingsService.CloneOptions);
+        return JsonSerializer.Deserialize<AppSettings>(json, AppSettingsService.CloneOptions) ?? new AppSettings();
+    }
 }
