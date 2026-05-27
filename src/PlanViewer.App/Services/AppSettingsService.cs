@@ -48,6 +48,11 @@ internal sealed class AppSettingsService
     /// Loads settings from disk. Returns default settings if the file is missing or corrupt.
     /// Migrates legacy format settings from the old standalone file if present.
     /// </summary>
+    /// <remarks>
+    /// Returns the in-process cached instance — callers must not mutate it. Use
+    /// <see cref="AppSettings.Clone"/> if you need an editable copy, or <see cref="Save"/>
+    /// to persist new state (which also refreshes the cache).
+    /// </remarks>
     public static AppSettings Load()
     {
         if (_cached != null)
@@ -192,6 +197,10 @@ internal sealed class AppSettings
     [JsonPropertyName("open_plans")]
     public List<string> OpenPlans { get; set; } = new();
 
+    /// <summary>
+    /// Divergence limit for accuracy ratio coloring on plan links. Default 10.
+    /// Links with accuracy ratio between 1/limit and limit keep the default edge color.
+    /// </summary>
     [JsonPropertyName("accuracy_ratio_divergence_limit")]
     public double AccuracyRatioDivergenceLimit { get; set; } = 10;
 
