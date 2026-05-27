@@ -1,5 +1,4 @@
 using System;
-using System.Diagnostics;
 using Microsoft.SqlServer.TransactSql.ScriptDom;
 
 namespace PlanViewer.App.Services;
@@ -79,43 +78,4 @@ public sealed class SqlFormatSettings
     }
 }
 
-/// <summary>
-/// Facade for <see cref="SqlFormatSettings"/> — now delegates to <see cref="AppSettingsService"/>.
-/// Kept for backward compatibility with code that calls Load/Save directly.
-/// </summary>
-internal static class SqlFormatSettingsService
-{
-    public static SqlFormatSettings Load(out string? error)
-    {
-        error = null;
-        try
-        {
-            var appSettings = AppSettingsService.Load();
-            return appSettings.FormatOptions ?? new SqlFormatSettings();
-        }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"SqlFormatSettings: failed to load settings: {ex.Message}");
-            error = ex.Message;
-            return new SqlFormatSettings();
-        }
-    }
 
-    public static bool Save(SqlFormatSettings settings, out string? error)
-    {
-        error = null;
-        try
-        {
-            var appSettings = AppSettingsService.Load();
-            appSettings.FormatOptions = settings;
-            AppSettingsService.Save(appSettings);
-            return true;
-        }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"SqlFormatSettings: failed to save settings: {ex.Message}");
-            error = ex.Message;
-            return false;
-        }
-    }
-}

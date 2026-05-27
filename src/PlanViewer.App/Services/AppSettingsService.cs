@@ -53,10 +53,17 @@ internal sealed class AppSettingsService
             // Migrate legacy format settings file into unified settings
             MigrateFormatSettings(settings);
 
+            // Clamp numeric values to valid ranges
+            settings.QueryStoreSlicerDays = Math.Clamp(settings.QueryStoreSlicerDays, 1, 365);
+            settings.QueryStoreTopLimit = Math.Clamp(settings.QueryStoreTopLimit, 1, 200);
+            settings.MultiQsTopDbCount = Math.Clamp(settings.MultiQsTopDbCount, 2, 20);
+            settings.QueryHistoryMaxPlans = Math.Clamp(settings.QueryHistoryMaxPlans, 1, 100);
+
             return settings;
         }
-        catch
+        catch (Exception ex)
         {
+            Debug.WriteLine($"AppSettings: failed to load settings: {ex.Message}");
             return new AppSettings();
         }
     }
