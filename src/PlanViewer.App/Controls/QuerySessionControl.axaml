@@ -92,10 +92,6 @@
                             Height="28" Padding="10,0" FontSize="12"
                             Theme="{StaticResource AppButton}"
                             ToolTip.Tip="Format the SQL query"/>
-                    <Button x:Name="FormatOptionsButton" Content="&#x2699; Format Options" Click="FormatOptions_Click"
-                            Height="28" Padding="10,0" FontSize="12"
-                            Theme="{StaticResource AppButton}"
-                            ToolTip.Tip="Configure SQL formatting options"/>
                 </WrapPanel>
             </DockPanel>
         </Border>

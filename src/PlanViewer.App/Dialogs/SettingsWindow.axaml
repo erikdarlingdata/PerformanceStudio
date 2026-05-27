@@ -1,0 +1,72 @@
+<Window xmlns="https://github.com/avaloniaui"
+		xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+		x:Class="PlanViewer.App.Dialogs.SettingsWindow"
+		Title="Settings"
+		Width="820" Height="620"
+		MinWidth="700" MinHeight="480"
+		WindowStartupLocation="CenterOwner"
+		Icon="avares://PlanViewer.App/EDD.ico"
+		Background="{DynamicResource BackgroundBrush}">
+
+	<Window.Styles>
+		<Style Selector="ToggleSwitch">
+			<Setter Property="OnContent" Value=""/>
+			<Setter Property="OffContent" Value=""/>
+			<Setter Property="MinWidth" Value="0"/>
+			<Setter Property="MinHeight" Value="0"/>
+			<Setter Property="Padding" Value="0"/>
+			<Setter Property="Margin" Value="0"/>
+			<Setter Property="VerticalAlignment" Value="Center"/>
+			<Setter Property="RenderTransformOrigin" Value="0%,50%"/>
+			<Setter Property="RenderTransform" Value="scale(0.75)"/>
+		</Style>
+		<Style Selector="ToggleSwitch:checked /template/ Border#SwitchKnobBounds">
+			<Setter Property="Background" Value="{DynamicResource AccentBrush}"/>
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+		</Style>
+		<Style Selector="ToggleSwitch:checked /template/ Border#OuterBorder">
+			<Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+		</Style>
+	</Window.Styles>
+
+	<DockPanel>
+		<!-- Bottom button bar -->
+		<Border DockPanel.Dock="Bottom" Background="{DynamicResource BackgroundDarkBrush}"
+				Padding="12,8">
+			<StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+					<Button x:Name="ResetAllButton" Content="Reset All to Defaults" Click="ResetAll_Click"
+							Height="32" Padding="16,0" FontSize="12"
+							Theme="{StaticResource AppButton}"/>
+					<Button x:Name="ResetButton" Content="Reset Section" Click="Reset_Click"
+							Height="32" Padding="16,0" FontSize="12"
+							Theme="{StaticResource AppButton}"/>
+				<Button x:Name="SaveButton" Content="Save" Click="Save_Click"
+						Height="32" Padding="16,0" FontSize="12"
+						Theme="{StaticResource AppButton}"/>
+				<Button x:Name="CancelButton" Content="Cancel" Click="Cancel_Click"
+						Height="32" Padding="16,0" FontSize="12"
+						Theme="{StaticResource AppButton}"/>
+			</StackPanel>
+		</Border>
+
+		<!-- Main content: sidebar + detail -->
+		<Grid ColumnDefinitions="180,*">
+			<!-- Sidebar -->
+			<Border Grid.Column="0" Background="{DynamicResource BackgroundDarkBrush}"
+					Padding="0,8">
+				<ListBox x:Name="SectionList" SelectionChanged="SectionList_SelectionChanged"
+						 Background="Transparent"
+						 Foreground="{DynamicResource ForegroundBrush}">
+					<ListBoxItem Content="Query Store" IsSelected="True"/>
+					<ListBoxItem Content="Query History"/>
+					<ListBoxItem Content="Script Options"/>
+				</ListBox>
+			</Border>
+
+			<!-- Detail panel -->
+			<ScrollViewer Grid.Column="1" Padding="20,12">
+				<ContentControl x:Name="DetailPanel"/>
+			</ScrollViewer>
+		</Grid>
+	</DockPanel>
+</Window>
