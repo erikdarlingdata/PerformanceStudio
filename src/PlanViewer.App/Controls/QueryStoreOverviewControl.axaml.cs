@@ -12,6 +12,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Threading;
+using PlanViewer.App.Services;
 using PlanViewer.Core.Interfaces;
 using PlanViewer.Core.Models;
 using PlanViewer.Core.Services;
@@ -38,18 +39,8 @@ public partial class QueryStoreOverviewControl : UserControl
     private DateTime _slicerEndUtc;
     private int _daysBack = 30;
 
-    // Color palette for databases (minimizes color dispersion)
-    private static readonly Color[] Palette = new[]
-    {
-        Color.Parse("#2EAEF1"), // blue
-        Color.Parse("#F2994A"), // orange
-        Color.Parse("#27AE60"), // green
-        Color.Parse("#9B51E0"), // purple
-        Color.Parse("#EB5757"), // red
-        Color.Parse("#F2C94C"), // yellow
-        Color.Parse("#56CCF2"), // light blue
-        Color.Parse("#BB6BD9"), // violet
-    };
+    // Color palette for databases — loaded from user settings
+    private readonly Color[] _palette;
 
     private static readonly Color OthersColor = Color.Parse("#555555");
 
@@ -69,13 +60,21 @@ public partial class QueryStoreOverviewControl : UserControl
     public event EventHandler<DrillDownEventArgs>? DrillDownRequested;
 
     public QueryStoreOverviewControl(ServerConnection serverConnection,
-        ICredentialService credentialService, int maxDop = 8, int topN = 4, bool supportsWaitStats = true)
+        ICredentialService credentialService, int maxDop = 8, int? topN = null, bool supportsWaitStats = true)
     {
         _serverConnection = serverConnection;
         _credentialService = credentialService;
         _masterConnectionString = serverConnection.GetConnectionString(credentialService, "master");
         _maxDop = maxDop;
-        _topN = topN;
+
+        var userSettings = AppSettingsService.Load();
+        _topN = topN ?? userSettings.MultiQsTopDbCount;
+        _palette = userSettings.MultiQsTopDbColors
+            .Select(hex => { try { return Color.Parse(hex); } catch { return Color.Parse("#555555"); } })
+            .ToArray();
+        if (_palette.Length == 0)
+            _palette = AppSettingsService.DefaultTopDbColors.Select(hex => Color.Parse(hex)).ToArray();
+
         _supportsWaitStats = supportsWaitStats;
         _slicerEndUtc = DateTime.UtcNow;
         _slicerStartUtc = _slicerEndUtc.AddHours(-24);
@@ -668,8 +667,8 @@ public partial class QueryStoreOverviewControl : UserControl
             .Select(m => m.DatabaseName)
             .ToList();
         var topDbs = ranked.Take(_topN).ToList();
-        for (int i = 0; i < topDbs.Count && i < Palette.Length; i++)
-            _dbColorMap[topDbs[i]] = Palette[i];
+        for (int i = 0; i < topDbs.Count && i < _palette.Length; i++)
+            _dbColorMap[topDbs[i]] = _palette[i];
 
         DrawMetricRow(TotalMetricsGrid, isTotal: true, topDbs);
         DrawMetricRow(AvgMetricsGrid, isTotal: false, topDbs);

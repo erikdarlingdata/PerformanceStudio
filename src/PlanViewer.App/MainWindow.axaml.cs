@@ -17,6 +17,7 @@ using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using PlanViewer.App.Controls;
+using PlanViewer.App.Dialogs;
 using PlanViewer.App.Services;
 using PlanViewer.Core.Interfaces;
 using PlanViewer.Core.Models;
@@ -37,6 +38,7 @@ public partial class MainWindow : Window
     private CancellationTokenSource? _mcpCts;
     private int _queryCounter;
     private AppSettings _appSettings;
+    private SettingsWindow? _settingsWindow;
 
     /// <summary>
     /// Set to true when the main window is closing. Detached windows check this
@@ -49,6 +51,10 @@ public partial class MainWindow : Window
         _credentialService = CredentialServiceFactory.Create();
         _connectionStore = new ConnectionStore();
         _appSettings = AppSettingsService.Load();
+
+        // Apply user preferences on startup
+        if (Enum.TryParse<TimeDisplayMode>(_appSettings.QueryStoreDefaultTimeDisplay, true, out var tdm))
+            TimeDisplayHelper.Current = tdm;
 
         // Listen for file paths from other instances (e.g. SSMS extension)
         StartPipeServer();
@@ -235,6 +241,23 @@ public partial class MainWindow : Window
     private void Exit_Click(object? sender, RoutedEventArgs e)
     {
         Close();
+    }
+
+    private void Settings_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_settingsWindow != null)
+        {
+            _settingsWindow.Activate();
+            return;
+        }
+
+        _settingsWindow = new SettingsWindow(_appSettings);
+        _settingsWindow.SettingsSaved += settings =>
+        {
+            _appSettings = settings;
+        };
+        _settingsWindow.Closed += (_, _) => _settingsWindow = null;
+        _settingsWindow.Show(this);
     }
 
     private void About_Click(object? sender, RoutedEventArgs e)

@@ -26,6 +26,7 @@
                 <MenuItem Header="E_xit" Click="Exit_Click"
                           InputGesture="Alt+F4"/>
             </MenuItem>
+            <MenuItem Header="_Settings" Click="Settings_Click"/>
             <MenuItem Header="_Help">
                 <MenuItem Header="_About Performance Studio" Click="About_Click"/>
                 <Separator/>

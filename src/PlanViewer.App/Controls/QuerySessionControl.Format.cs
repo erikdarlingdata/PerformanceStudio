@@ -86,9 +86,7 @@ public partial class QuerySessionControl : UserControl
 
         try
         {
-            var settings = SqlFormatSettingsService.Load(out var loadError);
-            if (loadError != null)
-                SetStatus("Warning: using default format settings (load failed)");
+            var settings = AppSettingsService.Load().FormatOptions ?? new SqlFormatSettings();
 
             var (formatted, errors) = await Task.Run(() => SqlFormattingService.Format(sql, settings));
 
@@ -147,13 +145,7 @@ public partial class QuerySessionControl : UserControl
         }
         finally
         {
-            FormatButton.IsEnabled = true;
-        }
-    }
-
-    private void FormatOptions_Click(object? sender, RoutedEventArgs e)
-    {
-        var dialog = new Dialogs.FormatOptionsWindow();
-        dialog.ShowDialog(GetParentWindow());
-    }
-}
+                    FormatButton.IsEnabled = true;
+                    }
+                }
+            }

@@ -61,8 +61,23 @@ public partial class QueryStoreGridControl : UserControl
         _database = initialDatabase;
         _connectionString = serverConnection.GetConnectionString(credentialService, initialDatabase);
         _waitStatsSupported = supportsWaitStats;
-        _slicerDaysBack = AppSettingsService.Load().QueryStoreSlicerDays;
+
+        var userSettings = AppSettingsService.Load();
+        _slicerDaysBack = userSettings.QueryStoreSlicerDays;
+
         InitializeComponent();
+
+        // Apply user defaults to UI controls
+        TopNBox.Value = userSettings.QueryStoreTopLimit;
+        SelectComboByTag(OrderByBox, userSettings.QueryStoreDefaultMetric);
+        SelectComboByTag(GroupByBox, userSettings.QueryStoreDefaultGroupBy switch
+        {
+            "QueryHash" => "query-hash",
+            "Module" => "module",
+            "None" => "none",
+            _ => "query-hash"
+        });
+
         ResultsGrid.ItemsSource = _filteredRows;
         Helpers.DataGridBehaviors.Attach(ResultsGrid);
         EnsureFilterPopup();
@@ -226,6 +241,18 @@ public partial class QueryStoreGridControl : UserControl
         ["TotalMemSort"]       = "TotalMemory",
         ["AvgMemSort"]         = "AvgMemory",
     };
+
+    private static void SelectComboByTag(ComboBox box, string tag)
+    {
+        for (int i = 0; i < box.Items.Count; i++)
+        {
+            if (box.Items[i] is ComboBoxItem item && item.Tag?.ToString() == tag)
+            {
+                box.SelectedIndex = i;
+                return;
+            }
+        }
+    }
 
 
 }

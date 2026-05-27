@@ -8,6 +8,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Threading;
+using PlanViewer.App.Services;
 using PlanViewer.Core.Models;
 using PlanViewer.Core.Services;
 
@@ -52,7 +53,7 @@ public partial class TimeRangeSlicerControl : UserControl
     private double _selectRectOriginX;   // canvas-x where drag-select started
     private double _selectRectCurrentX;  // canvas-x of current pointer during drag-select
 
-    private string _activeFilterTag = "24"; // tag of the currently active quick-filter button
+    private string _activeFilterTag = AppSettingsService.Load().QueryStoreDefaultTimeRange; // tag from user settings
     private DispatcherTimer? _rangeChangedDebounce;
 
     public event EventHandler<TimeRangeChangedEventArgs>? RangeChanged;
@@ -80,13 +81,13 @@ public partial class TimeRangeSlicerControl : UserControl
         }
         else
         {
-            // Default selection: last 24 hours
+            // Default selection from user settings
             _rangeEnd = 1.0;
-            _activeFilterTag = "24";
+            var defaultHours = int.TryParse(_activeFilterTag, out var h) ? h : 24;
             if (_data.Count >= 2)
             {
                 var last = _data[^1].IntervalStartUtc.AddHours(1);
-                var start24h = last.AddHours(-24);
+                var start24h = last.AddHours(-defaultHours);
                 _rangeStart = GetNormFromDateTime(start24h);
             }
             else
