@@ -1,7 +1,4 @@
 using System;
-using System.Diagnostics;
-using System.IO;
-using System.Text.Json;
 using Microsoft.SqlServer.TransactSql.ScriptDom;
 
 namespace PlanViewer.App.Services;
@@ -81,56 +78,4 @@ public sealed class SqlFormatSettings
     }
 }
 
-/// <summary>
-/// Loads and saves <see cref="SqlFormatSettings"/> to a local JSON file.
-/// </summary>
-internal static class SqlFormatSettingsService
-{
-    private static readonly string SettingsDir = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "PerformanceStudio");
 
-    private static readonly string SettingsPath = Path.Combine(SettingsDir, "perfstudio_format_settings.json");
-
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        WriteIndented = true
-    };
-
-    public static SqlFormatSettings Load(out string? error)
-    {
-        error = null;
-        try
-        {
-            if (!File.Exists(SettingsPath))
-                return new SqlFormatSettings();
-
-            var json = File.ReadAllText(SettingsPath);
-            return JsonSerializer.Deserialize<SqlFormatSettings>(json, JsonOptions) ?? new SqlFormatSettings();
-        }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"SqlFormatSettings: failed to load settings: {ex.Message}");
-            error = $"Could not load format settings from:\n{SettingsPath}\n\n{ex.Message}\n\nUsing defaults. Delete or fix the file to clear this error.";
-            return new SqlFormatSettings();
-        }
-    }
-
-    public static bool Save(SqlFormatSettings settings, out string? error)
-    {
-        error = null;
-        try
-        {
-            Directory.CreateDirectory(SettingsDir);
-            var json = JsonSerializer.Serialize(settings, JsonOptions);
-            AtomicFile.WriteAllText(SettingsPath, json);
-            return true;
-        }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"SqlFormatSettings: failed to save settings: {ex.Message}");
-            error = $"Could not save format settings to:\n{SettingsPath}\n\n{ex.Message}\n\nCheck that the folder is writable and not locked by another process.";
-            return false;
-        }
-    }
-}

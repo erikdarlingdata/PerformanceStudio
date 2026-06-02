@@ -296,7 +296,14 @@ public partial class QueryStoreHistoryControl : UserControl
 	private void BuildColorMap()
 	{
 		_planHashColorMap.Clear();
-		var hashes = _historyData.Select(r => r.QueryPlanHash).Distinct().OrderBy(h => h).ToList();
+		var maxPlans = Services.AppSettingsService.Load().QueryHistoryMaxPlans;
+		var hashes = _historyData
+			.GroupBy(r => r.QueryPlanHash)
+			.OrderByDescending(g => g.Sum(r => r.CountExecutions))
+			.Take(maxPlans)
+			.Select(g => g.Key)
+			.OrderBy(h => h)
+			.ToList();
 		for (int i = 0; i < hashes.Count; i++)
 			_planHashColorMap[hashes[i]] = PlanColors[i % PlanColors.Length];
 	}
