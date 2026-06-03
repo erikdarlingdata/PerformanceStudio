@@ -62,6 +62,9 @@
   </ItemGroup>
   <ItemGroup>
     <Content Include="Resources\AnalyzePlanCommand.png" />
+    <Content Include="Resources\PerformanceStudioIcon.png">
+      <IncludeInVSIX>true</IncludeInVSIX>
+    </Content>
     <Content Include="..\..\LICENSE">
       <Link>LICENSE</Link>
       <IncludeInVSIX>true</IncludeInVSIX>
