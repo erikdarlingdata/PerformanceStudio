@@ -10,12 +10,16 @@
     <Description xml:space="preserve">Adds "Open in Performance Studio" to the execution plan right-click menu in SSMS. Extracts the plan XML and opens it in Performance Studio for advanced analysis.</Description>
     <MoreInfo>https://github.com/erikdarlingdata/PerformanceStudio</MoreInfo>
     <License>LICENSE</License>
+    <Icon>Resources\PerformanceStudioIcon.png</Icon>
     <Tags>SQL Server, Execution Plan, Performance, SSMS</Tags>
   </Metadata>
   <Installation>
     <!-- SSMS 21 = product line 21, SSMS 22.3+ = product line 22 (VS 18.0 shell) -->
     <InstallationTarget Id="Microsoft.VisualStudio.Ssms" Version="[17.0,)">
       <ProductArchitecture>amd64</ProductArchitecture>
+    </InstallationTarget>
+    <InstallationTarget Id="Microsoft.VisualStudio.Ssms" Version="[17.0,)">
+      <ProductArchitecture>arm64</ProductArchitecture>
     </InstallationTarget>
   </Installation>
   <Prerequisites>
