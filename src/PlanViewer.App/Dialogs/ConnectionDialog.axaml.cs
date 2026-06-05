@@ -78,6 +78,7 @@ public partial class ConnectionDialog : Window
 
         TrustCertBox.IsChecked = saved.TrustServerCertificate;
         ReadOnlyIntentCheckBox.IsChecked = saved.ApplicationIntentReadOnly;
+        DatabaseInputBox.Text = saved.DatabaseName ?? "";
 
         // Load stored credentials
         var cred = _credentialService.GetCredential(saved.Id);
@@ -125,6 +126,11 @@ public partial class ConnectionDialog : Window
             return;
         }
 
+        // For Azure SQL DB / JIT access the login often can't open master, so connect
+        // through the database the user named (if any) instead of the hardcoded master.
+        var typedDatabase = DatabaseInputBox.Text?.Trim();
+        var connectDatabase = string.IsNullOrEmpty(typedDatabase) ? "master" : typedDatabase;
+
         StatusText.Text = "Connecting...";
         StatusText.Foreground = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.FromRgb(0xE4, 0xE6, 0xEB));
         TestButton.IsEnabled = false;
@@ -135,12 +141,13 @@ public partial class ConnectionDialog : Window
             var connectionString = connection.GetConnectionString(
                 LoginBox.Text?.Trim(),
                 PasswordBox.Text,
-                "master");
+                connectDatabase);
 
             await using var conn = new SqlConnection(connectionString);
             await conn.OpenAsync();
 
-            // Fetch databases
+            // Fetch databases the login can see. On Azure SQL DB connected to a single user
+            // database this returns master + that database, which is expected.
             var databases = new List<string>();
             using var cmd = new SqlCommand(
                 "SELECT name FROM sys.databases WHERE state_desc = 'ONLINE' ORDER BY name", conn);
@@ -148,13 +155,21 @@ public partial class ConnectionDialog : Window
             while (await reader.ReadAsync())
                 databases.Add(reader.GetString(0));
 
+            // The named database is reachable (OpenAsync succeeded), so make sure it's
+            // selectable even if enumeration didn't surface it (restricted JIT permissions).
+            if (!string.IsNullOrEmpty(typedDatabase) &&
+                !databases.Contains(typedDatabase, StringComparer.OrdinalIgnoreCase))
+                databases.Insert(0, typedDatabase);
+
             DatabaseBox.ItemsSource = databases;
             DatabaseBox.IsEnabled = true;
             ConnectButton.IsEnabled = true;
 
-            // Default to master if available
-            var masterIdx = databases.IndexOf("master");
-            if (masterIdx >= 0) DatabaseBox.SelectedIndex = masterIdx;
+            // Pre-select the named database when given, otherwise default to master.
+            var preferred = string.IsNullOrEmpty(typedDatabase) ? "master" : typedDatabase;
+            var preferredIdx = databases.FindIndex(d => d.Equals(preferred, StringComparison.OrdinalIgnoreCase));
+            if (preferredIdx >= 0) DatabaseBox.SelectedIndex = preferredIdx;
+            else if (databases.Count > 0) DatabaseBox.SelectedIndex = 0;
 
             StatusText.Text = $"Connected ({databases.Count} databases)";
             StatusText.Foreground = Avalonia.Media.Brushes.LimeGreen;
@@ -213,11 +228,13 @@ public partial class ConnectionDialog : Window
     private ServerConnection BuildServerConnection()
     {
         var serverName = ServerNameBox.Text?.Trim() ?? "";
+        var databaseName = DatabaseInputBox.Text?.Trim();
         return new ServerConnection
         {
             Id = serverName,
             ServerName = serverName,
             DisplayName = serverName,
+            DatabaseName = string.IsNullOrEmpty(databaseName) ? null : databaseName,
             AuthenticationType = GetSelectedAuthType(),
             TrustServerCertificate = TrustCertBox.IsChecked == true,
             EncryptMode = GetSelectedEncryptMode(),
