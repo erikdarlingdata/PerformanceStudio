@@ -18,6 +18,13 @@ public class ServerConnection
     public bool TrustServerCertificate { get; set; } = false;
     public bool ApplicationIntentReadOnly { get; set; } = false;
 
+    /// <summary>
+    /// Optional database name for the initial connection. Use for Azure SQL Database or
+    /// Just-In-Time access where the login can't open master.
+    /// Leave empty for on-premises SQL Server (defaults to master).
+    /// </summary>
+    public string? DatabaseName { get; set; }
+
     [JsonIgnore]
     public string AuthenticationDisplay => AuthenticationType switch
     {
