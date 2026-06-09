@@ -55,6 +55,7 @@ public class ConnectionStore
             existing.TrustServerCertificate = connection.TrustServerCertificate;
             existing.ApplicationIntentReadOnly = connection.ApplicationIntentReadOnly;
             existing.DisplayName = connection.DisplayName;
+            existing.DatabaseName = connection.DatabaseName;
             existing.LastConnected = DateTime.Now;
         }
         else
