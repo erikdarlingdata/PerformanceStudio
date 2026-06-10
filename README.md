@@ -90,7 +90,7 @@ Each warning includes severity (Info, Warning, or Critical), the operator node I
 
 ## Prerequisites
 
-- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) (required to build and run)
+- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) (only needed to build from source — the pre-built binaries below are self-contained and require no SDK)
 - SQL Server instance (optional — only needed for live plan capture; file analysis works without one)
 - Docker (optional — macOS/Linux users can run SQL Server locally via Docker)
 
