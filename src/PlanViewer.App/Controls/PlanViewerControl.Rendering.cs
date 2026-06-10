@@ -543,7 +543,7 @@ public partial class PlanViewerControl : UserControl
             "BackgroundLightBrush" => new SolidColorBrush(Color.FromRgb(0x23, 0x26, 0x2E)),
             "BorderBrush" => new SolidColorBrush(Color.FromRgb(0x3A, 0x3D, 0x45)),
             "ForegroundBrush" => new SolidColorBrush(Color.FromRgb(0xE4, 0xE6, 0xEB)),
-            "ForegroundMutedBrush" => new SolidColorBrush(Color.FromRgb(0xE4, 0xE6, 0xEB)),
+            "ForegroundMutedBrush" => new SolidColorBrush(Color.FromRgb(0xB0, 0xB6, 0xC0)),
             _ => Brushes.White
         };
     }

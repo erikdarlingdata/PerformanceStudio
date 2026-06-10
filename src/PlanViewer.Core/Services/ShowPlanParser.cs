@@ -11,6 +11,11 @@ public static partial class ShowPlanParser
 {
     private static readonly XNamespace Ns = "http://schemas.microsoft.com/sqlserver/2004/07/showplan";
 
+    // Plan XML is untrusted input (opened/pasted/downloaded). Cap recursion depth so a
+    // maliciously deep tree throws a catchable exception instead of an uncatchable
+    // StackOverflowException that takes the whole process down.
+    private const int MaxParseDepth = 1000;
+
     public static ParsedPlan Parse(string xml)
     {
         var plan = new ParsedPlan { RawXml = xml };
@@ -26,6 +31,11 @@ public static partial class ShowPlanParser
             return plan;
         }
 
+        // The tree walk below can throw on hostile/malformed plans (including the depth
+        // guards in ParseRelOp/ParseStatementAndChildren that stop unbounded recursion).
+        // Contain it so a bad plan becomes a ParseError, never a crash for the caller.
+        try
+        {
         var root = doc.Root;
         if (root == null) return plan;
 
@@ -67,6 +77,11 @@ public static partial class ShowPlanParser
         }
 
         ComputeOperatorCosts(plan);
+        }
+        catch (Exception ex)
+        {
+            plan.ParseError = ex.Message;
+        }
         return plan;
     }
 
@@ -74,9 +89,11 @@ public static partial class ShowPlanParser
     /// Handles StmtSimple, StmtCond (IF/ELSE), and StmtCursor recursively.
     /// Returns a flat list of all parseable statements found.
     /// </summary>
-    private static List<PlanStatement> ParseStatementAndChildren(XElement stmtEl)
+    private static List<PlanStatement> ParseStatementAndChildren(XElement stmtEl, int depth = 0)
     {
         var results = new List<PlanStatement>();
+        if (depth > MaxParseDepth)
+            throw new InvalidOperationException("Plan statement nesting exceeds the supported depth limit.");
         var localName = stmtEl.Name.LocalName;
 
         if (localName == "StmtCond")
@@ -86,21 +103,21 @@ public static partial class ShowPlanParser
             if (condEl != null)
             {
                 foreach (var child in condEl.Elements())
-                    results.AddRange(ParseStatementAndChildren(child));
+                    results.AddRange(ParseStatementAndChildren(child, depth + 1));
             }
 
             var thenStmts = stmtEl.Element(Ns + "Then")?.Element(Ns + "Statements");
             if (thenStmts != null)
             {
                 foreach (var child in thenStmts.Elements())
-                    results.AddRange(ParseStatementAndChildren(child));
+                    results.AddRange(ParseStatementAndChildren(child, depth + 1));
             }
 
             var elseStmts = stmtEl.Element(Ns + "Else")?.Element(Ns + "Statements");
             if (elseStmts != null)
             {
                 foreach (var child in elseStmts.Elements())
-                    results.AddRange(ParseStatementAndChildren(child));
+                    results.AddRange(ParseStatementAndChildren(child, depth + 1));
             }
         }
         else if (localName == "StmtCursor")
