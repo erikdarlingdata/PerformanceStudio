@@ -9,8 +9,11 @@ namespace PlanViewer.Core.Services;
 
 public static partial class ShowPlanParser
 {
-    private static PlanNode ParseRelOp(XElement relOpEl)
+    private static PlanNode ParseRelOp(XElement relOpEl, int depth = 0)
     {
+        if (depth > MaxParseDepth)
+            throw new InvalidOperationException("Plan operator nesting exceeds the supported depth limit.");
+
         var node = new PlanNode
         {
             NodeId = (int)ParseDouble(relOpEl.Attribute("NodeId")?.Value),
@@ -762,7 +765,7 @@ public static partial class ShowPlanParser
         // Recurse into child RelOps
         foreach (var childRelOp in FindChildRelOps(relOpEl))
         {
-            var childNode = ParseRelOp(childRelOp);
+            var childNode = ParseRelOp(childRelOp, depth + 1);
             childNode.Parent = node;
             node.Children.Add(childNode);
         }

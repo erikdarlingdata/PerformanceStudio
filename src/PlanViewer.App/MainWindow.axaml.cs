@@ -175,7 +175,11 @@ public partial class MainWindow : Window
                 }
                 catch
                 {
-                    // Pipe error — restart the listener
+                    // Pipe error (e.g. another instance already holds the single
+                    // server slot). Back off before retrying so we don't spin at
+                    // 100% CPU recreating the listener in a tight loop.
+                    try { await Task.Delay(1000, token); }
+                    catch (OperationCanceledException) { break; }
                 }
             }
         }, token);
