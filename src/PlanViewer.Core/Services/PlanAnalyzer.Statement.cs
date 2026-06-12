@@ -290,11 +290,15 @@ public static partial class PlanAnalyzer
         // https://erikdarling.com/cursor-declarations-that-use-openjson-can-bloat-your-plan-cache/).
         if (!cfg.IsRuleDisabled(37) && !string.IsNullOrEmpty(stmt.StatementText))
         {
-            // DECLARE <name> [qualifier(s)] CURSOR ... FOR
-            // Flags the declaration if LOCAL isn't among the qualifiers before CURSOR.
+            // DECLARE <name> [INSENSITIVE|SCROLL] CURSOR [qualifier(s)] FOR ...
+            // In the T-SQL extended syntax, LOCAL/GLOBAL appear AFTER the CURSOR
+            // keyword (only INSENSITIVE/SCROLL are legal before it), so the LOCAL
+            // qualifier must be looked for between CURSOR and the FOR that introduces
+            // the SELECT. Capturing tokens *before* CURSOR never sees LOCAL and would
+            // fire on every cursor, including ones already declared LOCAL.
             var cursorDeclMatch = Regex.Match(
                 stmt.StatementText,
-                @"\bDECLARE\s+\w+\s+((?:\w+\s+)*)CURSOR\b",
+                @"\bDECLARE\s+\w+\s+(?:INSENSITIVE\s+|SCROLL\s+)*CURSOR\b(.*?)\bFOR\b",
                 RegexOptions.IgnoreCase | RegexOptions.Singleline);
             if (cursorDeclMatch.Success)
             {

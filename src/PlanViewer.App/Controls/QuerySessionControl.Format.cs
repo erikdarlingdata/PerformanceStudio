@@ -143,6 +143,11 @@ public partial class QuerySessionControl : UserControl
             QueryEditor.CaretOffset = Math.Min(caretOffset, QueryEditor.Document.TextLength);
             SetStatus("Formatted");
         }
+        catch (Exception ex)
+        {
+            // async void handler: an unhandled throw here would crash the app.
+            SetStatus($"Format failed: {ex.Message}");
+        }
         finally
         {
             FormatButton.IsEnabled = true;

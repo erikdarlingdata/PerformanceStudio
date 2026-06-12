@@ -373,7 +373,9 @@ pre.query-text, pre.text-output {
         if (node == null) return false;
         foreach (var w in node.Warnings)
         {
-            if (w.Type.EndsWith(" Spill", StringComparison.Ordinal))
+            // Covers "Sort Spill"/"Hash Spill"/"Exchange Spill" as well as the
+            // standalone "Spill to TempDb" and "Spill Occurred" warning types.
+            if (w.Type.Contains("Spill", StringComparison.Ordinal))
                 return true;
         }
         foreach (var child in node.Children)
@@ -507,7 +509,7 @@ pre.query-text, pre.text-output {
 
         foreach (var w in sorted)
         {
-            var sevLower = w.Severity.ToLower();
+            var sevLower = w.Severity.ToLowerInvariant();
             sb.AppendLine($"<div class=\"warning-item {sevLower}\">");
             sb.AppendLine($"<span class=\"sev sev-{sevLower}\">{Encode(w.Severity)}</span>");
             if (w.Operator != null)

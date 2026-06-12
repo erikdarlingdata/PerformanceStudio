@@ -347,8 +347,10 @@ app.Run();
 
 static string GenerateId()
 {
+    // The id is the only access control on a shared plan, so it must be
+    // unpredictable — use a cryptographic RNG, not Random.Shared (xoshiro).
     const string chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-    return new string(Random.Shared.GetItems<char>(chars.AsSpan(), 8));
+    return new string(RandomNumberGenerator.GetItems<char>(chars.AsSpan(), 8));
 }
 
 static string GenerateDeleteToken()

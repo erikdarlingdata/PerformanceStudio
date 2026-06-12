@@ -5,6 +5,7 @@
     <SolidColorBrush x:Key="BackgroundDarkBrush" Color="#15171C"/>
     <SolidColorBrush x:Key="BackgroundLightBrush" Color="#22252D"/>
     <SolidColorBrush x:Key="ForegroundBrush" Color="#E4E6EB"/>
+    <SolidColorBrush x:Key="ForegroundMutedBrush" Color="#B0B6C0"/>
     <SolidColorBrush x:Key="BorderBrush" Color="#3A3D45"/>
     <SolidColorBrush x:Key="AccentBrush" Color="#2eaef1"/>
 

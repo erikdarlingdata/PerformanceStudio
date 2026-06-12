@@ -17,7 +17,10 @@ public static class ConnectionHelper
             ApplicationName = "PlanViewer",
             ConnectTimeout = 15,
             TrustServerCertificate = trustCert,
-            Encrypt = trustCert ? SqlConnectionEncryptOption.Optional : SqlConnectionEncryptOption.Mandatory
+            // Keep encryption mandatory regardless of --trust-cert. --trust-cert only
+            // skips certificate *validation* (for self-signed certs); it must not also
+            // drop the connection to optional/plaintext, which would allow a MITM.
+            Encrypt = SqlConnectionEncryptOption.Mandatory
         };
 
         if (multipleActiveResultSets)
