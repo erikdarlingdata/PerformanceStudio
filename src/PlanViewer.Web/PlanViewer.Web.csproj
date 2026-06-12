@@ -44,4 +44,18 @@
     <EmbeddedResource Include="..\PlanViewer.Core\Resources\WaitStats.json" Link="Core\Resources\WaitStats.json" />
   </ItemGroup>
 
+  <!-- Operator icon PNGs in wwwroot/icons are physical copies of Core's PlanIcons (Blazor's static
+       web asset pipeline only serves files physically present under wwwroot at evaluation time, so
+       linking or copy-at-build does not work). This guard fails the build if Core gains an icon that
+       was not copied here, preventing the broken-image drift that shipped in #283. -->
+  <Target Name="VerifyOperatorIconParity" BeforeTargets="BeforeBuild">
+    <ItemGroup>
+      <_CoreIcon Include="..\PlanViewer.Core\Resources\PlanIcons\*.png" />
+      <_WebIcon Include="wwwroot\icons\*.png" />
+      <_MissingWebIcon Include="@(_CoreIcon->'%(Filename)%(Extension)')" Exclude="@(_WebIcon->'%(Filename)%(Extension)')" />
+    </ItemGroup>
+    <Error Condition="'@(_MissingWebIcon)' != ''"
+           Text="Operator icon(s) exist in PlanViewer.Core\Resources\PlanIcons but are missing from PlanViewer.Web\wwwroot\icons: @(_MissingWebIcon). Copy them into wwwroot\icons or the web app will show broken images." />
+  </Target>
+
 </Project>
