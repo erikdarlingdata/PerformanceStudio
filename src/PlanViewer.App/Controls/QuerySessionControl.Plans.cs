@@ -30,7 +30,7 @@ namespace PlanViewer.App.Controls;
 
 public partial class QuerySessionControl : UserControl
 {
-    private void AddPlanTab(string planXml, string queryText, bool estimated, string? labelOverride = null)
+    private bool AddPlanTab(string planXml, string queryText, bool estimated, string? labelOverride = null)
     {
         _planCounter++;
         var label = labelOverride ?? (estimated ? $"Est Plan {_planCounter}" : $"Plan {_planCounter}");
@@ -42,7 +42,15 @@ public partial class QuerySessionControl : UserControl
         if (_serverConnection != null)
             viewer.SetConnectionStatus(_serverConnection.ServerName, _selectedDatabase);
         viewer.OpenInEditorRequested += OnOpenInEditorRequested;
-        viewer.LoadPlan(planXml, label, queryText);
+
+        if (!viewer.LoadPlan(planXml, label, queryText))
+        {
+            // Blank XML or a parse failure. Don't navigate away from the current view
+            // (e.g. the Query Store grid) to a blank tab — surface why and stay put.
+            viewer.OpenInEditorRequested -= OnOpenInEditorRequested;
+            SetStatus($"Couldn't load {label}: {viewer.LastLoadError}", autoClear: false);
+            return false;
+        }
 
         // Build tab header with close button and right-click rename
         var headerText = new TextBlock
@@ -101,6 +109,7 @@ public partial class QuerySessionControl : UserControl
         SubTabControl.Items.Add(tab);
         SubTabControl.SelectedItem = tab;
         UpdateCompareButtonState();
+        return true;
     }
 
     private void StartRename(StackPanel header, TextBlock headerText)
