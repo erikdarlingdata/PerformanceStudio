@@ -254,13 +254,19 @@ public partial class QuerySessionControl : UserControl
 
     private void OnQueryStorePlansSelected(object? sender, List<QueryStorePlan> plans)
     {
+        int loaded = 0;
         foreach (var qsPlan in plans)
         {
             var tabLabel = $"QS {qsPlan.QueryId} / {qsPlan.PlanId}";
-            AddPlanTab(qsPlan.PlanXml, qsPlan.QueryText, estimated: true, labelOverride: tabLabel);
+            if (AddPlanTab(qsPlan.PlanXml, qsPlan.QueryText, estimated: true, labelOverride: tabLabel))
+                loaded++;
         }
 
-        SetStatus($"{plans.Count} Query Store plans loaded");
+        // Only show the success summary when every plan loaded; otherwise AddPlanTab has
+        // already left a persistent status explaining the failure — don't clobber it.
+        if (loaded == plans.Count)
+            SetStatus($"{plans.Count} Query Store plans loaded");
+
         HumanAdviceButton.IsEnabled = true;
         RobotAdviceButton.IsEnabled = true;
     }

@@ -328,12 +328,15 @@
             </Grid>
 
             <!-- Empty State -->
-            <StackPanel x:Name="EmptyState" Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Center">
-                <TextBlock Text="No Plan Loaded" FontSize="20" FontWeight="Light"
+            <StackPanel x:Name="EmptyState" Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="520">
+                <TextBlock x:Name="EmptyStateTitle" Text="No Plan Loaded" FontSize="20" FontWeight="Light"
                            Foreground="{DynamicResource ForegroundBrush}" HorizontalAlignment="Center"/>
-                <TextBlock Text="Open a .sqlplan file or drag one onto this window"
+                <TextBlock x:Name="EmptyStateHint" Text="Open a .sqlplan file or drag one onto this window"
                            FontSize="13" Foreground="{DynamicResource ForegroundBrush}"
                            HorizontalAlignment="Center" Margin="0,8,0,0"/>
+                <TextBlock x:Name="EmptyStateError" Text="" IsVisible="False"
+                           FontSize="13" Foreground="#E06C75" TextWrapping="Wrap"
+                           TextAlignment="Center" HorizontalAlignment="Center" Margin="0,8,0,0"/>
             </StackPanel>
 
             <!-- Properties Splitter -->
