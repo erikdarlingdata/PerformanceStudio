@@ -1,0 +1,216 @@
+    <div class="insights-panel">
+
+        @* Runtime Summary *@
+        @{
+            var isEstimatedRuntime = Stmt.QueryTime == null;
+            var hasAnySpill = HasSpillInTree(Stmt.OperatorTree);
+        }
+        <div class="insight-card runtime">
+            <h4>@(isEstimatedRuntime ? "Predicted Runtime" : "Runtime")</h4>
+            <div class="insight-body">
+                @* Order per Joe #215 E11: Elapsed → CPU:Elapsed → DOP → CPU → Compile → Memory → Used → Optimization → CE Model → Cost *@
+                @if (Stmt.QueryTime != null)
+                {
+                    <div class="insight-row">
+                        <span class="insight-label">Elapsed</span>
+                        <span class="insight-value">@Stmt.QueryTime.ElapsedTimeMs.ToString("N0") ms</span>
+                    </div>
+                    @if (Stmt.QueryTime.ElapsedTimeMs > 0)
+                    {
+                        var effectiveCpu = Math.Max(0L, Stmt.QueryTime.CpuTimeMs - Stmt.QueryTime.ExternalWaitMs);
+                        var ratio = (double)effectiveCpu / Stmt.QueryTime.ElapsedTimeMs;
+                        <div class="insight-row">
+                            <span class="insight-label">CPU:Elapsed</span>
+                            <span class="insight-value">@ratio.ToString("N2")</span>
+                        </div>
+                    }
+                }
+                @if (Stmt.DegreeOfParallelism > 0)
+                {
+                    <div class="insight-row">
+                        <span class="insight-label">DOP</span>
+                        <span class="insight-value">@Stmt.DegreeOfParallelism</span>
+                    </div>
+                }
+                @if (Stmt.NonParallelReason != null)
+                {
+                    <div class="insight-row">
+                        <span class="insight-label">Serial</span>
+                        <span class="insight-value">@Stmt.NonParallelReason</span>
+                    </div>
+                }
+                @if (Stmt.QueryTime != null)
+                {
+                    <div class="insight-row">
+                        <span class="insight-label">CPU</span>
+                        <span class="insight-value">@Stmt.QueryTime.CpuTimeMs.ToString("N0") ms</span>
+                    </div>
+                }
+                @if (Stmt.CompileTimeMs > 0)
+                {
+                    <div class="insight-row">
+                        <span class="insight-label">Compile</span>
+                        <span class="insight-value">@Stmt.CompileTimeMs.ToString("N0") ms</span>
+                    </div>
+                }
+                @if (Stmt.MemoryGrant != null && Stmt.MemoryGrant.GrantedKB > 0)
+                {
+                    var pctUsed = (double)Stmt.MemoryGrant.MaxUsedKB / Stmt.MemoryGrant.GrantedKB * 100;
+                    var effClass = GetMemoryGrantColorClass(pctUsed, hasAnySpill);
+                    <div class="insight-row">
+                        <span class="insight-label">Memory</span>
+                        <span class="insight-value">@FormatKB(Stmt.MemoryGrant.GrantedKB) granted</span>
+                    </div>
+                    <div class="insight-row">
+                        <span class="insight-label">Used</span>
+                        <span class="insight-value @effClass">
+                            @FormatKB(Stmt.MemoryGrant.MaxUsedKB) (@pctUsed.ToString("N0")%)
+                            @if (hasAnySpill)
+                            {
+                                <span class="spill-tag" title="Operators spilled to tempdb">⚠ spill</span>
+                            }
+                        </span>
+                    </div>
+                }
+                else if (isEstimatedRuntime && Stmt.MemoryGrant != null && Stmt.MemoryGrant.DesiredKB > 0)
+                {
+                    <div class="insight-row">
+                        <span class="insight-label">Memory (estimated)</span>
+                        <span class="insight-value">@FormatKB(Stmt.MemoryGrant.DesiredKB) desired</span>
+                    </div>
+                    @if (Stmt.MemoryGrant.SerialRequiredKB > 0 && Stmt.MemoryGrant.SerialRequiredKB != Stmt.MemoryGrant.DesiredKB)
+                    {
+                        <div class="insight-row">
+                            <span class="insight-label">Serial required</span>
+                            <span class="insight-value">@FormatKB(Stmt.MemoryGrant.SerialRequiredKB)</span>
+                        </div>
+                    }
+                }
+                @if (Stmt.OptimizationLevel != null)
+                {
+                    <div class="insight-row">
+                        <span class="insight-label">Optimization</span>
+                        <span class="insight-value">@Stmt.OptimizationLevel</span>
+                    </div>
+                }
+                @if (Stmt.CardinalityEstimationModel > 0)
+                {
+                    <div class="insight-row">
+                        <span class="insight-label">CE Model</span>
+                        <span class="insight-value">@Stmt.CardinalityEstimationModel</span>
+                    </div>
+                }
+                <div class="insight-row">
+                    <span class="insight-label">Cost</span>
+                    <span class="insight-value">@Stmt.EstimatedCost.ToString("N2")</span>
+                </div>
+            </div>
+        </div>
+
+        @* Missing Indexes *@
+        <div class="insight-card indexes @(Stmt.MissingIndexes.Count > 0 ? "has-items" : "")">
+            <h4>Missing Indexes <span class="insight-count">@Stmt.MissingIndexes.Count</span></h4>
+            <div class="insight-body">
+                @if (Stmt.MissingIndexes.Count > 0)
+                {
+                    @foreach (var mi in Stmt.MissingIndexes)
+                    {
+                        <div class="mi-item">
+                            <div class="mi-table-name">@mi.Table</div>
+                            <div class="mi-impact-row">Impact: <span class="mi-impact-val">@mi.Impact.ToString("F0")%</span></div>
+                            <pre class="mi-create">@mi.CreateStatement</pre>
+                        </div>
+                    }
+                }
+                else
+                {
+                    <div class="insight-empty">No missing index suggestions</div>
+                }
+            </div>
+        </div>
+
+        @* Parameters *@
+        <div class="insight-card params @(Stmt.Parameters.Count > 0 ? "has-items" : "")">
+            <h4>Parameters <span class="insight-count">@Stmt.Parameters.Count</span></h4>
+            <div class="insight-body">
+                @if (Stmt.Parameters.Count > 0)
+                {
+                    <table class="params-table">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Type</th>
+                                <th>Compiled</th>
+                                @if (Stmt.Parameters.Any(p => p.RuntimeValue != null))
+                                {
+                                    <th>Runtime</th>
+                                }
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var p in Stmt.Parameters)
+                            {
+                                <tr class="@(p.SniffingIssue ? "sniffing-row" : "")">
+                                    <td class="param-name-cell">@p.Name</td>
+                                    <td class="param-type-cell">@p.DataType</td>
+                                    <td>@(p.CompiledValue ?? "?")</td>
+                                    @if (Stmt.Parameters.Any(pp => pp.RuntimeValue != null))
+                                    {
+                                        <td class="@(p.SniffingIssue ? "sniffing-val" : "")">@(p.RuntimeValue ?? "")</td>
+                                    }
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+                else
+                {
+                    <div class="insight-empty">No parameters</div>
+                }
+            </div>
+        </div>
+
+        @* Wait Stats — collapsible (#215 E12): default-closed so it doesn't push improvement items below the fold *@
+        <details class="insight-card waits @(Stmt.WaitStats.Count > 0 ? "has-items" : "")">
+            <summary>Wait Stats
+                @if (Stmt.WaitStats.Count > 0)
+                {
+                    <span class="insight-count">@Stmt.WaitStats.Sum(w => w.WaitTimeMs).ToString("N0") ms</span>
+                }
+            </summary>
+            <div class="insight-body">
+                @if (Stmt.WaitStats.Count > 0)
+                {
+                    var maxWait = Stmt.WaitStats.Max(w => w.WaitTimeMs);
+                    var benefitLookup = Stmt.WaitBenefits.ToDictionary(wb => wb.WaitType, wb => wb.MaxBenefitPercent, StringComparer.OrdinalIgnoreCase);
+                    @foreach (var w in Stmt.WaitStats.OrderByDescending(w => w.WaitTimeMs))
+                    {
+                        var barPct = maxWait > 0 ? (double)w.WaitTimeMs / maxWait * 100 : 0;
+                        benefitLookup.TryGetValue(w.WaitType, out var benefitPct);
+                        <div class="wait-row">
+                            <span class="wait-type">@w.WaitType</span>
+                            <div class="wait-bar-container">
+                                <div class="wait-bar" style="width: @barPct.ToString("F0")%"></div>
+                            </div>
+                            <span class="wait-ms">
+                                @w.WaitTimeMs.ToString("N0") ms
+                                @if (benefitPct > 0)
+                                {
+                                    <span class="wait-benefit">up to @(benefitPct >= 100 ? benefitPct.ToString("N0") : benefitPct.ToString("N1"))%</span>
+                                }
+                            </span>
+                        </div>
+                    }
+                }
+                else
+                {
+                    <div class="insight-empty">@(HasActualStats ? "No waits recorded" : "Estimated plan — no wait stats")</div>
+                }
+            </div>
+        </details>
+    </div>
+
+@code {
+    [Parameter] public StatementResult Stmt { get; set; } = default!;
+    [Parameter] public bool HasActualStats { get; set; }
+}

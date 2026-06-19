@@ -1,0 +1,1278 @@
+        <aside class="properties-panel">
+            <div class="prop-header">
+                <div class="prop-header-info">
+                    <img src="icons/@(Node.IconName).png" class="prop-header-icon" alt="" />
+                    <div>
+                        <div class="prop-header-op">@GetOperatorLabel(Node)</div>
+                        <div class="prop-header-sub">Node @Node.NodeId · Cost: @(Node.CostPercent)%</div>
+                    </div>
+                </div>
+                <button class="prop-close" @onclick="OnClose" title="Close">&times;</button>
+            </div>
+
+            <div class="prop-body">
+
+                @* General *@
+                <details class="prop-section" open>
+                    <summary>General</summary>
+                    <div class="prop-grid">
+                        <div class="prop-row"><span class="prop-label">Physical Op</span><span class="prop-value">@Node.PhysicalOp</span></div>
+                        <div class="prop-row"><span class="prop-label">Logical Op</span><span class="prop-value">@Node.LogicalOp</span></div>
+                        <div class="prop-row"><span class="prop-label">Node ID</span><span class="prop-value">@Node.NodeId</span></div>
+                        @if (!string.IsNullOrEmpty(Node.ExecutionMode))
+                        {
+                            <div class="prop-row"><span class="prop-label">Execution Mode</span><span class="prop-value">@Node.ExecutionMode</span></div>
+                        }
+                        @if (!string.IsNullOrEmpty(Node.ActualExecutionMode) && Node.ActualExecutionMode != Node.ExecutionMode)
+                        {
+                            <div class="prop-row"><span class="prop-label">Actual Exec Mode</span><span class="prop-value">@Node.ActualExecutionMode</span></div>
+                        }
+                        <div class="prop-row"><span class="prop-label">Parallel</span><span class="prop-value">@(Node.Parallel ? "True" : "False")</span></div>
+                        @if (Node.Partitioned)
+                        {
+                            <div class="prop-row"><span class="prop-label">Partitioned</span><span class="prop-value flag">Yes</span></div>
+                        }
+                        @if (Node.EstimatedDOP > 0)
+                        {
+                            <div class="prop-row"><span class="prop-label">Estimated DOP</span><span class="prop-value">@Node.EstimatedDOP</span></div>
+                        }
+                        @if (!string.IsNullOrEmpty(Node.FullObjectName))
+                        {
+                            <div class="prop-row"><span class="prop-label">Ordered</span><span class="prop-value">@(Node.Ordered ? "True" : "False")</span></div>
+                            @if (!string.IsNullOrEmpty(Node.ScanDirection))
+                            {
+                                <div class="prop-row"><span class="prop-label">Scan Direction</span><span class="prop-value">@Node.ScanDirection</span></div>
+                            }
+                            <div class="prop-row"><span class="prop-label">Forced Index</span><span class="prop-value">@(Node.ForcedIndex ? "True" : "False")</span></div>
+                            <div class="prop-row"><span class="prop-label">ForceScan</span><span class="prop-value">@(Node.ForceScan ? "True" : "False")</span></div>
+                            <div class="prop-row"><span class="prop-label">ForceSeek</span><span class="prop-value">@(Node.ForceSeek ? "True" : "False")</span></div>
+                            <div class="prop-row"><span class="prop-label">NoExpandHint</span><span class="prop-value">@(Node.NoExpandHint ? "True" : "False")</span></div>
+                            @if (Node.Lookup)
+                            {
+                                <div class="prop-row"><span class="prop-label">Lookup</span><span class="prop-value flag">Yes</span></div>
+                            }
+                            @if (Node.DynamicSeek)
+                            {
+                                <div class="prop-row"><span class="prop-label">Dynamic Seek</span><span class="prop-value flag">Yes</span></div>
+                            }
+                        }
+                        @if (!string.IsNullOrEmpty(Node.StorageType))
+                        {
+                            <div class="prop-row"><span class="prop-label">Storage</span><span class="prop-value">@Node.StorageType</span></div>
+                        }
+                        @if (Node.IsAdaptive)
+                        {
+                            <div class="prop-row"><span class="prop-label">Adaptive</span><span class="prop-value flag">Yes</span></div>
+                        }
+                        @if (Node.SpillOccurredDetail)
+                        {
+                            <div class="prop-row"><span class="prop-label">Spill Occurred</span><span class="prop-value flag warn">Yes</span></div>
+                        }
+                    </div>
+                </details>
+
+                @* Object *@
+                @if (!string.IsNullOrEmpty(Node.ObjectName))
+                {
+                    <details class="prop-section" open>
+                        <summary>Object</summary>
+                        <div class="prop-grid">
+                            <div class="prop-row"><span class="prop-label">Name</span><span class="prop-value code">@(Node.FullObjectName ?? Node.ObjectName)</span></div>
+                            @if (!string.IsNullOrEmpty(Node.IndexName))
+                            {
+                                <div class="prop-row"><span class="prop-label">Index</span><span class="prop-value code">@Node.IndexName</span></div>
+                            }
+                            @if (!string.IsNullOrEmpty(Node.IndexKind))
+                            {
+                                <div class="prop-row"><span class="prop-label">Index Kind</span><span class="prop-value">@Node.IndexKind</span></div>
+                            }
+                            @if (Node.FilteredIndex)
+                            {
+                                <div class="prop-row"><span class="prop-label">Filtered</span><span class="prop-value flag">Yes</span></div>
+                            }
+                            @if (!string.IsNullOrEmpty(Node.ObjectAlias))
+                            {
+                                <div class="prop-row"><span class="prop-label">Alias</span><span class="prop-value code">@Node.ObjectAlias</span></div>
+                            }
+                            @if (!string.IsNullOrEmpty(Node.DatabaseName))
+                            {
+                                <div class="prop-row"><span class="prop-label">Database</span><span class="prop-value">@Node.DatabaseName</span></div>
+                            }
+                            @if (!string.IsNullOrEmpty(Node.ServerName))
+                            {
+                                <div class="prop-row"><span class="prop-label">Server</span><span class="prop-value">@Node.ServerName</span></div>
+                            }
+                            @if (Node.TableReferenceId > 0)
+                            {
+                                <div class="prop-row"><span class="prop-label">Table Ref ID</span><span class="prop-value">@Node.TableReferenceId</span></div>
+                            }
+                        </div>
+                    </details>
+                }
+
+                @* Costs *@
+                <details class="prop-section" open>
+                    <summary>Costs</summary>
+                    <div class="prop-grid">
+                        <div class="prop-row"><span class="prop-label">Operator Cost</span><span class="prop-value">@Node.EstimatedOperatorCost.ToString("N4") (@(Node.CostPercent)%)</span></div>
+                        <div class="prop-row"><span class="prop-label">Subtree Cost</span><span class="prop-value">@Node.EstimatedTotalSubtreeCost.ToString("N4")</span></div>
+                        <div class="prop-row"><span class="prop-label">I/O Cost</span><span class="prop-value">@Node.EstimateIO.ToString("N4")</span></div>
+                        <div class="prop-row"><span class="prop-label">CPU Cost</span><span class="prop-value">@Node.EstimateCPU.ToString("N4")</span></div>
+                    </div>
+                </details>
+
+                @* Rows *@
+                <details class="prop-section" open>
+                    <summary>Rows</summary>
+                    <div class="prop-grid">
+                        <div class="prop-row"><span class="prop-label">Est. Executions</span><span class="prop-value">@((1 + Node.EstimateRebinds).ToString("N0"))</span></div>
+                        <div class="prop-row"><span class="prop-label">Est. Rows Per Exec</span><span class="prop-value">@Node.EstimateRows.ToString("N1")</span></div>
+                        <div class="prop-row"><span class="prop-label">Est. Rows All Execs</span><span class="prop-value">@((Node.EstimateRows * Math.Max(1, 1 + Node.EstimateRebinds)).ToString("N1"))</span></div>
+                        @if (Node.EstimatedRowsRead > 0)
+                        {
+                            <div class="prop-row"><span class="prop-label">Est. Rows Read</span><span class="prop-value">@Node.EstimatedRowsRead.ToString("N0")</span></div>
+                        }
+                        @if (Node.EstimatedRowSize > 0)
+                        {
+                            <div class="prop-row"><span class="prop-label">Avg Row Size</span><span class="prop-value">@Node.EstimatedRowSize B</span></div>
+                        }
+                        @if (Node.TableCardinality > 0)
+                        {
+                            <div class="prop-row"><span class="prop-label">Table Cardinality</span><span class="prop-value">@Node.TableCardinality.ToString("N0")</span></div>
+                        }
+                        @if (Node.EstimateRebinds > 0)
+                        {
+                            <div class="prop-row"><span class="prop-label">Est. Rebinds</span><span class="prop-value">@Node.EstimateRebinds.ToString("N2")</span></div>
+                        }
+                        @if (Node.EstimateRewinds > 0)
+                        {
+                            <div class="prop-row"><span class="prop-label">Est. Rewinds</span><span class="prop-value">@Node.EstimateRewinds.ToString("N2")</span></div>
+                        }
+                        @if (Node.EstimateRowsWithoutRowGoal > 0 && Math.Abs(Node.EstimateRowsWithoutRowGoal - Node.EstimateRows) > 0.01)
+                        {
+                            <div class="prop-row"><span class="prop-label">Est. Rows (No Goal)</span><span class="prop-value">@Node.EstimateRowsWithoutRowGoal.ToString("N0")</span></div>
+                        }
+                    </div>
+                </details>
+
+                @* Actual Statistics *@
+                @if (Node.HasActualStats)
+                {
+                    <details class="prop-section" open>
+                        <summary>Actual Statistics</summary>
+                        <div class="prop-grid">
+                            <div class="prop-row"><span class="prop-label">Actual Rows</span><span class="prop-value">@Node.ActualRows.ToString("N0")</span></div>
+                            @if (Node.PerThreadStats.Count > 1)
+                            {
+                                @foreach (var t in Node.PerThreadStats)
+                                {
+                                    <div class="prop-row indent"><span class="prop-label">Thread @t.ThreadId</span><span class="prop-value">@t.ActualRows.ToString("N0")</span></div>
+                                }
+                            }
+                            @if (Node.ActualRowsRead > 0)
+                            {
+                                <div class="prop-row"><span class="prop-label">Actual Rows Read</span><span class="prop-value">@Node.ActualRowsRead.ToString("N0")</span></div>
+                                @if (Node.PerThreadStats.Count > 1)
+                                {
+                                    @foreach (var t in Node.PerThreadStats.Where(t => t.ActualRowsRead > 0))
+                                    {
+                                        <div class="prop-row indent"><span class="prop-label">Thread @t.ThreadId</span><span class="prop-value">@t.ActualRowsRead.ToString("N0")</span></div>
+                                    }
+                                }
+                            }
+                            <div class="prop-row"><span class="prop-label">Actual Executions</span><span class="prop-value">@Node.ActualExecutions.ToString("N0")</span></div>
+                            @if (Node.PerThreadStats.Count > 1)
+                            {
+                                @foreach (var t in Node.PerThreadStats)
+                                {
+                                    <div class="prop-row indent"><span class="prop-label">Thread @t.ThreadId</span><span class="prop-value">@t.ActualExecutions.ToString("N0")</span></div>
+                                }
+                            }
+                            @if (Node.ActualRebinds > 0)
+                            {
+                                <div class="prop-row"><span class="prop-label">Actual Rebinds</span><span class="prop-value">@Node.ActualRebinds.ToString("N0")</span></div>
+                            }
+                            @if (Node.ActualRewinds > 0)
+                            {
+                                <div class="prop-row"><span class="prop-label">Actual Rewinds</span><span class="prop-value">@Node.ActualRewinds.ToString("N0")</span></div>
+                            }
+                            @if (Node.PartitionsAccessed > 0)
+                            {
+                                <div class="prop-row"><span class="prop-label">Partitions Accessed</span><span class="prop-value">@Node.PartitionsAccessed</span></div>
+                                @if (!string.IsNullOrEmpty(Node.PartitionRanges))
+                                {
+                                    <div class="prop-row"><span class="prop-label">Partition Ranges</span><span class="prop-value code">@Node.PartitionRanges</span></div>
+                                }
+                            }
+                        </div>
+                    </details>
+
+                    @* Actual Timing *@
+                    @if (Node.ActualElapsedMs > 0 || Node.ActualCPUMs > 0 || Node.UdfCpuTimeMs > 0 || Node.UdfElapsedTimeMs > 0)
+                    {
+                        <details class="prop-section" open>
+                            <summary>Actual Timing</summary>
+                            <div class="prop-grid">
+                                @if (Node.ActualElapsedMs > 0)
+                                {
+                                    <div class="prop-row"><span class="prop-label">Elapsed Time</span><span class="prop-value">@FormatMs(Node.ActualElapsedMs)</span></div>
+                                    @if (Node.PerThreadStats.Count > 1)
+                                    {
+                                        @foreach (var t in Node.PerThreadStats.Where(t => t.ActualElapsedMs > 0))
+                                        {
+                                            <div class="prop-row indent"><span class="prop-label">Thread @t.ThreadId</span><span class="prop-value">@FormatMs(t.ActualElapsedMs)</span></div>
+                                        }
+                                    }
+                                }
+                                @if (Node.ActualCPUMs > 0)
+                                {
+                                    <div class="prop-row"><span class="prop-label">CPU Time</span><span class="prop-value">@FormatMs(Node.ActualCPUMs)</span></div>
+                                    @if (Node.PerThreadStats.Count > 1)
+                                    {
+                                        @foreach (var t in Node.PerThreadStats.Where(t => t.ActualCPUMs > 0))
+                                        {
+                                            <div class="prop-row indent"><span class="prop-label">Thread @t.ThreadId</span><span class="prop-value">@FormatMs(t.ActualCPUMs)</span></div>
+                                        }
+                                    }
+                                }
+                                @if (Node.UdfElapsedTimeMs > 0)
+                                {
+                                    <div class="prop-row"><span class="prop-label">UDF Elapsed</span><span class="prop-value">@FormatMs(Node.UdfElapsedTimeMs)</span></div>
+                                }
+                                @if (Node.UdfCpuTimeMs > 0)
+                                {
+                                    <div class="prop-row"><span class="prop-label">UDF CPU</span><span class="prop-value">@FormatMs(Node.UdfCpuTimeMs)</span></div>
+                                }
+                            </div>
+                        </details>
+                    }
+
+                    @* Actual I/O *@
+                    @if (Node.ActualLogicalReads > 0 || Node.ActualPhysicalReads > 0 || Node.ActualScans > 0 || Node.ActualReadAheads > 0 || Node.ActualSegmentReads > 0 || Node.ActualSegmentSkips > 0)
+                    {
+                        <details class="prop-section" open>
+                            <summary>Actual I/O</summary>
+                            <div class="prop-grid">
+                                <div class="prop-row"><span class="prop-label">Logical Reads</span><span class="prop-value">@Node.ActualLogicalReads.ToString("N0")</span></div>
+                                @if (Node.PerThreadStats.Count > 1)
+                                {
+                                    @foreach (var t in Node.PerThreadStats.Where(t => t.ActualLogicalReads > 0))
+                                    {
+                                        <div class="prop-row indent"><span class="prop-label">Thread @t.ThreadId</span><span class="prop-value">@t.ActualLogicalReads.ToString("N0")</span></div>
+                                    }
+                                }
+                                @if (Node.ActualPhysicalReads > 0)
+                                {
+                                    <div class="prop-row"><span class="prop-label">Physical Reads</span><span class="prop-value">@Node.ActualPhysicalReads.ToString("N0")</span></div>
+                                    @if (Node.PerThreadStats.Count > 1)
+                                    {
+                                        @foreach (var t in Node.PerThreadStats.Where(t => t.ActualPhysicalReads > 0))
+                                        {
+                                            <div class="prop-row indent"><span class="prop-label">Thread @t.ThreadId</span><span class="prop-value">@t.ActualPhysicalReads.ToString("N0")</span></div>
+                                        }
+                                    }
+                                }
+                                @if (Node.ActualScans > 0)
+                                {
+                                    <div class="prop-row"><span class="prop-label">Scans</span><span class="prop-value">@Node.ActualScans.ToString("N0")</span></div>
+                                    @if (Node.PerThreadStats.Count > 1)
+                                    {
+                                        @foreach (var t in Node.PerThreadStats.Where(t => t.ActualScans > 0))
+                                        {
+                                            <div class="prop-row indent"><span class="prop-label">Thread @t.ThreadId</span><span class="prop-value">@t.ActualScans.ToString("N0")</span></div>
+                                        }
+                                    }
+                                }
+                                @if (Node.ActualReadAheads > 0)
+                                {
+                                    <div class="prop-row"><span class="prop-label">Read-Ahead Reads</span><span class="prop-value">@Node.ActualReadAheads.ToString("N0")</span></div>
+                                    @if (Node.PerThreadStats.Count > 1)
+                                    {
+                                        @foreach (var t in Node.PerThreadStats.Where(t => t.ActualReadAheads > 0))
+                                        {
+                                            <div class="prop-row indent"><span class="prop-label">Thread @t.ThreadId</span><span class="prop-value">@t.ActualReadAheads.ToString("N0")</span></div>
+                                        }
+                                    }
+                                }
+                                @if (Node.ActualSegmentReads > 0)
+                                {
+                                    <div class="prop-row"><span class="prop-label">Segment Reads</span><span class="prop-value">@Node.ActualSegmentReads.ToString("N0")</span></div>
+                                }
+                                @if (Node.ActualSegmentSkips > 0)
+                                {
+                                    <div class="prop-row"><span class="prop-label">Segment Skips</span><span class="prop-value">@Node.ActualSegmentSkips.ToString("N0")</span></div>
+                                }
+                            </div>
+                        </details>
+                    }
+
+                    @* Actual LOB I/O *@
+                    @if (Node.ActualLobLogicalReads > 0 || Node.ActualLobPhysicalReads > 0 || Node.ActualLobReadAheads > 0)
+                    {
+                        <details class="prop-section">
+                            <summary>Actual LOB I/O</summary>
+                            <div class="prop-grid">
+                                @if (Node.ActualLobLogicalReads > 0)
+                                {
+                                    <div class="prop-row"><span class="prop-label">LOB Logical Reads</span><span class="prop-value">@Node.ActualLobLogicalReads.ToString("N0")</span></div>
+                                }
+                                @if (Node.ActualLobPhysicalReads > 0)
+                                {
+                                    <div class="prop-row"><span class="prop-label">LOB Physical Reads</span><span class="prop-value">@Node.ActualLobPhysicalReads.ToString("N0")</span></div>
+                                }
+                                @if (Node.ActualLobReadAheads > 0)
+                                {
+                                    <div class="prop-row"><span class="prop-label">LOB Read-Aheads</span><span class="prop-value">@Node.ActualLobReadAheads.ToString("N0")</span></div>
+                                }
+                            </div>
+                        </details>
+                    }
+                }
+
+                @* Predicates *@
+                @if (HasPredicates(Node))
+                {
+                    <details class="prop-section" open>
+                        <summary>Predicates</summary>
+                        <div class="prop-grid">
+                            @if (!string.IsNullOrEmpty(Node.SeekPredicates))
+                            {
+                                <div class="prop-row full"><span class="prop-label">Seek</span><span class="prop-value code">@Node.SeekPredicates</span></div>
+                            }
+                            @if (!string.IsNullOrEmpty(Node.Predicate))
+                            {
+                                <div class="prop-row full"><span class="prop-label">Predicate</span><span class="prop-value code">@Node.Predicate</span></div>
+                            }
+                            @if (!string.IsNullOrEmpty(Node.HashKeysBuild))
+                            {
+                                <div class="prop-row full"><span class="prop-label">Hash Keys (Build)</span><span class="prop-value code">@Node.HashKeysBuild</span></div>
+                            }
+                            @if (!string.IsNullOrEmpty(Node.HashKeysProbe))
+                            {
+                                <div class="prop-row full"><span class="prop-label">Hash Keys (Probe)</span><span class="prop-value code">@Node.HashKeysProbe</span></div>
+                            }
+                            @if (!string.IsNullOrEmpty(Node.BuildResidual))
+                            {
+                                <div class="prop-row full"><span class="prop-label">Build Residual</span><span class="prop-value code">@Node.BuildResidual</span></div>
+                            }
+                            @if (!string.IsNullOrEmpty(Node.ProbeResidual))
+                            {
+                                <div class="prop-row full"><span class="prop-label">Probe Residual</span><span class="prop-value code">@Node.ProbeResidual</span></div>
+                            }
+                            @if (!string.IsNullOrEmpty(Node.MergeResidual))
+                            {
+                                <div class="prop-row full"><span class="prop-label">Merge Residual</span><span class="prop-value code">@Node.MergeResidual</span></div>
+                            }
+                            @if (!string.IsNullOrEmpty(Node.PassThru))
+                            {
+                                <div class="prop-row full"><span class="prop-label">Pass Through</span><span class="prop-value code">@Node.PassThru</span></div>
+                            }
+                            @if (!string.IsNullOrEmpty(Node.SetPredicate))
+                            {
+                                <div class="prop-row full"><span class="prop-label">Set Predicate</span><span class="prop-value code">@Node.SetPredicate</span></div>
+                            }
+                            @if (Node.GuessedSelectivity)
+                            {
+                                <div class="prop-row"><span class="prop-label">Guessed Selectivity</span><span class="prop-value flag warn">Yes</span></div>
+                            }
+                        </div>
+                    </details>
+                }
+
+                @* Output *@
+                @if (!string.IsNullOrEmpty(Node.OutputColumns))
+                {
+                    <details class="prop-section">
+                        <summary>Output</summary>
+                        <div class="prop-grid">
+                            <div class="prop-row full"><span class="prop-label">Columns</span><span class="prop-value code">@Node.OutputColumns</span></div>
+                        </div>
+                    </details>
+                }
+
+                @* Operator Details *@
+                @if (HasOperatorDetails(Node))
+                {
+                    <details class="prop-section">
+                        <summary>Operator Details</summary>
+                        <div class="prop-grid">
+                            @if (!string.IsNullOrEmpty(Node.OrderBy))
+                            {
+                                <div class="prop-row full"><span class="prop-label">Order By</span><span class="prop-value code">@Node.OrderBy</span></div>
+                            }
+                            @if (!string.IsNullOrEmpty(Node.GroupBy))
+                            {
+                                <div class="prop-row full"><span class="prop-label">Group By</span><span class="prop-value code">@Node.GroupBy</span></div>
+                            }
+                            @if (!string.IsNullOrEmpty(Node.TopExpression))
+                            {
+                                <div class="prop-row"><span class="prop-label">Top</span><span class="prop-value">@Node.TopExpression@(Node.IsPercent ? " PERCENT" : "")@(Node.WithTies ? " WITH TIES" : "")</span></div>
+                            }
+                            @if (!string.IsNullOrEmpty(Node.OffsetExpression))
+                            {
+                                <div class="prop-row"><span class="prop-label">Offset</span><span class="prop-value">@Node.OffsetExpression</span></div>
+                            }
+                            @if (!string.IsNullOrEmpty(Node.InnerSideJoinColumns))
+                            {
+                                <div class="prop-row full"><span class="prop-label">Inner Join Cols</span><span class="prop-value code">@Node.InnerSideJoinColumns</span></div>
+                            }
+                            @if (!string.IsNullOrEmpty(Node.OuterSideJoinColumns))
+                            {
+                                <div class="prop-row full"><span class="prop-label">Outer Join Cols</span><span class="prop-value code">@Node.OuterSideJoinColumns</span></div>
+                            }
+                            @if (!string.IsNullOrEmpty(Node.OuterReferences))
+                            {
+                                <div class="prop-row full"><span class="prop-label">Outer References</span><span class="prop-value code">@Node.OuterReferences</span></div>
+                            }
+                            @if (!string.IsNullOrEmpty(Node.DefinedValues))
+                            {
+                                <div class="prop-row full"><span class="prop-label">Defined Values</span><span class="prop-value code">@Node.DefinedValues</span></div>
+                            }
+                            @if (Node.ManyToMany)
+                            {
+                                <div class="prop-row"><span class="prop-label">Many to Many</span><span class="prop-value flag">Yes</span></div>
+                            }
+                            @if (Node.SortDistinct)
+                            {
+                                <div class="prop-row"><span class="prop-label">Sort Distinct</span><span class="prop-value flag">Yes</span></div>
+                            }
+                            @if (Node.BitmapCreator)
+                            {
+                                <div class="prop-row"><span class="prop-label">Bitmap Creator</span><span class="prop-value flag">Yes</span></div>
+                            }
+                            @if (Node.NLOptimized)
+                            {
+                                <div class="prop-row"><span class="prop-label">NL Optimized</span><span class="prop-value flag">Yes</span></div>
+                            }
+                            @if (Node.WithOrderedPrefetch)
+                            {
+                                <div class="prop-row"><span class="prop-label">Ordered Prefetch</span><span class="prop-value flag">Yes</span></div>
+                            }
+                            @if (Node.WithUnorderedPrefetch)
+                            {
+                                <div class="prop-row"><span class="prop-label">Unordered Prefetch</span><span class="prop-value flag">Yes</span></div>
+                            }
+                            @if (Node.NonClusteredIndexCount > 0)
+                            {
+                                <div class="prop-row"><span class="prop-label">NC Indexes</span><span class="prop-value">@Node.NonClusteredIndexCount maintained</span></div>
+                                @foreach (var ncIdx in Node.NonClusteredIndexNames)
+                                {
+                                    <div class="prop-row indent"><span class="prop-label"></span><span class="prop-value code">@ncIdx</span></div>
+                                }
+                            }
+                            @if (!string.IsNullOrEmpty(Node.HashKeys))
+                            {
+                                <div class="prop-row full"><span class="prop-label">Hash Keys</span><span class="prop-value code">@Node.HashKeys</span></div>
+                            }
+                            @if (!string.IsNullOrEmpty(Node.PartitionColumns))
+                            {
+                                <div class="prop-row full"><span class="prop-label">Partition Cols</span><span class="prop-value code">@Node.PartitionColumns</span></div>
+                            }
+                            @if (!string.IsNullOrEmpty(Node.SegmentColumn))
+                            {
+                                <div class="prop-row"><span class="prop-label">Segment Column</span><span class="prop-value code">@Node.SegmentColumn</span></div>
+                            }
+                            @if (Node.StartupExpression)
+                            {
+                                <div class="prop-row"><span class="prop-label">Startup Expression</span><span class="prop-value flag">Yes</span></div>
+                            }
+                            @if (Node.Remoting)
+                            {
+                                <div class="prop-row"><span class="prop-label">Remoting</span><span class="prop-value flag">Yes</span></div>
+                            }
+                            @if (Node.LocalParallelism)
+                            {
+                                <div class="prop-row"><span class="prop-label">Local Parallelism</span><span class="prop-value flag">Yes</span></div>
+                            }
+                            @if (!string.IsNullOrEmpty(Node.ConstantScanValues))
+                            {
+                                <div class="prop-row full"><span class="prop-label">Constant Values</span><span class="prop-value code">@Node.ConstantScanValues</span></div>
+                            }
+                            @if (Node.DMLRequestSort)
+                            {
+                                <div class="prop-row"><span class="prop-label">DML Request Sort</span><span class="prop-value flag">Yes</span></div>
+                            }
+                            @if (!string.IsNullOrEmpty(Node.ActionColumn))
+                            {
+                                <div class="prop-row"><span class="prop-label">Action Column</span><span class="prop-value code">@Node.ActionColumn</span></div>
+                            }
+                            @if (!string.IsNullOrEmpty(Node.OriginalActionColumn))
+                            {
+                                <div class="prop-row"><span class="prop-label">Original Action Col</span><span class="prop-value code">@Node.OriginalActionColumn</span></div>
+                            }
+                            @if (!string.IsNullOrEmpty(Node.TvfParameters))
+                            {
+                                <div class="prop-row full"><span class="prop-label">TVF Parameters</span><span class="prop-value code">@Node.TvfParameters</span></div>
+                            }
+                            @if (!string.IsNullOrEmpty(Node.UdxName))
+                            {
+                                <div class="prop-row"><span class="prop-label">UDX Name</span><span class="prop-value code">@Node.UdxName</span></div>
+                            }
+                            @if (!string.IsNullOrEmpty(Node.UdxUsedColumns))
+                            {
+                                <div class="prop-row full"><span class="prop-label">UDX Columns</span><span class="prop-value code">@Node.UdxUsedColumns</span></div>
+                            }
+                            @if (!string.IsNullOrEmpty(Node.TieColumns))
+                            {
+                                <div class="prop-row full"><span class="prop-label">Tie Columns</span><span class="prop-value code">@Node.TieColumns</span></div>
+                            }
+                            @if (Node.InRow)
+                            {
+                                <div class="prop-row"><span class="prop-label">In-Row</span><span class="prop-value flag">Yes</span></div>
+                            }
+                            @if (Node.ComputeSequence)
+                            {
+                                <div class="prop-row"><span class="prop-label">Compute Sequence</span><span class="prop-value flag">Yes</span></div>
+                            }
+                            @if (Node.RollupHighestLevel > 0)
+                            {
+                                <div class="prop-row"><span class="prop-label">Rollup Level</span><span class="prop-value">@Node.RollupHighestLevel</span></div>
+                            }
+                            @if (Node.RollupLevels.Count > 0)
+                            {
+                                <div class="prop-row"><span class="prop-label">Rollup Levels</span><span class="prop-value">@string.Join(", ", Node.RollupLevels)</span></div>
+                            }
+                            @if (Node.SpoolStack)
+                            {
+                                <div class="prop-row"><span class="prop-label">Spool Stack</span><span class="prop-value flag">Yes</span></div>
+                            }
+                            @if (Node.PrimaryNodeId > 0)
+                            {
+                                <div class="prop-row"><span class="prop-label">Primary Node ID</span><span class="prop-value">@Node.PrimaryNodeId</span></div>
+                            }
+                            @if (Node.IsStarJoin)
+                            {
+                                <div class="prop-row"><span class="prop-label">Star Join</span><span class="prop-value flag">Yes</span></div>
+                            }
+                            @if (!string.IsNullOrEmpty(Node.StarJoinOperationType))
+                            {
+                                <div class="prop-row"><span class="prop-label">Star Join Type</span><span class="prop-value">@Node.StarJoinOperationType</span></div>
+                            }
+                            @if (!string.IsNullOrEmpty(Node.ProbeColumn))
+                            {
+                                <div class="prop-row"><span class="prop-label">Probe Column</span><span class="prop-value code">@Node.ProbeColumn</span></div>
+                            }
+                            @if (!string.IsNullOrEmpty(Node.PartitioningType))
+                            {
+                                <div class="prop-row"><span class="prop-label">Partitioning Type</span><span class="prop-value">@Node.PartitioningType</span></div>
+                            }
+                            @if (!string.IsNullOrEmpty(Node.PartitionId))
+                            {
+                                <div class="prop-row"><span class="prop-label">Partition ID</span><span class="prop-value code">@Node.PartitionId</span></div>
+                            }
+                            @if (Node.ForceSeekColumnCount > 0)
+                            {
+                                <div class="prop-row"><span class="prop-label">ForceSeek Cols</span><span class="prop-value">@Node.ForceSeekColumnCount</span></div>
+                            }
+                            @if (Node.RowCount)
+                            {
+                                <div class="prop-row"><span class="prop-label">Row Count</span><span class="prop-value flag">Yes</span></div>
+                            }
+                            @if (Node.TopRows > 0)
+                            {
+                                <div class="prop-row"><span class="prop-label">Top Rows</span><span class="prop-value">@Node.TopRows</span></div>
+                            }
+                            @if (Node.GroupExecuted)
+                            {
+                                <div class="prop-row"><span class="prop-label">Group Executed</span><span class="prop-value flag">Yes</span></div>
+                            }
+                            @if (Node.RemoteDataAccess)
+                            {
+                                <div class="prop-row"><span class="prop-label">Remote Data Access</span><span class="prop-value flag">Yes</span></div>
+                            }
+                            @if (Node.OptimizedHalloweenProtectionUsed)
+                            {
+                                <div class="prop-row"><span class="prop-label">Halloween Protection</span><span class="prop-value flag">Yes</span></div>
+                            }
+                            @if (Node.StatsCollectionId > 0)
+                            {
+                                <div class="prop-row"><span class="prop-label">Stats Collection ID</span><span class="prop-value">@Node.StatsCollectionId</span></div>
+                            }
+                        </div>
+                    </details>
+                }
+
+                @* Adaptive Join *@
+                @if (Node.IsAdaptive)
+                {
+                    <details class="prop-section">
+                        <summary>Adaptive Join</summary>
+                        <div class="prop-grid">
+                            @if (!string.IsNullOrEmpty(Node.EstimatedJoinType))
+                            {
+                                <div class="prop-row"><span class="prop-label">Estimated Join</span><span class="prop-value">@Node.EstimatedJoinType</span></div>
+                            }
+                            @if (!string.IsNullOrEmpty(Node.ActualJoinType))
+                            {
+                                <div class="prop-row"><span class="prop-label">Actual Join</span><span class="prop-value">@Node.ActualJoinType</span></div>
+                            }
+                            @if (Node.AdaptiveThresholdRows > 0)
+                            {
+                                <div class="prop-row"><span class="prop-label">Threshold Rows</span><span class="prop-value">@Node.AdaptiveThresholdRows.ToString("N0")</span></div>
+                            }
+                        </div>
+                    </details>
+                }
+
+                @* Scalar UDFs *@
+                @if (Node.ScalarUdfs.Count > 0)
+                {
+                    <details class="prop-section">
+                        <summary>Scalar UDFs <span class="prop-warn-count">@Node.ScalarUdfs.Count</span></summary>
+                        <div class="prop-grid">
+                            @foreach (var udf in Node.ScalarUdfs)
+                            {
+                                <div class="prop-row full"><span class="prop-label">Function</span><span class="prop-value code">@udf.FunctionName</span></div>
+                                @if (udf.IsClrFunction)
+                                {
+                                    <div class="prop-row indent"><span class="prop-label">CLR</span><span class="prop-value flag">Yes</span></div>
+                                    @if (!string.IsNullOrEmpty(udf.ClrAssembly))
+                                    {
+                                        <div class="prop-row indent"><span class="prop-label">Assembly</span><span class="prop-value code">@udf.ClrAssembly</span></div>
+                                    }
+                                    @if (!string.IsNullOrEmpty(udf.ClrClass))
+                                    {
+                                        <div class="prop-row indent"><span class="prop-label">Class</span><span class="prop-value code">@udf.ClrClass</span></div>
+                                    }
+                                    @if (!string.IsNullOrEmpty(udf.ClrMethod))
+                                    {
+                                        <div class="prop-row indent"><span class="prop-label">Method</span><span class="prop-value code">@udf.ClrMethod</span></div>
+                                    }
+                                }
+                            }
+                        </div>
+                    </details>
+                }
+
+                @* Named Parameters *@
+                @if (Node.NamedParameters.Count > 0)
+                {
+                    <details class="prop-section">
+                        <summary>Named Parameters</summary>
+                        <div class="prop-grid">
+                            @foreach (var np in Node.NamedParameters)
+                            {
+                                <div class="prop-row"><span class="prop-label">@np.Name</span><span class="prop-value code">@(np.ScalarString ?? "")</span></div>
+                            }
+                        </div>
+                    </details>
+                }
+
+                @* Operator Indexed Views *@
+                @if (Node.OperatorIndexedViews.Count > 0)
+                {
+                    <details class="prop-section">
+                        <summary>Indexed Views</summary>
+                        <div class="prop-grid">
+                            @foreach (var iv in Node.OperatorIndexedViews)
+                            {
+                                <div class="prop-row full"><span class="prop-label"></span><span class="prop-value code">@iv</span></div>
+                            }
+                        </div>
+                    </details>
+                }
+
+                @* Suggested Index *@
+                @if (!string.IsNullOrEmpty(Node.SuggestedIndex))
+                {
+                    <details class="prop-section">
+                        <summary>Suggested Index</summary>
+                        <div class="prop-grid">
+                            <div class="prop-row full"><span class="prop-label"></span><span class="prop-value code">@Node.SuggestedIndex</span></div>
+                        </div>
+                    </details>
+                }
+
+                @* Remote Operator *@
+                @if (!string.IsNullOrEmpty(Node.RemoteDestination) || !string.IsNullOrEmpty(Node.RemoteSource) || !string.IsNullOrEmpty(Node.RemoteObject) || !string.IsNullOrEmpty(Node.RemoteQuery))
+                {
+                    <details class="prop-section">
+                        <summary>Remote Operator</summary>
+                        <div class="prop-grid">
+                            @if (!string.IsNullOrEmpty(Node.RemoteDestination))
+                            {
+                                <div class="prop-row"><span class="prop-label">Destination</span><span class="prop-value">@Node.RemoteDestination</span></div>
+                            }
+                            @if (!string.IsNullOrEmpty(Node.RemoteSource))
+                            {
+                                <div class="prop-row"><span class="prop-label">Source</span><span class="prop-value">@Node.RemoteSource</span></div>
+                            }
+                            @if (!string.IsNullOrEmpty(Node.RemoteObject))
+                            {
+                                <div class="prop-row"><span class="prop-label">Object</span><span class="prop-value code">@Node.RemoteObject</span></div>
+                            }
+                            @if (!string.IsNullOrEmpty(Node.RemoteQuery))
+                            {
+                                <div class="prop-row full"><span class="prop-label">Query</span><span class="prop-value code">@Node.RemoteQuery</span></div>
+                            }
+                        </div>
+                    </details>
+                }
+
+                @* Foreign Key References *@
+                @if (Node.ForeignKeyReferencesCount > 0)
+                {
+                    <details class="prop-section">
+                        <summary>Foreign Key References</summary>
+                        <div class="prop-grid">
+                            <div class="prop-row"><span class="prop-label">FK References</span><span class="prop-value">@Node.ForeignKeyReferencesCount</span></div>
+                            @if (Node.NoMatchingIndexCount > 0)
+                            {
+                                <div class="prop-row"><span class="prop-label">No Matching Index</span><span class="prop-value flag warn">@Node.NoMatchingIndexCount</span></div>
+                            }
+                            @if (Node.PartialMatchingIndexCount > 0)
+                            {
+                                <div class="prop-row"><span class="prop-label">Partial Match Index</span><span class="prop-value">@Node.PartialMatchingIndexCount</span></div>
+                            }
+                        </div>
+                    </details>
+                }
+
+                @* Memory *@
+                @if (HasMemoryInfo(Node))
+                {
+                    <details class="prop-section">
+                        <summary>Memory</summary>
+                        <div class="prop-grid">
+                            @if (Node.MemoryGrantKB.HasValue && Node.MemoryGrantKB > 0)
+                            {
+                                <div class="prop-row"><span class="prop-label">Granted</span><span class="prop-value">@FormatKB(Node.MemoryGrantKB.Value)</span></div>
+                            }
+                            @if (Node.DesiredMemoryKB.HasValue && Node.DesiredMemoryKB > 0)
+                            {
+                                <div class="prop-row"><span class="prop-label">Desired</span><span class="prop-value">@FormatKB(Node.DesiredMemoryKB.Value)</span></div>
+                            }
+                            @if (Node.MaxUsedMemoryKB.HasValue && Node.MaxUsedMemoryKB > 0)
+                            {
+                                <div class="prop-row"><span class="prop-label">Max Used</span><span class="prop-value">@FormatKB(Node.MaxUsedMemoryKB.Value)</span></div>
+                            }
+                            @if (Node.InputMemoryGrantKB > 0)
+                            {
+                                <div class="prop-row"><span class="prop-label">Input Grant</span><span class="prop-value">@FormatKB(Node.InputMemoryGrantKB)</span></div>
+                            }
+                            @if (Node.OutputMemoryGrantKB > 0)
+                            {
+                                <div class="prop-row"><span class="prop-label">Output Grant</span><span class="prop-value">@FormatKB(Node.OutputMemoryGrantKB)</span></div>
+                            }
+                            @if (Node.UsedMemoryGrantKB > 0)
+                            {
+                                <div class="prop-row"><span class="prop-label">Used Grant</span><span class="prop-value">@FormatKB(Node.UsedMemoryGrantKB)</span></div>
+                            }
+                            @if (Node.MemoryFractionInput > 0)
+                            {
+                                <div class="prop-row"><span class="prop-label">Fraction Input</span><span class="prop-value">@Node.MemoryFractionInput.ToString("F4")</span></div>
+                            }
+                            @if (Node.MemoryFractionOutput > 0)
+                            {
+                                <div class="prop-row"><span class="prop-label">Fraction Output</span><span class="prop-value">@Node.MemoryFractionOutput.ToString("F4")</span></div>
+                            }
+                        </div>
+                    </details>
+                }
+
+                @* Warnings *@
+                @if (Node.HasWarnings)
+                {
+                    <details class="prop-section" open>
+                        <summary>Warnings <span class="prop-warn-count">@Node.Warnings.Count</span></summary>
+                        <div class="prop-grid">
+                            @foreach (var w in Node.Warnings)
+                            {
+                                <div class="prop-warning">
+                                    <span class="prop-warning-type">@w.WarningType</span>
+                                    <span class="prop-warning-msg">@w.Message</span>
+                                </div>
+                            }
+                        </div>
+                    </details>
+                }
+
+                @* Statement Info (root node only) *@
+                @if (IsRoot && StmtPlan != null)
+                {
+                    <details class="prop-section">
+                        <summary>Statement Info</summary>
+                        <div class="prop-grid">
+                            @if (!string.IsNullOrEmpty(StmtPlan.StatementOptmLevel))
+                            {
+                                <div class="prop-row"><span class="prop-label">Optimization</span><span class="prop-value">@StmtPlan.StatementOptmLevel</span></div>
+                            }
+                            @if (!string.IsNullOrEmpty(StmtPlan.StatementOptmEarlyAbortReason))
+                            {
+                                <div class="prop-row"><span class="prop-label">Early Abort</span><span class="prop-value">@StmtPlan.StatementOptmEarlyAbortReason</span></div>
+                            }
+                            @if (StmtPlan.CardinalityEstimationModelVersion > 0)
+                            {
+                                <div class="prop-row"><span class="prop-label">CE Model</span><span class="prop-value">@StmtPlan.CardinalityEstimationModelVersion</span></div>
+                            }
+                            @if (StmtPlan.DegreeOfParallelism > 0)
+                            {
+                                <div class="prop-row"><span class="prop-label">DOP</span><span class="prop-value">@StmtPlan.DegreeOfParallelism</span></div>
+                            }
+                            @if (StmtPlan.CompileTimeMs > 0)
+                            {
+                                <div class="prop-row"><span class="prop-label">Compile Time</span><span class="prop-value">@FormatMs(StmtPlan.CompileTimeMs)</span></div>
+                            }
+                            @if (StmtPlan.CompileCPUMs > 0)
+                            {
+                                <div class="prop-row"><span class="prop-label">Compile CPU</span><span class="prop-value">@FormatMs(StmtPlan.CompileCPUMs)</span></div>
+                            }
+                            @if (StmtPlan.CompileMemoryKB > 0)
+                            {
+                                <div class="prop-row"><span class="prop-label">Compile Memory</span><span class="prop-value">@FormatKB(StmtPlan.CompileMemoryKB)</span></div>
+                            }
+                            @if (StmtPlan.CachedPlanSizeKB > 0)
+                            {
+                                <div class="prop-row"><span class="prop-label">Cached Plan Size</span><span class="prop-value">@FormatKB(StmtPlan.CachedPlanSizeKB)</span></div>
+                            }
+                            @if (!string.IsNullOrEmpty(StmtPlan.QueryHash))
+                            {
+                                <div class="prop-row"><span class="prop-label">Query Hash</span><span class="prop-value code">@StmtPlan.QueryHash</span></div>
+                            }
+                            @if (!string.IsNullOrEmpty(StmtPlan.QueryPlanHash))
+                            {
+                                <div class="prop-row"><span class="prop-label">Plan Hash</span><span class="prop-value code">@StmtPlan.QueryPlanHash</span></div>
+                            }
+                            @if (StmtPlan.BatchModeOnRowStoreUsed)
+                            {
+                                <div class="prop-row"><span class="prop-label">Batch on RowStore</span><span class="prop-value flag">Yes</span></div>
+                            }
+                            @if (StmtPlan.SecurityPolicyApplied)
+                            {
+                                <div class="prop-row"><span class="prop-label">Security Policy</span><span class="prop-value flag">Yes</span></div>
+                            }
+                            @if (!string.IsNullOrEmpty(StmtPlan.NonParallelPlanReason))
+                            {
+                                <div class="prop-row"><span class="prop-label">Non-Parallel Reason</span><span class="prop-value">@StmtPlan.NonParallelPlanReason</span></div>
+                            }
+                            @if (StmtPlan.EffectiveDOP > 0)
+                            {
+                                <div class="prop-row"><span class="prop-label">Effective DOP</span><span class="prop-value">@StmtPlan.EffectiveDOP</span></div>
+                            }
+                            @if (!string.IsNullOrEmpty(StmtPlan.DOPFeedbackAdjusted))
+                            {
+                                <div class="prop-row"><span class="prop-label">DOP Feedback</span><span class="prop-value">@StmtPlan.DOPFeedbackAdjusted</span></div>
+                            }
+                            @if (StmtPlan.MaxQueryMemoryKB > 0)
+                            {
+                                <div class="prop-row"><span class="prop-label">Max Query Memory</span><span class="prop-value">@FormatKB(StmtPlan.MaxQueryMemoryKB)</span></div>
+                            }
+                            @if (StmtPlan.QueryPlanMemoryGrantKB > 0)
+                            {
+                                <div class="prop-row"><span class="prop-label">Plan Memory Grant</span><span class="prop-value">@FormatKB(StmtPlan.QueryPlanMemoryGrantKB)</span></div>
+                            }
+                            @if (StmtPlan.RetrievedFromCache)
+                            {
+                                <div class="prop-row"><span class="prop-label">From Cache</span><span class="prop-value flag">Yes</span></div>
+                            }
+                            @if (StmtPlan.StatementParameterizationType > 0)
+                            {
+                                <div class="prop-row"><span class="prop-label">Parameterization</span><span class="prop-value">@(StmtPlan.StatementParameterizationType == 1 ? "Forced" : StmtPlan.StatementParameterizationType == 2 ? "Simple" : StmtPlan.StatementParameterizationType.ToString())</span></div>
+                            }
+                            @if (!string.IsNullOrEmpty(StmtPlan.StatementSqlHandle))
+                            {
+                                <div class="prop-row"><span class="prop-label">SQL Handle</span><span class="prop-value code">@StmtPlan.StatementSqlHandle</span></div>
+                            }
+                            @if (!string.IsNullOrEmpty(StmtPlan.PlanGuideName))
+                            {
+                                <div class="prop-row"><span class="prop-label">Plan Guide</span><span class="prop-value code">@StmtPlan.PlanGuideName</span></div>
+                            }
+                            @if (!string.IsNullOrEmpty(StmtPlan.PlanGuideDB))
+                            {
+                                <div class="prop-row"><span class="prop-label">Plan Guide DB</span><span class="prop-value code">@StmtPlan.PlanGuideDB</span></div>
+                            }
+                            @if (StmtPlan.UsePlan)
+                            {
+                                <div class="prop-row"><span class="prop-label">USE PLAN</span><span class="prop-value flag">Yes</span></div>
+                            }
+                            @if (StmtPlan.QueryStoreStatementHintId > 0)
+                            {
+                                <div class="prop-row"><span class="prop-label">QS Hint ID</span><span class="prop-value">@StmtPlan.QueryStoreStatementHintId</span></div>
+                            }
+                            @if (!string.IsNullOrEmpty(StmtPlan.QueryStoreStatementHintText))
+                            {
+                                <div class="prop-row full"><span class="prop-label">QS Hint</span><span class="prop-value code">@StmtPlan.QueryStoreStatementHintText</span></div>
+                            }
+                            @if (!string.IsNullOrEmpty(StmtPlan.QueryStoreStatementHintSource))
+                            {
+                                <div class="prop-row"><span class="prop-label">QS Hint Source</span><span class="prop-value">@StmtPlan.QueryStoreStatementHintSource</span></div>
+                            }
+                            @if (!string.IsNullOrEmpty(StmtPlan.ParameterizedText))
+                            {
+                                <div class="prop-row full"><span class="prop-label">Parameterized Text</span><span class="prop-value code">@StmtPlan.ParameterizedText</span></div>
+                            }
+                            @if (!string.IsNullOrEmpty(StmtPlan.StmtUseDatabaseName))
+                            {
+                                <div class="prop-row"><span class="prop-label">USE Database</span><span class="prop-value code">@StmtPlan.StmtUseDatabaseName</span></div>
+                            }
+                            @if (StmtPlan.DatabaseContextSettingsId > 0)
+                            {
+                                <div class="prop-row"><span class="prop-label">DB Settings ID</span><span class="prop-value">@StmtPlan.DatabaseContextSettingsId</span></div>
+                            }
+                            @if (StmtPlan.ParentObjectId > 0)
+                            {
+                                <div class="prop-row"><span class="prop-label">Parent Object ID</span><span class="prop-value">@StmtPlan.ParentObjectId</span></div>
+                            }
+                        </div>
+                    </details>
+                }
+
+                @* Cursor Info (root only) *@
+                @if (IsRoot && StmtPlan != null && !string.IsNullOrEmpty(StmtPlan.CursorName))
+                {
+                    <details class="prop-section">
+                        <summary>Cursor Info</summary>
+                        <div class="prop-grid">
+                            <div class="prop-row"><span class="prop-label">Name</span><span class="prop-value code">@StmtPlan.CursorName</span></div>
+                            @if (!string.IsNullOrEmpty(StmtPlan.CursorActualType))
+                            {
+                                <div class="prop-row"><span class="prop-label">Actual Type</span><span class="prop-value">@StmtPlan.CursorActualType</span></div>
+                            }
+                            @if (!string.IsNullOrEmpty(StmtPlan.CursorRequestedType))
+                            {
+                                <div class="prop-row"><span class="prop-label">Requested Type</span><span class="prop-value">@StmtPlan.CursorRequestedType</span></div>
+                            }
+                            @if (!string.IsNullOrEmpty(StmtPlan.CursorConcurrency))
+                            {
+                                <div class="prop-row"><span class="prop-label">Concurrency</span><span class="prop-value">@StmtPlan.CursorConcurrency</span></div>
+                            }
+                            @if (StmtPlan.CursorForwardOnly)
+                            {
+                                <div class="prop-row"><span class="prop-label">Forward Only</span><span class="prop-value flag">Yes</span></div>
+                            }
+                        </div>
+                    </details>
+                }
+
+                @* Memory Grant Info (root only) *@
+                @if (IsRoot && StmtPlan?.MemoryGrant != null)
+                {
+                    <details class="prop-section">
+                        <summary>Memory Grant Info</summary>
+                        <div class="prop-grid">
+                            @if (StmtPlan.MemoryGrant.GrantedMemoryKB > 0)
+                            {
+                                <div class="prop-row"><span class="prop-label">Granted</span><span class="prop-value">@FormatKB(StmtPlan.MemoryGrant.GrantedMemoryKB)</span></div>
+                            }
+                            @if (StmtPlan.MemoryGrant.MaxUsedMemoryKB > 0)
+                            {
+                                <div class="prop-row"><span class="prop-label">Max Used</span><span class="prop-value">@FormatKB(StmtPlan.MemoryGrant.MaxUsedMemoryKB)</span></div>
+                            }
+                            @if (StmtPlan.MemoryGrant.RequestedMemoryKB > 0)
+                            {
+                                <div class="prop-row"><span class="prop-label">Requested</span><span class="prop-value">@FormatKB(StmtPlan.MemoryGrant.RequestedMemoryKB)</span></div>
+                            }
+                            @if (StmtPlan.MemoryGrant.DesiredMemoryKB > 0)
+                            {
+                                <div class="prop-row"><span class="prop-label">Desired</span><span class="prop-value">@FormatKB(StmtPlan.MemoryGrant.DesiredMemoryKB)</span></div>
+                            }
+                            @if (StmtPlan.MemoryGrant.RequiredMemoryKB > 0)
+                            {
+                                <div class="prop-row"><span class="prop-label">Required</span><span class="prop-value">@FormatKB(StmtPlan.MemoryGrant.RequiredMemoryKB)</span></div>
+                            }
+                            @if (StmtPlan.MemoryGrant.SerialRequiredMemoryKB > 0)
+                            {
+                                <div class="prop-row"><span class="prop-label">Serial Required</span><span class="prop-value">@FormatKB(StmtPlan.MemoryGrant.SerialRequiredMemoryKB)</span></div>
+                            }
+                            @if (StmtPlan.MemoryGrant.SerialDesiredMemoryKB > 0)
+                            {
+                                <div class="prop-row"><span class="prop-label">Serial Desired</span><span class="prop-value">@FormatKB(StmtPlan.MemoryGrant.SerialDesiredMemoryKB)</span></div>
+                            }
+                            @if (StmtPlan.MemoryGrant.GrantWaitTimeMs > 0)
+                            {
+                                <div class="prop-row"><span class="prop-label">Grant Wait Time</span><span class="prop-value">@FormatMs(StmtPlan.MemoryGrant.GrantWaitTimeMs)</span></div>
+                            }
+                            @if (StmtPlan.MemoryGrant.LastRequestedMemoryKB > 0)
+                            {
+                                <div class="prop-row"><span class="prop-label">Last Requested</span><span class="prop-value">@FormatKB(StmtPlan.MemoryGrant.LastRequestedMemoryKB)</span></div>
+                            }
+                            @if (!string.IsNullOrEmpty(StmtPlan.MemoryGrant.IsMemoryGrantFeedbackAdjusted))
+                            {
+                                <div class="prop-row"><span class="prop-label">Feedback Adjusted</span><span class="prop-value">@StmtPlan.MemoryGrant.IsMemoryGrantFeedbackAdjusted</span></div>
+                            }
+                        </div>
+                    </details>
+                }
+
+                @* Feature Flags (root only) *@
+                @if (IsRoot && StmtPlan != null && (StmtPlan.ContainsInterleavedExecutionCandidates || StmtPlan.ContainsInlineScalarTsqlUdfs || StmtPlan.ContainsLedgerTables || StmtPlan.ExclusiveProfileTimeActive || StmtPlan.QueryCompilationReplay > 0 || StmtPlan.QueryVariantID > 0))
+                {
+                    <details class="prop-section">
+                        <summary>Feature Flags</summary>
+                        <div class="prop-grid">
+                            @if (StmtPlan.ContainsInterleavedExecutionCandidates)
+                            {
+                                <div class="prop-row"><span class="prop-label">Interleaved Exec</span><span class="prop-value flag">Yes</span></div>
+                            }
+                            @if (StmtPlan.ContainsInlineScalarTsqlUdfs)
+                            {
+                                <div class="prop-row"><span class="prop-label">Inline Scalar UDFs</span><span class="prop-value flag">Yes</span></div>
+                            }
+                            @if (StmtPlan.ContainsLedgerTables)
+                            {
+                                <div class="prop-row"><span class="prop-label">Ledger Tables</span><span class="prop-value flag">Yes</span></div>
+                            }
+                            @if (StmtPlan.ExclusiveProfileTimeActive)
+                            {
+                                <div class="prop-row"><span class="prop-label">Exclusive Profile</span><span class="prop-value flag">Yes</span></div>
+                            }
+                            @if (StmtPlan.QueryCompilationReplay > 0)
+                            {
+                                <div class="prop-row"><span class="prop-label">Compilation Replay</span><span class="prop-value">@StmtPlan.QueryCompilationReplay</span></div>
+                            }
+                            @if (StmtPlan.QueryVariantID > 0)
+                            {
+                                <div class="prop-row"><span class="prop-label">Query Variant ID</span><span class="prop-value">@StmtPlan.QueryVariantID</span></div>
+                            }
+                        </div>
+                    </details>
+                }
+
+                @* Set Options (root only) *@
+                @if (IsRoot && StmtPlan?.SetOptions != null)
+                {
+                    <details class="prop-section">
+                        <summary>Set Options</summary>
+                        <div class="prop-grid">
+                            <div class="prop-row"><span class="prop-label">ANSI_NULLS</span><span class="prop-value">@(StmtPlan.SetOptions.AnsiNulls ? "ON" : "OFF")</span></div>
+                            <div class="prop-row"><span class="prop-label">ANSI_PADDING</span><span class="prop-value">@(StmtPlan.SetOptions.AnsiPadding ? "ON" : "OFF")</span></div>
+                            <div class="prop-row"><span class="prop-label">ANSI_WARNINGS</span><span class="prop-value">@(StmtPlan.SetOptions.AnsiWarnings ? "ON" : "OFF")</span></div>
+                            <div class="prop-row"><span class="prop-label">ARITHABORT</span><span class="prop-value">@(StmtPlan.SetOptions.ArithAbort ? "ON" : "OFF")</span></div>
+                            <div class="prop-row"><span class="prop-label">CONCAT_NULL</span><span class="prop-value">@(StmtPlan.SetOptions.ConcatNullYieldsNull ? "ON" : "OFF")</span></div>
+                            <div class="prop-row"><span class="prop-label">NUMERIC_ROUNDABORT</span><span class="prop-value">@(StmtPlan.SetOptions.NumericRoundAbort ? "ON" : "OFF")</span></div>
+                            <div class="prop-row"><span class="prop-label">QUOTED_IDENTIFIER</span><span class="prop-value">@(StmtPlan.SetOptions.QuotedIdentifier ? "ON" : "OFF")</span></div>
+                        </div>
+                    </details>
+                }
+
+                @* Hardware Properties (root only) *@
+                @if (IsRoot && StmtPlan?.HardwareProperties != null)
+                {
+                    <details class="prop-section">
+                        <summary>Hardware</summary>
+                        <div class="prop-grid">
+                            @if (StmtPlan.HardwareProperties.EstimatedAvailableMemoryGrant > 0)
+                            {
+                                <div class="prop-row"><span class="prop-label">Available Memory</span><span class="prop-value">@FormatKB(StmtPlan.HardwareProperties.EstimatedAvailableMemoryGrant)</span></div>
+                            }
+                            @if (StmtPlan.HardwareProperties.EstimatedPagesCached > 0)
+                            {
+                                <div class="prop-row"><span class="prop-label">Pages Cached</span><span class="prop-value">@StmtPlan.HardwareProperties.EstimatedPagesCached.ToString("N0")</span></div>
+                            }
+                            @if (StmtPlan.HardwareProperties.EstimatedAvailableDOP > 0)
+                            {
+                                <div class="prop-row"><span class="prop-label">Available DOP</span><span class="prop-value">@StmtPlan.HardwareProperties.EstimatedAvailableDOP</span></div>
+                            }
+                            @if (StmtPlan.HardwareProperties.MaxCompileMemory > 0)
+                            {
+                                <div class="prop-row"><span class="prop-label">Max Compile Memory</span><span class="prop-value">@FormatKB(StmtPlan.HardwareProperties.MaxCompileMemory)</span></div>
+                            }
+                        </div>
+                    </details>
+                }
+
+                @* Handles (root only) *@
+                @if (IsRoot && StmtPlan != null && (!string.IsNullOrEmpty(StmtPlan.ParameterizedPlanHandle) || !string.IsNullOrEmpty(StmtPlan.BatchSqlHandle) || !string.IsNullOrEmpty(StmtPlan.DispatcherPlanHandle)))
+                {
+                    <details class="prop-section">
+                        <summary>Handles</summary>
+                        <div class="prop-grid">
+                            @if (!string.IsNullOrEmpty(StmtPlan.ParameterizedPlanHandle))
+                            {
+                                <div class="prop-row full"><span class="prop-label">Parameterized Plan</span><span class="prop-value code">@StmtPlan.ParameterizedPlanHandle</span></div>
+                            }
+                            @if (!string.IsNullOrEmpty(StmtPlan.BatchSqlHandle))
+                            {
+                                <div class="prop-row full"><span class="prop-label">Batch SQL Handle</span><span class="prop-value code">@StmtPlan.BatchSqlHandle</span></div>
+                            }
+                            @if (!string.IsNullOrEmpty(StmtPlan.DispatcherPlanHandle))
+                            {
+                                <div class="prop-row full"><span class="prop-label">Dispatcher Plan</span><span class="prop-value code">@StmtPlan.DispatcherPlanHandle</span></div>
+                            }
+                        </div>
+                    </details>
+                }
+
+                @* Trace Flags (root only) *@
+                @if (IsRoot && StmtPlan != null && StmtPlan.TraceFlags.Count > 0)
+                {
+                    <details class="prop-section">
+                        <summary>Trace Flags <span class="prop-warn-count">@StmtPlan.TraceFlags.Count</span></summary>
+                        <div class="prop-grid">
+                            @foreach (var tf in StmtPlan.TraceFlags)
+                            {
+                                <div class="prop-row"><span class="prop-label">TF @tf.Value</span><span class="prop-value">@tf.Scope@(tf.IsCompileTime ? " (compile)" : "")</span></div>
+                            }
+                        </div>
+                    </details>
+                }
+
+                @* PSP Dispatcher (root only) *@
+                @if (IsRoot && StmtPlan?.Dispatcher != null && (StmtPlan.Dispatcher.ParameterSensitivePredicates.Count > 0 || StmtPlan.Dispatcher.OptionalParameterPredicates.Count > 0))
+                {
+                    <details class="prop-section">
+                        <summary>PSP Dispatcher</summary>
+                        <div class="prop-grid">
+                            @foreach (var psp in StmtPlan.Dispatcher.ParameterSensitivePredicates)
+                            {
+                                @if (!string.IsNullOrEmpty(psp.PredicateText))
+                                {
+                                    <div class="prop-row full"><span class="prop-label">Predicate</span><span class="prop-value code">@psp.PredicateText</span></div>
+                                }
+                                <div class="prop-row indent"><span class="prop-label">Range</span><span class="prop-value">[@psp.LowBoundary.ToString("N0") — @psp.HighBoundary.ToString("N0")]</span></div>
+                                @foreach (var stat in psp.Statistics)
+                                {
+                                    <div class="prop-row indent"><span class="prop-label">@(!string.IsNullOrEmpty(stat.TableName) ? $"{stat.TableName}.{stat.StatisticsName}" : stat.StatisticsName)</span><span class="prop-value">Modified: @stat.ModificationCount.ToString("N0"), Sampled: @stat.SamplingPercent.ToString("F1")%</span></div>
+                                }
+                            }
+                            @foreach (var opt in StmtPlan.Dispatcher.OptionalParameterPredicates)
+                            {
+                                @if (!string.IsNullOrEmpty(opt.PredicateText))
+                                {
+                                    <div class="prop-row full"><span class="prop-label">Optional</span><span class="prop-value code">@opt.PredicateText</span></div>
+                                }
+                            }
+                        </div>
+                    </details>
+                }
+
+                @* Cardinality Feedback (root only) *@
+                @if (IsRoot && StmtPlan != null && StmtPlan.CardinalityFeedback.Count > 0)
+                {
+                    <details class="prop-section">
+                        <summary>Cardinality Feedback</summary>
+                        <div class="prop-grid">
+                            @foreach (var cf in StmtPlan.CardinalityFeedback)
+                            {
+                                <div class="prop-row"><span class="prop-label">Node @cf.Key</span><span class="prop-value">@cf.Value.ToString("N0") rows</span></div>
+                            }
+                        </div>
+                    </details>
+                }
+
+                @* Optimization Replay (root only) *@
+                @if (IsRoot && StmtPlan != null && !string.IsNullOrEmpty(StmtPlan.OptimizationReplayScript))
+                {
+                    <details class="prop-section">
+                        <summary>Optimization Replay</summary>
+                        <div class="prop-grid">
+                            <div class="prop-row full"><span class="prop-label"></span><span class="prop-value code">@StmtPlan.OptimizationReplayScript</span></div>
+                        </div>
+                    </details>
+                }
+
+                @* Template Plan Guide (root only) *@
+                @if (IsRoot && StmtPlan != null && !string.IsNullOrEmpty(StmtPlan.TemplatePlanGuideName))
+                {
+                    <details class="prop-section">
+                        <summary>Template Plan Guide</summary>
+                        <div class="prop-grid">
+                            <div class="prop-row"><span class="prop-label">Name</span><span class="prop-value code">@StmtPlan.TemplatePlanGuideName</span></div>
+                            @if (!string.IsNullOrEmpty(StmtPlan.TemplatePlanGuideDB))
+                            {
+                                <div class="prop-row"><span class="prop-label">Database</span><span class="prop-value code">@StmtPlan.TemplatePlanGuideDB</span></div>
+                            }
+                        </div>
+                    </details>
+                }
+
+                @* Plan Version (root only) *@
+                @if (IsRoot && Plan != null && (!string.IsNullOrEmpty(Plan.BuildVersion) || !string.IsNullOrEmpty(Plan.Build)))
+                {
+                    <details class="prop-section">
+                        <summary>Plan Version</summary>
+                        <div class="prop-grid">
+                            @if (!string.IsNullOrEmpty(Plan.BuildVersion))
+                            {
+                                <div class="prop-row"><span class="prop-label">Build Version</span><span class="prop-value">@Plan.BuildVersion</span></div>
+                            }
+                            @if (!string.IsNullOrEmpty(Plan.Build))
+                            {
+                                <div class="prop-row"><span class="prop-label">Build</span><span class="prop-value">@Plan.Build</span></div>
+                            }
+                            @if (Plan.ClusteredMode)
+                            {
+                                <div class="prop-row"><span class="prop-label">Clustered Mode</span><span class="prop-value flag">Yes</span></div>
+                            }
+                        </div>
+                    </details>
+                }
+
+                @* Statistics Used (root only) *@
+                @if (IsRoot && StmtPlan != null && StmtPlan.StatsUsage.Count > 0)
+                {
+                    <details class="prop-section">
+                        <summary>Statistics Used <span class="prop-warn-count">@StmtPlan.StatsUsage.Count</span></summary>
+                        <div class="prop-grid">
+                            @foreach (var stat in StmtPlan.StatsUsage)
+                            {
+                                <div class="prop-row"><span class="prop-label">@(!string.IsNullOrEmpty(stat.TableName) ? $"{stat.TableName}.{stat.StatisticsName}" : stat.StatisticsName)</span><span class="prop-value">Mod: @stat.ModificationCount.ToString("N0"), @stat.SamplingPercent.ToString("F1")%@(!string.IsNullOrEmpty(stat.LastUpdate) ? $", {stat.LastUpdate}" : "")</span></div>
+                            }
+                        </div>
+                    </details>
+                }
+
+                @* Thread Stats (root only) *@
+                @if (IsRoot && StmtPlan?.ThreadStats != null)
+                {
+                    <details class="prop-section">
+                        <summary>Thread Stats</summary>
+                        <div class="prop-grid">
+                            <div class="prop-row"><span class="prop-label">Branches</span><span class="prop-value">@StmtPlan.ThreadStats.Branches</span></div>
+                            <div class="prop-row"><span class="prop-label">Used Threads</span><span class="prop-value">@StmtPlan.ThreadStats.UsedThreads</span></div>
+                            @if (StmtPlan.ThreadStats.Reservations.Sum(r => r.ReservedThreads) > 0)
+                            {
+                                <div class="prop-row"><span class="prop-label">Reserved Threads</span><span class="prop-value">@StmtPlan.ThreadStats.Reservations.Sum(r => r.ReservedThreads)</span></div>
+                                @foreach (var res in StmtPlan.ThreadStats.Reservations)
+                                {
+                                    <div class="prop-row indent"><span class="prop-label">Node @res.NodeId</span><span class="prop-value">@res.ReservedThreads reserved</span></div>
+                                }
+                            }
+                        </div>
+                    </details>
+                }
+
+                @* Query Time Stats (root only) *@
+                @if (IsRoot && StmtPlan?.QueryTimeStats != null)
+                {
+                    <details class="prop-section">
+                        <summary>Query Time Stats</summary>
+                        <div class="prop-grid">
+                            <div class="prop-row"><span class="prop-label">CPU Time</span><span class="prop-value">@FormatMs(StmtPlan.QueryTimeStats.CpuTimeMs)</span></div>
+                            <div class="prop-row"><span class="prop-label">Elapsed Time</span><span class="prop-value">@FormatMs(StmtPlan.QueryTimeStats.ElapsedTimeMs)</span></div>
+                            @if (StmtPlan.QueryUdfCpuTimeMs > 0)
+                            {
+                                <div class="prop-row"><span class="prop-label">UDF CPU Time</span><span class="prop-value">@FormatMs(StmtPlan.QueryUdfCpuTimeMs)</span></div>
+                            }
+                            @if (StmtPlan.QueryUdfElapsedTimeMs > 0)
+                            {
+                                <div class="prop-row"><span class="prop-label">UDF Elapsed Time</span><span class="prop-value">@FormatMs(StmtPlan.QueryUdfElapsedTimeMs)</span></div>
+                            }
+                        </div>
+                    </details>
+                }
+
+                @* Indexed Views (root only, statement-level) *@
+                @if (IsRoot && StmtPlan != null && StmtPlan.IndexedViews.Count > 0)
+                {
+                    <details class="prop-section">
+                        <summary>Indexed Views</summary>
+                        <div class="prop-grid">
+                            @foreach (var iv in StmtPlan.IndexedViews)
+                            {
+                                <div class="prop-row full"><span class="prop-label">View</span><span class="prop-value code">@iv</span></div>
+                            }
+                        </div>
+                    </details>
+                }
+
+            </div>
+        </aside>
+
+@code {
+    [Parameter] public PlanNode Node { get; set; } = default!;
+    [Parameter] public PlanStatement? StmtPlan { get; set; }
+    [Parameter] public ParsedPlan? Plan { get; set; }
+    [Parameter] public bool IsRoot { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+}
