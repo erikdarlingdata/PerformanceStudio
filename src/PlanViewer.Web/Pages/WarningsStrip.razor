@@ -1,0 +1,46 @@
+        <div class="warnings-strip">
+            <h4>Warnings
+                @{
+                    var allWarns = GetAllWarnings(Stmt);
+                    var critCount = allWarns.Count(w => w.Severity == "Critical");
+                    var warnCount = allWarns.Count(w => w.Severity == "Warning");
+                    var infoCount = allWarns.Count(w => w.Severity == "Info");
+                }
+                @if (critCount > 0) { <span class="warn-count-badge critical">@critCount</span> }
+                @if (warnCount > 0) { <span class="warn-count-badge warning">@warnCount</span> }
+                @if (infoCount > 0) { <span class="warn-count-badge info">@infoCount</span> }
+            </h4>
+            <div class="warnings-list">
+                @foreach (var w in GetAllWarnings(Stmt)
+                    .OrderByDescending(x => x.MaxBenefitPercent ?? -1)
+                    .ThenByDescending(x => x.Severity == "Critical" ? 3 : x.Severity == "Warning" ? 2 : 1)
+                    .ThenBy(x => x.Type))
+                {
+                    <div class="warning @w.Severity.ToLower()">
+                        <span class="severity">@w.Severity</span>
+                        @if (w.Operator != null)
+                        {
+                            <span class="warning-op">@w.Operator</span>
+                        }
+                        <span class="warning-type">@w.Type</span>
+                        @if (w.IsLegacy)
+                        {
+                            <span class="warn-legacy" title="Legacy rule — predates the benefit-scoring framework; content and scoring pending rework">legacy</span>
+                        }
+                        @if (w.MaxBenefitPercent.HasValue)
+                        {
+                            <span class="warn-benefit">up to @(w.MaxBenefitPercent.Value >= 100 ? w.MaxBenefitPercent.Value.ToString("N0") : w.MaxBenefitPercent.Value.ToString("N1"))% benefit</span>
+                        }
+                        <span class="warning-msg">@w.Message</span>
+                        @if (!string.IsNullOrEmpty(w.ActionableFix))
+                        {
+                            <span class="warning-fix">@w.ActionableFix</span>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+
+@code {
+    [Parameter] public StatementResult Stmt { get; set; } = default!;
+}

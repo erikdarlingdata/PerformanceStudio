@@ -229,9 +229,7 @@ public static class AnalyzeCommand
             return;
         }
 
-        var plan = ShowPlanParser.Parse(planXml);
-        PlanAnalyzer.Analyze(plan, analyzerConfig);
-        BenefitScorer.Score(plan);
+        var plan = PlanAnalysisRunner.Analyze(planXml, analyzerConfig);
 
         if (plan.Batches.Count == 0)
         {
@@ -295,7 +293,7 @@ public static class AnalyzeCommand
         {
             try
             {
-                var connection = BuildServerConnection(server, auth, trustCert, credentialService);
+                var connection = CliConnectionResolver.BuildServerConnection(server, auth, trustCert, credentialService);
                 connectionString = connection.GetConnectionString(credentialService, database);
             }
             catch (Exception ex)
@@ -374,20 +372,12 @@ public static class AnalyzeCommand
         var outDir = outputDir?.FullName ?? Directory.GetCurrentDirectory();
         Directory.CreateDirectory(outDir);
 
-        var isAzure = IsAzureSqlDb(server);
+        var isAzure = CliConnectionResolver.IsAzureSqlDb(server);
         var planType = estimated ? "estimated" : "actual";
         Console.Error.WriteLine($"Capturing {planType} plans from {server}/{database}");
 
         // Fetch server metadata for Rule 38 (Standard Edition DOP limitation)
-        ServerMetadata? serverMetadata = null;
-        try
-        {
-            serverMetadata = await ServerMetadataService.FetchServerMetadataAsync(connectionString, isAzure);
-        }
-        catch
-        {
-            // Non-fatal: analysis continues without server context
-        }
+        var serverMetadata = await CliConnectionResolver.FetchServerMetadataAsync(connectionString, server);
 
         Console.Error.WriteLine();
 
@@ -435,31 +425,11 @@ public static class AnalyzeCommand
                 await File.WriteAllTextAsync(planPath, planXml);
 
                 // Parse, analyze, map result
-                var plan = ShowPlanParser.Parse(planXml);
-                PlanAnalyzer.Analyze(plan, analyzerConfig, serverMetadata);
-                BenefitScorer.Score(plan);
+                var plan = PlanAnalysisRunner.Analyze(planXml, analyzerConfig, serverMetadata);
                 var result = ResultMapper.Map(plan, $"{name}.sql");
 
-                if (warningsOnly)
-                {
-                    foreach (var stmt in result.Statements)
-                        stmt.OperatorTree = null;
-                }
-
-                if (outputFormat == "json" || outputFormat == "both")
-                {
-                    var jsonOpts = compact ? CompactJsonOptions : JsonOptions;
-                    var json = JsonSerializer.Serialize(result, jsonOpts);
-                    var analysisPath = Path.Combine(outDir, $"{name}.analysis.json");
-                    await File.WriteAllTextAsync(analysisPath, json);
-                }
-
-                if (outputFormat == "text" || outputFormat == "both")
-                {
-                    var txtPath = Path.Combine(outDir, $"{name}.analysis.txt");
-                    using var writer = new StreamWriter(txtPath);
-                    TextFormatter.WriteText(result, writer);
-                }
+                await PlanAnalysisRunner.WriteResultFilesAsync(
+                    result, outDir, name, outputFormat, compact ? CompactJsonOptions : JsonOptions, warningsOnly);
 
                 Console.Error.WriteLine($"OK ({sw.Elapsed.TotalSeconds:F1}s)");
             }
@@ -485,44 +455,6 @@ public static class AnalyzeCommand
 
         if (errors > 0)
             Environment.ExitCode = 1;
-    }
-
-    private static ServerConnection BuildServerConnection(
-        string server, string? auth, bool trustCert, ICredentialService credentialService)
-    {
-        var authType = auth?.ToLowerInvariant() switch
-        {
-            "windows" => AuthenticationTypes.Windows,
-            "sql" => AuthenticationTypes.SqlServer,
-            "entra" => AuthenticationTypes.EntraMFA,
-            null => credentialService.CredentialExists(server)
-                ? AuthenticationTypes.SqlServer
-                : AuthenticationTypes.Windows,
-            _ => throw new ArgumentException($"Unknown auth type: {auth}. Use: windows, sql, entra")
-        };
-
-        if (authType == AuthenticationTypes.SqlServer && !credentialService.CredentialExists(server))
-        {
-            Console.Error.WriteLine($"No credential found for {server}. Run: planview credential add {server} --user <username>");
-            Environment.ExitCode = 1;
-            throw new InvalidOperationException("No credentials configured");
-        }
-
-        return new ServerConnection
-        {
-            Id = server,
-            ServerName = server,
-            DisplayName = server,
-            AuthenticationType = authType,
-            TrustServerCertificate = trustCert,
-            EncryptMode = trustCert ? "Optional" : "Mandatory"
-        };
-    }
-
-    private static bool IsAzureSqlDb(string serverName)
-    {
-        return serverName.Contains(".database.windows.net", StringComparison.OrdinalIgnoreCase) ||
-               serverName.Contains(".database.azure.com", StringComparison.OrdinalIgnoreCase);
     }
 
     #endregion
