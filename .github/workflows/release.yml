@@ -173,7 +173,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.version.outputs.VERSION }}
         run: |
-          dotnet tool install -g vpk
+          # Pin vpk to match the Velopack PackageReference (Velopack recommends the
+          # CLI and library versions match for compatible packages + reproducible releases).
+          dotnet tool install -g vpk --version 1.2.0
           New-Item -ItemType Directory -Force -Path releases/velopack
 
           # Download previous release for delta generation
