@@ -2073,8 +2073,8 @@ else
         // Actual plan stats
         if (node.HasActualStats)
         {
-            var ownElapsedMs = GetOwnElapsedMs(node);
-            var ownCpuMs = GetOwnCpuMs(node);
+            var ownElapsedMs = NodeTimeAttribution.GetOwnElapsedMs(node);
+            var ownCpuMs = NodeTimeAttribution.GetOwnCpuMs(node);
             var ownElapsedSec = ownElapsedMs / 1000.0;
             var ownCpuSec = ownCpuMs / 1000.0;
 
@@ -2180,36 +2180,6 @@ else
             parts.Add($"[{w.Severity}] {w.WarningType}: {w.Message}");
 
         return string.Join("\n", parts);
-    }
-
-    private static long GetOwnElapsedMs(PlanNode node)
-    {
-        if (!node.HasActualStats) return 0;
-        var mode = node.ActualExecutionMode ?? node.ExecutionMode;
-        if (mode == "Batch") return node.ActualElapsedMs;
-        long childSum = 0;
-        foreach (var child in node.Children)
-        {
-            if (child.PhysicalOp == "Parallelism" && child.Children.Count > 0)
-                childSum += child.Children.Where(c => c.HasActualStats).Select(c => c.ActualElapsedMs).DefaultIfEmpty(0).Max();
-            else if (child.HasActualStats) childSum += child.ActualElapsedMs;
-            else childSum += GetOwnElapsedMs(child);
-        }
-        return Math.Max(0, node.ActualElapsedMs - childSum);
-    }
-
-    private static long GetOwnCpuMs(PlanNode node)
-    {
-        if (!node.HasActualStats || node.ActualCPUMs == 0) return 0;
-        var mode = node.ActualExecutionMode ?? node.ExecutionMode;
-        if (mode == "Batch") return node.ActualCPUMs;
-        long childSum = 0;
-        foreach (var child in node.Children)
-        {
-            if (child.HasActualStats && child.ActualCPUMs > 0) childSum += child.ActualCPUMs;
-            else childSum += GetOwnCpuMs(child);
-        }
-        return Math.Max(0, node.ActualCPUMs - childSum);
     }
 
     private static List<WarningResult> GetAllWarnings(StatementResult stmt)
