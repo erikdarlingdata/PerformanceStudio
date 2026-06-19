@@ -235,25 +235,17 @@ public static class QueryStoreCommand
             }
             else if (credentialService != null)
             {
-                var authType = auth?.ToLowerInvariant() switch
+                try
                 {
-                    "windows" => AuthenticationTypes.Windows,
-                    "sql" => AuthenticationTypes.SqlServer,
-                    "entra" => AuthenticationTypes.EntraMFA,
-                    null => credentialService.CredentialExists(server)
-                        ? AuthenticationTypes.SqlServer
-                        : AuthenticationTypes.Windows,
-                    _ => throw new ArgumentException($"Unknown auth type: {auth}")
-                };
-
-                var conn = new ServerConnection
+                    var conn = CliConnectionResolver.BuildServerConnection(server, auth, trustCert, credentialService);
+                    connectionString = conn.GetConnectionString(credentialService, database);
+                }
+                catch (Exception ex)
                 {
-                    Id = server, ServerName = server, DisplayName = server,
-                    AuthenticationType = authType,
-                    TrustServerCertificate = trustCert,
-                    EncryptMode = trustCert ? "Optional" : "Mandatory"
-                };
-                connectionString = conn.GetConnectionString(credentialService, database);
+                    Console.Error.WriteLine(ex.Message);
+                    Environment.ExitCode = 1;
+                    return;
+                }
             }
             else
             {
@@ -315,17 +307,7 @@ public static class QueryStoreCommand
         Console.Error.WriteLine();
 
         // Fetch server metadata for Rule 38 (Standard Edition DOP limitation)
-        ServerMetadata? serverMetadata = null;
-        try
-        {
-            var isAzure = server.Contains(".database.windows.net", StringComparison.OrdinalIgnoreCase) ||
-                          server.Contains(".database.azure.com", StringComparison.OrdinalIgnoreCase);
-            serverMetadata = await ServerMetadataService.FetchServerMetadataAsync(connectionString, isAzure);
-        }
-        catch
-        {
-            // Non-fatal: analysis continues without server context
-        }
+        var serverMetadata = await CliConnectionResolver.FetchServerMetadataAsync(connectionString, server);
 
         // Resolve output directory
         var outDir = outputDir?.FullName ?? Directory.GetCurrentDirectory();
@@ -355,31 +337,11 @@ public static class QueryStoreCommand
                 await File.WriteAllTextAsync(planPath, qsPlan.PlanXml);
 
                 // Parse, analyze, map
-                var plan = ShowPlanParser.Parse(qsPlan.PlanXml);
-                PlanAnalyzer.Analyze(plan, analyzerConfig, serverMetadata);
-                BenefitScorer.Score(plan);
+                var plan = PlanAnalysisRunner.Analyze(qsPlan.PlanXml, analyzerConfig, serverMetadata);
                 var result = ResultMapper.Map(plan, $"{label}.sqlplan");
 
-                if (warningsOnly)
-                {
-                    foreach (var stmt in result.Statements)
-                        stmt.OperatorTree = null;
-                }
-
-                // Write analysis files
-                if (outputFormat == "json" || outputFormat == "both")
-                {
-                    var jsonOpts = compact ? CompactJsonOptions : JsonOptions;
-                    var json = JsonSerializer.Serialize(result, jsonOpts);
-                    await File.WriteAllTextAsync(Path.Combine(outDir, $"{label}.analysis.json"), json);
-                }
-
-                if (outputFormat == "text" || outputFormat == "both")
-                {
-                    var txtPath = Path.Combine(outDir, $"{label}.analysis.txt");
-                    using var writer = new StreamWriter(txtPath);
-                    TextFormatter.WriteText(result, writer);
-                }
+                await PlanAnalysisRunner.WriteResultFilesAsync(
+                    result, outDir, label, outputFormat, compact ? CompactJsonOptions : JsonOptions, warningsOnly);
 
                 var warnings = result.Summary.TotalWarnings;
                 var critical = result.Summary.CriticalWarnings;
