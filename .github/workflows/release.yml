@@ -193,12 +193,19 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path releases
 
-          # Package Windows (signed) and Linux as flat zips
-          foreach ($rid in @('win-x64', 'linux-x64')) {
-            if (Test-Path 'README.md') { Copy-Item 'README.md' "publish/$rid/" }
-            if (Test-Path 'LICENSE') { Copy-Item 'LICENSE' "publish/$rid/" }
-            Compress-Archive -Path "publish/$rid/*" -DestinationPath "releases/PerformanceStudio-$rid.zip" -Force
-          }
+          # Windows (signed): flat zip via Compress-Archive. Windows has no Unix
+          # execute bit, so the signed .exe needs no special handling.
+          if (Test-Path 'README.md') { Copy-Item 'README.md' 'publish/win-x64/' }
+          if (Test-Path 'LICENSE') { Copy-Item 'LICENSE' 'publish/win-x64/' }
+          Compress-Archive -Path 'publish/win-x64/*' -DestinationPath 'releases/PerformanceStudio-win-x64.zip' -Force
+
+          # Linux: flat zip via zip_with_exec.py so the apphost keeps its execute
+          # bit. Compress-Archive (and .NET's ZipArchive) stamp the archive's host
+          # byte as Windows, so unzip/macOS/Linux drop the Unix mode and the binary
+          # extracts non-executable -- it then won't launch ("permission denied").
+          if (Test-Path 'README.md') { Copy-Item 'README.md' 'publish/linux-x64/' }
+          if (Test-Path 'LICENSE') { Copy-Item 'LICENSE' 'publish/linux-x64/' }
+          python .github/scripts/zip_with_exec.py publish/linux-x64 releases/PerformanceStudio-linux-x64.zip --exec PlanViewer.App --exec-optional createdump
 
           # Package macOS as proper .app bundles
           foreach ($rid in @('osx-x64', 'osx-arm64')) {
@@ -233,7 +240,10 @@ jobs:
             if (Test-Path 'README.md') { Copy-Item 'README.md' "$wrapperDir/" }
             if (Test-Path 'LICENSE') { Copy-Item 'LICENSE' "$wrapperDir/" }
 
-            Compress-Archive -Path "$wrapperDir/*" -DestinationPath "releases/PerformanceStudio-$rid.zip" -Force
+            # Zip the bundle with zip_with_exec.py so the apphost inside the .app
+            # keeps its execute bit (Compress-Archive would strip it, leaving a
+            # bundle macOS refuses to launch).
+            python .github/scripts/zip_with_exec.py "$wrapperDir" "releases/PerformanceStudio-$rid.zip" --exec "PerformanceStudio.app/Contents/MacOS/PlanViewer.App" --exec-optional "PerformanceStudio.app/Contents/MacOS/createdump"
           }
 
           # Checksums (zips only, Velopack has its own checksums)
