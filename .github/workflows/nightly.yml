@@ -81,12 +81,17 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path releases
 
-          # Package Windows and Linux as flat zips
-          foreach ($rid in @('win-x64', 'linux-x64')) {
-            if (Test-Path 'README.md') { Copy-Item 'README.md' "publish/$rid/" }
-            if (Test-Path 'LICENSE') { Copy-Item 'LICENSE' "publish/$rid/" }
-            Compress-Archive -Path "publish/$rid/*" -DestinationPath "releases/PerformanceStudio-$rid-$env:VERSION.zip" -Force
-          }
+          # Windows: flat zip via Compress-Archive (no Unix execute bit needed).
+          if (Test-Path 'README.md') { Copy-Item 'README.md' 'publish/win-x64/' }
+          if (Test-Path 'LICENSE') { Copy-Item 'LICENSE' 'publish/win-x64/' }
+          Compress-Archive -Path 'publish/win-x64/*' -DestinationPath "releases/PerformanceStudio-win-x64-$env:VERSION.zip" -Force
+
+          # Linux: flat zip via zip_with_exec.py so the apphost keeps its execute
+          # bit. Compress-Archive stamps the archive host byte as Windows, so the
+          # Unix mode is dropped and the binary extracts non-executable.
+          if (Test-Path 'README.md') { Copy-Item 'README.md' 'publish/linux-x64/' }
+          if (Test-Path 'LICENSE') { Copy-Item 'LICENSE' 'publish/linux-x64/' }
+          python .github/scripts/zip_with_exec.py publish/linux-x64 "releases/PerformanceStudio-linux-x64-$env:VERSION.zip" --exec PlanViewer.App --exec-optional createdump
 
           # Package macOS as proper .app bundles
           foreach ($rid in @('osx-x64', 'osx-arm64')) {
@@ -115,7 +120,9 @@ jobs:
             if (Test-Path 'README.md') { Copy-Item 'README.md' "$wrapperDir/" }
             if (Test-Path 'LICENSE') { Copy-Item 'LICENSE' "$wrapperDir/" }
 
-            Compress-Archive -Path "$wrapperDir/*" -DestinationPath "releases/PerformanceStudio-$rid-$env:VERSION.zip" -Force
+            # Zip the bundle with zip_with_exec.py so the apphost inside the .app
+            # keeps its execute bit (Compress-Archive would strip it).
+            python .github/scripts/zip_with_exec.py "$wrapperDir" "releases/PerformanceStudio-$rid-$env:VERSION.zip" --exec "PerformanceStudio.app/Contents/MacOS/PlanViewer.App" --exec-optional "PerformanceStudio.app/Contents/MacOS/createdump"
           }
 
       - name: Generate checksums

@@ -265,8 +265,8 @@ public partial class PlanViewerControl : UserControl
         if (node.HasActualStats)
         {
             // Compute own time (subtract children in row mode)
-            var ownElapsedMs = GetOwnElapsedMs(node);
-            var ownCpuMs = GetOwnCpuMs(node);
+            var ownElapsedMs = NodeTimeAttribution.GetOwnElapsedMs(node);
+            var ownCpuMs = NodeTimeAttribution.GetOwnCpuMs(node);
 
             // Elapsed time -- color based on own time, not cumulative
             var ownElapsedSec = ownElapsedMs / 1000.0;

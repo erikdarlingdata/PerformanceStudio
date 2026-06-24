@@ -187,6 +187,13 @@ public partial class PlanViewerControl : UserControl
     public ParsedPlan? CurrentPlan => _currentPlan;
 
     /// <summary>
+    /// Reason the most recent <see cref="LoadPlan"/> failed (blank XML, parse error,
+    /// or no renderable statements), or null when it succeeded. Lets callers surface
+    /// why a plan didn't load instead of silently showing the empty state.
+    /// </summary>
+    public string? LastLoadError { get; private set; }
+
+    /// <summary>
     /// Exposes the query text associated with this plan (if any).
     /// </summary>
     public string? QueryText => _queryText;
@@ -298,15 +305,40 @@ public partial class PlanViewerControl : UserControl
         });
     }
 
-    public void LoadPlan(string planXml, string label, string? queryText = null)
+    /// <summary>
+    /// Parses and renders a plan. Returns true when a plan was rendered; false when the
+    /// XML was blank, failed to parse, or contained no renderable statements (in which case
+    /// the empty state explains why and <see cref="LastLoadError"/> holds the reason).
+    /// </summary>
+    public bool LoadPlan(string planXml, string label, string? queryText = null)
     {
         _label = label;
         _queryText = queryText;
+        LastLoadError = null;
 
         // Query text stored for copy/repro but no longer shown in a
         // separate expander — it's already visible in the Statements grid.
 
+        // A Query Store row can have a NULL/empty query_plan; don't treat that
+        // (or a parse failure) as a silent "No Plan Loaded".
+        if (string.IsNullOrWhiteSpace(planXml))
+        {
+            LastLoadError = "The plan is empty — this source has no stored query plan XML.";
+            ShowEmptyState("Couldn't Load Plan", LastLoadError);
+            return false;
+        }
+
         _currentPlan = ShowPlanParser.Parse(planXml);
+
+        // ShowPlanParser never throws; it records failures in ParseError and returns an
+        // empty plan. Surface that instead of rendering a blank "No Plan Loaded" panel.
+        if (!string.IsNullOrEmpty(_currentPlan.ParseError))
+        {
+            LastLoadError = _currentPlan.ParseError;
+            ShowEmptyState("Couldn't Load Plan", $"Parse error: {_currentPlan.ParseError}");
+            return false;
+        }
+
         PlanAnalyzer.Analyze(_currentPlan, ConfigLoader.Load(), _serverMetadata);
         BenefitScorer.Score(_currentPlan);
 
@@ -317,9 +349,9 @@ public partial class PlanViewerControl : UserControl
 
         if (allStatements.Count == 0)
         {
-            EmptyState.IsVisible = true;
-            PlanScrollViewer.IsVisible = false;
-            return;
+            LastLoadError = "The plan parsed but contains no statements to display.";
+            ShowEmptyState("No Plan Loaded", null);
+            return false;
         }
 
         EmptyState.IsVisible = false;
@@ -355,6 +387,30 @@ public partial class PlanViewerControl : UserControl
             CriticalWarningCount = criticalCount,
             MissingIndexCount = _currentPlan.AllMissingIndexes.Count
         });
+
+        return true;
+    }
+
+    /// <summary>
+    /// Shows the empty-state panel with a title and, optionally, an error detail line.
+    /// When <paramref name="error"/> is null the normal "open a file" hint is shown instead.
+    /// </summary>
+    private void ShowEmptyState(string title, string? error)
+    {
+        EmptyStateTitle.Text = title;
+        if (string.IsNullOrEmpty(error))
+        {
+            EmptyStateError.IsVisible = false;
+            EmptyStateHint.IsVisible = true;
+        }
+        else
+        {
+            EmptyStateError.Text = error;
+            EmptyStateError.IsVisible = true;
+            EmptyStateHint.IsVisible = false;
+        }
+        EmptyState.IsVisible = true;
+        PlanScrollViewer.IsVisible = false;
     }
 
     public void Clear()
@@ -367,8 +423,8 @@ public partial class PlanViewerControl : UserControl
         _queryText = null;
         _selectedNodeBorder = null;
         _selectedNode = null;
-        EmptyState.IsVisible = true;
-        PlanScrollViewer.IsVisible = false;
+        LastLoadError = null;
+        ShowEmptyState("No Plan Loaded", null);
         InsightsPanel.IsVisible = false;
         CostText.Text = "";
         CloseStatementsPanel();

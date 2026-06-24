@@ -18,6 +18,35 @@ public static partial class PlanAnalyzer
 
     private static void AnalyzeNode(PlanNode node, PlanStatement stmt, AnalyzerConfig cfg)
     {
+        Rule01_FilterOperator(node, stmt, cfg);
+        Rule02_EagerIndexSpool(node, stmt, cfg);
+        Rule04_UdfTiming(node, stmt, cfg);
+        Rule05_RowEstimateMismatch(node, stmt, cfg);
+        Rule06_ScalarUdfReference(node, stmt, cfg);
+        Rule07_SpillSeverity(node, stmt, cfg);
+        Rule08_ParallelThreadSkew(node, stmt, cfg);
+        Rule10_LookupResidual(node, stmt, cfg);
+        Rule12_NonSargablePredicate(node, stmt, cfg);
+        Rule11_ScanResidual(node, stmt, cfg);
+        Rule32_CardinalityMisestimateScan(node, stmt, cfg);
+        Rule33_CeGuessDetection(node, stmt, cfg);
+        Rule34_BareScanNarrowOutput(node, stmt, cfg);
+        Rule13_MismatchedDataTypes(node, stmt, cfg);
+        Rule14_LazyTableSpoolRebind(node, stmt, cfg);
+        Rule15_JoinOrClause(node, stmt, cfg);
+        Rule16_NestedLoopsHighExec(node, stmt, cfg);
+        Rule17_ManyToManyMerge(node, stmt, cfg);
+        Rule22_TableVariables(node, stmt, cfg);
+        Rule23_TableValuedFunctions(node, stmt, cfg);
+        Rule24_TopAboveScan(node, stmt, cfg);
+        Rule26_RowGoal(node, stmt, cfg);
+        Rule28_RowCountSpool(node, stmt, cfg);
+        Rule29_ImplicitConversionSeek(node, stmt, cfg);
+        Rule35_ExpensiveOperator(node, stmt, cfg);
+    }
+
+    private static void Rule01_FilterOperator(PlanNode node, PlanStatement stmt, AnalyzerConfig cfg)
+    {
         // Rule 1: Filter operators — rows survived the tree just to be discarded
         // Quantify the impact by summing child subtree cost (reads, CPU, time).
         // Suppress when the filter's child subtree is trivial (low I/O, fast, cheap).
@@ -58,6 +87,10 @@ public static partial class PlanAnalyzer
             }
         }
 
+    }
+
+    private static void Rule02_EagerIndexSpool(PlanNode node, PlanStatement stmt, AnalyzerConfig cfg)
+    {
         // Rule 2: Eager Index Spools — optimizer building temporary indexes on the fly
         if (!cfg.IsRuleDisabled(2) && node.LogicalOp == "Eager Spool" &&
             node.PhysicalOp.Contains("Index", StringComparison.OrdinalIgnoreCase))
@@ -74,6 +107,10 @@ public static partial class PlanAnalyzer
             });
         }
 
+    }
+
+    private static void Rule04_UdfTiming(PlanNode node, PlanStatement stmt, AnalyzerConfig cfg)
+    {
         // Rule 4: UDF timing — any node spending time in UDFs (actual plans)
         if (!cfg.IsRuleDisabled(4) && (node.UdfCpuTimeMs > 0 || node.UdfElapsedTimeMs > 0))
         {
@@ -85,6 +122,10 @@ public static partial class PlanAnalyzer
             });
         }
 
+    }
+
+    private static void Rule05_RowEstimateMismatch(PlanNode node, PlanStatement stmt, AnalyzerConfig cfg)
+    {
         // Rule 5: Large estimate vs actual row gaps (actual plans only)
         // Only warn when the bad estimate actually causes observable harm:
         // - The node itself spilled (Sort/Hash with bad memory grant)
@@ -137,6 +178,10 @@ public static partial class PlanAnalyzer
             }
         }
 
+    }
+
+    private static void Rule06_ScalarUdfReference(PlanNode node, PlanStatement stmt, AnalyzerConfig cfg)
+    {
         // Rule 6: Scalar UDF references (works on estimated plans too)
         // Suppress when Serial Plan warning is already firing for a UDF-related reason —
         // the Serial Plan warning already explains the issue, this would be redundant.
@@ -156,6 +201,10 @@ public static partial class PlanAnalyzer
             });
         }
 
+    }
+
+    private static void Rule07_SpillSeverity(PlanNode node, PlanStatement stmt, AnalyzerConfig cfg)
+    {
         // Rule 7: Spill detection — calculate operator time and set severity
         // based on what percentage of statement elapsed time the spill accounts for.
         // Exchange spills on Parallelism operators get special handling since their
@@ -185,7 +234,7 @@ public static partial class PlanAnalyzer
                     if (stmtMs > 0 && operatorMs > 0)
                     {
                         var pct = (double)operatorMs / stmtMs;
-                        w.Message += $" Operator time: {operatorMs:N0}ms ({pct:P0} of statement).";
+                        w.Message += $" Operator time: {operatorMs:N0}ms ({pct * 100:N0}% of statement).";
                     }
                 }
             }
@@ -198,7 +247,7 @@ public static partial class PlanAnalyzer
                 if (stmtMs > 0)
                 {
                     var pct = (double)operatorMs / stmtMs;
-                    w.Message += $" Operator time: {operatorMs:N0}ms ({pct:P0} of statement).";
+                    w.Message += $" Operator time: {operatorMs:N0}ms ({pct * 100:N0}% of statement).";
 
                     if (pct >= 0.5)
                         w.Severity = PlanWarningSeverity.Critical;
@@ -208,6 +257,10 @@ public static partial class PlanAnalyzer
             }
         }
 
+    }
+
+    private static void Rule08_ParallelThreadSkew(PlanNode node, PlanStatement stmt, AnalyzerConfig cfg)
+    {
         // Rule 8: Parallel thread skew (actual plans with per-thread stats)
         // Only warn when there are enough rows to meaningfully distribute across threads
         // Filter out thread 0 (coordinator) which typically does 0 rows in parallel operators
@@ -225,7 +278,7 @@ public static partial class PlanAnalyzer
                 var skewThreshold = workerThreads.Count <= 2 ? 0.80 : 0.50;
                 if (skewRatio >= skewThreshold)
                 {
-                    var message = $"Thread {maxThread.ThreadId} processed {skewRatio:P0} of rows ({maxThread.ActualRows:N0}/{totalRows:N0}). Work is heavily skewed to one thread, so parallelism isn't helping much.";
+                    var message = $"Thread {maxThread.ThreadId} processed {skewRatio * 100:N0}% of rows ({maxThread.ActualRows:N0}/{totalRows:N0}). Work is heavily skewed to one thread, so parallelism isn't helping much.";
                     var severity = PlanWarningSeverity.Warning;
 
                     // Batch mode sorts produce all output on a single thread by design
@@ -253,6 +306,10 @@ public static partial class PlanAnalyzer
             }
         }
 
+    }
+
+    private static void Rule10_LookupResidual(PlanNode node, PlanStatement stmt, AnalyzerConfig cfg)
+    {
         // Rule 10: Key Lookup / RID Lookup with residual predicate
         // Check RID Lookup first — it's more specific (PhysicalOp) and also has Lookup=true
         if (!cfg.IsRuleDisabled(10) && node.PhysicalOp.StartsWith("RID Lookup", StringComparison.OrdinalIgnoreCase))
@@ -295,10 +352,20 @@ public static partial class PlanAnalyzer
             });
         }
 
+    }
+
+    // Shared by Rule 12 (emits the warning) and Rule 11 (which suppresses its residual-
+    // predicate warning when a non-SARGable predicate was already flagged). Pure function
+    // of node + cfg, so both rules can compute it independently.
+    private static string? GetNonSargableReason(PlanNode node, AnalyzerConfig cfg) =>
+        cfg.IsRuleDisabled(12) || (node.HasActualStats && node.ActualExecutions == 0)
+            ? null : DetectNonSargablePredicate(node);
+
+    private static void Rule12_NonSargablePredicate(PlanNode node, PlanStatement stmt, AnalyzerConfig cfg)
+    {
         // Rule 12: Non-SARGable predicate on scan
         // Skip for 0-execution nodes — the operator never ran, so the warning is academic
-        var nonSargableReason = cfg.IsRuleDisabled(12) || (node.HasActualStats && node.ActualExecutions == 0)
-            ? null : DetectNonSargablePredicate(node);
+        var nonSargableReason = GetNonSargableReason(node, cfg);
         if (nonSargableReason != null)
         {
             var nonSargableAdvice = nonSargableReason switch
@@ -325,10 +392,14 @@ public static partial class PlanAnalyzer
             });
         }
 
+    }
+
+    private static void Rule11_ScanResidual(PlanNode node, PlanStatement stmt, AnalyzerConfig cfg)
+    {
         // Rule 11: Scan with residual predicate (skip if non-SARGable already flagged)
         // A PROBE() alone is just a bitmap filter — not a real residual predicate.
         // Skip for 0-execution nodes — the operator never ran
-        if (!cfg.IsRuleDisabled(11) && nonSargableReason == null && IsRowstoreScan(node) && !string.IsNullOrEmpty(node.Predicate) &&
+        if (!cfg.IsRuleDisabled(11) && GetNonSargableReason(node, cfg) == null && IsRowstoreScan(node) && !string.IsNullOrEmpty(node.Predicate) &&
             !IsProbeOnly(node.Predicate) && !(node.HasActualStats && node.ActualExecutions == 0))
         {
             var displayPredicate = StripProbeExpressions(node.Predicate);
@@ -368,6 +439,10 @@ public static partial class PlanAnalyzer
             });
         }
 
+    }
+
+    private static void Rule32_CardinalityMisestimateScan(PlanNode node, PlanStatement stmt, AnalyzerConfig cfg)
+    {
         // Rule 32: Cardinality misestimate on expensive scan — likely preventing index usage
         // When a scan dominates the plan AND the estimate is vastly higher than actual rows,
         // the optimizer chose a scan because it thought it needed most of the table.
@@ -395,6 +470,10 @@ public static partial class PlanAnalyzer
             }
         }
 
+    }
+
+    private static void Rule33_CeGuessDetection(PlanNode node, PlanStatement stmt, AnalyzerConfig cfg)
+    {
         // Rule 33: Estimated plan CE guess detection — scans with telltale default selectivity
         // When the optimizer uses a local variable or can't sniff, it falls back to density-based
         // guesses: 30% (equality), 10% (inequality), 9% (LIKE/between), ~16.43% (sqrt(30%)),
@@ -421,6 +500,10 @@ public static partial class PlanAnalyzer
             }
         }
 
+    }
+
+    private static void Rule34_BareScanNarrowOutput(PlanNode node, PlanStatement stmt, AnalyzerConfig cfg)
+    {
         // Rule 34: Bare scan with narrow output — NC index or columnstore candidate.
         // When a Clustered Index Scan or heap Table Scan reads the full table with no
         // predicate but only outputs a few columns, a narrower nonclustered index could
@@ -472,6 +555,10 @@ public static partial class PlanAnalyzer
             }
         }
 
+    }
+
+    private static void Rule13_MismatchedDataTypes(PlanNode node, PlanStatement stmt, AnalyzerConfig cfg)
+    {
         // Rule 13: Mismatched data types (GetRangeWithMismatchedTypes / GetRangeThroughConvert)
         if (!cfg.IsRuleDisabled(13) && node.PhysicalOp == "Compute Scalar" && !string.IsNullOrEmpty(node.DefinedValues))
         {
@@ -493,6 +580,10 @@ public static partial class PlanAnalyzer
             }
         }
 
+    }
+
+    private static void Rule14_LazyTableSpoolRebind(PlanNode node, PlanStatement stmt, AnalyzerConfig cfg)
+    {
         // Rule 14: Lazy Table Spool unfavorable rebind/rewind ratio
         // Rebinds = cache misses (child re-executes), rewinds = cache hits (reuse cached result)
         // Exclude Lazy Index Spools: they cache by correlated parameter value (like a hash table)
@@ -523,6 +614,10 @@ public static partial class PlanAnalyzer
             }
         }
 
+    }
+
+    private static void Rule15_JoinOrClause(PlanNode node, PlanStatement stmt, AnalyzerConfig cfg)
+    {
         // Rule 15: Join OR clause
         // Pattern: Nested Loops → Merge Interval → TopN Sort → [Compute Scalar] → Concatenation → [Compute Scalar] → 2+ Constant Scans
         if (!cfg.IsRuleDisabled(15) && node.PhysicalOp == "Concatenation")
@@ -543,6 +638,10 @@ public static partial class PlanAnalyzer
             }
         }
 
+    }
+
+    private static void Rule16_NestedLoopsHighExec(PlanNode node, PlanStatement stmt, AnalyzerConfig cfg)
+    {
         // Rule 16: Nested Loops high inner-side execution count
         // Deep analysis: combine execution count + outer estimate mismatch + inner cost
         if (!cfg.IsRuleDisabled(16) && node.PhysicalOp == "Nested Loops" &&
@@ -612,6 +711,10 @@ public static partial class PlanAnalyzer
             // deliberately — don't second-guess it without actual execution data.
         }
 
+    }
+
+    private static void Rule17_ManyToManyMerge(PlanNode node, PlanStatement stmt, AnalyzerConfig cfg)
+    {
         // Rule 17: Many-to-many Merge Join
         // In actual plans, the Merge Join operator reports logical reads when the worktable is used.
         // When ActualLogicalReads is 0, the worktable wasn't hit and the warning is noise.
@@ -628,6 +731,10 @@ public static partial class PlanAnalyzer
             });
         }
 
+    }
+
+    private static void Rule22_TableVariables(PlanNode node, PlanStatement stmt, AnalyzerConfig cfg)
+    {
         // Rule 22: Table variables (Object name starts with @)
         if (!cfg.IsRuleDisabled(22) && !string.IsNullOrEmpty(node.ObjectName) &&
             node.ObjectName.StartsWith("@"))
@@ -646,6 +753,10 @@ public static partial class PlanAnalyzer
             });
         }
 
+    }
+
+    private static void Rule23_TableValuedFunctions(PlanNode node, PlanStatement stmt, AnalyzerConfig cfg)
+    {
         // Rule 23: Table-valued functions
         if (!cfg.IsRuleDisabled(23) && node.LogicalOp == "Table-valued function")
         {
@@ -658,6 +769,10 @@ public static partial class PlanAnalyzer
             });
         }
 
+    }
+
+    private static void Rule24_TopAboveScan(PlanNode node, PlanStatement stmt, AnalyzerConfig cfg)
+    {
         // Rule 24: Top above a scan
         // Detects Top or Top N Sort operators feeding from a scan. This often means the
         // query is scanning the entire table/index and sorting just to return a few rows,
@@ -696,6 +811,10 @@ public static partial class PlanAnalyzer
             }
         }
 
+    }
+
+    private static void Rule26_RowGoal(PlanNode node, PlanStatement stmt, AnalyzerConfig cfg)
+    {
         // Rule 26: Row Goal (informational) — optimizer reduced estimate due to TOP/EXISTS/IN
         // Only surface on data access operators (seeks/scans) where the row goal actually matters
         var isDataAccess = node.PhysicalOp != null &&
@@ -734,6 +853,10 @@ public static partial class PlanAnalyzer
             }
         }
 
+    }
+
+    private static void Rule28_RowCountSpool(PlanNode node, PlanStatement stmt, AnalyzerConfig cfg)
+    {
         // Rule 28: Row Count Spool — NOT IN with nullable column
         // Pattern: Row Count Spool with high rewinds, child scan has IS NULL predicate,
         // and statement text contains NOT IN
@@ -751,6 +874,10 @@ public static partial class PlanAnalyzer
             }
         }
 
+    }
+
+    private static void Rule29_ImplicitConversionSeek(PlanNode node, PlanStatement stmt, AnalyzerConfig cfg)
+    {
         // Rule 29: Enhance implicit conversion warnings — Seek Plan is more severe
         // Skip for 0-execution nodes — the operator never ran
         if (!cfg.IsRuleDisabled(29) && !(node.HasActualStats && node.ActualExecutions == 0))
@@ -763,6 +890,10 @@ public static partial class PlanAnalyzer
             }
         }
 
+    }
+
+    private static void Rule35_ExpensiveOperator(PlanNode node, PlanStatement stmt, AnalyzerConfig cfg)
+    {
         // Rule 35: Expensive Operator — always show operators that take a significant
         // share of statement time even when no other rule has something to say. Joe
         // (#215 C8) wanted expensive scans that the tool had nothing to suggest on

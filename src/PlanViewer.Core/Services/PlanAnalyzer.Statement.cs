@@ -10,6 +10,22 @@ public static partial class PlanAnalyzer
 {
     private static void AnalyzeStatement(PlanStatement stmt, AnalyzerConfig cfg, ServerMetadata? serverMetadata = null)
     {
+        Rule03_SerialPlan(stmt, cfg, serverMetadata);
+        Rule09_MemoryGrant(stmt, cfg, serverMetadata);
+        Rule18_CompileMemoryExceeded(stmt, cfg, serverMetadata);
+        Rule19_HighCompileCpu(stmt, cfg, serverMetadata);
+        Rule04Stmt_UdfExecution(stmt, cfg, serverMetadata);
+        Rule20_LocalVariablesNoRecompile(stmt, cfg, serverMetadata);
+        Rule27_OptimizeForUnknown(stmt, cfg, serverMetadata);
+        Rule36_DynamicCursor(stmt, cfg, serverMetadata);
+        Rule37_CursorWithoutLocal(stmt, cfg, serverMetadata);
+        Rule38_StandardEditionDop(stmt, cfg, serverMetadata);
+        Rule30_MissingIndexQuality(stmt, cfg, serverMetadata);
+        Rule22Stmt_TableVariable(stmt, cfg, serverMetadata);
+    }
+
+    private static void Rule03_SerialPlan(PlanStatement stmt, AnalyzerConfig cfg, ServerMetadata? serverMetadata)
+    {
         // Rule 3: Serial plan with reason
         // Skip: cost < 1 (CTFP is an integer so cost < 1 can never go parallel),
         // TRIVIAL optimization (can't go parallel anyway),
@@ -124,6 +140,10 @@ public static partial class PlanAnalyzer
             }
         }
 
+    }
+
+    private static void Rule09_MemoryGrant(PlanStatement stmt, AnalyzerConfig cfg, ServerMetadata? serverMetadata)
+    {
         // Rule 9: Memory grant issues (statement-level)
         if (!cfg.IsRuleDisabled(9) && stmt.MemoryGrant != null)
         {
@@ -192,6 +212,10 @@ public static partial class PlanAnalyzer
             }
         }
 
+    }
+
+    private static void Rule18_CompileMemoryExceeded(PlanStatement stmt, AnalyzerConfig cfg, ServerMetadata? serverMetadata)
+    {
         // Rule 18: Compile memory exceeded (early abort)
         if (!cfg.IsRuleDisabled(18) && stmt.StatementOptmEarlyAbortReason == "MemoryLimitExceeded")
         {
@@ -203,6 +227,10 @@ public static partial class PlanAnalyzer
             });
         }
 
+    }
+
+    private static void Rule19_HighCompileCpu(PlanStatement stmt, AnalyzerConfig cfg, ServerMetadata? serverMetadata)
+    {
         // Rule 19: High compile CPU
         if (!cfg.IsRuleDisabled(19) && stmt.CompileCPUMs >= 1000)
         {
@@ -214,6 +242,10 @@ public static partial class PlanAnalyzer
             });
         }
 
+    }
+
+    private static void Rule04Stmt_UdfExecution(PlanStatement stmt, AnalyzerConfig cfg, ServerMetadata? serverMetadata)
+    {
         // Rule 4 (statement-level): UDF execution timing from QueryTimeStats
         // Some plans report UDF timing only at the statement level, not per-node.
         if (!cfg.IsRuleDisabled(4) && (stmt.QueryUdfCpuTimeMs > 0 || stmt.QueryUdfElapsedTimeMs > 0))
@@ -226,6 +258,10 @@ public static partial class PlanAnalyzer
             });
         }
 
+    }
+
+    private static void Rule20_LocalVariablesNoRecompile(PlanStatement stmt, AnalyzerConfig cfg, ServerMetadata? serverMetadata)
+    {
         // Rule 20: Local variables without RECOMPILE
         // Parameters with no CompiledValue are likely local variables — the optimizer
         // cannot sniff their values and uses density-based ("unknown") estimates.
@@ -256,6 +292,10 @@ public static partial class PlanAnalyzer
         // for actual plans, SQL Server runtime stats show exactly where time was
         // spent, so a statement-text-pattern warning about CTE reuse is guessing.
 
+    }
+
+    private static void Rule27_OptimizeForUnknown(PlanStatement stmt, AnalyzerConfig cfg, ServerMetadata? serverMetadata)
+    {
         // Rule 27: OPTIMIZE FOR UNKNOWN in statement text
         if (!cfg.IsRuleDisabled(27) && !string.IsNullOrEmpty(stmt.StatementText) &&
             Regex.IsMatch(stmt.StatementText, @"OPTIMIZE\s+FOR\s+UNKNOWN", RegexOptions.IgnoreCase))
@@ -268,6 +308,10 @@ public static partial class PlanAnalyzer
             });
         }
 
+    }
+
+    private static void Rule36_DynamicCursor(PlanStatement stmt, AnalyzerConfig cfg, ServerMetadata? serverMetadata)
+    {
         // Rule 36: Dynamic cursor (#215 E1). Dynamic cursors can prevent index usage
         // because they must tolerate underlying data changes between fetches, forcing
         // scans and extra work per fetch. Switching to FAST_FORWARD, STATIC, or KEYSET
@@ -284,6 +328,10 @@ public static partial class PlanAnalyzer
             });
         }
 
+    }
+
+    private static void Rule37_CursorWithoutLocal(PlanStatement stmt, AnalyzerConfig cfg, ServerMetadata? serverMetadata)
+    {
         // Rule 37: CURSOR declaration without LOCAL (#215 E3). Default cursor scope
         // is GLOBAL in SQL Server, which puts cursors in a shared namespace and can
         // bloat the plan cache (Erik's writeup:
@@ -315,6 +363,10 @@ public static partial class PlanAnalyzer
             }
         }
 
+    }
+
+    private static void Rule38_StandardEditionDop(PlanStatement stmt, AnalyzerConfig cfg, ServerMetadata? serverMetadata)
+    {
         // Rule 38: Standard Edition DOP 2 limitation with batch mode
         // SQL Server Standard Edition limits DOP to 2 when batch mode operators are present.
         if (!cfg.IsRuleDisabled(38) && stmt.DegreeOfParallelism == 2 && stmt.RootNode != null
@@ -359,6 +411,10 @@ public static partial class PlanAnalyzer
         // The CPU:Elapsed ratio is now shown in the runtime summary, and wait stats speak
         // for themselves — no need for meta-warnings guessing at causes.
 
+    }
+
+    private static void Rule30_MissingIndexQuality(PlanStatement stmt, AnalyzerConfig cfg, ServerMetadata? serverMetadata)
+    {
         // Rule 30: Missing index quality evaluation
         if (!cfg.IsRuleDisabled(30))
         {
@@ -421,6 +477,10 @@ public static partial class PlanAnalyzer
             }
         }
 
+    }
+
+    private static void Rule22Stmt_TableVariable(PlanStatement stmt, AnalyzerConfig cfg, ServerMetadata? serverMetadata)
+    {
         // Rule 22 (statement-level): Table variable warnings
         // Walk the tree to find table variable references, then emit statement-level warnings
         if (!cfg.IsRuleDisabled(22) && stmt.RootNode != null)
