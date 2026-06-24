@@ -24,6 +24,7 @@
     <PackageReference Include="AvaloniaEdit.TextMate" Version="11.4.1" />
     <PackageReference Include="AvaloniaEdit.TextMate.Grammars" Version="0.10.12.1" />
     <PackageReference Include="Meziantou.Framework.Win32.CredentialManager" Version="2.0.1" />
+    <PackageReference Include="Microsoft.Win32.Registry" Version="5.0.0" />
     <PackageReference Include="ModelContextProtocol" Version="1.4.0" />
     <PackageReference Include="ModelContextProtocol.AspNetCore" Version="1.4.0" />
     <PackageReference Include="TextMateSharp.Grammars" Version="2.0.4" />

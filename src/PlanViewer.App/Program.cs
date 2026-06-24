@@ -2,6 +2,7 @@ using Avalonia;
 using System;
 using System.IO;
 using System.IO.Pipes;
+using PlanViewer.App.Services;
 using Velopack;
 
 namespace PlanViewer.App;
@@ -13,7 +14,15 @@ class Program
     [STAThread]
     public static void Main(string[] args)
     {
-        VelopackApp.Build().Run();
+        var velopack = VelopackApp.Build();
+        if (OperatingSystem.IsWindows())
+        {
+            // Clean up the .sqlplan association on uninstall. Velopack's uninstall
+            // hooks are Windows-only, which lines up — the association cleanup that
+            // needs them is Windows too (Linux ships as a plain zip, no uninstaller).
+            velopack = velopack.OnBeforeUninstallFastCallback((_) => FileAssociationService.Unregister());
+        }
+        velopack.Run();
 
         // If another instance is running, send the file path to it and exit
         if (args.Length > 0 && TrySendToRunningInstance(args[0]))
