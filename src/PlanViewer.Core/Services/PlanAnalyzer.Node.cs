@@ -234,7 +234,7 @@ public static partial class PlanAnalyzer
                     if (stmtMs > 0 && operatorMs > 0)
                     {
                         var pct = (double)operatorMs / stmtMs;
-                        w.Message += $" Operator time: {operatorMs:N0}ms ({pct:P0} of statement).";
+                        w.Message += $" Operator time: {operatorMs:N0}ms ({pct * 100:N0}% of statement).";
                     }
                 }
             }
@@ -247,7 +247,7 @@ public static partial class PlanAnalyzer
                 if (stmtMs > 0)
                 {
                     var pct = (double)operatorMs / stmtMs;
-                    w.Message += $" Operator time: {operatorMs:N0}ms ({pct:P0} of statement).";
+                    w.Message += $" Operator time: {operatorMs:N0}ms ({pct * 100:N0}% of statement).";
 
                     if (pct >= 0.5)
                         w.Severity = PlanWarningSeverity.Critical;
@@ -278,7 +278,7 @@ public static partial class PlanAnalyzer
                 var skewThreshold = workerThreads.Count <= 2 ? 0.80 : 0.50;
                 if (skewRatio >= skewThreshold)
                 {
-                    var message = $"Thread {maxThread.ThreadId} processed {skewRatio:P0} of rows ({maxThread.ActualRows:N0}/{totalRows:N0}). Work is heavily skewed to one thread, so parallelism isn't helping much.";
+                    var message = $"Thread {maxThread.ThreadId} processed {skewRatio * 100:N0}% of rows ({maxThread.ActualRows:N0}/{totalRows:N0}). Work is heavily skewed to one thread, so parallelism isn't helping much.";
                     var severity = PlanWarningSeverity.Warning;
 
                     // Batch mode sorts produce all output on a single thread by design
