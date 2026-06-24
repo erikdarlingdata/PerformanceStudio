@@ -111,6 +111,29 @@ public partial class MainWindow : Window
         }
     }
 
+    /// <summary>
+    /// Opens one or more files by path. Used by the macOS activation handler when a
+    /// plan is double-clicked in Finder (the path arrives via an event, not argv).
+    /// Marshals to the UI thread and skips paths that no longer exist.
+    /// </summary>
+    public void OpenFiles(IEnumerable<string> paths)
+    {
+        void OpenAll()
+        {
+            foreach (var path in paths)
+            {
+                if (!string.IsNullOrEmpty(path) && File.Exists(path))
+                    OpenFileByExtension(path);
+            }
+            Activate();
+        }
+
+        if (Dispatcher.UIThread.CheckAccess())
+            OpenAll();
+        else
+            Dispatcher.UIThread.Post(OpenAll);
+    }
+
     private void OpenFileByExtension(string filePath)
     {
         if (filePath.EndsWith(".sql", StringComparison.OrdinalIgnoreCase))
