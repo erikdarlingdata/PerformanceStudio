@@ -144,10 +144,12 @@ public partial class QuerySessionControl : UserControl
         SetStatus($"Checking Query Store on {database}...");
         try
         {
-            var (enabled, state) = await QueryStoreService.CheckEnabledAsync(connStr);
+            var (enabled, state, readOnlyReplica) = await QueryStoreService.CheckEnabledAsync(connStr);
             if (!enabled)
             {
-                SetStatus($"Query Store not enabled on {database} ({state ?? "unknown"})");
+                SetStatus(readOnlyReplica
+                    ? $"{database} is a read-only replica with no Query Store data ({state ?? "unknown"}); enable it on the primary"
+                    : $"Query Store not enabled on {database} ({state ?? "unknown"})");
                 return;
             }
         }
@@ -203,10 +205,12 @@ public partial class QuerySessionControl : UserControl
         SetStatus("Checking Query Store...");
         try
         {
-            var (enabled, state) = await QueryStoreService.CheckEnabledAsync(_connectionString);
+            var (enabled, state, readOnlyReplica) = await QueryStoreService.CheckEnabledAsync(_connectionString);
             if (!enabled)
             {
-                SetStatus($"Query Store not enabled ({state ?? "unknown"})");
+                SetStatus(readOnlyReplica
+                    ? $"Read-only replica with no Query Store data ({state ?? "unknown"}); enable it on the primary"
+                    : $"Query Store not enabled ({state ?? "unknown"})");
                 return;
             }
         }

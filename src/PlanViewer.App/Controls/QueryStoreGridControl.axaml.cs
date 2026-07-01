@@ -139,10 +139,12 @@ public partial class QueryStoreGridControl : UserControl
 
         try
         {
-            var (enabled, state) = await QueryStoreService.CheckEnabledAsync(newConnStr);
+            var (enabled, state, readOnlyReplica) = await QueryStoreService.CheckEnabledAsync(newConnStr);
             if (!enabled)
             {
-                StatusText.Text = $"Query Store not enabled on {db} ({state ?? "unknown"})";
+                StatusText.Text = readOnlyReplica
+                    ? $"{db} is a read-only replica with no Query Store data ({state ?? "unknown"})"
+                    : $"Query Store not enabled on {db} ({state ?? "unknown"})";
                 QsDatabaseBox.SelectedItem = _database; // revert
                 return;
             }
