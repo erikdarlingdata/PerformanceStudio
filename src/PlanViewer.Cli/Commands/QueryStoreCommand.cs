@@ -282,11 +282,14 @@ public static class QueryStoreCommand
     {
         // Verify Query Store is enabled
         Console.Error.Write($"Checking Query Store on {server}/{database}... ");
-        var (enabled, state) = await QueryStoreService.CheckEnabledAsync(connectionString);
+        var (enabled, state, readOnlyReplica) = await QueryStoreService.CheckEnabledAsync(connectionString);
         if (!enabled)
         {
             Console.Error.WriteLine($"NOT ENABLED (state: {state ?? "unknown"})");
-            Console.Error.WriteLine("Enable Query Store: ALTER DATABASE [" + database + "] SET QUERY_STORE = ON;");
+            if (readOnlyReplica)
+                Console.Error.WriteLine("This is a read-only replica with no Query Store data to read. Enable Query Store on the primary replica — it cannot be enabled here.");
+            else
+                Console.Error.WriteLine("Enable Query Store: ALTER DATABASE [" + database + "] SET QUERY_STORE = ON;");
             Environment.ExitCode = 1;
             return;
         }
