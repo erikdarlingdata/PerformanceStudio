@@ -10,28 +10,60 @@ namespace PlanViewer.Core.Services;
 public static partial class QueryStoreService
 {
     /// <summary>
-    /// Verifies Query Store is enabled and in a readable state on the target database.
-    /// Returns true if Query Store is accessible.
+    /// Decides whether Query Store data can be read, given the local Query Store state and
+    /// whether the database is a read-only replica that already holds captured data.
+    /// A READ* state (READ_ONLY / READ_WRITE / READ_CAPTURE_SECONDARY) is readable directly.
+    /// A read-only replica reports its local state as OFF even though the primary's captured
+    /// data is replicated and readable, so a read-only replica that holds data is also
+    /// readable. A writable database whose Query Store is OFF/ERROR is not. See issue #378.
     /// </summary>
-    public static async Task<(bool Enabled, string? State)> CheckEnabledAsync(
+    public static bool IsQueryStoreReadable(string? state, bool readOnlyReplica, bool hasData) =>
+        (state != null && state.StartsWith("READ", StringComparison.OrdinalIgnoreCase))
+        || (readOnlyReplica && hasData);
+
+    /// <summary>
+    /// Verifies Query Store is enabled and in a readable state on the target database.
+    /// Returns true if Query Store data is accessible.
+    /// </summary>
+    /// <remarks>
+    /// On a readable secondary replica (an Always On AG secondary, or an Azure SQL
+    /// geo-replica / read-scale-out replica) the database is read-only, so the local Query
+    /// Store capture engine can't run and <c>actual_state_desc</c> reports OFF — or, on
+    /// SQL 2022+/Azure with the secondary-replica feature enabled, READ_CAPTURE_SECONDARY.
+    /// Either way the primary's captured data is replicated into the database's internal
+    /// tables and is fully readable through the sys.query_store_* views (SSMS reads it there
+    /// too). So when the database is a read-only replica that already holds Query Store data,
+    /// treat it as enabled-for-reading even though the local state isn't a READ* state;
+    /// refusing to open would block a scenario that works. See issue #378.
+    /// </remarks>
+    public static async Task<(bool Enabled, string? State, bool ReadOnlyReplica)> CheckEnabledAsync(
         string connectionString, CancellationToken ct = default)
     {
         const string sql = @"
 SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
 SELECT
-    actual_state_desc
+    actual_state_desc,
+    read_only_replica =
+        CONVERT(bit, CASE WHEN DATABASEPROPERTYEX(DB_NAME(), 'Updateability') = 'READ_ONLY' THEN 1 ELSE 0 END),
+    has_query_store_data =
+        CONVERT(bit, CASE WHEN EXISTS (SELECT 1 FROM sys.query_store_query) THEN 1 ELSE 0 END)
 FROM sys.database_query_store_options;";
 
         await using var conn = new SqlConnection(connectionString);
         await conn.OpenAsync(ct);
         await using var cmd = new SqlCommand(sql, conn);
-        var state = (string?)await cmd.ExecuteScalarAsync(ct);
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
 
-        if (state == null)
-            return (false, null);
+        // No row means Query Store has never been configured on this database.
+        if (!await reader.ReadAsync(ct))
+            return (false, null, false);
 
-        var enabled = state.StartsWith("READ", StringComparison.OrdinalIgnoreCase);
-        return (enabled, state);
+        var state = reader.IsDBNull(0) ? null : reader.GetString(0);
+        var readOnlyReplica = !reader.IsDBNull(1) && reader.GetBoolean(1);
+        var hasData = !reader.IsDBNull(2) && reader.GetBoolean(2);
+
+        var enabled = IsQueryStoreReadable(state, readOnlyReplica, hasData);
+        return (enabled, state, readOnlyReplica);
     }
 
     /// <summary>

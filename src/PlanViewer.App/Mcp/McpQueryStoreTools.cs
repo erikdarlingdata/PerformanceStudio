@@ -32,14 +32,15 @@ public sealed class McpQueryStoreTools
                 return ConnectionNotFound(connectionStore, connection_name);
 
             var connectionString = conn.GetConnectionString(credentialService, database);
-            var (enabled, state) = await QueryStoreService.CheckEnabledAsync(connectionString);
+            var (enabled, state, readOnlyReplica) = await QueryStoreService.CheckEnabledAsync(connectionString);
 
             return JsonSerializer.Serialize(new
             {
                 server = conn.ServerName,
                 database,
                 query_store_enabled = enabled,
-                state
+                state,
+                read_only_replica = readOnlyReplica
             }, McpHelpers.JsonOptions);
         }
         catch (Exception ex)
@@ -114,9 +115,11 @@ public sealed class McpQueryStoreTools
             var connectionString = conn.GetConnectionString(credentialService, database);
 
             // Check Query Store is enabled first
-            var (enabled, state) = await QueryStoreService.CheckEnabledAsync(connectionString);
+            var (enabled, state, readOnlyReplica) = await QueryStoreService.CheckEnabledAsync(connectionString);
             if (!enabled)
-                return $"Query Store is not enabled on [{database}]. State: {state ?? "unknown"}.";
+                return readOnlyReplica
+                    ? $"[{database}] is a read-only replica with no Query Store data to read (state: {state ?? "unknown"}). Enable Query Store on the primary replica."
+                    : $"Query Store is not enabled on [{database}]. State: {state ?? "unknown"}.";
 
             // Fetch plans using the app's built-in query
             var plans = await QueryStoreService.FetchTopPlansAsync(
