@@ -81,12 +81,15 @@ public partial class QueryStoreOverviewControl : UserControl
                 var labelR = (radius + innerRadius) / 2;
                 var lx = cx + labelR * Math.Cos(midAngle);
                 var ly = cy + labelR * Math.Sin(midAngle);
+                // Pick label ink by arc luminance (same rule as the bar cards) so the
+                // percentage stays readable on light fills instead of white-on-light.
+                var labelLuminance = 0.299 * color.R + 0.587 * color.G + 0.114 * color.B;
                 var pctLabel = new TextBlock
                 {
                     Text = $"{pct:F0}%",
                     FontSize = 10,
                     FontWeight = FontWeight.SemiBold,
-                    Foreground = Brushes.White,
+                    Foreground = new SolidColorBrush(labelLuminance > 128 ? Colors.Black : Colors.White),
                 };
                 pctLabel.Measure(Size.Infinity);
                 Canvas.SetLeft(pctLabel, lx - pctLabel.DesiredSize.Width / 2);
