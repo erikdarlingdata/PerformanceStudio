@@ -59,16 +59,19 @@ public partial class QueryStoreHistoryControl : UserControl
 	private static readonly SolidColorBrush ActiveButtonFg = new(Avalonia.Media.Color.FromRgb(0x11, 0x12, 0x17));
 	private static readonly SolidColorBrush InactiveButtonFg = new(Avalonia.Media.Color.FromRgb(0x9D, 0xA5, 0xB4));
 
+	// Validated colorblind-safe categorical ramp (dark surface), in fixed CVD
+	// order — shared with the Multi QS Overview database palette so the two
+	// Query Store views read as one system.
 	private static readonly ScottPlot.Color[] PlanColors =
 	{
-		ScottPlot.Color.FromHex("#4FC3F7"),
-		ScottPlot.Color.FromHex("#FF7043"),
-		ScottPlot.Color.FromHex("#66BB6A"),
-		ScottPlot.Color.FromHex("#AB47BC"),
-		ScottPlot.Color.FromHex("#FFA726"),
-		ScottPlot.Color.FromHex("#26C6DA"),
-		ScottPlot.Color.FromHex("#F06292"),
-		ScottPlot.Color.FromHex("#A1887F"),
+		ScottPlot.Color.FromHex("#3987E5"),
+		ScottPlot.Color.FromHex("#199E70"),
+		ScottPlot.Color.FromHex("#C98500"),
+		ScottPlot.Color.FromHex("#008300"),
+		ScottPlot.Color.FromHex("#9085E9"),
+		ScottPlot.Color.FromHex("#E66767"),
+		ScottPlot.Color.FromHex("#D55181"),
+		ScottPlot.Color.FromHex("#D95926"),
 	};
 
 	// Map grid orderBy tags to history metric tags

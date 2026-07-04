@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -76,6 +77,12 @@ internal sealed class AppSettingsService
             settings.QueryStoreTopLimit = Math.Clamp(settings.QueryStoreTopLimit, 1, 200);
             settings.MultiQsTopDbCount = Math.Clamp(settings.MultiQsTopDbCount, 2, 20);
             settings.QueryHistoryMaxPlans = Math.Clamp(settings.QueryHistoryMaxPlans, 1, 100);
+
+            // Migrate installs still on the old default palette to the validated
+            // colorblind-safe ramp. Only touches settings that exactly match the
+            // legacy defaults, so any user-customized colors are left untouched.
+            if (settings.MultiQsTopDbColors.SequenceEqual(LegacyTopDbColors, StringComparer.OrdinalIgnoreCase))
+                settings.MultiQsTopDbColors = new List<string>(DefaultTopDbColors);
 
             _cached = settings;
             return settings;
@@ -174,9 +181,23 @@ internal sealed class AppSettingsService
     }
 
     /// <summary>
-    /// Default color palette for Multi QS Overview top databases.
+    /// Default color palette for Multi QS Overview top databases. Eight hues from
+    /// the validated colorblind-safe categorical ramp (dark surface), in fixed CVD
+    /// order. Databases beyond the eighth fold into the neutral "Others" fill, so
+    /// no invented ninth hue is ever needed.
     /// </summary>
     internal static readonly List<string> DefaultTopDbColors = new()
+    {
+        "#3987E5", "#199E70", "#C98500", "#008300",
+        "#9085E9", "#E66767", "#D55181", "#D95926",
+    };
+
+    /// <summary>
+    /// The pre-dataviz default palette. Retained only so <see cref="Load"/> can
+    /// detect an installation still on the old defaults and migrate it to
+    /// <see cref="DefaultTopDbColors"/> without clobbering a user's custom colors.
+    /// </summary>
+    private static readonly List<string> LegacyTopDbColors = new()
     {
         "#2EAEF1", "#F2994A", "#27AE60", "#9B51E0", "#EB5757",
         "#F2C94C", "#56CCF2", "#BB6BD9", "#E91E63", "#00BCD4",

@@ -89,6 +89,7 @@ public partial class QueryStoreOverviewControl : UserControl
 
         var stepX = w / n;
         var barGap = Math.Min(2.0, Math.Max(0.5, stepX * 0.1));
+        const double segGap = 1.0; // surface gap between stacked segments so bands stay distinct
 
         for (int i = 0; i < n; i++)
         {
@@ -121,7 +122,7 @@ public partial class QueryStoreOverviewControl : UserControl
                 var rect = new Rectangle
                 {
                     Width = Math.Max(1, stepX - barGap),
-                    Height = Math.Max(0.5, segH),
+                    Height = Math.Max(0.5, segH - segGap),
                     Fill = new SolidColorBrush(color),
                 };
                 Canvas.SetLeft(rect, x);
@@ -139,7 +140,7 @@ public partial class QueryStoreOverviewControl : UserControl
                 var rect = new Rectangle
                 {
                     Width = Math.Max(1, stepX - barGap),
-                    Height = Math.Max(0.5, segH),
+                    Height = Math.Max(0.5, segH - segGap),
                     Fill = new SolidColorBrush(OthersColor),
                 };
                 Canvas.SetLeft(rect, x);
