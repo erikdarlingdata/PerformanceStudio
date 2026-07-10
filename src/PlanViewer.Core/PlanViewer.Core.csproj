@@ -19,4 +19,10 @@
     <EmbeddedResource Include="Resources\WaitStats.json" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Self-time attribution (PlanAnalyzer.Timing) is internal but is the
+         source of every operator timing the UI and BenefitScorer report. -->
+    <InternalsVisibleTo Include="PlanViewer.Core.Tests" />
+  </ItemGroup>
+
 </Project>

@@ -675,7 +675,13 @@ public static partial class ShowPlanParser
             node.HasActualStats = true;
             long totalRows = 0, totalExecutions = 0, totalRowsRead = 0;
             long totalRebinds = 0, totalRewinds = 0;
-            long maxElapsed = 0, totalCpu = 0;
+            // Elapsed takes the max across threads, but thread 0 is the coordinator
+            // in a parallel plan: no rows, and an elapsed equal to the whole parallel
+            // branch's wall clock. Taking the max over it makes every operator in the
+            // branch look like it took the branch's entire duration. A serial plan has
+            // one thread numbered 0, which is a worker, so fall back to it.
+            long maxElapsed = 0, maxWorkerElapsed = 0, totalCpu = 0;
+            var sawWorkerThread = false;
             long totalLogicalReads = 0, totalPhysicalReads = 0;
             long totalScans = 0, totalReadAheads = 0;
             long totalLobLogicalReads = 0, totalLobPhysicalReads = 0, totalLobReadAheads = 0;
@@ -721,6 +727,13 @@ public static partial class ShowPlanParser
 
                 var elapsed = ParseLong(thread.Attribute("ActualElapsedms")?.Value);
                 if (elapsed > maxElapsed) maxElapsed = elapsed;
+
+                var threadId = (int)ParseDouble(thread.Attribute("Thread")?.Value);
+                if (threadId > 0)
+                {
+                    sawWorkerThread = true;
+                    if (elapsed > maxWorkerElapsed) maxWorkerElapsed = elapsed;
+                }
             }
 
             node.ActualRows = totalRows;
@@ -728,7 +741,7 @@ public static partial class ShowPlanParser
             node.ActualRowsRead = totalRowsRead;
             node.ActualRebinds = totalRebinds;
             node.ActualRewinds = totalRewinds;
-            node.ActualElapsedMs = maxElapsed;
+            node.ActualElapsedMs = sawWorkerThread ? maxWorkerElapsed : maxElapsed;
             node.ActualCPUMs = totalCpu;
             node.ActualLogicalReads = totalLogicalReads;
             node.ActualPhysicalReads = totalPhysicalReads;

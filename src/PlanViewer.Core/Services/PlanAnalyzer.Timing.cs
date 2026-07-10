@@ -65,35 +65,40 @@ public static partial class PlanAnalyzer
     }
 
     /// <summary>
-    /// Per-thread self-time calculation for parallel row mode operators.
-    /// For each thread: self = parent_elapsed[t] - sum(children_elapsed[t]).
-    /// Returns max across threads.
+    /// Threads that actually did work. In a parallel plan thread 0 is the
+    /// coordinator: it carries no rows, and its ActualElapsedms is the wall clock
+    /// of the whole parallel branch. Including it in a per-thread self-time
+    /// calculation hands the operator the branch's entire duration.
+    /// A serial plan has a single thread numbered 0, which IS a worker, so only
+    /// exclude thread 0 when other threads exist.
     /// </summary>
-    private static long GetPerThreadOwnElapsed(PlanNode node)
+    private static List<PerThreadRuntimeInfo> WorkThreads(PlanNode node)
     {
-        // Build lookup: threadId -> parent elapsed for this node
-        var parentByThread = new Dictionary<int, long>();
-        foreach (var ts in node.PerThreadStats)
-            parentByThread[ts.ThreadId] = ts.ActualElapsedMs;
+        var workers = node.PerThreadStats.Where(t => t.ThreadId > 0).ToList();
+        return workers.Count > 0 ? workers : node.PerThreadStats;
+    }
 
-        // Build lookup: threadId -> sum of all direct children's elapsed
+    /// <summary>
+    /// Per-thread self-time calculation for parallel row mode operators.
+    /// For each worker thread: self = parent[t] - sum(effective children[t]).
+    /// Returns max across worker threads.
+    /// </summary>
+    private static long GetPerThreadOwnElapsed(PlanNode node) =>
+        GetPerThreadOwn(node, t => t.ActualElapsedMs, n => n.ActualElapsedMs);
+
+    private static long GetPerThreadOwn(
+        PlanNode node,
+        Func<PerThreadRuntimeInfo, long> pick,
+        Func<PlanNode, long> nodeTotal)
+    {
+        var parentByThread = new Dictionary<int, long>();
+        foreach (var ts in WorkThreads(node))
+            parentByThread[ts.ThreadId] = pick(ts);
+
         var childSumByThread = new Dictionary<int, long>();
         foreach (var child in node.Children)
-        {
-            var childNode = child;
+            AddEffectiveChildByThread(child, pick, nodeTotal, childSumByThread);
 
-            // Exchange operators have unreliable times — look through to their child
-            if (child.PhysicalOp == "Parallelism" && child.Children.Count > 0)
-                childNode = child.Children.OrderByDescending(c => c.ActualElapsedMs).First();
-
-            foreach (var ts in childNode.PerThreadStats)
-            {
-                childSumByThread.TryGetValue(ts.ThreadId, out var existing);
-                childSumByThread[ts.ThreadId] = existing + ts.ActualElapsedMs;
-            }
-        }
-
-        // Self-time per thread = parent - children, take max across threads
         var maxSelf = 0L;
         foreach (var (threadId, parentMs) in parentByThread)
         {
@@ -103,6 +108,83 @@ public static partial class PlanAnalyzer
         }
 
         return maxSelf;
+    }
+
+    /// <summary>
+    /// What a child contributes to its parent's per-thread total. The per-thread
+    /// mirror of GetEffectiveChildElapsedMs, and it must look through the same two
+    /// things the serial path does, or the parent absorbs the subtree beneath them:
+    ///
+    ///   - A batch-mode child reports STANDALONE time, so only its own value would
+    ///     come off and the rest of the batch zone would stay in the parent.
+    ///   - A pass-through child (Compute Scalar) carries no runtime stats at all,
+    ///     so zero would come off.
+    ///
+    /// Together these crowned a row-mode Nested Loops above a batch Hash Aggregate
+    /// as the hottest operator in its plan, with the aggregate's time counted twice.
+    /// </summary>
+    private static void AddEffectiveChildByThread(
+        PlanNode child,
+        Func<PerThreadRuntimeInfo, long> pick,
+        Func<PlanNode, long> nodeTotal,
+        Dictionary<int, long> acc)
+    {
+        // Exchange operators have unreliable times — look through to their child.
+        if (child.PhysicalOp == "Parallelism" && child.Children.Count > 0)
+        {
+            var dominant = child.Children.OrderByDescending(nodeTotal).First();
+            AddEffectiveChildByThread(dominant, pick, nodeTotal, acc);
+            return;
+        }
+
+        var mode = child.ActualExecutionMode ?? child.ExecutionMode;
+        if (mode == "Batch" && child.HasActualStats)
+        {
+            AddBatchSubtreeByThread(child, pick, nodeTotal, acc);
+            return;
+        }
+
+        if (child.HasActualStats && nodeTotal(child) > 0)
+        {
+            foreach (var ts in WorkThreads(child))
+            {
+                acc.TryGetValue(ts.ThreadId, out var existing);
+                acc[ts.ThreadId] = existing + pick(ts);
+            }
+            return;
+        }
+
+        // No runtime stats: look through to the descendants that have them.
+        foreach (var grandchild in child.Children)
+            AddEffectiveChildByThread(grandchild, pick, nodeTotal, acc);
+    }
+
+    /// <summary>
+    /// Per-thread sum across a contiguous batch-mode zone, stopping at exchanges.
+    /// Batch operators pipeline, so their times add rather than nest.
+    /// </summary>
+    private static void AddBatchSubtreeByThread(
+        PlanNode node,
+        Func<PerThreadRuntimeInfo, long> pick,
+        Func<PlanNode, long> nodeTotal,
+        Dictionary<int, long> acc)
+    {
+        foreach (var ts in WorkThreads(node))
+        {
+            acc.TryGetValue(ts.ThreadId, out var existing);
+            acc[ts.ThreadId] = existing + pick(ts);
+        }
+
+        foreach (var child in node.Children)
+        {
+            if (child.PhysicalOp == "Parallelism") continue; // zone boundary
+
+            var childMode = child.ActualExecutionMode ?? child.ExecutionMode;
+            if (childMode == "Batch" && child.HasActualStats)
+                AddBatchSubtreeByThread(child, pick, nodeTotal, acc);
+            else
+                AddEffectiveChildByThread(child, pick, nodeTotal, acc);
+        }
     }
 
     /// <summary>
@@ -116,33 +198,7 @@ public static partial class PlanAnalyzer
         if (!node.HasActualStats || node.ActualCPUMs <= 0) return 0;
 
         if (node.PerThreadStats.Count > 1)
-        {
-            var parentByThread = new Dictionary<int, long>();
-            foreach (var ts in node.PerThreadStats)
-                parentByThread[ts.ThreadId] = ts.ActualCPUMs;
-
-            var childSumByThread = new Dictionary<int, long>();
-            foreach (var child in node.Children)
-            {
-                var childNode = child;
-                if (child.PhysicalOp == "Parallelism" && child.Children.Count > 0)
-                    childNode = child.Children.OrderByDescending(c => c.ActualCPUMs).First();
-                foreach (var ts in childNode.PerThreadStats)
-                {
-                    childSumByThread.TryGetValue(ts.ThreadId, out var existing);
-                    childSumByThread[ts.ThreadId] = existing + ts.ActualCPUMs;
-                }
-            }
-
-            var maxSelf = 0L;
-            foreach (var (threadId, parentCpu) in parentByThread)
-            {
-                childSumByThread.TryGetValue(threadId, out var childCpu);
-                var self = Math.Max(0, parentCpu - childCpu);
-                if (self > maxSelf) maxSelf = self;
-            }
-            return maxSelf;
-        }
+            return GetPerThreadOwn(node, t => t.ActualCPUMs, n => n.ActualCPUMs);
 
         // Serial: operator_cpu - Σ effective child cpu
         var totalChildCpu = 0L;
