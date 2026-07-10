@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Synthetic plan. Two timing traps in one shape:
+
+  1. Thread 0 is the coordinator: zero rows, but its ActualElapsedms is the whole
+     parallel branch's wall clock (1000ms). Including it in per-thread self-time
+     hands the operator the branch's entire duration.
+
+  2. A row-mode Nested Loops sits above a BATCH-mode subtree. Batch operators
+     report standalone times, so subtracting only the topmost batch child's value
+     leaves the rest of the zone inside the parent.
+
+  Correct self elapsed for node 0 = slowest worker (1000)
+                                    - batch zone (0 + 900)
+                                    - row child (50)
+                                  = 50ms.
+  Before the fix it reported 1000ms and was crowned the hottest operator.
+-->
+<ShowPlanXML xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" Version="1.539" Build="16.0.4003.1" xmlns="http://schemas.microsoft.com/sqlserver/2004/07/showplan">
+  <BatchSequence>
+    <Batch>
+      <Statements>
+        <StmtSimple StatementCompId="1" StatementEstRows="1" StatementId="1" StatementOptmLevel="FULL" StatementSubTreeCost="1" StatementText="SELECT 1;" StatementType="SELECT" QueryHash="0x0000000000000001" QueryPlanHash="0x0000000000000002">
+          <QueryPlan DegreeOfParallelism="2" CachedPlanSize="16" CompileTime="1" CompileCPU="1" CompileMemory="16">
+            <QueryTimeStats CpuTime="60" ElapsedTime="1000" />
+            <RelOp NodeId="0" PhysicalOp="Nested Loops" LogicalOp="Inner Join" EstimateRows="1" EstimateIO="0" EstimateCPU="0" AvgRowSize="9" EstimatedTotalSubtreeCost="1" Parallel="1" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+              <OutputList />
+              <RunTimeInformation>
+                <RunTimeCountersPerThread Thread="0" ActualRows="0" ActualExecutions="0" ActualElapsedms="1000" ActualCPUms="0" ActualExecutionMode="Row" />
+                <RunTimeCountersPerThread Thread="1" ActualRows="1" ActualExecutions="1" ActualElapsedms="1000" ActualCPUms="30" ActualExecutionMode="Row" />
+                <RunTimeCountersPerThread Thread="2" ActualRows="1" ActualExecutions="1" ActualElapsedms="990" ActualCPUms="28" ActualExecutionMode="Row" />
+              </RunTimeInformation>
+              <NestedLoops Optimized="0">
+                <RelOp NodeId="1" PhysicalOp="Compute Scalar" LogicalOp="Compute Scalar" EstimateRows="1" EstimateIO="0" EstimateCPU="0" AvgRowSize="9" EstimatedTotalSubtreeCost="1" Parallel="1" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Batch">
+                  <OutputList />
+                  <RunTimeInformation>
+                    <RunTimeCountersPerThread Thread="0" ActualRows="0" ActualExecutions="0" ActualElapsedms="0" ActualCPUms="0" ActualExecutionMode="Batch" />
+                    <RunTimeCountersPerThread Thread="1" ActualRows="1" ActualExecutions="1" ActualElapsedms="0" ActualCPUms="0" ActualExecutionMode="Batch" />
+                    <RunTimeCountersPerThread Thread="2" ActualRows="1" ActualExecutions="1" ActualElapsedms="0" ActualCPUms="0" ActualExecutionMode="Batch" />
+                  </RunTimeInformation>
+                  <ComputeScalar>
+                    <DefinedValues />
+                    <RelOp NodeId="2" PhysicalOp="Hash Match" LogicalOp="Aggregate" EstimateRows="1" EstimateIO="0" EstimateCPU="0" AvgRowSize="9" EstimatedTotalSubtreeCost="1" Parallel="1" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Batch">
+                      <OutputList />
+                      <RunTimeInformation>
+                        <RunTimeCountersPerThread Thread="0" ActualRows="0" ActualExecutions="0" ActualElapsedms="0" ActualCPUms="0" ActualExecutionMode="Batch" />
+                        <RunTimeCountersPerThread Thread="1" ActualRows="1" ActualExecutions="1" ActualElapsedms="900" ActualCPUms="12" ActualExecutionMode="Batch" />
+                        <RunTimeCountersPerThread Thread="2" ActualRows="1" ActualExecutions="1" ActualElapsedms="890" ActualCPUms="11" ActualExecutionMode="Batch" />
+                      </RunTimeInformation>
+                      <Hash>
+                        <DefinedValues />
+                        <RelOp NodeId="3" PhysicalOp="Columnstore Index Scan" LogicalOp="Index Scan" EstimateRows="1" EstimateIO="0" EstimateCPU="0" AvgRowSize="9" EstimatedTotalSubtreeCost="1" Parallel="1" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Batch" TableCardinality="1000">
+                          <OutputList />
+                          <RunTimeInformation>
+                            <RunTimeCountersPerThread Thread="0" ActualRows="0" ActualExecutions="0" ActualElapsedms="0" ActualCPUms="0" ActualExecutionMode="Batch" />
+                            <RunTimeCountersPerThread Thread="1" ActualRows="500" ActualExecutions="1" ActualElapsedms="0" ActualCPUms="0" ActualExecutionMode="Batch" />
+                            <RunTimeCountersPerThread Thread="2" ActualRows="500" ActualExecutions="1" ActualElapsedms="0" ActualCPUms="0" ActualExecutionMode="Batch" />
+                          </RunTimeInformation>
+                          <IndexScan Ordered="0" ForcedIndex="0" ForceSeek="0" ForceScan="0" NoExpandHint="0" Storage="ColumnStore">
+                            <Object Database="[d]" Schema="[dbo]" Table="[Facts]" Index="[CCI_Facts]" IndexKind="NonClustered" Storage="ColumnStore" />
+                          </IndexScan>
+                        </RelOp>
+                      </Hash>
+                    </RelOp>
+                  </ComputeScalar>
+                </RelOp>
+                <RelOp NodeId="4" PhysicalOp="Index Seek" LogicalOp="Index Seek" EstimateRows="1" EstimateIO="0" EstimateCPU="0" AvgRowSize="9" EstimatedTotalSubtreeCost="1" Parallel="1" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row" TableCardinality="1000">
+                  <OutputList />
+                  <RunTimeInformation>
+                    <RunTimeCountersPerThread Thread="0" ActualRows="0" ActualExecutions="0" ActualElapsedms="0" ActualCPUms="0" ActualExecutionMode="Row" />
+                    <RunTimeCountersPerThread Thread="1" ActualRows="1" ActualExecutions="1" ActualElapsedms="50" ActualCPUms="6" ActualExecutionMode="Row" />
+                    <RunTimeCountersPerThread Thread="2" ActualRows="1" ActualExecutions="1" ActualElapsedms="48" ActualCPUms="5" ActualExecutionMode="Row" />
+                  </RunTimeInformation>
+                  <IndexScan Ordered="1" ScanDirection="FORWARD" ForcedIndex="0" ForceSeek="0" ForceScan="0" NoExpandHint="0" Storage="RowStore">
+                    <Object Database="[d]" Schema="[dbo]" Table="[Dim]" Index="[PK_Dim]" IndexKind="Clustered" Storage="RowStore" />
+                  </IndexScan>
+                </RelOp>
+              </NestedLoops>
+            </RelOp>
+          </QueryPlan>
+        </StmtSimple>
+      </Statements>
+    </Batch>
+  </BatchSequence>
+</ShowPlanXML>

@@ -100,6 +100,13 @@ public static class NodeTimeAttribution
                     .DefaultIfEmpty(0)
                     .Max();
             }
+            else if ((child.ActualExecutionMode ?? child.ExecutionMode) == "Batch")
+            {
+                // Batch operators report STANDALONE times, so the zone's times add
+                // rather than nest. Taking only this child's value would leave the
+                // rest of the zone inside the parent's "own" time.
+                sum += SumBatchSubtreeElapsedMs(child);
+            }
             else if (child.ActualElapsedMs > 0)
             {
                 sum += child.ActualElapsedMs;
@@ -108,6 +115,27 @@ public static class NodeTimeAttribution
             {
                 sum += GetChildElapsedMsSum(child); // skip through transparent operators
             }
+        }
+        return sum;
+    }
+
+    /// <summary>
+    /// Sums elapsed across a contiguous batch-mode zone, stopping at exchange
+    /// boundaries. Mirrors the analysis path in PlanAnalyzer.Timing.
+    /// </summary>
+    private static long SumBatchSubtreeElapsedMs(PlanNode node)
+    {
+        long sum = node.ActualElapsedMs;
+        foreach (var child in node.Children)
+        {
+            if (child.PhysicalOp == "Parallelism") continue; // zone boundary
+
+            if ((child.ActualExecutionMode ?? child.ExecutionMode) == "Batch")
+                sum += SumBatchSubtreeElapsedMs(child);
+            else if (child.ActualElapsedMs > 0)
+                sum += child.ActualElapsedMs; // row mode: already cumulative
+            else
+                sum += GetChildElapsedMsSum(child); // pass-through, no stats
         }
         return sum;
     }
