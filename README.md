@@ -128,7 +128,7 @@ dotnet build
 To verify the build:
 
 ```bash
-dotnet test tests/PlanViewer.Core.Tests    # 37 tests should pass
+dotnet test PlanViewer.sln
 dotnet run --project src/PlanViewer.Cli -- analyze --help
 ```
 
@@ -148,6 +148,33 @@ planview analyze my_query.sqlplan --output text
 # Text output, warnings and missing indexes only (skip operator tree)
 planview analyze my_query.sqlplan --output text --warnings-only
 ```
+
+### Explore plans interactively (Repl pilot)
+
+Running `planview` without arguments starts a long-lived read-only session. Existing
+`analyze`, `querystore`, and `credential` commands continue to use the legacy
+System.CommandLine graph.
+
+```text
+planview
+> open slow-query.sqlplan
+[plan slow-query]> summary
+[plan slow-query]> warnings --severity critical
+[plan slow-query]> operators --top 10
+[plan slow-query]> missing-indexes --json
+```
+
+The same graph also works in one-shot and MCP modes:
+
+```bash
+planview plan open slow-query.sqlplan --json --no-logo
+planview repl                         # explicit interactive alias
+planview mcp serve                    # stdio MCP server generated from the graph
+```
+
+The pilot uses `Repl` `0.11.0-dev.181`; loaded plans live only for the lifetime of
+the process and all exposed plan operations are read-only. See
+[`docs/repl-pilot.md`](docs/repl-pilot.md) for architecture and compatibility notes.
 
 ### Capture and analyze plans from a live server
 

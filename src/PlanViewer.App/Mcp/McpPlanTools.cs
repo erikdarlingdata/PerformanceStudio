@@ -53,6 +53,7 @@ public sealed class McpPlanTools
         "This is the primary tool for understanding plan quality. Use list_plans first to get session_id values.")]
     public static string AnalyzePlan(
         PlanSessionManager sessionManager,
+        PlanOperations operations,
         [Description("The session_id from list_plans.")] string session_id)
     {
         var session = sessionManager.GetSession(session_id);
@@ -61,7 +62,7 @@ public sealed class McpPlanTools
 
         try
         {
-            var result = ResultMapper.Map(session.Plan, session.Source);
+            var result = operations.GetAnalysis(session_id);
             return JsonSerializer.Serialize(result, McpHelpers.JsonOptions);
         }
         catch (Exception ex)
@@ -75,6 +76,7 @@ public sealed class McpPlanTools
         "missing indexes, cost, DOP, memory grants. Faster than analyze_plan for quick assessment.")]
     public static string GetPlanSummary(
         PlanSessionManager sessionManager,
+        PlanOperations operations,
         [Description("The session_id from list_plans.")] string session_id)
     {
         var session = sessionManager.GetSession(session_id);
@@ -83,8 +85,7 @@ public sealed class McpPlanTools
 
         try
         {
-            var result = ResultMapper.Map(session.Plan, session.Source);
-            return TextFormatter.Format(result);
+            return TextFormatter.Format(operations.GetAnalysis(session_id));
         }
         catch (Exception ex)
         {
@@ -97,6 +98,7 @@ public sealed class McpPlanTools
         "Optionally filter by severity (Critical, Warning, or Info).")]
     public static string GetPlanWarnings(
         PlanSessionManager sessionManager,
+        PlanOperations operations,
         [Description("The session_id from list_plans.")] string session_id,
         [Description("Optional severity filter: Critical, Warning, or Info.")] string? severity = null)
     {
@@ -106,29 +108,16 @@ public sealed class McpPlanTools
 
         try
         {
-            var result = ResultMapper.Map(session.Plan, session.Source);
-            var allWarnings = result.Statements
-                .SelectMany(s => s.Warnings.Select(w => new
-                {
-                    severity = w.Severity,
-                    type = w.Type,
-                    message = w.Message,
-                    node_id = w.NodeId,
-                    @operator = w.Operator,
-                    statement = McpHelpers.Truncate(s.StatementText, 200)
-                }))
-                .Where(w => severity == null ||
-                    w.severity.Equals(severity, StringComparison.OrdinalIgnoreCase))
-                .ToList();
-
-            if (allWarnings.Count == 0)
+            var result = operations.GetWarnings(session_id, severity);
+            if (result.WarningCount == 0)
             {
                 return severity != null
                     ? $"No {severity} warnings found in this plan."
                     : "No warnings found in this plan.";
             }
 
-            return JsonSerializer.Serialize(new { warning_count = allWarnings.Count, warnings = allWarnings },
+            return JsonSerializer.Serialize(
+                new { warning_count = result.WarningCount, warnings = result.Warnings },
                 McpHelpers.JsonOptions);
         }
         catch (Exception ex)
@@ -142,29 +131,19 @@ public sealed class McpPlanTools
         "ready-to-run CREATE INDEX statements.")]
     public static string GetMissingIndexes(
         PlanSessionManager sessionManager,
+        PlanOperations operations,
         [Description("The session_id from list_plans.")] string session_id)
     {
         var session = sessionManager.GetSession(session_id);
         if (session == null)
             return SessionNotFound(sessionManager, session_id);
 
-        var indexes = session.Plan.AllMissingIndexes;
-        if (indexes.Count == 0)
+        var result = operations.GetMissingIndexes(session_id);
+        if (result.MissingIndexCount == 0)
             return "No missing index suggestions in this plan.";
 
-        var result = indexes.Select(idx => new
-        {
-            database = idx.Database,
-            schema_name = idx.Schema,
-            table = idx.Table,
-            impact = idx.Impact,
-            equality_columns = idx.EqualityColumns,
-            inequality_columns = idx.InequalityColumns,
-            include_columns = idx.IncludeColumns,
-            create_statement = idx.CreateStatement
-        });
-
-        return JsonSerializer.Serialize(new { missing_index_count = indexes.Count, indexes = result },
+        return JsonSerializer.Serialize(
+            new { missing_index_count = result.MissingIndexCount, indexes = result.Indexes },
             McpHelpers.JsonOptions);
     }
 
@@ -208,6 +187,7 @@ public sealed class McpPlanTools
         "or actual elapsed time (if available). Useful for quickly finding bottleneck operators.")]
     public static string GetExpensiveOperators(
         PlanSessionManager sessionManager,
+        PlanOperations operations,
         [Description("The session_id from list_plans.")] string session_id,
         [Description("Number of operators to return. Default 10.")] int top = 10)
     {
@@ -218,35 +198,9 @@ public sealed class McpPlanTools
         var topError = McpHelpers.ValidateTop(top);
         if (topError != null) return topError;
 
-        var allNodes = new List<(PlanNode Node, string Statement)>();
-        foreach (var stmt in session.Plan.Batches.SelectMany(b => b.Statements))
-        {
-            if (stmt.RootNode == null) continue;
-            CollectNodes(stmt.RootNode, McpHelpers.Truncate(stmt.StatementText, 100) ?? "", allNodes);
-        }
-
-        var hasActuals = allNodes.Any(n => n.Node.ActualElapsedMs > 0);
-        var ranked = hasActuals
-            ? allNodes.OrderByDescending(n => n.Node.ActualElapsedMs)
-            : allNodes.OrderByDescending(n => n.Node.CostPercent);
-
-        var result = ranked.Take(top).Select(n => new
-        {
-            node_id = n.Node.NodeId,
-            physical_op = n.Node.PhysicalOp,
-            logical_op = n.Node.LogicalOp,
-            cost_percent = n.Node.CostPercent,
-            estimated_rows = n.Node.EstimateRows,
-            actual_rows = n.Node.ActualRows,
-            actual_elapsed_ms = n.Node.ActualElapsedMs,
-            actual_cpu_ms = n.Node.ActualCPUMs,
-            logical_reads = n.Node.ActualLogicalReads,
-            physical_reads = n.Node.ActualPhysicalReads,
-            object_name = n.Node.ObjectName,
-            statement = n.Statement
-        });
-
-        return JsonSerializer.Serialize(new { ranked_by = hasActuals ? "actual_elapsed_ms" : "cost_percent", operators = result },
+        var result = operations.GetExpensiveOperators(session_id, top);
+        return JsonSerializer.Serialize(
+            new { ranked_by = result.RankedBy, operators = result.Operators },
             McpHelpers.JsonOptions);
     }
 

@@ -1,7 +1,15 @@
 using System.CommandLine;
+using PlanViewer.Cli;
 using PlanViewer.Cli.Commands;
 using PlanViewer.Core.Services;
 using PlanViewer.Core.Interfaces;
+using PlanViewer.Cli.ReplSurface;
+
+if (CliRouting.ShouldUseRepl(args))
+{
+    var repl = PlanReplApp.Create();
+    return await repl.RunAsync(CliRouting.GetReplArgs(args));
+}
 
 // Create credential service (platform-specific)
 ICredentialService? credentialService = null;
