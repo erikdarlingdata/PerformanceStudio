@@ -26,12 +26,22 @@ public sealed class PlanOperations
     private readonly IPlanCatalog _catalog;
     private readonly AnalyzerConfig _config;
     private readonly PlanResourceBudget _budget;
+    private readonly bool _enforceQueryAdmission;
 
     public PlanOperations(IPlanCatalog catalog, AnalyzerConfig? config = null)
+        : this(catalog, config, enforceQueryAdmission: true)
+    {
+    }
+
+    internal PlanOperations(
+        IPlanCatalog catalog,
+        AnalyzerConfig? config,
+        bool enforceQueryAdmission)
     {
         _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
         _config = config ?? ConfigLoader.Load();
         _budget = PlanResourceBudget.ForCatalog(_catalog);
+        _enforceQueryAdmission = enforceQueryAdmission;
     }
 
     public async Task<PlanSessionSummary> OpenAsync(
@@ -63,7 +73,7 @@ public sealed class PlanOperations
         return await OpenStreamCoreAsync(stream, label, cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task<PlanSessionSummary> OpenOwnedStreamAsync(
+    internal async Task<PlanSessionSummary> OpenOwnedStreamAsync(
         Func<CancellationToken, ValueTask<(FileStream Stream, string Label, IAsyncDisposable Owner)>> streamFactory,
         CancellationToken cancellationToken = default)
     {
@@ -167,7 +177,7 @@ public sealed class PlanOperations
         }
     }
 
-    public PlanSessionSummary AdmitSnapshot(
+    internal PlanSessionSummary AdmitSnapshot(
         PlanSession session,
         long sourceBytes,
         CancellationToken cancellationToken)
@@ -311,7 +321,7 @@ public sealed class PlanOperations
     public MissingIndexesResult GetMissingIndexes(string sessionId) =>
         GetMissingIndexes(sessionId, CancellationToken.None);
 
-    public MissingIndexesResult GetMissingIndexes(
+    internal MissingIndexesResult GetMissingIndexes(
         string sessionId,
         CancellationToken cancellationToken) =>
         GetMissingIndexes(GetRequiredSession(sessionId), cancellationToken);
@@ -324,7 +334,7 @@ public sealed class PlanOperations
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(session);
-        using var querySlot = _budget.AcquireQuerySlot(cancellationToken);
+        using var querySlot = AcquireQuerySlot(cancellationToken);
         var indexes = new List<MissingIndexItem>(DefaultMaxMissingIndexResults);
         var totalIndexCount = 0;
         var columnsTruncated = false;
@@ -373,7 +383,7 @@ public sealed class PlanOperations
     public ExpensiveOperatorsResult GetExpensiveOperators(string sessionId, int top = 10) =>
         GetExpensiveOperators(sessionId, top, CancellationToken.None);
 
-    public ExpensiveOperatorsResult GetExpensiveOperators(
+    internal ExpensiveOperatorsResult GetExpensiveOperators(
         string sessionId,
         int top,
         CancellationToken cancellationToken) =>
@@ -401,7 +411,7 @@ public sealed class PlanOperations
         if (top is < 1 or > 100)
             throw new ArgumentOutOfRangeException(nameof(top), top, "Top must be between 1 and 100.");
 
-        using var querySlot = _budget.AcquireQuerySlot(cancellationToken);
+        using var querySlot = AcquireQuerySlot(cancellationToken);
         var analysis = GetAnalysisCancellable(session, cancellationToken);
         var topByActual = new List<RankedOperator>(top);
         var topByCost = new List<RankedOperator>(top);
@@ -447,7 +457,7 @@ public sealed class PlanOperations
     public PlanWarningsResult GetWarnings(string sessionId, string? severity = null) =>
         GetWarnings(sessionId, severity, CancellationToken.None);
 
-    public PlanWarningsResult GetWarnings(
+    internal PlanWarningsResult GetWarnings(
         string sessionId,
         string? severity,
         CancellationToken cancellationToken) =>
@@ -480,7 +490,7 @@ public sealed class PlanOperations
             throw new ArgumentException("Severity must be Critical, Warning, or Info.", nameof(severity));
         }
 
-        using var querySlot = _budget.AcquireQuerySlot(cancellationToken);
+        using var querySlot = AcquireQuerySlot(cancellationToken);
         var analysis = GetAnalysisCancellable(session, cancellationToken);
         var returnedWarnings = new List<PlanWarningItem>(DefaultMaxWarningResults);
         var totalWarningCount = 0;
@@ -529,10 +539,18 @@ public sealed class PlanOperations
         }
     }
 
-    public IDisposable AcquireQueryScope(CancellationToken cancellationToken) =>
-        _budget.AcquireQuerySlot(cancellationToken);
+    internal IDisposable AcquireQueryScope(CancellationToken cancellationToken) =>
+        AcquireQuerySlot(cancellationToken);
 
-    public AnalysisResult GetAnalysisForRequest(
+    private IDisposable AcquireQuerySlot(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return _enforceQueryAdmission
+            ? _budget.AcquireQuerySlot(cancellationToken)
+            : NoopDisposable.Instance;
+    }
+
+    internal AnalysisResult GetAnalysisForRequest(
         PlanSession session,
         CancellationToken cancellationToken)
     {
@@ -548,6 +566,15 @@ public sealed class PlanOperations
     {
         ArgumentNullException.ThrowIfNull(session);
         return session.Analysis ?? ResultMapper.Map(session.Plan, session.Source);
+    }
+
+    private sealed class NoopDisposable : IDisposable
+    {
+        internal static NoopDisposable Instance { get; } = new();
+
+        public void Dispose()
+        {
+        }
     }
 
     private static AnalysisResult GetAnalysisCancellable(

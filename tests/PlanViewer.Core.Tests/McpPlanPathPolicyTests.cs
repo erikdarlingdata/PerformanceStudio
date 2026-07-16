@@ -8,6 +8,18 @@ namespace PlanViewer.Core.Tests;
 public sealed class McpPlanPathPolicyTests
 {
     [Theory]
+    [InlineData(true, false, StringComparison.OrdinalIgnoreCase)]
+    [InlineData(false, true, StringComparison.OrdinalIgnoreCase)]
+    [InlineData(false, false, StringComparison.Ordinal)]
+    public void GetPathComparisonForPlatform_UsesFilesystemCompatibleCaseRules(
+        bool isWindows,
+        bool isMacOS,
+        StringComparison expected)
+    {
+        Assert.Equal(expected, McpPlanPathPolicy.GetPathComparisonForPlatform(isWindows, isMacOS));
+    }
+
+    [Theory]
     [InlineData(@"C:\plans\query.sqlplan", false)]
     [InlineData(@"C:\plans\host.txt:query.sqlplan", true)]
     [InlineData(@"\\server\share\query.sqlplan", false)]

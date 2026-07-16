@@ -12,12 +12,14 @@ public sealed class PlanResourceBudgetTests
         var second = PlanResourceBudget.ForCatalog(catalog);
 
         Assert.Same(first, second);
-        using var firstLease = await first.AcquireOpenSlotAsync(TestContext.Current.CancellationToken);
+        var firstLease = await first.AcquireOpenSlotAsync(TestContext.Current.CancellationToken);
         using var secondLease = await second.AcquireOpenSlotAsync(TestContext.Current.CancellationToken);
 
-        var error = await Assert.ThrowsAsync<InvalidOperationException>(
-            async () => await first.AcquireOpenSlotAsync(TestContext.Current.CancellationToken));
-        Assert.Contains("concurrent plan-open limit", error.Message, StringComparison.Ordinal);
+        var queued = first.AcquireOpenSlotAsync(TestContext.Current.CancellationToken);
+        Assert.False(queued.IsCompleted);
+
+        firstLease.Dispose();
+        using var admitted = await queued.WaitAsync(TestContext.Current.CancellationToken);
     }
 
 
@@ -53,6 +55,33 @@ public sealed class PlanResourceBudgetTests
                 includeOperatorWarnings: true,
                 validateSeverity: true,
                 cancelled.Token));
+    }
+
+    [Fact]
+    public void GivenDesktopFacade_WhenSharedQuerySlotsAreExhausted_ThenReadOperationsRemainAvailable()
+    {
+        var catalog = new InMemoryPlanCatalog();
+        var budget = PlanResourceBudget.ForCatalog(catalog);
+        var operations = new PlanOperations(
+            catalog,
+            PlanViewer.Core.Models.AnalyzerConfig.Default,
+            enforceQueryAdmission: false);
+        var leases = Enumerable.Range(0, PlanOperations.DefaultMaxConcurrentQueries)
+            .Select(_ => budget.AcquireQuerySlot(TestContext.Current.CancellationToken))
+            .ToList();
+        try
+        {
+            var result = operations.GetMissingIndexes(
+                CreateSession("desktop"),
+                TestContext.Current.CancellationToken);
+
+            Assert.Empty(result.Indexes);
+        }
+        finally
+        {
+            foreach (var lease in leases)
+                lease.Dispose();
+        }
     }
 
     [Fact]
@@ -113,12 +142,10 @@ public sealed class PlanResourceBudgetTests
         Assert.Equal(PlanOperations.DefaultMaxConcurrentOpens, Volatile.Read(ref maxActiveFactories));
         Assert.Equal(PlanOperations.DefaultMaxConcurrentOpens, Volatile.Read(ref activeFactories));
 
-        Assert.True(opens[^1].IsFaulted);
+        Assert.False(opens[^1].IsCompleted);
         releaseFactories.TrySetResult();
-        await Task.WhenAll(opens[..PlanOperations.DefaultMaxConcurrentOpens])
-            .WaitAsync(TestContext.Current.CancellationToken);
-        var error = await Assert.ThrowsAsync<InvalidOperationException>(async () => await opens[^1]);
-        Assert.Contains("concurrent plan-open limit", error.Message, StringComparison.Ordinal);
+        await Task.WhenAll(opens).WaitAsync(TestContext.Current.CancellationToken);
+
         Assert.Equal(PlanOperations.DefaultMaxConcurrentOpens, maxActiveFactories);
     }
 

@@ -30,12 +30,7 @@ internal sealed class PlanResourceBudget
 
     internal async Task<IDisposable> AcquireOpenSlotAsync(CancellationToken cancellationToken)
     {
-        if (!await _openSlots.WaitAsync(0, cancellationToken).ConfigureAwait(false))
-        {
-            throw new InvalidOperationException(
-                $"The concurrent plan-open limit of {PlanOperations.DefaultMaxConcurrentOpens} has been reached. Retry after an active open completes.");
-        }
-
+        await _openSlots.WaitAsync(cancellationToken).ConfigureAwait(false);
         return new SemaphoreLease(_openSlots);
     }
 

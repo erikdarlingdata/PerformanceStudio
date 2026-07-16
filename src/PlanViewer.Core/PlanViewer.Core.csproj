@@ -20,7 +20,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Internal test seams cover parser cancellation and budget invariants. -->
+    <!-- App and CLI are executable hosts in this repository; keep host-only orchestration internal. -->
+    <InternalsVisibleTo Include="PlanViewer.App" />
+    <InternalsVisibleTo Include="planview" />
     <InternalsVisibleTo Include="PlanViewer.Core.Tests" />
   </ItemGroup>
 

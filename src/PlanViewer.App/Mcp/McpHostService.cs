@@ -56,7 +56,10 @@ public sealed class McpHostService : BackgroundService
             /* Register services that MCP tools need via dependency injection */
             builder.Services.AddSingleton(_sessionManager);
             builder.Services.AddSingleton<IPlanCatalog>(_sessionManager);
-            builder.Services.AddSingleton(new PlanOperations(_sessionManager, AnalyzerConfig.Default));
+            builder.Services.AddSingleton(new PlanOperations(
+                _sessionManager,
+                AnalyzerConfig.Default,
+                enforceQueryAdmission: false));
             builder.Services.AddSingleton(_connectionStore);
             builder.Services.AddSingleton(_credentialService);
 

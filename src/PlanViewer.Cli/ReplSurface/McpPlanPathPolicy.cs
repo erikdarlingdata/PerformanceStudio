@@ -158,7 +158,7 @@ internal static class McpPlanPathPolicy
         foreach (var entry in Directory.EnumerateDirectories(parent))
         {
             var name = Path.GetFileName(Path.TrimEndingDirectorySeparator(entry));
-            if (name.Equals(segment, StringComparison.Ordinal))
+            if (name.Equals(segment, PathComparisonKind))
                 return entry;
         }
 
@@ -180,9 +180,20 @@ internal static class McpPlanPathPolicy
         return path.AsSpan(start).Contains(':');
     }
 
-    private static StringComparer PathComparison => StringComparer.Ordinal;
+    private static StringComparer PathComparison =>
+        PathComparisonKind == StringComparison.OrdinalIgnoreCase
+            ? StringComparer.OrdinalIgnoreCase
+            : StringComparer.Ordinal;
 
-    private static StringComparison PathComparisonKind => StringComparison.Ordinal;
+    private static StringComparison PathComparisonKind =>
+        GetPathComparisonForPlatform(OperatingSystem.IsWindows(), OperatingSystem.IsMacOS());
+
+    // Windows and default macOS volumes are case-insensitive. Linux remains ordinal;
+    // case-sensitive Windows/macOS configurations are outside this pilot's scope.
+    internal static StringComparison GetPathComparisonForPlatform(bool isWindows, bool isMacOS) =>
+        isWindows || isMacOS
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
 }
 
 internal sealed class McpAuthorizedPlanFile(FileStream stream, string label) : IAsyncDisposable

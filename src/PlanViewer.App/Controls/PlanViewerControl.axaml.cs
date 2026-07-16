@@ -374,7 +374,7 @@ public partial class PlanViewerControl : UserControl
         }
 
         const string sessionSource = "file";
-        PlanSessionManager.Instance.Register(_mcpSessionId, new PlanViewer.App.Mcp.PlanSession
+        PlanSessionManager.Instance.Register(new PlanViewer.Core.Models.PlanSession
         {
             SessionId = _mcpSessionId,
             Label = label,

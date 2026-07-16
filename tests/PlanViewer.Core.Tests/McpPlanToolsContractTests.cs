@@ -78,8 +78,9 @@ public sealed class McpPlanToolsContractTests
         };
         manager.Register(session);
 
-        using var warnings = JsonDocument.Parse(McpPlanTools.GetPlanWarnings(manager, session.SessionId));
-        using var indexes = JsonDocument.Parse(McpPlanTools.GetMissingIndexes(manager, session.SessionId));
+        var operations = new PlanOperations(manager);
+        using var warnings = JsonDocument.Parse(McpPlanTools.GetPlanWarnings(manager, operations, session.SessionId));
+        using var indexes = JsonDocument.Parse(McpPlanTools.GetMissingIndexes(manager, operations, session.SessionId));
 
         Assert.True(warnings.RootElement.GetProperty("truncated").GetBoolean());
         Assert.Equal(
@@ -174,28 +175,38 @@ public sealed class McpPlanToolsContractTests
     }
 
     [Fact]
-    public void AnalyzePlan_PreservesTheUiSessionSourceWhenMappedOnDemand()
+    public async Task AnalyzePlan_PreservesTheUiSessionSourceWhenMappedOnDemand()
     {
         var manager = new PlanSessionManager();
         var plan = PlanTestHelper.LoadAndAnalyze("row_goal_plan.sqlplan");
         var sessionId = $"ui-{Guid.NewGuid():N}";
-        manager.Register(sessionId, new PlanViewer.App.Mcp.PlanSession
+        manager.Register(new CorePlanSession
         {
             SessionId = sessionId,
             Label = "row_goal_plan.sqlplan",
             Source = "file",
             Plan = plan
         });
+        var operations = new PlanOperations(manager, AnalyzerConfig.Default, enforceQueryAdmission: false);
 
-        var json = McpPlanTools.AnalyzePlan(manager, sessionId);
+        var json = await McpPlanTools.AnalyzePlan(
+            manager,
+            operations,
+            sessionId,
+            TestContext.Current.CancellationToken);
+        var summary = await McpPlanTools.GetPlanSummary(
+            manager,
+            operations,
+            sessionId,
+            TestContext.Current.CancellationToken);
 
         using var document = JsonDocument.Parse(json);
         Assert.Equal("file", document.RootElement.GetProperty("plan_source").GetString());
         Assert.DoesNotContain("error", json, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("error", McpPlanTools.GetPlanSummary(manager, sessionId), StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("error", McpPlanTools.GetPlanWarnings(manager, sessionId), StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("error", McpPlanTools.GetMissingIndexes(manager, sessionId), StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("error", McpPlanTools.GetExpensiveOperators(manager, sessionId), StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("error", summary, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("error", McpPlanTools.GetPlanWarnings(manager, operations, sessionId), StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("error", McpPlanTools.GetMissingIndexes(manager, operations, sessionId), StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("error", McpPlanTools.GetExpensiveOperators(manager, operations, sessionId), StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -207,7 +218,7 @@ public sealed class McpPlanToolsContractTests
         var legacyPlan = PlanTestHelper.LoadAndAnalyze("param-sniffing-posttypeid2.sqlplan");
         var capturedPlan = PlanTestHelper.LoadAndAnalyze("param-sniffing-posttypeid2.sqlplan");
         var legacyManager = new PlanSessionManager();
-        legacyManager.Register(sessionId, new PlanViewer.App.Mcp.PlanSession
+        legacyManager.Register(new CorePlanSession
         {
             SessionId = sessionId,
             Label = label,
@@ -224,10 +235,10 @@ public sealed class McpPlanToolsContractTests
             queryText,
             "server");
         capturedOperations.AdmitSnapshot(
-            captured.ToCore(),
+            captured,
             Encoding.UTF8.GetByteCount(captured.RawPlanXml!),
             TestContext.Current.CancellationToken);
-        var registered = Assert.IsType<PlanViewer.App.Mcp.PlanSession>(capturedManager.GetSession(sessionId));
+        var registered = Assert.IsType<CorePlanSession>(capturedManager.GetSession(sessionId));
 
         Assert.Equal("query-store", captured.Source);
         Assert.Equal(captured.RawPlanXml, registered.RawPlanXml);
@@ -251,33 +262,7 @@ public sealed class McpPlanToolsContractTests
             McpPlanTools.GetReproScript(capturedManager, sessionId));
     }
 
-#pragma warning disable xUnit1051 // Intentionally exercise synchronous compatibility overloads.
-    [Fact]
-    public void HistoricalOverloads_DelegateToTheSharedOperationsBehavior()
-    {
-        var manager = new PlanSessionManager();
-        var session = CreateEstimatedSession();
-        manager.Register(session);
-        var operations = new PlanOperations(manager, AnalyzerConfig.Default);
 
-        Assert.Equal(
-            McpPlanTools.AnalyzePlan(manager, operations, session.SessionId),
-            McpPlanTools.AnalyzePlan(manager, session.SessionId));
-        Assert.Equal(
-            McpPlanTools.GetPlanSummary(manager, operations, session.SessionId),
-            McpPlanTools.GetPlanSummary(manager, session.SessionId));
-        Assert.Equal(
-            McpPlanTools.GetPlanWarnings(manager, operations, session.SessionId, "Warning"),
-            McpPlanTools.GetPlanWarnings(manager, session.SessionId, "Warning"));
-        Assert.Equal(
-            McpPlanTools.GetMissingIndexes(manager, operations, session.SessionId),
-            McpPlanTools.GetMissingIndexes(manager, session.SessionId));
-        Assert.Equal(
-            McpPlanTools.GetExpensiveOperators(manager, operations, session.SessionId, 3),
-            McpPlanTools.GetExpensiveOperators(manager, session.SessionId, 3));
-    }
-
-#pragma warning restore xUnit1051
 
     private static CorePlanSession CreateEstimatedSession()
     {

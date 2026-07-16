@@ -2,15 +2,15 @@ using PlanViewer.Core.Models;
 
 namespace PlanViewer.Core.Services;
 
-public static class PlanAnalysisPipeline
+internal static class PlanAnalysisPipeline
 {
-    public static ParsedPlan Analyze(
+    internal static ParsedPlan Analyze(
         string planXml,
         AnalyzerConfig config,
         CancellationToken cancellationToken = default) =>
         Analyze(planXml, config, serverMetadata: null, cancellationToken);
 
-    public static ParsedPlan Analyze(
+    internal static ParsedPlan Analyze(
         string planXml,
         AnalyzerConfig config,
         ServerMetadata? serverMetadata,
@@ -49,19 +49,12 @@ public static class PlanAnalysisPipeline
         return AnalyzeParsed(plan, config, serverMetadata, cancellationToken, beforeAnalysis);
     }
 
-    public static ParsedPlan AnalyzeParsed(
-        ParsedPlan plan,
-        AnalyzerConfig config,
-        ServerMetadata? serverMetadata = null,
-        CancellationToken cancellationToken = default) =>
-        AnalyzeParsed(plan, config, serverMetadata, cancellationToken, beforeAnalysis: null);
-
     internal static ParsedPlan AnalyzeParsed(
         ParsedPlan plan,
         AnalyzerConfig config,
-        ServerMetadata? serverMetadata,
-        CancellationToken cancellationToken,
-        Action<ParsedPlan, CancellationToken>? beforeAnalysis)
+        ServerMetadata? serverMetadata = null,
+        CancellationToken cancellationToken = default,
+        Action<ParsedPlan, CancellationToken>? beforeAnalysis = null)
     {
         ArgumentNullException.ThrowIfNull(plan);
         ArgumentNullException.ThrowIfNull(config);

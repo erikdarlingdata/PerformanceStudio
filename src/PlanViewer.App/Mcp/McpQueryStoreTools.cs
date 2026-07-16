@@ -19,18 +19,6 @@ namespace PlanViewer.App.Mcp;
 [McpServerToolType]
 public sealed class McpQueryStoreTools
 {
-    public static Task<string> CheckQueryStore(
-        ConnectionStore connectionStore,
-        ICredentialService credentialService,
-        string connection_name,
-        string database) =>
-        CheckQueryStore(
-            connectionStore,
-            credentialService,
-            connection_name,
-            database,
-            CancellationToken.None);
-
     [McpServerTool(Name = "check_query_store")]
     [Description("Checks whether Query Store is enabled and accessible on a database. " +
         "Use this before calling get_query_store_top to verify the target database supports Query Store.")]
@@ -71,39 +59,6 @@ public sealed class McpQueryStoreTools
             return McpHelpers.FormatError("check_query_store", ex);
         }
     }
-
-    public static Task<string> GetQueryStoreTop(
-        PlanSessionManager sessionManager,
-        ConnectionStore connectionStore,
-        ICredentialService credentialService,
-        string connection_name,
-        string database,
-        int top = 10,
-        string order_by = "cpu",
-        int hours_back = 24,
-        long? query_id = null,
-        long? plan_id = null,
-        string? query_hash = null,
-        string? plan_hash = null,
-        string? module = null,
-        string? execution_type = null) =>
-        GetQueryStoreTop(
-            sessionManager,
-            new PlanOperations(sessionManager, AnalyzerConfig.Default),
-            connectionStore,
-            credentialService,
-            connection_name,
-            database,
-            CancellationToken.None,
-            top,
-            order_by,
-            hours_back,
-            query_id,
-            plan_id,
-            query_hash,
-            plan_hash,
-            module,
-            execution_type);
 
     [McpServerTool(Name = "get_query_store_top")]
     [Description("Fetches the top N queries from Query Store ranked by the specified metric. " +
@@ -236,7 +191,7 @@ public sealed class McpQueryStoreTools
                         qsPlan.QueryText,
                         conn.ServerName);
                     operations.AdmitSnapshot(
-                        session.ToCore(),
+                        session,
                         Encoding.UTF8.GetByteCount(xml),
                         cancellationToken);
 

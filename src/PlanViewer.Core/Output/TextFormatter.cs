@@ -7,7 +7,7 @@ public static class TextFormatter
     public static string Format(AnalysisResult result) =>
         FormatCancellable(result, CancellationToken.None);
 
-    public static string FormatCancellable(AnalysisResult result, CancellationToken cancellationToken)
+    internal static string FormatCancellable(AnalysisResult result, CancellationToken cancellationToken)
     {
         using var writer = new StringWriter();
         WriteTextCancellable(result, writer, cancellationToken);
