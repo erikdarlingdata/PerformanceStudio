@@ -129,6 +129,11 @@ public static class QueryStoreCommand
             Description = "Filter by module name (schema.name, supports % wildcards)"
         };
 
+        var queryTextSearchOption = new Option<string?>("--query-text-search")
+        {
+            Description = "Filter to queries whose text contains this string (SQL LIKE match, auto-wrapped in %; % _ [ ] are wildcards)"
+        };
+
         var executionTypeOption = new Option<string?>("--execution-type")
         {
             Description = "Filter by execution type: regular, aborted, exception, or failed (= aborted + exception)"
@@ -140,7 +145,7 @@ public static class QueryStoreCommand
             outputDirOption, outputOption, compactOption, warningsOnlyOption, configOption,
             authOption, trustCertOption, loginOption, passwordOption, passwordStdinOption,
             queryIdOption, planIdOption, queryHashOption, planHashOption, moduleOption,
-            executionTypeOption
+            queryTextSearchOption, executionTypeOption
         };
 
         cmd.SetAction(async (parseResult, ct) =>
@@ -165,6 +170,7 @@ public static class QueryStoreCommand
             var filterQueryHash = parseResult.GetValue(queryHashOption);
             var filterPlanHash = parseResult.GetValue(planHashOption);
             var filterModule = parseResult.GetValue(moduleOption);
+            var filterQueryTextSearch = parseResult.GetValue(queryTextSearchOption);
             var filterExecutionType = parseResult.GetValue(executionTypeOption);
 
             // Load .env file if present (CLI args take precedence)
@@ -211,7 +217,7 @@ public static class QueryStoreCommand
 
             QueryStoreFilter? filter = null;
             if (filterQueryId != null || filterPlanId != null ||
-                filterQueryHash != null || filterPlanHash != null || filterModule != null ||
+                filterQueryHash != null || filterPlanHash != null || filterModule != null || filterQueryTextSearch != null ||
                 executionTypes != null)
             {
                 filter = new QueryStoreFilter
@@ -221,6 +227,7 @@ public static class QueryStoreCommand
                     QueryHash = filterQueryHash,
                     QueryPlanHash = filterPlanHash,
                     ModuleName = filterModule,
+                    QueryTextSearch = filterQueryTextSearch,
                     ExecutionTypeDescs = executionTypes,
                 };
             }

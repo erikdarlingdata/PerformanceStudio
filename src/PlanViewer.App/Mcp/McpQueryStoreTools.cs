@@ -55,7 +55,7 @@ public sealed class McpQueryStoreTools
         "Each fetched plan is automatically loaded into the application for further analysis " +
         "with analyze_plan, get_plan_warnings, etc. Returns summary stats and session IDs. " +
         "Optional filters narrow results server-side by query_id, plan_id, query_hash, " +
-        "plan_hash, or module name (schema.name, supports % wildcards).")]
+        "plan_hash, module name (schema.name, supports % wildcards), or query text (query_text_search).")]
     public static async Task<string> GetQueryStoreTop(
         PlanSessionManager sessionManager,
         ConnectionStore connectionStore,
@@ -72,6 +72,7 @@ public sealed class McpQueryStoreTools
         [Description("Filter by query hash (hex, e.g. 0x1AB2C3D4).")] string? query_hash = null,
         [Description("Filter by query plan hash (hex, e.g. 0x1AB2C3D4).")] string? plan_hash = null,
         [Description("Filter by module name (schema.name, supports % wildcards).")] string? module = null,
+        [Description("Filter to queries whose SQL text contains this string. Matched with SQL LIKE (auto-wrapped in %); % _ [ ] act as wildcards.")] string? query_text_search = null,
         [Description("Filter by execution type: regular, aborted, exception, or failed (= aborted + exception).")] string? execution_type = null)
     {
         try
@@ -98,7 +99,7 @@ public sealed class McpQueryStoreTools
 
             QueryStoreFilter? filter = null;
             if (query_id != null || plan_id != null ||
-                query_hash != null || plan_hash != null || module != null ||
+                query_hash != null || plan_hash != null || module != null || query_text_search != null ||
                 executionTypes != null)
             {
                 filter = new QueryStoreFilter
@@ -108,6 +109,7 @@ public sealed class McpQueryStoreTools
                     QueryHash = query_hash,
                     QueryPlanHash = plan_hash,
                     ModuleName = module,
+                    QueryTextSearch = query_text_search,
                     ExecutionTypeDescs = executionTypes,
                 };
             }
