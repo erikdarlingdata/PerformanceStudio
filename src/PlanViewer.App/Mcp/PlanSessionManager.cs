@@ -66,6 +66,8 @@ public sealed class PlanSession
     public required string Source { get; init; }
     public required ParsedPlan Plan { get; init; }
     public AnalysisResult? Analysis { get; init; }
+    internal string? CapturedRawXml { get; init; }
+    internal string? CapturedDatabaseName { get; init; }
     public string? QueryText { get; init; }
     public string? ConnectionInfo { get; init; }
     public int StatementCount { get; init; }

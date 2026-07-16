@@ -240,6 +240,7 @@ public sealed class McpQueryStoreTools
     {
         var analysis = ResultMapper.Map(parsed, "query-store");
         var allStatements = parsed.Batches.SelectMany(batch => batch.Statements).ToList();
+        var executableStatement = allStatements.FirstOrDefault(statement => statement.RootNode is not null);
         var session = new PlanSession
         {
             SessionId = sessionId,
@@ -247,6 +248,8 @@ public sealed class McpQueryStoreTools
             Source = "query-store",
             Plan = parsed,
             Analysis = analysis,
+            CapturedRawXml = parsed.RawXml,
+            CapturedDatabaseName = executableStatement?.RootNode?.DatabaseName,
             QueryText = queryText,
             ConnectionInfo = connectionInfo,
             StatementCount = allStatements.Count,

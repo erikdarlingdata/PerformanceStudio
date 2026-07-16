@@ -156,23 +156,49 @@ public sealed class McpPlanToolsContractTests
     }
 
     [Fact]
-    public void GivenQueryStorePlan_WhenCaptured_ThenSourceIsStableAndParserGraphIsReleased()
+    public void GivenQueryStorePlan_WhenCaptured_ThenLegacyToolsRemainExactWithoutTheParserGraph()
     {
-        var plan = PlanTestHelper.LoadAndAnalyze("row_goal_plan.sqlplan");
-
-        var session = McpQueryStoreTools.CaptureSession(
-            "query-store-session",
-            "QS:database Q1 P2",
-            plan,
-            "SELECT 1",
+        const string sessionId = "query-store-session";
+        const string label = "QS:database Q1 P2";
+        const string queryText = "SELECT * FROM dbo.PostTypes WHERE Id = @PostTypeId";
+        var legacyPlan = PlanTestHelper.LoadAndAnalyze("param-sniffing-posttypeid2.sqlplan");
+        var capturedPlan = PlanTestHelper.LoadAndAnalyze("param-sniffing-posttypeid2.sqlplan");
+        var legacyManager = new PlanSessionManager();
+        legacyManager.Register(sessionId, new PlanViewer.App.Mcp.PlanSession
+        {
+            SessionId = sessionId,
+            Label = label,
+            Source = "query-store",
+            Plan = legacyPlan,
+            QueryText = queryText
+        });
+        var capturedManager = new PlanSessionManager();
+        var captured = McpQueryStoreTools.CaptureSession(
+            sessionId,
+            label,
+            capturedPlan,
+            queryText,
             "server");
+        capturedManager.Register(sessionId, captured);
 
-        Assert.Equal("query-store", session.Source);
-        Assert.Equal("query-store", session.Analysis?.PlanSource);
-        Assert.Equal("QS:database Q1 P2", session.Label);
-        Assert.Equal(1, session.StatementCount);
-        Assert.Empty(session.Plan.Batches);
-        Assert.Empty(session.Plan.RawXml);
+        Assert.Equal("query-store", captured.Source);
+        Assert.Equal("query-store", captured.Analysis?.PlanSource);
+        Assert.Equal(label, captured.Label);
+        Assert.False(string.IsNullOrEmpty(captured.CapturedRawXml));
+        Assert.Empty(captured.Plan.Batches);
+        Assert.Empty(captured.Plan.RawXml);
+        Assert.Equal(
+            McpPlanTools.GetPlanParameters(legacyManager, sessionId),
+            McpPlanTools.GetPlanParameters(capturedManager, sessionId));
+        Assert.Equal(
+            McpPlanTools.GetPlanXml(legacyManager, sessionId),
+            McpPlanTools.GetPlanXml(capturedManager, sessionId));
+        Assert.Equal(
+            McpPlanTools.ComparePlans(legacyManager, sessionId, sessionId),
+            McpPlanTools.ComparePlans(capturedManager, sessionId, sessionId));
+        Assert.Equal(
+            McpPlanTools.GetReproScript(legacyManager, sessionId),
+            McpPlanTools.GetReproScript(capturedManager, sessionId));
     }
 
     [Fact]

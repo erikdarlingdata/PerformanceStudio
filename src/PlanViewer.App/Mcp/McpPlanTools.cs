@@ -199,20 +199,19 @@ public sealed class McpPlanTools
         if (session == null)
             return SessionNotFound(sessionManager, session_id);
 
-        var statements = session.Plan.Batches
-            .SelectMany(b => b.Statements)
-            .Where(s => s.Parameters.Count > 0)
-            .Select(s => new
+        var statements = GetAnalysisSnapshot(session).Statements
+            .Where(statement => statement.Parameters.Count > 0)
+            .Select(statement => new
             {
-                statement = McpHelpers.Truncate(s.StatementText, 200),
-                parameters = s.Parameters.Select(p => new
+                statement = McpHelpers.Truncate(statement.StatementText, 200),
+                parameters = statement.Parameters.Select(parameter => new
                 {
-                    name = p.Name,
-                    data_type = p.DataType,
-                    compiled_value = p.CompiledValue,
-                    runtime_value = p.RuntimeValue,
-                    sniffing_mismatch = p.CompiledValue != null && p.RuntimeValue != null
-                        && p.CompiledValue != p.RuntimeValue
+                    name = parameter.Name,
+                    data_type = parameter.DataType,
+                    compiled_value = parameter.CompiledValue,
+                    runtime_value = parameter.RuntimeValue,
+                    sniffing_mismatch = parameter.CompiledValue != null && parameter.RuntimeValue != null
+                        && parameter.CompiledValue != parameter.RuntimeValue
                 })
             })
             .ToList();
@@ -256,7 +255,7 @@ public sealed class McpPlanTools
         if (session == null)
             return SessionNotFound(sessionManager, session_id);
 
-        return McpHelpers.Truncate(session.Plan.RawXml, 512_000) ?? "No plan XML available.";
+        return McpHelpers.Truncate(GetRawPlanXml(session), 512_000) ?? "No plan XML available.";
     }
 
     [McpServerTool(Name = "compare_plans")]
@@ -277,8 +276,8 @@ public sealed class McpPlanTools
 
         try
         {
-            var resultA = ResultMapper.Map(sessionA.Plan, sessionA.Source);
-            var resultB = ResultMapper.Map(sessionB.Plan, sessionB.Source);
+            var resultA = GetAnalysisSnapshot(sessionA);
+            var resultB = GetAnalysisSnapshot(sessionB);
             return ComparisonFormatter.Compare(resultA, resultB, sessionA.Label, sessionB.Label);
         }
         catch (Exception ex)
@@ -300,28 +299,29 @@ public sealed class McpPlanTools
 
         try
         {
-            var stmt = session.Plan.Batches
-                .SelectMany(b => b.Statements)
-                .FirstOrDefault(s => s.RootNode != null);
+            var statement = GetAnalysisSnapshot(session).Statements
+                .FirstOrDefault(candidate => candidate.OperatorTree is not null);
 
-            if (stmt == null)
+            if (statement is null)
                 return "No executable statement found in this plan.";
 
-            var queryText = session.QueryText ?? stmt.StatementText ?? "";
-
-            // Extract database from first operator node's DatabaseName property
-            string? databaseName = null;
-            if (stmt.RootNode?.DatabaseName != null)
-                databaseName = stmt.RootNode.DatabaseName;
+            var queryText = session.QueryText ?? statement.StatementText ?? "";
+            var databaseName = session.CapturedDatabaseName ?? statement.OperatorTree?.DatabaseName;
 
             return ReproScriptBuilder.BuildReproScript(
-                queryText, databaseName, session.Plan.RawXml, null);
+                queryText, databaseName, GetRawPlanXml(session), null);
         }
         catch (Exception ex)
         {
             return McpHelpers.FormatError("get_repro_script", ex);
         }
     }
+
+    private static AnalysisResult GetAnalysisSnapshot(PlanSession session) =>
+        session.Analysis ?? ResultMapper.Map(session.Plan, session.Source);
+
+    private static string? GetRawPlanXml(PlanSession session) =>
+        session.CapturedRawXml ?? session.Plan.RawXml;
 
     private static string SessionNotFound(PlanSessionManager sessionManager, string sessionId)
     {
