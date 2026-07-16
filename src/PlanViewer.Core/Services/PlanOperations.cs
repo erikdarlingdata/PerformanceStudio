@@ -127,12 +127,12 @@ public sealed class PlanOperations
         if (string.IsNullOrWhiteSpace(planXml))
             throw new InvalidDataException("Plan file is empty.");
 
-        var plan = PlanAnalysisPipeline.Analyze(
+        var plan = await PlanAnalysisPipeline.AnalyzeAsync(
             planXml,
             _config,
             serverMetadata: null,
             cancellationToken,
-            ValidateComplexity);
+            ValidateComplexity).ConfigureAwait(false);
         if (!string.IsNullOrWhiteSpace(plan.ParseError))
             throw new InvalidDataException($"Could not parse plan XML: {plan.ParseError}");
         if (!plan.Batches.SelectMany(batch => batch.Statements).Any())
@@ -468,6 +468,18 @@ public sealed class PlanOperations
             if (returnedWarnings.Count < DefaultMaxWarningResults)
                 returnedWarnings.Add(ToWarningItem(warning, statementText));
         }
+    }
+
+    internal IDisposable AcquireQueryScope(CancellationToken cancellationToken) =>
+        _budget.AcquireQuerySlot(cancellationToken);
+
+    internal AnalysisResult GetAnalysisForRequest(
+        PlanSession session,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        cancellationToken.ThrowIfCancellationRequested();
+        return GetAnalysisCancellable(session, cancellationToken);
     }
 
     public AnalysisResult GetAnalysis(string sessionId) =>

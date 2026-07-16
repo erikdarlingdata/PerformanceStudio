@@ -83,6 +83,31 @@ public sealed class PlanXmlPreflightTests
     }
 
     [Fact]
+    public async Task ValidateAsync_RejectsAlternateStatementsNestedUnderCondition()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"preflight-condition-statements-{Guid.NewGuid():N}.sqlplan");
+        try
+        {
+            var xml = new StringBuilder(
+                "<ShowPlanXML xmlns=\"http://schemas.microsoft.com/sqlserver/2004/07/showplan\"><BatchSequence><Batch><Statements><StmtCond><Condition>");
+            for (var id = 0; id < PlanOperations.DefaultMaxStatements; id++)
+                xml.Append($"<StmtUseDb Database=\"db{id}\" StatementType=\"USE DATABASE\" />");
+            xml.Append("</Condition></StmtCond></Statements></Batch></BatchSequence></ShowPlanXML>");
+            await File.WriteAllTextAsync(path, xml.ToString(), TestContext.Current.CancellationToken);
+            await using var stream = OpenPlan(path);
+
+            var exception = await Assert.ThrowsAsync<InvalidDataException>(
+                () => PlanXmlPreflight.ValidateAsync(stream, TestContext.Current.CancellationToken));
+
+            Assert.Contains("statement complexity", exception.Message, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
     public async Task ValidateAsync_RejectsAlternateStatementTypesBeforeMaterialization()
     {
         var path = Path.Combine(Path.GetTempPath(), $"preflight-alternate-statements-{Guid.NewGuid():N}.sqlplan");

@@ -130,6 +130,22 @@ public sealed class McpPlanToolsContractTests
 
 
     [Fact]
+    public void FullAnalysisHandlers_PropagateRequestCancellation()
+    {
+        var manager = new PlanSessionManager();
+        var session = CreateEstimatedSession();
+        manager.Register(session);
+        var operations = new PlanOperations(manager);
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+
+        Assert.Throws<OperationCanceledException>(
+            () => McpPlanTools.AnalyzePlan(manager, operations, session.SessionId, cancellation.Token));
+        Assert.Throws<OperationCanceledException>(
+            () => McpPlanTools.GetPlanSummary(manager, operations, session.SessionId, cancellation.Token));
+    }
+
+    [Fact]
     public void AnalyzePlan_PreservesTheUiSessionSourceWhenASnapshotIsPresent()
     {
         var manager = new PlanSessionManager();
@@ -210,10 +226,18 @@ public sealed class McpPlanToolsContractTests
         var operations = new PlanOperations(manager, AnalyzerConfig.Default);
 
         Assert.Equal(
-            McpPlanTools.AnalyzePlan(manager, operations, session.SessionId),
+            McpPlanTools.AnalyzePlan(
+                manager,
+                operations,
+                session.SessionId,
+                TestContext.Current.CancellationToken),
             McpPlanTools.AnalyzePlan(manager, session.SessionId));
         Assert.Equal(
-            McpPlanTools.GetPlanSummary(manager, operations, session.SessionId),
+            McpPlanTools.GetPlanSummary(
+                manager,
+                operations,
+                session.SessionId,
+                TestContext.Current.CancellationToken),
             McpPlanTools.GetPlanSummary(manager, session.SessionId));
         Assert.Equal(
             McpPlanTools.GetPlanWarnings(manager, operations, session.SessionId, "Warning"),

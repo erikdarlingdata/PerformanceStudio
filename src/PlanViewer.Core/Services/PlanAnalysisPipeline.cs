@@ -33,6 +33,22 @@ internal static class PlanAnalysisPipeline
         return AnalyzeParsed(plan, config, serverMetadata, cancellationToken, beforeAnalysis);
     }
 
+    internal static async Task<ParsedPlan> AnalyzeAsync(
+        string planXml,
+        AnalyzerConfig config,
+        ServerMetadata? serverMetadata,
+        CancellationToken cancellationToken,
+        Action<ParsedPlan, CancellationToken>? beforeAnalysis)
+    {
+        ArgumentNullException.ThrowIfNull(planXml);
+        ArgumentNullException.ThrowIfNull(config);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var plan = await ShowPlanParser.ParseAsync(planXml, cancellationToken).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+        return AnalyzeParsed(plan, config, serverMetadata, cancellationToken, beforeAnalysis);
+    }
+
     internal static ParsedPlan AnalyzeParsed(
         ParsedPlan plan,
         AnalyzerConfig config,

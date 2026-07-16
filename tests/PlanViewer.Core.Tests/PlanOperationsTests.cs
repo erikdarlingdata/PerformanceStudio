@@ -1,9 +1,25 @@
+using System.Text;
 using PlanViewer.Core.Services;
 
 namespace PlanViewer.Core.Tests;
 
 public sealed class PlanOperationsTests
 {
+    [Fact]
+    public async Task ParseAsync_ObservesCancellationDuringLargeDocumentLoading()
+    {
+        var xml = new StringBuilder(
+            "<ShowPlanXML xmlns=\"http://schemas.microsoft.com/sqlserver/2004/07/showplan\"><BatchSequence>");
+        for (var index = 0; index < 200_000; index++)
+            xml.Append("<Unused Value=\"bounded\" />");
+        xml.Append("</BatchSequence></ShowPlanXML>");
+        using var cancellation = new CancellationTokenSource();
+        cancellation.CancelAfter(TimeSpan.FromMilliseconds(1));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => ShowPlanParser.ParseAsync(xml.ToString(), cancellation.Token));
+    }
+
     [Fact]
     public async Task OpenAsync_LoadsAnalyzesAndRegistersAPlanFile()
     {

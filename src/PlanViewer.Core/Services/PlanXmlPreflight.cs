@@ -102,11 +102,15 @@ internal static class PlanXmlPreflight
                     reader.LocalName == "Operation" &&
                     parent.LocalName == "CursorPlan" &&
                     parent.NamespaceUri == ShowPlanNamespace;
+                var isConditionalStatement =
+                    isShowPlanElement &&
+                    parent.LocalName == "Condition" &&
+                    parent.NamespaceUri == ShowPlanNamespace;
                 var isFallbackStatement =
                     isShowPlanElement &&
                     reader.LocalName == "StmtSimple" &&
                     !isDirectStatement;
-                if (isDirectStatement || isCursorOperation || isFallbackStatement)
+                if (isDirectStatement || isCursorOperation || isConditionalStatement || isFallbackStatement)
                 {
                     statements++;
                     if (statements > PlanOperations.DefaultMaxStatements)

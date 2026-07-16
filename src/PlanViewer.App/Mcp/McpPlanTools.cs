@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Linq;
 using System.Text.Json;
+using System.Threading;
 using ModelContextProtocol.Server;
 using PlanViewer.App.Services;
 using PlanViewer.Core.Models;
@@ -79,7 +80,8 @@ public sealed class McpPlanTools
     public static string AnalyzePlan(
         PlanSessionManager sessionManager,
         PlanOperations operations,
-        [Description("The session_id from list_plans.")] string session_id)
+        [Description("The session_id from list_plans.")] string session_id,
+        CancellationToken cancellationToken = default)
     {
         var session = sessionManager.GetSession(session_id);
         if (session == null)
@@ -87,8 +89,15 @@ public sealed class McpPlanTools
 
         try
         {
-            var result = operations.GetAnalysis(session);
-            return JsonSerializer.Serialize(result, McpHelpers.JsonOptions);
+            using var queryScope = operations.AcquireQueryScope(cancellationToken);
+            var result = operations.GetAnalysisForRequest(session, cancellationToken);
+            var json = JsonSerializer.Serialize(result, McpHelpers.JsonOptions);
+            cancellationToken.ThrowIfCancellationRequested();
+            return json;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -102,7 +111,8 @@ public sealed class McpPlanTools
     public static string GetPlanSummary(
         PlanSessionManager sessionManager,
         PlanOperations operations,
-        [Description("The session_id from list_plans.")] string session_id)
+        [Description("The session_id from list_plans.")] string session_id,
+        CancellationToken cancellationToken = default)
     {
         var session = sessionManager.GetSession(session_id);
         if (session == null)
@@ -110,7 +120,14 @@ public sealed class McpPlanTools
 
         try
         {
-            return TextFormatter.Format(operations.GetAnalysis(session));
+            using var queryScope = operations.AcquireQueryScope(cancellationToken);
+            var summary = TextFormatter.Format(operations.GetAnalysisForRequest(session, cancellationToken));
+            cancellationToken.ThrowIfCancellationRequested();
+            return summary;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {
