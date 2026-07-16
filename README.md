@@ -57,7 +57,7 @@ Side-by-side comparison of two plans showing cost, runtime, I/O, memory, and wai
 ### Query Store Integration
 Fetch top queries by CPU, duration, logical reads, physical reads, writes, memory, or executions from Query Store and load their plans directly into the analyzer.
 
-![Query Store Integration](screenshots/performance_studio_querystore_analysis_top_cpu_by_query_hash.png)
+![Query Store Integration](screenshots/performance_studio_query-store_analysis_top_cpu_by_query_hash.png)
 
 ### Minimap and colored links by accuracy ratio divergence
 The minimap provides a high-level overview of the entire plan, allowing you to quickly navigate to areas of interest. Colored links between operators indicate accuracy ratio divergence, helping you identify where estimates are most off from actuals.
@@ -151,17 +151,18 @@ planview analyze my_query.sqlplan --output text --warnings-only
 
 ### Explore plans interactively (Repl pilot)
 
-Running `planview` without arguments starts a long-lived read-only session. Existing
-`analyze`, `querystore`, and `credential` commands continue to use the legacy
+Running `planview` without arguments starts a long-lived plan-exploration session. Existing
+`analyze`, `query-store`, and `credential` commands continue to use the legacy
 System.CommandLine graph.
 
 ```text
 planview
 > open slow-query.sqlplan
-[plan slow-query]> summary
-[plan slow-query]> warnings --severity critical
-[plan slow-query]> operators --top 10
-[plan slow-query]> missing-indexes --json
+[plan slow-query-<opaque-id>]> summary
+[plan slow-query-<opaque-id>]> warnings --severity critical
+[plan slow-query-<opaque-id>]> operators --top 10
+[plan slow-query-<opaque-id>]> missing-indexes --json
+[plan slow-query-<opaque-id>]> close
 ```
 
 The same graph also works in one-shot and MCP modes:
@@ -172,9 +173,16 @@ planview repl                         # explicit interactive alias
 planview mcp serve                    # stdio MCP server generated from the graph
 ```
 
-The pilot uses `Repl` `0.11.0-dev.181`; loaded plans live only for the lifetime of
-the process and all exposed plan operations are read-only. See
-[`docs/repl-pilot.md`](docs/repl-pilot.md) for architecture and compatibility notes.
+Bare `planview` is intentionally interactive and waits on stdin; scripts should use an
+explicit legacy command, a one-shot `plan` command, or `planview --help`.
+
+The pilot uses the stable `Repl` `0.11.0` release. Loaded plans live only for the lifetime of
+the process; `open` and `close` change only that in-memory catalog and never write the
+source plan. MCP `plan_open` validates and reads the same opened file handle inside client
+roots, accepts only `.sqlplan` files, and uses the server launch directory only when native
+roots are unsupported and no soft roots exist. Advertised empty roots deny access. MCP and
+local mode share the 16 MiB file/2-concurrent-open/32-session resource limits. See
+[`docs/repl-pilot.md`](docs/repl-pilot.md) for architecture, security, and compatibility notes.
 
 ### Capture and analyze plans from a live server
 
