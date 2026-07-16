@@ -263,7 +263,7 @@ public sealed class PlanOperations
         using var querySlot = _budget.AcquireQuerySlot(cancellationToken);
         var indexes = new List<MissingIndexItem>(DefaultMaxMissingIndexResults);
         var totalIndexCount = 0;
-        foreach (var statement in GetAnalysis(session, cancellationToken).Statements)
+        foreach (var statement in GetAnalysisCancellable(session, cancellationToken).Statements)
         {
             cancellationToken.ThrowIfCancellationRequested();
             foreach (var index in statement.MissingIndexes)
@@ -328,7 +328,7 @@ public sealed class PlanOperations
             throw new ArgumentOutOfRangeException(nameof(top), top, "Top must be between 1 and 100.");
 
         using var querySlot = _budget.AcquireQuerySlot(cancellationToken);
-        var analysis = GetAnalysis(session, cancellationToken);
+        var analysis = GetAnalysisCancellable(session, cancellationToken);
         var topByActual = new List<RankedOperator>(top);
         var topByCost = new List<RankedOperator>(top);
         var hasActuals = false;
@@ -407,7 +407,7 @@ public sealed class PlanOperations
         }
 
         using var querySlot = _budget.AcquireQuerySlot(cancellationToken);
-        var analysis = GetAnalysis(session, cancellationToken);
+        var analysis = GetAnalysisCancellable(session, cancellationToken);
         var returnedWarnings = new List<PlanWarningItem>(DefaultMaxWarningResults);
         var totalWarningCount = 0;
         foreach (var statement in analysis.Statements)
@@ -464,7 +464,7 @@ public sealed class PlanOperations
         return session.Analysis ?? ResultMapper.Map(session.Plan, session.Source);
     }
 
-    private static AnalysisResult GetAnalysis(
+    private static AnalysisResult GetAnalysisCancellable(
         PlanSession session,
         CancellationToken cancellationToken) =>
         session.Analysis ?? ResultMapper.MapCancellable(session.Plan, session.Source, metadata: null, cancellationToken);
