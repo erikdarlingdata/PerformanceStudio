@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using PlanViewer.Core.Interfaces;
@@ -118,8 +119,11 @@ public sealed class PlanOperations
         var preflight = await PlanXmlPreflight.ValidateAsync(stream, cancellationToken).ConfigureAwait(false);
         using var retainedEstimate = _budget.ReserveRetainedEstimate(
             EstimateRetainedAnalysisBytes(stream.Length, preflight));
-        var planXml = await ReadPlanXmlAsync(stream, cancellationToken).ConfigureAwait(false);
+        var decodedPlan = await ReadPlanXmlAsync(stream, cancellationToken).ConfigureAwait(false);
+        if (!CryptographicOperations.FixedTimeEquals(preflight.ContentHash, decodedPlan.ContentHash))
+            throw new InvalidDataException("Plan file changed while it was being read.");
         cancellationToken.ThrowIfCancellationRequested();
+        var planXml = decodedPlan.Content;
         if (string.IsNullOrWhiteSpace(planXml))
             throw new InvalidDataException("Plan file is empty.");
 
@@ -176,13 +180,19 @@ public sealed class PlanOperations
             ((long)preflight.ElementCount * 256) +
             ((long)preflight.AttributeCount * 128));
 
-    private static async Task<string> ReadPlanXmlAsync(
+    private static async Task<DecodedPlan> ReadPlanXmlAsync(
         FileStream stream,
         CancellationToken cancellationToken)
     {
         stream.Position = 0;
-        using var reader = new StreamReader(
+        using var sha256 = SHA256.Create();
+        await using var hashingStream = new CryptoStream(
             stream,
+            sha256,
+            CryptoStreamMode.Read,
+            leaveOpen: true);
+        using var reader = new StreamReader(
+            hashingStream,
             Encoding.UTF8,
             detectEncodingFromByteOrderMarks: true,
             bufferSize: 64 * 1024,
@@ -208,13 +218,18 @@ public sealed class PlanOperations
                 content.Append(buffer, 0, charactersRead);
             }
 
-            return content.ToString();
+            return new DecodedPlan(
+                content.ToString(),
+                sha256.Hash?.ToArray()
+                    ?? throw new InvalidDataException("Could not hash the decoded plan XML."));
         }
         finally
         {
             ArrayPool<char>.Shared.Return(buffer);
         }
     }
+
+    private readonly record struct DecodedPlan(string Content, byte[] ContentHash);
 
     public bool Close(string sessionId)
     {

@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Xml;
 
 namespace PlanViewer.Core.Services;
@@ -6,7 +7,8 @@ internal readonly record struct PlanXmlPreflightResult(
     int StatementCount,
     int OperatorCount,
     int ElementCount,
-    int AttributeCount);
+    int AttributeCount,
+    byte[] ContentHash);
 
 internal static class PlanXmlPreflight
 {
@@ -45,7 +47,13 @@ internal static class PlanXmlPreflight
         stream.Position = 0;
         try
         {
-            using var reader = XmlReader.Create(stream, settings);
+            using var sha256 = SHA256.Create();
+            await using var hashingStream = new CryptoStream(
+                stream,
+                sha256,
+                CryptoStreamMode.Read,
+                leaveOpen: true);
+            using var reader = XmlReader.Create(hashingStream, settings);
             while (await reader.ReadAsync().ConfigureAwait(false))
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -121,6 +129,14 @@ internal static class PlanXmlPreflight
                 if (!reader.IsEmptyElement)
                     ancestry.Push((reader.LocalName, reader.NamespaceURI));
             }
+
+            return new PlanXmlPreflightResult(
+                statements,
+                operators,
+                elements,
+                attributes,
+                sha256.Hash?.ToArray()
+                    ?? throw new InvalidDataException("Could not hash the plan XML during preflight."));
         }
         catch (XmlException exception)
         {
@@ -131,6 +147,5 @@ internal static class PlanXmlPreflight
             stream.Position = 0;
         }
 
-        return new PlanXmlPreflightResult(statements, operators, elements, attributes);
     }
 }

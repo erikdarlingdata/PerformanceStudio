@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text;
 using PlanViewer.Core.Services;
 
@@ -5,6 +6,22 @@ namespace PlanViewer.Core.Tests;
 
 public sealed class PlanXmlPreflightTests
 {
+    [Fact]
+    public async Task ValidateAsync_HashesTheExactPreflightBytes()
+    {
+        var path = Path.GetFullPath(Path.Combine("Plans", "row_goal_plan.sqlplan"));
+        var expected = SHA256.HashData(await File.ReadAllBytesAsync(
+            path,
+            TestContext.Current.CancellationToken));
+        await using var stream = OpenPlan(path);
+
+        var result = await PlanXmlPreflight.ValidateAsync(
+            stream,
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(expected, result.ContentHash);
+    }
+
     [Fact]
     public async Task ValidateAsync_RejectsStatementBudgetBeforeMaterialization()
     {
