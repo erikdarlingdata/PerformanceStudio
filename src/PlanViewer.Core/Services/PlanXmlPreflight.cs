@@ -2,11 +2,20 @@ using System.Xml;
 
 namespace PlanViewer.Core.Services;
 
-internal readonly record struct PlanXmlPreflightResult(int StatementCount, int OperatorCount);
+internal readonly record struct PlanXmlPreflightResult(
+    int StatementCount,
+    int OperatorCount,
+    int ElementCount,
+    int AttributeCount);
 
 internal static class PlanXmlPreflight
 {
     internal const int DefaultMaxXmlDepth = 512;
+    internal const int DefaultMaxXmlElements = 250_000;
+    internal const int DefaultMaxXmlAttributes = 1_000_000;
+
+    private const string ShowPlanNamespace =
+        "http://schemas.microsoft.com/sqlserver/2004/07/showplan";
 
     internal static async Task<PlanXmlPreflightResult> ValidateAsync(
         FileStream stream,
@@ -28,8 +37,11 @@ internal static class PlanXmlPreflight
             XmlResolver = null
         };
 
+        var ancestry = new Stack<(string LocalName, string NamespaceUri)>();
         var statements = 0;
         var operators = 0;
+        var elements = 0;
+        var attributes = 0;
         stream.Position = 0;
         try
         {
@@ -43,6 +55,13 @@ internal static class PlanXmlPreflight
                     throw new InvalidDataException(
                         $"Plan file exceeds the {PlanOperations.DefaultMaxPlanFileBytes / (1024 * 1024)} MiB size limit.");
                 }
+
+                if (reader.NodeType == XmlNodeType.EndElement)
+                {
+                    ancestry.Pop();
+                    continue;
+                }
+
                 if (reader.NodeType != XmlNodeType.Element)
                     continue;
                 if (reader.Depth > DefaultMaxXmlDepth)
@@ -51,26 +70,56 @@ internal static class PlanXmlPreflight
                         $"Plan XML exceeds the supported depth limit of {DefaultMaxXmlDepth}.");
                 }
 
-                switch (reader.LocalName)
+                elements++;
+                if (elements > DefaultMaxXmlElements)
                 {
-                    case "StmtSimple":
-                    case "StmtCursor":
-                        statements++;
-                        if (statements > PlanOperations.DefaultMaxStatements)
-                        {
-                            throw new InvalidDataException(
-                                $"Plan exceeds the {PlanOperations.DefaultMaxStatements} statement complexity limit.");
-                        }
-                        break;
-                    case "RelOp":
-                        operators++;
-                        if (operators > PlanOperations.DefaultMaxOperators)
-                        {
-                            throw new InvalidDataException(
-                                $"Plan exceeds the {PlanOperations.DefaultMaxOperators} operator complexity limit.");
-                        }
-                        break;
+                    throw new InvalidDataException(
+                        $"Plan XML exceeds the supported element limit of {DefaultMaxXmlElements}.");
                 }
+
+                attributes = checked(attributes + reader.AttributeCount);
+                if (attributes > DefaultMaxXmlAttributes)
+                {
+                    throw new InvalidDataException(
+                        $"Plan XML exceeds the supported attribute limit of {DefaultMaxXmlAttributes}.");
+                }
+
+                var parent = ancestry.TryPeek(out var value) ? value : default;
+                var isShowPlanElement = reader.NamespaceURI.Equals(ShowPlanNamespace, StringComparison.Ordinal);
+                var isDirectStatement =
+                    parent.LocalName == "Statements" &&
+                    parent.NamespaceUri == ShowPlanNamespace;
+                var isCursorOperation =
+                    isShowPlanElement &&
+                    reader.LocalName == "Operation" &&
+                    parent.LocalName == "CursorPlan" &&
+                    parent.NamespaceUri == ShowPlanNamespace;
+                var isFallbackStatement =
+                    isShowPlanElement &&
+                    reader.LocalName == "StmtSimple" &&
+                    !isDirectStatement;
+                if (isDirectStatement || isCursorOperation || isFallbackStatement)
+                {
+                    statements++;
+                    if (statements > PlanOperations.DefaultMaxStatements)
+                    {
+                        throw new InvalidDataException(
+                            $"Plan exceeds the {PlanOperations.DefaultMaxStatements} statement complexity limit.");
+                    }
+                }
+
+                if (isShowPlanElement && reader.LocalName == "RelOp")
+                {
+                    operators++;
+                    if (operators > PlanOperations.DefaultMaxOperators)
+                    {
+                        throw new InvalidDataException(
+                            $"Plan exceeds the {PlanOperations.DefaultMaxOperators} operator complexity limit.");
+                    }
+                }
+
+                if (!reader.IsEmptyElement)
+                    ancestry.Push((reader.LocalName, reader.NamespaceURI));
             }
         }
         catch (XmlException exception)
@@ -82,6 +131,6 @@ internal static class PlanXmlPreflight
             stream.Position = 0;
         }
 
-        return new PlanXmlPreflightResult(statements, operators);
+        return new PlanXmlPreflightResult(statements, operators, elements, attributes);
     }
 }

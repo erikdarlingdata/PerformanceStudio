@@ -7,6 +7,17 @@ namespace PlanViewer.Core.Tests;
 
 public sealed class McpPlanPathPolicyTests
 {
+    [Theory]
+    [InlineData(@"C:\plans\query.sqlplan", false)]
+    [InlineData(@"C:\plans\host.txt:query.sqlplan", true)]
+    [InlineData(@"\\server\share\query.sqlplan", false)]
+    public void ContainsWindowsAlternateDataStream_DistinguishesTheDriveDesignator(
+        string path,
+        bool expected)
+    {
+        Assert.Equal(expected, McpPlanPathPolicy.ContainsWindowsAlternateDataStream(path));
+    }
+
     [Fact]
     public async Task OpenAsync_DeniesAdvertisedEmptyRoots()
     {

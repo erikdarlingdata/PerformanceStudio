@@ -22,6 +22,40 @@ public sealed class PlanResourceBudgetTests
 
 
     [Fact]
+    public void GivenSharedCatalog_WhenQuerySlotsAreExhausted_ThenOperationsFailFastAndHonorCancellation()
+    {
+        var catalog = new InMemoryPlanCatalog();
+        var budget = PlanResourceBudget.ForCatalog(catalog);
+        var operations = new PlanOperations(catalog, PlanViewer.Core.Models.AnalyzerConfig.Default);
+        var leases = Enumerable.Range(0, PlanOperations.DefaultMaxConcurrentQueries)
+            .Select(_ => budget.AcquireQuerySlot(TestContext.Current.CancellationToken))
+            .ToList();
+        try
+        {
+            var busy = Assert.Throws<InvalidOperationException>(
+                () => operations.GetMissingIndexes(
+                    CreateSession("busy"),
+                    TestContext.Current.CancellationToken));
+            Assert.Contains("concurrent plan-query limit", busy.Message, StringComparison.Ordinal);
+        }
+        finally
+        {
+            foreach (var lease in leases)
+                lease.Dispose();
+        }
+
+        using var cancelled = new CancellationTokenSource();
+        cancelled.Cancel();
+        Assert.Throws<OperationCanceledException>(
+            () => operations.GetWarnings(
+                CreateSession("cancelled"),
+                severity: null,
+                includeOperatorWarnings: true,
+                validateSeverity: true,
+                cancelled.Token));
+    }
+
+    [Fact]
     public void TryRegister_ReportsCapacityInsteadOfMasqueradingItAsAnIdCollision()
     {
         var catalog = new InMemoryPlanCatalog();

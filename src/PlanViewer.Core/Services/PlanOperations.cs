@@ -1,3 +1,5 @@
+using System.Buffers;
+using System.Text;
 using System.Text.RegularExpressions;
 using PlanViewer.Core.Interfaces;
 using PlanViewer.Core.Models;
@@ -15,6 +17,7 @@ public sealed class PlanOperations
     internal const int DefaultMaxStatements = 10_000;
     internal const int DefaultMaxOperators = 100_000;
     internal const int DefaultMaxConcurrentOpens = 2;
+    internal const int DefaultMaxConcurrentQueries = 4;
     internal const int DefaultMaxWarningResults = 500;
     internal const int DefaultMaxMissingIndexResults = 100;
     internal const int DefaultMaxResponseTextLength = 4_096;
@@ -169,31 +172,48 @@ public sealed class PlanOperations
         checked(
             (sourceBytes * 2) +
             ((long)preflight.StatementCount * 2 * 1024) +
-            ((long)preflight.OperatorCount * 4 * 1024));
+            ((long)preflight.OperatorCount * 4 * 1024) +
+            ((long)preflight.ElementCount * 256) +
+            ((long)preflight.AttributeCount * 128));
 
     private static async Task<string> ReadPlanXmlAsync(
         FileStream stream,
         CancellationToken cancellationToken)
     {
-        using var content = new MemoryStream((int)Math.Min(stream.Length, DefaultMaxPlanFileBytes));
-        var buffer = new byte[64 * 1024];
-        while (true)
+        stream.Position = 0;
+        using var reader = new StreamReader(
+            stream,
+            Encoding.UTF8,
+            detectEncodingFromByteOrderMarks: true,
+            bufferSize: 64 * 1024,
+            leaveOpen: true);
+        var content = new StringBuilder((int)Math.Min(stream.Length, DefaultMaxPlanFileBytes));
+        var buffer = ArrayPool<char>.Shared.Rent(64 * 1024);
+        try
         {
-            var bytesRead = await stream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
-            if (bytesRead == 0)
-                break;
-            if (content.Length + bytesRead > DefaultMaxPlanFileBytes)
+            while (true)
             {
-                throw new InvalidDataException(
-                    $"Plan file exceeds the {DefaultMaxPlanFileBytes / (1024 * 1024)} MiB size limit.");
+                var charactersRead = await reader
+                    .ReadAsync(buffer.AsMemory(), cancellationToken)
+                    .ConfigureAwait(false);
+                if (charactersRead == 0)
+                    break;
+                if (stream.Position > DefaultMaxPlanFileBytes ||
+                    content.Length + charactersRead > DefaultMaxPlanFileBytes)
+                {
+                    throw new InvalidDataException(
+                        $"Plan file exceeds the {DefaultMaxPlanFileBytes / (1024 * 1024)} MiB size limit.");
+                }
+
+                content.Append(buffer, 0, charactersRead);
             }
 
-            content.Write(buffer, 0, bytesRead);
+            return content.ToString();
         }
-
-        content.Position = 0;
-        using var reader = new StreamReader(content, detectEncodingFromByteOrderMarks: true);
-        return await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
+        finally
+        {
+            ArrayPool<char>.Shared.Return(buffer);
+        }
     }
 
     public bool Close(string sessionId)
@@ -225,66 +245,114 @@ public sealed class PlanOperations
     }
 
     public MissingIndexesResult GetMissingIndexes(string sessionId) =>
-        GetMissingIndexes(GetRequiredSession(sessionId));
+        GetMissingIndexes(sessionId, CancellationToken.None);
 
-    public MissingIndexesResult GetMissingIndexes(PlanSession session)
+    internal MissingIndexesResult GetMissingIndexes(
+        string sessionId,
+        CancellationToken cancellationToken) =>
+        GetMissingIndexes(GetRequiredSession(sessionId), cancellationToken);
+
+    public MissingIndexesResult GetMissingIndexes(PlanSession session) =>
+        GetMissingIndexes(session, CancellationToken.None);
+
+    internal MissingIndexesResult GetMissingIndexes(
+        PlanSession session,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(session);
-        var sourceIndexes = GetAnalysis(session).Statements
-            .SelectMany(statement => statement.MissingIndexes)
-            .ToList();
-        var indexes = sourceIndexes.Take(DefaultMaxMissingIndexResults).Select(index => new MissingIndexItem
+        using var querySlot = _budget.AcquireQuerySlot(cancellationToken);
+        var indexes = new List<MissingIndexItem>(DefaultMaxMissingIndexResults);
+        var totalIndexCount = 0;
+        foreach (var statement in GetAnalysis(session, cancellationToken).Statements)
         {
-            Database = Truncate(index.Database, 512),
-            SchemaName = Truncate(index.SchemaName, 512),
-            Table = Truncate(index.BareTable, 512),
-            Impact = index.Impact,
-            EqualityColumns = BoundColumns(index.EqualityColumns),
-            InequalityColumns = BoundColumns(index.InequalityColumns),
-            IncludeColumns = BoundColumns(index.IncludeColumns),
-            CreateStatement = Truncate(index.CreateStatement, DefaultMaxResponseTextLength)
-        }).ToList();
+            cancellationToken.ThrowIfCancellationRequested();
+            foreach (var index in statement.MissingIndexes)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                totalIndexCount++;
+                if (indexes.Count >= DefaultMaxMissingIndexResults)
+                    continue;
+                indexes.Add(new MissingIndexItem
+                {
+                    Database = Truncate(index.Database, 512),
+                    SchemaName = Truncate(index.SchemaName, 512),
+                    Table = Truncate(index.BareTable, 512),
+                    Impact = index.Impact,
+                    EqualityColumns = BoundColumns(index.EqualityColumns),
+                    InequalityColumns = BoundColumns(index.InequalityColumns),
+                    IncludeColumns = BoundColumns(index.IncludeColumns),
+                    CreateStatement = Truncate(index.CreateStatement, DefaultMaxResponseTextLength)
+                });
+            }
+        }
 
         return new MissingIndexesResult
         {
             SessionId = session.SessionId,
-            MissingIndexCount = sourceIndexes.Count,
+            MissingIndexCount = totalIndexCount,
             ReturnedIndexCount = indexes.Count,
-            Truncated = indexes.Count < sourceIndexes.Count,
+            Truncated = indexes.Count < totalIndexCount,
             Indexes = indexes
         };
     }
 
     public ExpensiveOperatorsResult GetExpensiveOperators(string sessionId, int top = 10) =>
-        GetExpensiveOperators(GetRequiredSession(sessionId), top);
+        GetExpensiveOperators(sessionId, top, CancellationToken.None);
+
+    internal ExpensiveOperatorsResult GetExpensiveOperators(
+        string sessionId,
+        int top,
+        CancellationToken cancellationToken) =>
+        GetExpensiveOperators(GetRequiredSession(sessionId), top, useBareObjectNames: false, cancellationToken);
 
     public ExpensiveOperatorsResult GetExpensiveOperators(
         PlanSession session,
         int top = 10,
-        bool useBareObjectNames = false)
+        bool useBareObjectNames = false) =>
+        GetExpensiveOperators(session, top, useBareObjectNames, CancellationToken.None);
+
+    internal ExpensiveOperatorsResult GetExpensiveOperators(
+        PlanSession session,
+        int top,
+        CancellationToken cancellationToken) =>
+        GetExpensiveOperators(session, top, useBareObjectNames: false, cancellationToken);
+
+    internal ExpensiveOperatorsResult GetExpensiveOperators(
+        PlanSession session,
+        int top,
+        bool useBareObjectNames,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(session);
         if (top is < 1 or > 100)
             throw new ArgumentOutOfRangeException(nameof(top), top, "Top must be between 1 and 100.");
 
-        var analysis = GetAnalysis(session);
-        var operators = new List<(OperatorResult Node, string Statement)>();
+        using var querySlot = _budget.AcquireQuerySlot(cancellationToken);
+        var analysis = GetAnalysis(session, cancellationToken);
+        var topByActual = new List<RankedOperator>(top);
+        var topByCost = new List<RankedOperator>(top);
+        var hasActuals = false;
         foreach (var statement in analysis.Statements)
         {
-            if (statement.OperatorTree is not null)
-                CollectOperators(statement.OperatorTree, Truncate(statement.StatementText, 100), operators);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (statement.OperatorTree is null)
+                continue;
+            var statementText = Truncate(statement.StatementText, 100);
+            VisitOperators(statement.OperatorTree, cancellationToken, node =>
+            {
+                var candidate = new RankedOperator(node, statementText);
+                hasActuals |= node.ActualElapsedMs > 0;
+                AddRanked(topByActual, candidate, top, rankByActuals: true);
+                AddRanked(topByCost, candidate, top, rankByActuals: false);
+            });
         }
 
-        var hasActuals = operators.Any(item => item.Node.ActualElapsedMs > 0);
-        var ranked = hasActuals
-            ? operators.OrderByDescending(item => item.Node.ActualElapsedMs ?? 0)
-            : operators.OrderByDescending(item => item.Node.CostPercent);
-
+        var ranked = hasActuals ? topByActual : topByCost;
         return new ExpensiveOperatorsResult
         {
             SessionId = session.SessionId,
             RankedBy = hasActuals ? "actual_elapsed_ms" : "cost_percent",
-            Operators = ranked.Take(top).Select(item => new ExpensiveOperatorItem
+            Operators = ranked.Select(item => new ExpensiveOperatorItem
             {
                 NodeId = item.Node.NodeId,
                 PhysicalOp = item.Node.PhysicalOp,
@@ -303,13 +371,33 @@ public sealed class PlanOperations
     }
 
     public PlanWarningsResult GetWarnings(string sessionId, string? severity = null) =>
-        GetWarnings(GetRequiredSession(sessionId), severity);
+        GetWarnings(sessionId, severity, CancellationToken.None);
+
+    internal PlanWarningsResult GetWarnings(
+        string sessionId,
+        string? severity,
+        CancellationToken cancellationToken) =>
+        GetWarnings(GetRequiredSession(sessionId), severity, includeOperatorWarnings: true, validateSeverity: true, cancellationToken);
 
     public PlanWarningsResult GetWarnings(
         PlanSession session,
         string? severity = null,
         bool includeOperatorWarnings = true,
-        bool validateSeverity = true)
+        bool validateSeverity = true) =>
+        GetWarnings(session, severity, includeOperatorWarnings, validateSeverity, CancellationToken.None);
+
+    internal PlanWarningsResult GetWarnings(
+        PlanSession session,
+        string? severity,
+        CancellationToken cancellationToken) =>
+        GetWarnings(session, severity, includeOperatorWarnings: true, validateSeverity: true, cancellationToken);
+
+    internal PlanWarningsResult GetWarnings(
+        PlanSession session,
+        string? severity,
+        bool includeOperatorWarnings,
+        bool validateSeverity,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(session);
         if (validateSeverity && severity is not null &&
@@ -318,25 +406,32 @@ public sealed class PlanOperations
             throw new ArgumentException("Severity must be Critical, Warning, or Info.", nameof(severity));
         }
 
-        var analysis = GetAnalysis(session);
-        var warnings = new List<PlanWarningItem>();
+        using var querySlot = _budget.AcquireQuerySlot(cancellationToken);
+        var analysis = GetAnalysis(session, cancellationToken);
+        var returnedWarnings = new List<PlanWarningItem>(DefaultMaxWarningResults);
+        var totalWarningCount = 0;
         foreach (var statement in analysis.Statements)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var statementText = Truncate(statement.StatementText, 200);
-            warnings.AddRange(statement.Warnings.Select(warning => ToWarningItem(warning, statementText)));
+            foreach (var warning in statement.Warnings)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                AddWarning(warning, statementText);
+            }
             if (includeOperatorWarnings && statement.OperatorTree is not null)
-                CollectWarnings(statement.OperatorTree, statementText, warnings);
+            {
+                VisitOperators(statement.OperatorTree, cancellationToken, node =>
+                {
+                    foreach (var warning in node.Warnings)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        AddWarning(warning, statementText);
+                    }
+                });
+            }
         }
 
-        if (severity is not null)
-        {
-            warnings = warnings
-                .Where(warning => warning.Severity.Equals(severity, StringComparison.OrdinalIgnoreCase))
-                .ToList();
-        }
-
-        var totalWarningCount = warnings.Count;
-        var returnedWarnings = warnings.Take(DefaultMaxWarningResults).ToList();
         return new PlanWarningsResult
         {
             SessionId = session.SessionId,
@@ -345,6 +440,19 @@ public sealed class PlanOperations
             Truncated = returnedWarnings.Count < totalWarningCount,
             Warnings = returnedWarnings
         };
+
+        void AddWarning(WarningResult warning, string statementText)
+        {
+            if (severity is not null &&
+                !warning.Severity.Equals(severity, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            totalWarningCount++;
+            if (returnedWarnings.Count < DefaultMaxWarningResults)
+                returnedWarnings.Add(ToWarningItem(warning, statementText));
+        }
     }
 
     public AnalysisResult GetAnalysis(string sessionId) =>
@@ -355,6 +463,11 @@ public sealed class PlanOperations
         ArgumentNullException.ThrowIfNull(session);
         return session.Analysis ?? ResultMapper.Map(session.Plan, session.Source);
     }
+
+    private static AnalysisResult GetAnalysis(
+        PlanSession session,
+        CancellationToken cancellationToken) =>
+        session.Analysis ?? ResultMapper.MapCancellable(session.Plan, session.Source, metadata: null, cancellationToken);
 
     private static void ValidateComplexity(ParsedPlan plan, CancellationToken cancellationToken)
     {
@@ -404,35 +517,49 @@ public sealed class PlanOperations
             pending.Push(statements[index]);
     }
 
-    private static void CollectOperators(
+    private readonly record struct RankedOperator(OperatorResult Node, string Statement);
+
+    private static void VisitOperators(
         OperatorResult node,
-        string statement,
-        ICollection<(OperatorResult Node, string Statement)> operators)
+        CancellationToken cancellationToken,
+        Action<OperatorResult> visit)
     {
         var pending = new Stack<OperatorResult>();
         pending.Push(node);
         while (pending.TryPop(out var current))
         {
-            operators.Add((current, statement));
+            cancellationToken.ThrowIfCancellationRequested();
+            visit(current);
             for (var index = current.Children.Count - 1; index >= 0; index--)
                 pending.Push(current.Children[index]);
         }
     }
 
-    private static void CollectWarnings(
-        OperatorResult node,
-        string statement,
-        ICollection<PlanWarningItem> warnings)
+    private static void AddRanked(
+        List<RankedOperator> ranked,
+        RankedOperator candidate,
+        int maximum,
+        bool rankByActuals)
     {
-        var pending = new Stack<OperatorResult>();
-        pending.Push(node);
-        while (pending.TryPop(out var current))
+        var candidateScore = rankByActuals
+            ? candidate.Node.ActualElapsedMs ?? 0
+            : candidate.Node.CostPercent;
+        var insertAt = 0;
+        while (insertAt < ranked.Count)
         {
-            foreach (var warning in current.Warnings)
-                warnings.Add(ToWarningItem(warning, statement));
-            for (var index = current.Children.Count - 1; index >= 0; index--)
-                pending.Push(current.Children[index]);
+            var item = ranked[insertAt];
+            var score = rankByActuals ? item.Node.ActualElapsedMs ?? 0 : item.Node.CostPercent;
+            if (candidateScore > score)
+            {
+                break;
+            }
+            insertAt++;
         }
+        if (insertAt >= maximum)
+            return;
+        ranked.Insert(insertAt, candidate);
+        if (ranked.Count > maximum)
+            ranked.RemoveAt(maximum);
     }
 
     private static PlanWarningItem ToWarningItem(WarningResult warning, string statement) => new()

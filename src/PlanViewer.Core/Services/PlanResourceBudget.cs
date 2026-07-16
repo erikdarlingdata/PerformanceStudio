@@ -13,6 +13,7 @@ internal sealed class PlanResourceBudget
     private readonly IPlanCatalog _catalog;
     private readonly object _syncRoot = new();
     private readonly SemaphoreSlim _openSlots = new(PlanOperations.DefaultMaxConcurrentOpens);
+    private readonly SemaphoreSlim _querySlots = new(PlanOperations.DefaultMaxConcurrentQueries);
     private readonly Dictionary<string, long> _retainedEstimateBySession = new(StringComparer.OrdinalIgnoreCase);
     private long _reservedAndRetainedEstimate;
 
@@ -35,7 +36,19 @@ internal sealed class PlanResourceBudget
                 $"The concurrent plan-open limit of {PlanOperations.DefaultMaxConcurrentOpens} has been reached. Retry after an active open completes.");
         }
 
-        return new OpenSlotLease(_openSlots);
+        return new SemaphoreLease(_openSlots);
+    }
+
+    internal IDisposable AcquireQuerySlot(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!_querySlots.Wait(0, cancellationToken))
+        {
+            throw new InvalidOperationException(
+                $"The concurrent plan-query limit of {PlanOperations.DefaultMaxConcurrentQueries} has been reached. Retry after an active query completes.");
+        }
+
+        return new SemaphoreLease(_querySlots);
     }
 
     internal bool TryRegister(PlanSession session, int maxSessions)
@@ -139,7 +152,7 @@ internal sealed class PlanResourceBudget
         }
     }
 
-    private sealed class OpenSlotLease(SemaphoreSlim semaphore) : IDisposable
+    private sealed class SemaphoreLease(SemaphoreSlim semaphore) : IDisposable
     {
         private SemaphoreSlim? _semaphore = semaphore;
 

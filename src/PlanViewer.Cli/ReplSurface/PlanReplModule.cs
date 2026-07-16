@@ -42,26 +42,32 @@ public sealed class PlanReplModule(IPlanCatalog catalog, PlanOperations operatio
 
                     scope.Map(
                             "warnings",
-                            (string id, [Description("Critical, Warning, or Info")] string? severity = null) =>
-                                Execute(() => operations.GetWarnings(id, severity)))
+                            (string id, CancellationToken cancellationToken,
+                                [Description("Critical, Warning, or Info")] string? severity = null) =>
+                                Execute(() => operations.GetWarnings(id, severity, cancellationToken)))
                         .WithDescription("List plan warnings, optionally filtered by severity")
                         .ReadOnly();
 
                     scope.Map(
                             "expensive-operators",
-                            (string id, [Description("Number of operators to return (1-100)")] int top = 10) =>
-                                Execute(() => operations.GetExpensiveOperators(id, top)))
+                            (string id, CancellationToken cancellationToken,
+                                [Description("Number of operators to return (1-100)")] int top = 10) =>
+                                Execute(() => operations.GetExpensiveOperators(id, top, cancellationToken)))
                         .WithDescription("List the most expensive operators")
                         .ReadOnly();
 
                     scope.Map(
                             "operators",
-                            (string id, [Description("Number of operators to return (1-100)")] int top = 10) =>
-                                Execute(() => operations.GetExpensiveOperators(id, top)))
+                            (string id, CancellationToken cancellationToken,
+                                [Description("Number of operators to return (1-100)")] int top = 10) =>
+                                Execute(() => operations.GetExpensiveOperators(id, top, cancellationToken)))
                         .WithDescription("Alias for expensive-operators")
                         .ReadOnly();
 
-                    scope.Map("missing-indexes", (string id) => Execute(() => operations.GetMissingIndexes(id)))
+                    scope.Map(
+                            "missing-indexes",
+                            (string id, CancellationToken cancellationToken) =>
+                                Execute(() => operations.GetMissingIndexes(id, cancellationToken)))
                         .WithDescription("List missing-index suggestions")
                         .ReadOnly();
 
@@ -152,6 +158,10 @@ public sealed class PlanReplModule(IPlanCatalog catalog, PlanOperations operatio
         catch (KeyNotFoundException)
         {
             return Results.NotFound("Plan session was not found.");
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.Error("server_busy", ex.Message);
         }
     }
 }

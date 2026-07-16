@@ -32,6 +32,7 @@ internal static class McpPlanPathPolicy
 
             // Never probe an absolute pathname until lexical containment has been established.
             if (!roots.Any(root => IsWithinRoot(lexicalPath, root)) ||
+                (OperatingSystem.IsWindows() && ContainsWindowsAlternateDataStream(lexicalPath)) ||
                 !Path.GetExtension(lexicalPath).Equals(".sqlplan", StringComparison.OrdinalIgnoreCase))
             {
                 continue;
@@ -48,7 +49,8 @@ internal static class McpPlanPathPolicy
                     bufferSize: 64 * 1024,
                     FileOptions.Asynchronous | FileOptions.SequentialScan);
                 var openedPath = OpenedFilePathResolver.GetFinalPath(stream);
-                if (!Path.GetExtension(openedPath).Equals(".sqlplan", StringComparison.OrdinalIgnoreCase) ||
+                if ((OperatingSystem.IsWindows() && ContainsWindowsAlternateDataStream(openedPath)) ||
+                    !Path.GetExtension(openedPath).Equals(".sqlplan", StringComparison.OrdinalIgnoreCase) ||
                     !roots.Any(root => IsWithinRoot(openedPath, root)))
                 {
                     await stream.DisposeAsync().ConfigureAwait(false);
@@ -125,7 +127,7 @@ internal static class McpPlanPathPolicy
                          [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
                          StringSplitOptions.RemoveEmptyEntries))
             {
-                var directory = new DirectoryInfo(Path.Combine(current, segment));
+                var directory = new DirectoryInfo(ResolveDirectoryEntry(current, segment));
                 if (!directory.Exists)
                     throw new DirectoryNotFoundException("Root directory does not exist.");
                 current = directory.ResolveLinkTarget(returnFinalTarget: true)?.FullName ?? directory.FullName;
@@ -133,6 +135,21 @@ internal static class McpPlanPathPolicy
         }
 
         return Path.GetFullPath(current);
+    }
+
+    private static string ResolveDirectoryEntry(string parent, string segment)
+    {
+        if (!OperatingSystem.IsWindows())
+            return Path.Combine(parent, segment);
+
+        foreach (var entry in Directory.EnumerateDirectories(parent))
+        {
+            var name = Path.GetFileName(Path.TrimEndingDirectorySeparator(entry));
+            if (name.Equals(segment, StringComparison.Ordinal))
+                return entry;
+        }
+
+        throw new DirectoryNotFoundException("Root directory does not exist with the advertised casing.");
     }
 
     private static bool IsWithinRoot(string candidate, string root)
@@ -144,11 +161,15 @@ internal static class McpPlanPathPolicy
         return candidate.StartsWith(rootPrefix, PathComparisonKind);
     }
 
-    private static StringComparer PathComparison =>
-        OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+    internal static bool ContainsWindowsAlternateDataStream(string path)
+    {
+        var start = path.Length >= 2 && char.IsAsciiLetter(path[0]) && path[1] == ':' ? 2 : 0;
+        return path.AsSpan(start).Contains(':');
+    }
 
-    private static StringComparison PathComparisonKind =>
-        OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+    private static StringComparer PathComparison => StringComparer.Ordinal;
+
+    private static StringComparison PathComparisonKind => StringComparison.Ordinal;
 }
 
 internal sealed class McpAuthorizedPlanFile(FileStream stream, string label) : IAsyncDisposable

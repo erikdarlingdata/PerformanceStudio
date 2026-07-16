@@ -30,6 +30,19 @@ internal static class PlanAnalysisPipeline
 
         var plan = ShowPlanParser.Parse(planXml);
         cancellationToken.ThrowIfCancellationRequested();
+        return AnalyzeParsed(plan, config, serverMetadata, cancellationToken, beforeAnalysis);
+    }
+
+    internal static ParsedPlan AnalyzeParsed(
+        ParsedPlan plan,
+        AnalyzerConfig config,
+        ServerMetadata? serverMetadata = null,
+        CancellationToken cancellationToken = default,
+        Action<ParsedPlan, CancellationToken>? beforeAnalysis = null)
+    {
+        ArgumentNullException.ThrowIfNull(plan);
+        ArgumentNullException.ThrowIfNull(config);
+        cancellationToken.ThrowIfCancellationRequested();
         if (!string.IsNullOrWhiteSpace(plan.ParseError) ||
             !plan.Batches.SelectMany(batch => batch.Statements).Any())
         {

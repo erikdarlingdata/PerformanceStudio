@@ -80,7 +80,7 @@ public sealed class PlanOperationsTests
             .ToList();
         statement.OperatorTree = null;
 
-        var result = operations.GetWarnings(session);
+        var result = operations.GetWarnings(session, severity: null, TestContext.Current.CancellationToken);
 
         Assert.Equal(PlanOperations.DefaultMaxWarningResults + 1, result.WarningCount);
         Assert.Equal(PlanOperations.DefaultMaxWarningResults, result.ReturnedWarningCount);
@@ -97,7 +97,7 @@ public sealed class PlanOperationsTests
         var path = Path.GetFullPath(Path.Combine("Plans", "row_goal_plan.sqlplan"));
         var opened = await operations.OpenAsync(path, TestContext.Current.CancellationToken);
 
-        var warnings = operations.GetWarnings(opened.SessionId, "warning");
+        var warnings = operations.GetWarnings(opened.SessionId, "warning", TestContext.Current.CancellationToken);
 
         var warning = Assert.Single(warnings.Warnings);
         Assert.Equal(1, warnings.WarningCount);
@@ -115,7 +115,7 @@ public sealed class PlanOperationsTests
         var path = Path.GetFullPath(Path.Combine("Plans", "row_goal_plan.sqlplan"));
         var opened = await operations.OpenAsync(path, TestContext.Current.CancellationToken);
 
-        var result = operations.GetExpensiveOperators(opened.SessionId, 1);
+        var result = operations.GetExpensiveOperators(opened.SessionId, 1, TestContext.Current.CancellationToken);
 
         Assert.Equal("cost_percent", result.RankedBy);
         var item = Assert.Single(result.Operators);
@@ -123,6 +123,57 @@ public sealed class PlanOperationsTests
         Assert.Equal(80, item.CostPercent);
     }
 
+
+    [Fact]
+    public void GetExpensiveOperators_UsesActualElapsedTimeAndKeepsStableTies()
+    {
+        var firstTie = new PlanViewer.Core.Output.OperatorResult
+        {
+            NodeId = 2,
+            PhysicalOp = "First tie",
+            ActualElapsedMs = 10,
+            CostPercent = 1
+        };
+        var secondTie = new PlanViewer.Core.Output.OperatorResult
+        {
+            NodeId = 3,
+            PhysicalOp = "Second tie",
+            ActualElapsedMs = 10,
+            CostPercent = 99
+        };
+        var root = new PlanViewer.Core.Output.OperatorResult
+        {
+            NodeId = 1,
+            PhysicalOp = "Root",
+            ActualElapsedMs = 1,
+            CostPercent = 100,
+            Children = [firstTie, secondTie]
+        };
+        var session = new PlanViewer.Core.Models.PlanSession
+        {
+            SessionId = "actual-ranking",
+            Label = "actual.sqlplan",
+            Source = "actual.sqlplan",
+            Plan = new PlanViewer.Core.Models.ParsedPlan(),
+            Analysis = new PlanViewer.Core.Output.AnalysisResult
+            {
+                Statements =
+                [
+                    new PlanViewer.Core.Output.StatementResult
+                    {
+                        StatementText = "SELECT 1",
+                        OperatorTree = root
+                    }
+                ]
+            }
+        };
+        var operations = new PlanOperations(new InMemoryPlanCatalog());
+
+        var result = operations.GetExpensiveOperators(session, top: 2, TestContext.Current.CancellationToken);
+
+        Assert.Equal("actual_elapsed_ms", result.RankedBy);
+        Assert.Equal([2, 3], result.Operators.Select(item => item.NodeId));
+    }
 
     [Fact]
     public async Task GetMissingIndexes_BoundsTheReturnedItemsAndReportsTruncation()
@@ -146,7 +197,7 @@ public sealed class PlanOperationsTests
             })
             .ToList();
 
-        var result = operations.GetMissingIndexes(session);
+        var result = operations.GetMissingIndexes(session, TestContext.Current.CancellationToken);
 
         Assert.Equal(PlanOperations.DefaultMaxMissingIndexResults + 1, result.MissingIndexCount);
         Assert.Equal(PlanOperations.DefaultMaxMissingIndexResults, result.ReturnedIndexCount);
@@ -167,7 +218,7 @@ public sealed class PlanOperationsTests
         var path = Path.GetFullPath(Path.Combine("Plans", "top_above_scan_plan.sqlplan"));
         var opened = await operations.OpenAsync(path, TestContext.Current.CancellationToken);
 
-        var result = operations.GetMissingIndexes(opened.SessionId);
+        var result = operations.GetMissingIndexes(opened.SessionId, TestContext.Current.CancellationToken);
 
         Assert.Equal(opened.SessionId, result.SessionId);
         Assert.Equal(result.Indexes.Count, result.MissingIndexCount);
@@ -245,9 +296,9 @@ public sealed class PlanOperationsTests
         var path = Path.GetFullPath(Path.Combine("Plans", "row_goal_plan.sqlplan"));
         var opened = await operations.OpenAsync(path, TestContext.Current.CancellationToken);
 
-        Assert.Throws<ArgumentException>(() => operations.GetWarnings(opened.SessionId, "urgent"));
-        Assert.Throws<ArgumentOutOfRangeException>(() => operations.GetExpensiveOperators(opened.SessionId, 0));
-        Assert.Throws<ArgumentOutOfRangeException>(() => operations.GetExpensiveOperators(opened.SessionId, 101));
+        Assert.Throws<ArgumentException>(() => operations.GetWarnings(opened.SessionId, "urgent", TestContext.Current.CancellationToken));
+        Assert.Throws<ArgumentOutOfRangeException>(() => operations.GetExpensiveOperators(opened.SessionId, 0, TestContext.Current.CancellationToken));
+        Assert.Throws<ArgumentOutOfRangeException>(() => operations.GetExpensiveOperators(opened.SessionId, 101, TestContext.Current.CancellationToken));
     }
 
 
@@ -487,13 +538,38 @@ public sealed class PlanOperationsTests
 
             var first = await operations.OpenAsync(path, TestContext.Current.CancellationToken);
             await operations.OpenAsync(path, TestContext.Current.CancellationToken);
-            await operations.OpenAsync(path, TestContext.Current.CancellationToken);
             var exception = await Assert.ThrowsAsync<InvalidOperationException>(
                 () => operations.OpenAsync(path, TestContext.Current.CancellationToken));
 
             Assert.Contains("retained-analysis", exception.Message, StringComparison.OrdinalIgnoreCase);
             Assert.True(operations.Close(first.SessionId));
             await operations.OpenAsync(path, TestContext.Current.CancellationToken);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public async Task OpenAsync_RejectsHighCardinalityAuxiliaryElementsByRetainedEstimate()
+    {
+        const int auxiliaryElementCount = 245_000;
+        var operations = new PlanOperations(new InMemoryPlanCatalog());
+        var path = Path.Combine(Path.GetTempPath(), $"retained-elements-{Guid.NewGuid():N}.sqlplan");
+        try
+        {
+            var xml = new System.Text.StringBuilder(
+                "<ShowPlanXML xmlns=\"http://schemas.microsoft.com/sqlserver/2004/07/showplan\"><BatchSequence><Batch><Statements><StmtUseDb Database=\"db\">");
+            for (var index = 0; index < auxiliaryElementCount; index++)
+                xml.Append("<Element />");
+            xml.Append("</StmtUseDb></Statements></Batch></BatchSequence></ShowPlanXML>");
+            await File.WriteAllTextAsync(path, xml.ToString(), TestContext.Current.CancellationToken);
+
+            var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+                () => operations.OpenAsync(path, TestContext.Current.CancellationToken));
+
+            Assert.Contains("retained-analysis", exception.Message, StringComparison.OrdinalIgnoreCase);
         }
         finally
         {
