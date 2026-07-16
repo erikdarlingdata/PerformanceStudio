@@ -4,15 +4,21 @@ namespace PlanViewer.Cli.ReplSurface;
 
 internal static class McpPlanPathPolicy
 {
+    private static readonly TimeSpan DefaultRootsTimeout = TimeSpan.FromSeconds(5);
+
     public static async ValueTask<McpAuthorizedPlanFile> OpenAsync(
         string path,
         IMcpClientRoots clientRoots,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        TimeSpan? rootsTimeout = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         ArgumentNullException.ThrowIfNull(clientRoots);
 
-        var roots = await GetEffectiveRootsAsync(clientRoots, cancellationToken).ConfigureAwait(false);
+        var timeout = rootsTimeout ?? DefaultRootsTimeout;
+        if (timeout <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(rootsTimeout), "The client-roots timeout must be positive.");
+        var roots = await GetEffectiveRootsAsync(clientRoots, timeout, cancellationToken).ConfigureAwait(false);
         var candidates = Path.IsPathFullyQualified(path)
             ? [path]
             : roots.Select(root => Path.Combine(root, path));
@@ -71,15 +77,22 @@ internal static class McpPlanPathPolicy
 
     private static async ValueTask<IReadOnlyList<string>> GetEffectiveRootsAsync(
         IMcpClientRoots clientRoots,
+        TimeSpan timeout,
         CancellationToken cancellationToken)
     {
         if (!clientRoots.IsSupported && !clientRoots.HasSoftRoots)
             return [ResolveExistingDirectory(Directory.GetCurrentDirectory())];
 
         IReadOnlyList<McpClientRoot> advertisedRoots;
+        using var timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutSource.CancelAfter(timeout);
         try
         {
-            advertisedRoots = await clientRoots.GetAsync(cancellationToken).ConfigureAwait(false);
+            advertisedRoots = await clientRoots.GetAsync(timeoutSource.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new UnauthorizedAccessException("Client roots negotiation timed out.", exception);
         }
         catch (OperationCanceledException)
         {

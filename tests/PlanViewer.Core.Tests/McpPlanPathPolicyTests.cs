@@ -19,6 +19,21 @@ public sealed class McpPlanPathPolicyTests
     }
 
     [Fact]
+    public async Task OpenAsync_TimesOutUnresponsiveNativeRoots()
+    {
+        var roots = new HangingClientRoots();
+
+        var exception = await Assert.ThrowsAsync<UnauthorizedAccessException>(async () =>
+            await McpPlanPathPolicy.OpenAsync(
+                "probe.sqlplan",
+                roots,
+                TestContext.Current.CancellationToken,
+                TimeSpan.FromMilliseconds(20)));
+
+        Assert.Contains("timed out", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task OpenAsync_DeniesAdvertisedEmptyRoots()
     {
         var roots = new StubClientRoots(isSupported: true, hasSoftRoots: false, []);
@@ -129,6 +144,23 @@ public sealed class McpPlanPathPolicyTests
         {
             Directory.Delete(temporary, recursive: true);
         }
+    }
+
+    private sealed class HangingClientRoots : IMcpClientRoots
+    {
+        public bool IsSupported => true;
+        public bool HasSoftRoots => false;
+        public IReadOnlyList<McpClientRoot> Current => [];
+
+        public async ValueTask<IReadOnlyList<McpClientRoot>> GetAsync(
+            CancellationToken cancellationToken = default)
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            return [];
+        }
+
+        public void SetSoftRoots(IEnumerable<McpClientRoot> roots) => throw new NotSupportedException();
+        public void ClearSoftRoots() => throw new NotSupportedException();
     }
 
     private sealed class StubClientRoots(
