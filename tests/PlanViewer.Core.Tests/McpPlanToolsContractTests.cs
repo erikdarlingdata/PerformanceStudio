@@ -40,6 +40,57 @@ public sealed class McpPlanToolsContractTests
     }
 
     [Fact]
+    public void BoundedResponses_ExplicitlyReportTruncation()
+    {
+        var manager = new PlanSessionManager();
+        var template = CreateEstimatedSession();
+        var analysis = ResultMapper.Map(template.Plan, template.Source);
+        var statement = Assert.Single(analysis.Statements);
+        statement.Warnings = Enumerable.Range(0, PlanOperations.DefaultMaxWarningResults + 1)
+            .Select(index => new WarningResult
+            {
+                Type = $"warning-{index}",
+                Severity = "Warning",
+                Message = "bounded"
+            })
+            .ToList();
+        statement.MissingIndexes = Enumerable.Range(0, PlanOperations.DefaultMaxMissingIndexResults + 1)
+            .Select(index => new MissingIndexResult
+            {
+                BareTable = $"table-{index}",
+                Table = $"dbo.table-{index}",
+                CreateStatement = "CREATE INDEX"
+            })
+            .ToList();
+        var session = new CorePlanSession
+        {
+            SessionId = template.SessionId,
+            Label = template.Label,
+            Source = template.Source,
+            Plan = template.Plan,
+            Analysis = analysis,
+            StatementCount = template.StatementCount,
+            HasActualStats = template.HasActualStats,
+            WarningCount = analysis.Summary.TotalWarnings,
+            CriticalWarningCount = analysis.Summary.CriticalWarnings,
+            MissingIndexCount = analysis.Summary.MissingIndexes
+        };
+        manager.Register(session);
+
+        using var warnings = JsonDocument.Parse(McpPlanTools.GetPlanWarnings(manager, session.SessionId));
+        using var indexes = JsonDocument.Parse(McpPlanTools.GetMissingIndexes(manager, session.SessionId));
+
+        Assert.True(warnings.RootElement.GetProperty("truncated").GetBoolean());
+        Assert.Equal(
+            PlanOperations.DefaultMaxWarningResults,
+            warnings.RootElement.GetProperty("returned_warning_count").GetInt32());
+        Assert.True(indexes.RootElement.GetProperty("truncated").GetBoolean());
+        Assert.Equal(
+            PlanOperations.DefaultMaxMissingIndexResults,
+            indexes.RootElement.GetProperty("returned_index_count").GetInt32());
+    }
+
+    [Fact]
     public void GetExpensiveOperators_PreservesHistoricalBareObjectName()
     {
         var manager = new PlanSessionManager();
@@ -77,6 +128,52 @@ public sealed class McpPlanToolsContractTests
         Assert.Equal(0, item.GetProperty("actual_elapsed_ms").GetInt64());
     }
 
+
+    [Fact]
+    public void AnalyzePlan_PreservesTheUiSessionSourceWhenASnapshotIsPresent()
+    {
+        var manager = new PlanSessionManager();
+        var plan = PlanTestHelper.LoadAndAnalyze("row_goal_plan.sqlplan");
+        var sessionId = $"ui-{Guid.NewGuid():N}";
+        manager.Register(sessionId, new PlanViewer.App.Mcp.PlanSession
+        {
+            SessionId = sessionId,
+            Label = "row_goal_plan.sqlplan",
+            Source = "file",
+            Plan = plan,
+            Analysis = ResultMapper.Map(plan, "file")
+        });
+
+        var json = McpPlanTools.AnalyzePlan(manager, sessionId);
+
+        using var document = JsonDocument.Parse(json);
+        Assert.Equal("file", document.RootElement.GetProperty("plan_source").GetString());
+        Assert.DoesNotContain("error", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("error", McpPlanTools.GetPlanSummary(manager, sessionId), StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("error", McpPlanTools.GetPlanWarnings(manager, sessionId), StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("error", McpPlanTools.GetMissingIndexes(manager, sessionId), StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("error", McpPlanTools.GetExpensiveOperators(manager, sessionId), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void GivenQueryStorePlan_WhenCaptured_ThenSourceIsStableAndParserGraphIsReleased()
+    {
+        var plan = PlanTestHelper.LoadAndAnalyze("row_goal_plan.sqlplan");
+
+        var session = McpQueryStoreTools.CaptureSession(
+            "query-store-session",
+            "QS:database Q1 P2",
+            plan,
+            "SELECT 1",
+            "server");
+
+        Assert.Equal("query-store", session.Source);
+        Assert.Equal("query-store", session.Analysis?.PlanSource);
+        Assert.Equal("QS:database Q1 P2", session.Label);
+        Assert.Equal(1, session.StatementCount);
+        Assert.Empty(session.Plan.Batches);
+        Assert.Empty(session.Plan.RawXml);
+    }
 
     [Fact]
     public void HistoricalOverloads_DelegateToTheSharedOperationsBehavior()

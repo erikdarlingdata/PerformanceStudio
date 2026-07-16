@@ -48,4 +48,8 @@
   <ItemGroup>
     <ProjectReference Include="..\PlanViewer.Core\PlanViewer.Core.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="PlanViewer.Core.Tests" />
+  </ItemGroup>
 </Project>

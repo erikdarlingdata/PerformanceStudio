@@ -146,7 +146,13 @@ public sealed class McpPlanTools
             }
 
             return JsonSerializer.Serialize(
-                new { warning_count = result.WarningCount, warnings = result.Warnings },
+                new
+                {
+                    warning_count = result.WarningCount,
+                    returned_warning_count = result.ReturnedWarningCount,
+                    truncated = result.Truncated,
+                    warnings = result.Warnings
+                },
                 McpHelpers.JsonOptions);
         }
         catch (Exception ex)
@@ -172,7 +178,13 @@ public sealed class McpPlanTools
             return "No missing index suggestions in this plan.";
 
         return JsonSerializer.Serialize(
-            new { missing_index_count = result.MissingIndexCount, indexes = result.Indexes },
+            new
+            {
+                missing_index_count = result.MissingIndexCount,
+                returned_index_count = result.ReturnedIndexCount,
+                truncated = result.Truncated,
+                indexes = result.Indexes
+            },
             McpHelpers.JsonOptions);
     }
 

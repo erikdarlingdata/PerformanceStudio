@@ -156,25 +156,13 @@ public sealed class McpQueryStoreTools
                         xml,
                         AnalyzerConfig.Default,
                         serverMetadata);
-                    var analysis = ResultMapper.Map(parsed, label);
-                    var allStatements = parsed.Batches.SelectMany(b => b.Statements).ToList();
-
-                    sessionManager.Register(sessionId, new PlanSession
-                    {
-                        SessionId = sessionId,
-                        Label = label,
-                        Source = "query-store",
-                        Plan = parsed,
-                        Analysis = analysis,
-                        QueryText = qsPlan.QueryText,
-                        ConnectionInfo = conn.ServerName,
-                        StatementCount = allStatements.Count,
-                        HasActualStats = false, // Query Store plans are always estimated
-                        WarningCount = allStatements.Sum(s => s.PlanWarnings.Count),
-                        CriticalWarningCount = allStatements.Sum(s =>
-                            s.PlanWarnings.Count(w => w.Severity == Core.Models.PlanWarningSeverity.Critical)),
-                        MissingIndexCount = parsed.AllMissingIndexes.Count
-                    });
+                    var session = CaptureSession(
+                        sessionId,
+                        label,
+                        parsed,
+                        qsPlan.QueryText,
+                        conn.ServerName);
+                    sessionManager.Register(sessionId, session);
 
                     return new
                     {
@@ -193,8 +181,8 @@ public sealed class McpQueryStoreTools
                         avg_duration_ms = qsPlan.AvgDurationUs / 1000.0,
                         total_logical_reads = qsPlan.TotalLogicalIoReads,
                         avg_logical_reads = qsPlan.AvgLogicalIoReads,
-                        warning_count = allStatements.Sum(s => s.PlanWarnings.Count),
-                        missing_index_count = parsed.AllMissingIndexes.Count,
+                        warning_count = session.WarningCount,
+                        missing_index_count = session.MissingIndexCount,
                         last_executed_utc = qsPlan.LastExecutedUtc.ToString("yyyy-MM-dd HH:mm:ss"),
                         loaded = true
                     };
@@ -241,6 +229,37 @@ public sealed class McpQueryStoreTools
         {
             return McpHelpers.FormatError("get_query_store_top", ex);
         }
+    }
+
+    internal static PlanSession CaptureSession(
+        string sessionId,
+        string label,
+        ParsedPlan parsed,
+        string? queryText,
+        string connectionInfo)
+    {
+        var analysis = ResultMapper.Map(parsed, "query-store");
+        var allStatements = parsed.Batches.SelectMany(batch => batch.Statements).ToList();
+        var session = new PlanSession
+        {
+            SessionId = sessionId,
+            Label = label,
+            Source = "query-store",
+            Plan = parsed,
+            Analysis = analysis,
+            QueryText = queryText,
+            ConnectionInfo = connectionInfo,
+            StatementCount = allStatements.Count,
+            HasActualStats = false,
+            WarningCount = allStatements.Sum(statement => statement.PlanWarnings.Count),
+            CriticalWarningCount = allStatements.Sum(statement =>
+                statement.PlanWarnings.Count(warning => warning.Severity == Core.Models.PlanWarningSeverity.Critical)),
+            MissingIndexCount = parsed.AllMissingIndexes.Count
+        };
+
+        parsed.RawXml = string.Empty;
+        parsed.Batches.Clear();
+        return session;
     }
 
     private static Core.Models.ServerConnection? FindConnection(
