@@ -8,10 +8,10 @@ Read-only describes the analyzed plans and external systems: the pilot never wri
 
 ## Architecture
 
-1. Put immutable plan-session models plus `IPlanCatalog` and its thread-safe in-memory implementation in `PlanViewer.Core`.
-2. Put typed, renderer-free operations (`open`, `close`, `list`, `summary`, `warnings`, `missing indexes`, `expensive operators`) in `PlanViewer.Core`.
+1. Put detached analysis snapshots plus `IPlanCatalog` and its thread-safe in-memory implementation in `PlanViewer.Core`. REPL sessions retain the analyzed projection rather than the mutable parser graph; desktop sessions keep their UI graph and expose a separately captured MCP projection.
+2. Put typed, renderer-free operations (`open`, `close`, `list`, `summary`, `warnings`, `missing indexes`, `expensive operators`) and the shared parse/analyze/score pipeline in `PlanViewer.Core`.
 3. Keep the Avalonia `PlanSessionManager` as a thin compatibility singleton over the Core catalog. Existing App MCP tools delegate to Core operations using the already-resolved session snapshot, avoiding a second catalog lookup while preserving their historical output behavior.
-4. Add a Repl `IReplModule` in `PlanViewer.Cli`, pinned to the stable `Repl`/`Repl.Mcp`/`Repl.Testing` 0.11.0 release. Launch Repl for no args and for the new `plan` graph; dispatch all existing argument prefixes to System.CommandLine unchanged.
+4. Add a Repl `IReplModule` in `PlanViewer.Cli`, pinned to the stable `Repl`/`Repl.Mcp`/`Repl.Testing` 0.11.0 release. Launch Repl only for explicit `repl`, `plan`, `open`, or `mcp` prefixes; zero arguments and existing prefixes remain on System.CommandLine.
 5. Return typed values from Repl handlers so text, JSON, tests, and MCP are renderer concerns rather than handler concerns.
 
 ## Security and resource boundaries
@@ -22,9 +22,11 @@ Local CLI/Repl commands may open any accessible `.sqlplan` file, matching normal
 - The server launch directory is a fallback root only when native roots are unsupported and no soft roots are configured. Advertised-but-empty, invalid, or unavailable roots deny access.
 - MCP errors do not disclose absolute paths outside the allowed roots.
 - Only an explicit allow-list of plan tools is exported; automatic read-only resource promotion is disabled.
-- Files are read through a hard 16 MiB streaming ceiling even if they grow during loading; plans are limited to 10,000 statements and 100,000 operators including recursively retained UDF/stored-procedure subplans, concurrent opens to 2, and the process catalog to 32 sessions.
-- `plan_close` provides explicit eviction. Catalog registration and the 32-session ceiling are enforced atomically, and closed session IDs are never reused.
-- Loading honors cancellation before and between parse, analysis, scoring, and registration stages.
+- Files are read through a hard 16 MiB streaming ceiling even if they grow during loading. A forward-only XML preflight prohibits DTDs and rejects depth over 512, more than 10,000 statement elements, or more than 100,000 operators before `XDocument` and the parser graph are materialized; the parsed graph is checked again before analysis.
+- The limit of 2 concurrent opens is shared by every `PlanOperations` facade over the same catalog, and excess calls fail fast before path resolution or file acquisition. Admission is coordinated atomically across those facades, with at most 32 sessions and a 64 MiB aggregate retained-analysis estimate. The estimate is reserved after streaming preflight and conservatively accounts for UTF-16 source text, statements (2 KiB each), and operators (4 KiB each); `plan_close` releases it.
+- Warning responses return at most 500 items, missing-index responses at most 100 suggestions, and operator queries at most 100 items. Result metadata reports truncation, and plan-controlled text fields are bounded before serialization.
+- `plan_close` provides explicit eviction and releases the retained-memory reservation. Session labels are capped at 48 characters and use a fresh 12-hex-character opaque suffix; active-ID collisions are retried.
+- Streaming preflight, per-statement/per-operator analysis, scoring, mapping, and registration honor cancellation. Synchronous XML materialization is bounded by preflight and checks cancellation immediately after returning.
 
 ## TDD slices
 
@@ -68,8 +70,9 @@ The generated MCP server identifies itself as `planview`. It exports the canonic
 ## Compatibility boundary
 
 - `analyze`, `query-store`, `credential`, and their existing options remain on the original System.CommandLine root.
-- The Repl graph is selected only for no arguments, `repl`, `plan`, `open`, or `mcp`.
-- The existing `analyze --compact` JSON output is checked manually byte-for-byte against a pre-change baseline.
+- Legacy `analyze` keeps its existing input behavior. The pilot intentionally accepts only `.sqlplan` in `open`/`plan_open`; this narrow local-file boundary is not retrofitted onto historical commands.
+- The Repl graph is selected only for explicit `repl`, `plan`, `open`, or `mcp` prefixes; zero arguments preserve legacy routing.
+- A committed process test runs `analyze --compact` and compares the exact stdout SHA-256 with the pre-change baseline (`0c609fed8e250d9366eb9a6cd5eaf40b661ee30d7ba2546bd7726960592e9d87`).
 - The Avalonia MCP session manager implements `IPlanCatalog`; committed App-side tests pin the historical warning scope, invalid-severity message, bare `object_name`, numeric default metrics, and snapshot behavior.
 - The desktop MCP host constructs shared operations with `AnalyzerConfig.Default`, so an unrelated malformed `planview.config.json` cannot prevent that server from starting.
 - Sessions are process-local. Query Store mutations and credentials are intentionally outside this pilot.

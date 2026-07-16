@@ -57,7 +57,7 @@ Side-by-side comparison of two plans showing cost, runtime, I/O, memory, and wai
 ### Query Store Integration
 Fetch top queries by CPU, duration, logical reads, physical reads, writes, memory, or executions from Query Store and load their plans directly into the analyzer.
 
-![Query Store Integration](screenshots/performance_studio_query-store_analysis_top_cpu_by_query_hash.png)
+![Query Store Integration](screenshots/performance_studio_querystore_analysis_top_cpu_by_query_hash.png)
 
 ### Minimap and colored links by accuracy ratio divergence
 The minimap provides a high-level overview of the entire plan, allowing you to quickly navigate to areas of interest. Colored links between operators indicate accuracy ratio divergence, helping you identify where estimates are most off from actuals.
@@ -151,12 +151,12 @@ planview analyze my_query.sqlplan --output text --warnings-only
 
 ### Explore plans interactively (Repl pilot)
 
-Running `planview` without arguments starts a long-lived plan-exploration session. Existing
-`analyze`, `query-store`, and `credential` commands continue to use the legacy
+Run `planview repl` to start a long-lived plan-exploration session. Zero arguments and the
+existing `analyze`, `query-store`, and `credential` commands continue to use the legacy
 System.CommandLine graph.
 
 ```text
-planview
+planview repl
 > open slow-query.sqlplan
 [plan slow-query-<opaque-id>]> summary
 [plan slow-query-<opaque-id>]> warnings --severity critical
