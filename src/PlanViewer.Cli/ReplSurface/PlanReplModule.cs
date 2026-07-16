@@ -86,12 +86,15 @@ public sealed class PlanReplModule(IPlanCatalog catalog, PlanOperations operatio
             }
             else
             {
-                await using var authorized = await McpPlanPathPolicy
-                    .OpenAsync(path, roots, cancellationToken)
-                    .ConfigureAwait(false);
-                opened = await operations
-                    .OpenAsync(authorized.Stream, authorized.Label, cancellationToken)
-                    .ConfigureAwait(false);
+                opened = await operations.OpenOwnedStreamAsync(
+                    async token =>
+                    {
+                        var authorized = await McpPlanPathPolicy
+                            .OpenAsync(path, roots, token)
+                            .ConfigureAwait(false);
+                        return (authorized.Stream, authorized.Label, (IAsyncDisposable)authorized);
+                    },
+                    cancellationToken).ConfigureAwait(false);
             }
             return Results.NavigateTo($"plan {opened.SessionId}", opened);
         }
@@ -136,10 +139,11 @@ public sealed class PlanReplModule(IPlanCatalog catalog, PlanOperations operatio
     }
 
     private static object Execute<T>(Func<T> operation)
+        where T : notnull
     {
         try
         {
-            return operation()!;
+            return operation();
         }
         catch (ArgumentException ex)
         {

@@ -1,7 +1,9 @@
 using System.Text.Json;
 using PlanViewer.App.Mcp;
 using PlanViewer.Core.Interfaces;
-using PlanViewer.Core.Models;
+using AnalyzerConfig = PlanViewer.Core.Models.AnalyzerConfig;
+using CorePlanSession = PlanViewer.Core.Models.PlanSession;
+using CorePlanSessionSummary = PlanViewer.Core.Models.PlanSessionSummary;
 using PlanViewer.Core.Output;
 using PlanViewer.Core.Services;
 
@@ -75,11 +77,37 @@ public sealed class McpPlanToolsContractTests
         Assert.Equal(0, item.GetProperty("actual_elapsed_ms").GetInt64());
     }
 
-    private static PlanSession CreateEstimatedSession()
+
+    [Fact]
+    public void HistoricalOverloads_DelegateToTheSharedOperationsBehavior()
+    {
+        var manager = new PlanSessionManager();
+        var session = CreateEstimatedSession();
+        manager.Register(session);
+        var operations = new PlanOperations(manager, AnalyzerConfig.Default);
+
+        Assert.Equal(
+            McpPlanTools.AnalyzePlan(manager, operations, session.SessionId),
+            McpPlanTools.AnalyzePlan(manager, session.SessionId));
+        Assert.Equal(
+            McpPlanTools.GetPlanSummary(manager, operations, session.SessionId),
+            McpPlanTools.GetPlanSummary(manager, session.SessionId));
+        Assert.Equal(
+            McpPlanTools.GetPlanWarnings(manager, operations, session.SessionId, "Warning"),
+            McpPlanTools.GetPlanWarnings(manager, session.SessionId, "Warning"));
+        Assert.Equal(
+            McpPlanTools.GetMissingIndexes(manager, operations, session.SessionId),
+            McpPlanTools.GetMissingIndexes(manager, session.SessionId));
+        Assert.Equal(
+            McpPlanTools.GetExpensiveOperators(manager, operations, session.SessionId, 3),
+            McpPlanTools.GetExpensiveOperators(manager, session.SessionId, 3));
+    }
+
+    private static CorePlanSession CreateEstimatedSession()
     {
         var plan = PlanTestHelper.LoadAndAnalyze("row_goal_plan.sqlplan");
         var analysis = ResultMapper.Map(plan, "row_goal_plan.sqlplan");
-        return new PlanSession
+        return new CorePlanSession
         {
             SessionId = $"contract-{Guid.NewGuid():N}",
             Label = "row_goal_plan.sqlplan",
@@ -95,10 +123,10 @@ public sealed class McpPlanToolsContractTests
 
     private sealed class ThrowingCatalog : IPlanCatalog
     {
-        public void Register(PlanSession session) => throw new InvalidOperationException();
-        public bool TryRegister(PlanSession session) => throw new InvalidOperationException();
+        public void Register(CorePlanSession session) => throw new InvalidOperationException();
+        public bool TryRegister(CorePlanSession session) => throw new InvalidOperationException();
         public bool Unregister(string sessionId) => throw new InvalidOperationException();
-        public PlanSession? GetSession(string sessionId) => throw new InvalidOperationException("Catalog was queried twice.");
-        public IReadOnlyList<PlanSessionSummary> GetAllSessions() => throw new InvalidOperationException();
+        public CorePlanSession? GetSession(string sessionId) => throw new InvalidOperationException("Catalog was queried twice.");
+        public IReadOnlyList<CorePlanSessionSummary> GetAllSessions() => throw new InvalidOperationException();
     }
 }

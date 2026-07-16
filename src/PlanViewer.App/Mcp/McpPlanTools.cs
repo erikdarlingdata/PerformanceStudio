@@ -16,6 +16,31 @@ namespace PlanViewer.App.Mcp;
 [McpServerToolType]
 public sealed class McpPlanTools
 {
+    // Historical overloads remain callable; MCP discovery uses the attributed overloads below.
+    public static string AnalyzePlan(PlanSessionManager sessionManager, string session_id) =>
+        AnalyzePlan(sessionManager, CreateOperations(sessionManager), session_id);
+
+    public static string GetPlanSummary(PlanSessionManager sessionManager, string session_id) =>
+        GetPlanSummary(sessionManager, CreateOperations(sessionManager), session_id);
+
+    public static string GetPlanWarnings(
+        PlanSessionManager sessionManager,
+        string session_id,
+        string? severity = null) =>
+        GetPlanWarnings(sessionManager, CreateOperations(sessionManager), session_id, severity);
+
+    public static string GetMissingIndexes(PlanSessionManager sessionManager, string session_id) =>
+        GetMissingIndexes(sessionManager, CreateOperations(sessionManager), session_id);
+
+    public static string GetExpensiveOperators(
+        PlanSessionManager sessionManager,
+        string session_id,
+        int top = 10) =>
+        GetExpensiveOperators(sessionManager, CreateOperations(sessionManager), session_id, top);
+
+    private static PlanOperations CreateOperations(PlanSessionManager sessionManager) =>
+        new(sessionManager, AnalyzerConfig.Default);
+
     [McpServerTool(Name = "list_plans")]
     [Description("Lists all execution plans currently loaded in the application. Returns session IDs, labels, " +
         "statement counts, warning counts, and source type. Use this first to discover available plans.")]

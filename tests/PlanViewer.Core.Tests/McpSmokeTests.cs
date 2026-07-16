@@ -113,7 +113,7 @@ public sealed class McpSmokeTests
                 opened.Content.OfType<TextContentBlock>().Select(block => block.Text));
             var id = System.Text.RegularExpressions.Regex.Match(
                 openedText,
-                "top_above_scan_plan-[0-9a-f]{32}",
+                "top_above_scan_plan-[0-9a-f]{12}",
                 System.Text.RegularExpressions.RegexOptions.IgnoreCase).Value;
             Assert.NotEmpty(id);
             var summary = await client.CallToolAsync(

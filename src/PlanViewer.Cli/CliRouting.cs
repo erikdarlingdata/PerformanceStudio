@@ -6,7 +6,7 @@ public static class CliRouting
         new(StringComparer.OrdinalIgnoreCase) { "plan", "open", "mcp", "repl" };
 
     public static bool ShouldUseRepl(IReadOnlyList<string> args) =>
-        args.Count == 0 || ReplCommands.Contains(args[0]);
+        args.Count > 0 && ReplCommands.Contains(args[0]);
 
     public static string[] GetReplArgs(IReadOnlyList<string> args) =>
         args.Count > 0 && args[0].Equals("repl", StringComparison.OrdinalIgnoreCase)

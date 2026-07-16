@@ -21,8 +21,8 @@ public sealed class CliRoutingTests
         Assert.True(CliRouting.ShouldUseRepl([command]));
 
     [Fact]
-    public void NoArguments_StartsInteractiveMode() =>
-        Assert.True(CliRouting.ShouldUseRepl([]));
+    public void NoArguments_PreserveLegacyRouting() =>
+        Assert.False(CliRouting.ShouldUseRepl([]));
 
     [Fact]
     public void ReplAlias_IsRemovedBeforeDispatch() =>

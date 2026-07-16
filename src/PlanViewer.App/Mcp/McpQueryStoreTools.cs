@@ -7,6 +7,7 @@ using ModelContextProtocol.Server;
 using PlanViewer.App.Services;
 using PlanViewer.Core.Interfaces;
 using PlanViewer.Core.Models;
+using PlanViewer.Core.Output;
 using PlanViewer.Core.Services;
 
 #pragma warning disable CA1707 // Identifiers should not contain underscores (MCP snake_case convention)
@@ -151,10 +152,11 @@ public sealed class McpQueryStoreTools
                 {
                     var xml = qsPlan.PlanXml
                         .Replace("encoding=\"utf-16\"", "encoding=\"utf-8\"");
-                    var parsed = ShowPlanParser.Parse(xml);
-                    PlanAnalyzer.Analyze(parsed, serverMetadata: serverMetadata);
-                    BenefitScorer.Score(parsed);
-
+                    var parsed = PlanAnalysisPipeline.Analyze(
+                        xml,
+                        AnalyzerConfig.Default,
+                        serverMetadata);
+                    var analysis = ResultMapper.Map(parsed, label);
                     var allStatements = parsed.Batches.SelectMany(b => b.Statements).ToList();
 
                     sessionManager.Register(sessionId, new PlanSession
@@ -163,6 +165,7 @@ public sealed class McpQueryStoreTools
                         Label = label,
                         Source = "query-store",
                         Plan = parsed,
+                        Analysis = analysis,
                         QueryText = qsPlan.QueryText,
                         ConnectionInfo = conn.ServerName,
                         StatementCount = allStatements.Count,

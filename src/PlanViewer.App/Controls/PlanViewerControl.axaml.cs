@@ -374,12 +374,14 @@ public partial class PlanViewerControl : UserControl
                 CountNodeWarnings(s.RootNode, ref warningCount, ref criticalCount);
         }
 
-        PlanSessionManager.Instance.Register(_mcpSessionId, new PlanSession
+        var analysisSnapshot = ResultMapper.Map(_currentPlan, label);
+        PlanSessionManager.Instance.Register(_mcpSessionId, new PlanViewer.App.Mcp.PlanSession
         {
             SessionId = _mcpSessionId,
             Label = label,
             Source = "file",
             Plan = _currentPlan,
+            Analysis = analysisSnapshot,
             QueryText = queryText,
             StatementCount = allStatements.Count,
             HasActualStats = allStatements.Any(s => s.QueryTimeStats != null),
