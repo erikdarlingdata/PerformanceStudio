@@ -19,16 +19,8 @@ public static class PlanAnalysisRunner
     /// serverMetadata for live captures (enables server-context rules); pass null
     /// for offline .sqlplan files.
     /// </summary>
-    public static ParsedPlan Analyze(string planXml, AnalyzerConfig config, ServerMetadata? serverMetadata = null)
-    {
-        var plan = ShowPlanParser.Parse(planXml);
-        if (serverMetadata != null)
-            PlanAnalyzer.Analyze(plan, config, serverMetadata);
-        else
-            PlanAnalyzer.Analyze(plan, config);
-        BenefitScorer.Score(plan);
-        return plan;
-    }
+    public static ParsedPlan Analyze(string planXml, AnalyzerConfig config, ServerMetadata? serverMetadata = null) =>
+        PlanAnalysisPipeline.Analyze(planXml, config, serverMetadata);
 
     /// <summary>
     /// Writes {label}.analysis.json and/or {label}.analysis.txt into outDir per

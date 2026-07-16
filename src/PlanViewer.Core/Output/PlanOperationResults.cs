@@ -54,6 +54,12 @@ public sealed class PlanWarningsResult
     [JsonPropertyName("warning_count")]
     public int WarningCount { get; init; }
 
+    [JsonPropertyName("returned_warning_count")]
+    public int ReturnedWarningCount { get; init; }
+
+    [JsonPropertyName("truncated")]
+    public bool Truncated { get; init; }
+
     [JsonPropertyName("warnings")]
     public IReadOnlyList<PlanWarningItem> Warnings { get; init; } = [];
 }
@@ -139,6 +145,12 @@ public sealed class MissingIndexesResult
 
     [JsonPropertyName("missing_index_count")]
     public int MissingIndexCount { get; init; }
+
+    [JsonPropertyName("returned_index_count")]
+    public int ReturnedIndexCount { get; init; }
+
+    [JsonPropertyName("truncated")]
+    public bool Truncated { get; init; }
 
     [JsonPropertyName("indexes")]
     public IReadOnlyList<MissingIndexItem> Indexes { get; init; } = [];

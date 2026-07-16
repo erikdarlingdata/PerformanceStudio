@@ -8,7 +8,14 @@ namespace PlanViewer.Core.Output;
 /// </summary>
 public static class ResultMapper
 {
-    public static AnalysisResult Map(ParsedPlan plan, string source, ServerMetadata? metadata = null)
+    public static AnalysisResult Map(ParsedPlan plan, string source, ServerMetadata? metadata = null) =>
+        MapCancellable(plan, source, metadata, CancellationToken.None);
+
+    internal static AnalysisResult MapCancellable(
+        ParsedPlan plan,
+        string source,
+        ServerMetadata? metadata,
+        CancellationToken cancellationToken)
     {
         var result = new AnalysisResult
         {
@@ -19,13 +26,15 @@ public static class ResultMapper
 
         foreach (var batch in plan.Batches)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             foreach (var stmt in batch.Statements)
             {
-                result.Statements.Add(MapStatement(stmt));
+                cancellationToken.ThrowIfCancellationRequested();
+                result.Statements.Add(MapStatement(stmt, cancellationToken));
             }
         }
 
-        result.Summary = BuildSummary(result);
+        result.Summary = BuildSummary(result, cancellationToken);
 
         if (metadata != null)
         {
@@ -74,8 +83,11 @@ public static class ResultMapper
         return result;
     }
 
-    private static StatementResult MapStatement(PlanStatement stmt)
+    private static StatementResult MapStatement(
+        PlanStatement stmt,
+        CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var result = new StatementResult
         {
             StatementText = stmt.StatementText,
@@ -192,11 +204,14 @@ public static class ResultMapper
         {
             result.MissingIndexes.Add(new MissingIndexResult
             {
+                Database = mi.Database,
+                SchemaName = mi.Schema,
+                BareTable = mi.Table,
                 Table = $"{mi.Database}.{mi.Schema}.{mi.Table}",
                 Impact = mi.Impact,
-                EqualityColumns = mi.EqualityColumns,
-                InequalityColumns = mi.InequalityColumns,
-                IncludeColumns = mi.IncludeColumns,
+                EqualityColumns = mi.EqualityColumns.ToList(),
+                InequalityColumns = mi.InequalityColumns.ToList(),
+                IncludeColumns = mi.IncludeColumns.ToList(),
                 CreateStatement = mi.CreateStatement
             });
         }
@@ -204,7 +219,7 @@ public static class ResultMapper
         // Operator tree
         if (stmt.RootNode != null)
         {
-            result.OperatorTree = MapNode(stmt.RootNode);
+            result.OperatorTree = MapNode(stmt.RootNode, cancellationToken);
         }
 
         // Plan guide
@@ -235,8 +250,9 @@ public static class ResultMapper
         return result;
     }
 
-    private static OperatorResult MapNode(PlanNode node)
+    private static OperatorResult MapNode(PlanNode node, CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var result = new OperatorResult
         {
             NodeId = node.NodeId,
@@ -294,19 +310,22 @@ public static class ResultMapper
 
         // Children
         foreach (var child in node.Children)
-            result.Children.Add(MapNode(child));
+            result.Children.Add(MapNode(child, cancellationToken));
 
         return result;
     }
 
-    private static AnalysisSummary BuildSummary(AnalysisResult result)
+    private static AnalysisSummary BuildSummary(
+        AnalysisResult result,
+        CancellationToken cancellationToken)
     {
         var allWarnings = new List<WarningResult>();
 
         foreach (var stmt in result.Statements)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             allWarnings.AddRange(stmt.Warnings);
-            CollectNodeWarnings(stmt.OperatorTree, allWarnings);
+            CollectNodeWarnings(stmt.OperatorTree, allWarnings, cancellationToken);
         }
 
         return new AnalysisSummary
@@ -323,12 +342,23 @@ public static class ResultMapper
         };
     }
 
-    private static void CollectNodeWarnings(OperatorResult? node, List<WarningResult> warnings)
+    private static void CollectNodeWarnings(
+        OperatorResult? node,
+        List<WarningResult> warnings,
+        CancellationToken cancellationToken)
     {
-        if (node == null) return;
-        warnings.AddRange(node.Warnings);
-        foreach (var child in node.Children)
-            CollectNodeWarnings(child, warnings);
+        if (node == null)
+            return;
+
+        var pending = new Stack<OperatorResult>();
+        pending.Push(node);
+        while (pending.TryPop(out var current))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            warnings.AddRange(current.Warnings);
+            for (var index = current.Children.Count - 1; index >= 0; index--)
+                pending.Push(current.Children[index]);
+        }
     }
 
     /// <summary>

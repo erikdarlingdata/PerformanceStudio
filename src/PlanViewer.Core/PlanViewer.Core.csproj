@@ -23,6 +23,8 @@
     <!-- Self-time attribution (PlanAnalyzer.Timing) is internal but is the
          source of every operator timing the UI and BenefitScorer report. -->
     <InternalsVisibleTo Include="PlanViewer.Core.Tests" />
+    <InternalsVisibleTo Include="planview" />
+    <InternalsVisibleTo Include="PlanViewer.App" />
   </ItemGroup>
 
 </Project>

@@ -8,12 +8,17 @@ namespace PlanViewer.Core.Services;
 
 public static partial class PlanAnalyzer
 {
-    private static void AnalyzeNodeTree(PlanNode node, PlanStatement stmt, AnalyzerConfig cfg)
+    private static void AnalyzeNodeTree(
+        PlanNode node,
+        PlanStatement stmt,
+        AnalyzerConfig cfg,
+        CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         AnalyzeNode(node, stmt, cfg);
 
         foreach (var child in node.Children)
-            AnalyzeNodeTree(child, stmt, cfg);
+            AnalyzeNodeTree(child, stmt, cfg, cancellationToken);
     }
 
     private static void AnalyzeNode(PlanNode node, PlanStatement stmt, AnalyzerConfig cfg)
@@ -190,16 +195,16 @@ public static partial class PlanAnalyzer
             or "CLRUserDefinedFunctionRequiresDataAccess"
             or "CouldNotGenerateValidParallelPlan";
         if (!cfg.IsRuleDisabled(6) && !serialPlanCoversUdf)
-        foreach (var udf in node.ScalarUdfs)
-        {
-            var type = udf.IsClrFunction ? "CLR" : "T-SQL";
-            node.Warnings.Add(new PlanWarning
+            foreach (var udf in node.ScalarUdfs)
             {
-                WarningType = "Scalar UDF",
-                Message = $"Scalar {type} UDF: {udf.FunctionName}. Scalar UDFs run once per row and prevent parallelism. Options: rewrite as an inline table-valued function, assign the result to a variable if only one row is needed, dump results to a #temp table and apply the UDF to the final result set, or on SQL Server 2019+ check if the UDF is eligible for automatic scalar UDF inlining.",
-                Severity = PlanWarningSeverity.Warning
-            });
-        }
+                var type = udf.IsClrFunction ? "CLR" : "T-SQL";
+                node.Warnings.Add(new PlanWarning
+                {
+                    WarningType = "Scalar UDF",
+                    Message = $"Scalar {type} UDF: {udf.FunctionName}. Scalar UDFs run once per row and prevent parallelism. Options: rewrite as an inline table-valued function, assign the result to a variable if only one row is needed, dump results to a #temp table and apply the UDF to the final result set, or on SQL Server 2019+ check if the UDF is eligible for automatic scalar UDF inlining.",
+                    Severity = PlanWarningSeverity.Warning
+                });
+            }
 
     }
 
@@ -210,52 +215,52 @@ public static partial class PlanAnalyzer
         // Exchange spills on Parallelism operators get special handling since their
         // timing is unreliable but the write count tells the story.
         if (!cfg.IsRuleDisabled(7))
-        foreach (var w in node.Warnings.ToList())
-        {
-            if (w.SpillDetails == null)
-                continue;
-
-            var isExchangeSpill = w.SpillDetails.SpillType == "Exchange";
-
-            if (isExchangeSpill)
+            foreach (var w in node.Warnings.ToList())
             {
-                // Exchange spills: severity based on write count since timing is unreliable
-                var writes = w.SpillDetails.WritesToTempDb;
-                if (writes >= 1_000_000)
-                    w.Severity = PlanWarningSeverity.Critical;
-                else if (writes >= 10_000)
-                    w.Severity = PlanWarningSeverity.Warning;
+                if (w.SpillDetails == null)
+                    continue;
 
-                // Surface Parallelism operator time when available (actual plans)
-                if (node.ActualElapsedMs > 0)
+                var isExchangeSpill = w.SpillDetails.SpillType == "Exchange";
+
+                if (isExchangeSpill)
                 {
-                    var operatorMs = GetParallelismOperatorElapsedMs(node);
+                    // Exchange spills: severity based on write count since timing is unreliable
+                    var writes = w.SpillDetails.WritesToTempDb;
+                    if (writes >= 1_000_000)
+                        w.Severity = PlanWarningSeverity.Critical;
+                    else if (writes >= 10_000)
+                        w.Severity = PlanWarningSeverity.Warning;
+
+                    // Surface Parallelism operator time when available (actual plans)
+                    if (node.ActualElapsedMs > 0)
+                    {
+                        var operatorMs = GetParallelismOperatorElapsedMs(node);
+                        var stmtMs = stmt.QueryTimeStats?.ElapsedTimeMs ?? 0;
+                        if (stmtMs > 0 && operatorMs > 0)
+                        {
+                            var pct = (double)operatorMs / stmtMs;
+                            w.Message += $" Operator time: {operatorMs:N0}ms ({pct * 100:N0}% of statement).";
+                        }
+                    }
+                }
+                else if (node.ActualElapsedMs > 0)
+                {
+                    // Sort/Hash spills: severity based on operator time percentage
+                    var operatorMs = GetOperatorOwnElapsedMs(node);
                     var stmtMs = stmt.QueryTimeStats?.ElapsedTimeMs ?? 0;
-                    if (stmtMs > 0 && operatorMs > 0)
+
+                    if (stmtMs > 0)
                     {
                         var pct = (double)operatorMs / stmtMs;
                         w.Message += $" Operator time: {operatorMs:N0}ms ({pct * 100:N0}% of statement).";
+
+                        if (pct >= 0.5)
+                            w.Severity = PlanWarningSeverity.Critical;
+                        else if (pct >= 0.1)
+                            w.Severity = PlanWarningSeverity.Warning;
                     }
                 }
             }
-            else if (node.ActualElapsedMs > 0)
-            {
-                // Sort/Hash spills: severity based on operator time percentage
-                var operatorMs = GetOperatorOwnElapsedMs(node);
-                var stmtMs = stmt.QueryTimeStats?.ElapsedTimeMs ?? 0;
-
-                if (stmtMs > 0)
-                {
-                    var pct = (double)operatorMs / stmtMs;
-                    w.Message += $" Operator time: {operatorMs:N0}ms ({pct * 100:N0}% of statement).";
-
-                    if (pct >= 0.5)
-                        w.Severity = PlanWarningSeverity.Critical;
-                    else if (pct >= 0.1)
-                        w.Severity = PlanWarningSeverity.Warning;
-                }
-            }
-        }
 
     }
 
@@ -881,14 +886,14 @@ public static partial class PlanAnalyzer
         // Rule 29: Enhance implicit conversion warnings — Seek Plan is more severe
         // Skip for 0-execution nodes — the operator never ran
         if (!cfg.IsRuleDisabled(29) && !(node.HasActualStats && node.ActualExecutions == 0))
-        foreach (var w in node.Warnings.ToList())
-        {
-            if (w.WarningType == "Implicit Conversion" && w.Message.StartsWith("Seek Plan"))
+            foreach (var w in node.Warnings.ToList())
             {
-                w.Severity = PlanWarningSeverity.Critical;
-                w.Message = $"Implicit conversion prevented an index seek, forcing a scan instead. Fix the data type mismatch: ensure the parameter or variable type matches the column type exactly. {w.Message}";
+                if (w.WarningType == "Implicit Conversion" && w.Message.StartsWith("Seek Plan"))
+                {
+                    w.Severity = PlanWarningSeverity.Critical;
+                    w.Message = $"Implicit conversion prevented an index seek, forcing a scan instead. Fix the data type mismatch: ensure the parameter or variable type matches the column type exactly. {w.Message}";
+                }
             }
-        }
 
     }
 

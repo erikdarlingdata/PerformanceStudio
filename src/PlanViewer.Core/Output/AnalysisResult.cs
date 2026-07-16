@@ -251,6 +251,15 @@ public class WarningResult
 
 public class MissingIndexResult
 {
+    [JsonIgnore]
+    public string Database { get; set; } = "";
+
+    [JsonIgnore]
+    public string SchemaName { get; set; } = "";
+
+    [JsonIgnore]
+    public string BareTable { get; set; } = "";
+
     [JsonPropertyName("table")]
     public string Table { get; set; } = "";
 

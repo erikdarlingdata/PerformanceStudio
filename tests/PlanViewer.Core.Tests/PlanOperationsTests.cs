@@ -13,14 +13,34 @@ public sealed class PlanOperationsTests
 
         var opened = await operations.OpenAsync(path, TestContext.Current.CancellationToken);
 
-        Assert.Matches("^row_goal_plan-[0-9a-f]{32}$", opened.SessionId);
+        Assert.Matches("^row_goal_plan-[0-9a-f]{12}$", opened.SessionId);
         Assert.Equal("row_goal_plan.sqlplan", opened.Label);
         Assert.Equal(1, opened.StatementCount);
         Assert.Equal(2, opened.WarningCount);
         var session = catalog.GetSession(opened.SessionId);
         Assert.NotNull(session);
         Assert.Equal("row_goal_plan.sqlplan", session.Source);
-        Assert.NotEmpty(session.Plan.Batches);
+        Assert.NotNull(session.Analysis);
+        Assert.Empty(session.Plan.Batches);
+    }
+
+    [Fact]
+    public async Task GetAnalysis_UsesTheSnapshotCapturedAtRegistration()
+    {
+        var catalog = new InMemoryPlanCatalog();
+        var operations = new PlanOperations(catalog);
+        var path = Path.GetFullPath(Path.Combine("Plans", "row_goal_plan.sqlplan"));
+        var opened = await operations.OpenAsync(path, TestContext.Current.CancellationToken);
+        var session = Assert.IsType<PlanViewer.Core.Models.PlanSession>(catalog.GetSession(opened.SessionId));
+
+        Assert.Empty(session.Plan.Batches);
+        var captured = operations.GetAnalysis(session);
+        session.Plan.Batches.Clear();
+        var afterMutation = operations.GetAnalysis(session);
+
+        Assert.Same(captured, afterMutation);
+        Assert.Equal(1, afterMutation.Summary.TotalStatements);
+        Assert.Equal(2, afterMutation.Summary.TotalWarnings);
     }
 
     [Fact]
@@ -38,6 +58,36 @@ public sealed class PlanOperationsTests
         Assert.Equal(0, summary.CriticalWarnings);
         Assert.False(summary.HasActualStats);
         Assert.Contains("Row Goal", summary.WarningTypes);
+    }
+
+    [Fact]
+    public async Task GetWarnings_BoundsTheReturnedItemsAndReportsTruncation()
+    {
+        var catalog = new InMemoryPlanCatalog();
+        var operations = new PlanOperations(catalog);
+        var path = Path.GetFullPath(Path.Combine("Plans", "row_goal_plan.sqlplan"));
+        var opened = await operations.OpenAsync(path, TestContext.Current.CancellationToken);
+        var session = Assert.IsType<PlanViewer.Core.Models.PlanSession>(catalog.GetSession(opened.SessionId));
+        var analysis = Assert.IsType<PlanViewer.Core.Output.AnalysisResult>(session.Analysis);
+        var statement = Assert.Single(analysis.Statements);
+        statement.Warnings = Enumerable.Range(0, PlanOperations.DefaultMaxWarningResults + 1)
+            .Select(index => new PlanViewer.Core.Output.WarningResult
+            {
+                Type = $"warning-{index}",
+                Severity = "Warning",
+                Message = new string('x', PlanOperations.DefaultMaxResponseTextLength + 1)
+            })
+            .ToList();
+        statement.OperatorTree = null;
+
+        var result = operations.GetWarnings(session);
+
+        Assert.Equal(PlanOperations.DefaultMaxWarningResults + 1, result.WarningCount);
+        Assert.Equal(PlanOperations.DefaultMaxWarningResults, result.ReturnedWarningCount);
+        Assert.Equal(PlanOperations.DefaultMaxWarningResults, result.Warnings.Count);
+        Assert.True(result.Truncated);
+        Assert.All(result.Warnings, warning =>
+            Assert.True(warning.Message.Length <= PlanOperations.DefaultMaxResponseTextLength + 17));
     }
 
     [Fact]
@@ -75,6 +125,42 @@ public sealed class PlanOperationsTests
 
 
     [Fact]
+    public async Task GetMissingIndexes_BoundsTheReturnedItemsAndReportsTruncation()
+    {
+        var catalog = new InMemoryPlanCatalog();
+        var operations = new PlanOperations(catalog);
+        var path = Path.GetFullPath(Path.Combine("Plans", "row_goal_plan.sqlplan"));
+        var opened = await operations.OpenAsync(path, TestContext.Current.CancellationToken);
+        var session = Assert.IsType<PlanViewer.Core.Models.PlanSession>(catalog.GetSession(opened.SessionId));
+        var analysis = Assert.IsType<PlanViewer.Core.Output.AnalysisResult>(session.Analysis);
+        var statement = Assert.Single(analysis.Statements);
+        statement.MissingIndexes = Enumerable.Range(0, PlanOperations.DefaultMaxMissingIndexResults + 1)
+            .Select(index => new PlanViewer.Core.Output.MissingIndexResult
+            {
+                Database = "database",
+                SchemaName = "dbo",
+                BareTable = $"table-{index}",
+                Table = $"database.dbo.table-{index}",
+                EqualityColumns = Enumerable.Repeat(new string('c', 600), 100).ToList(),
+                CreateStatement = new string('x', PlanOperations.DefaultMaxResponseTextLength + 1)
+            })
+            .ToList();
+
+        var result = operations.GetMissingIndexes(session);
+
+        Assert.Equal(PlanOperations.DefaultMaxMissingIndexResults + 1, result.MissingIndexCount);
+        Assert.Equal(PlanOperations.DefaultMaxMissingIndexResults, result.ReturnedIndexCount);
+        Assert.Equal(PlanOperations.DefaultMaxMissingIndexResults, result.Indexes.Count);
+        Assert.True(result.Truncated);
+        Assert.All(result.Indexes, index =>
+        {
+            Assert.True(index.CreateStatement.Length <= PlanOperations.DefaultMaxResponseTextLength + 17);
+            Assert.True(index.EqualityColumns.Count <= 64);
+            Assert.All(index.EqualityColumns, column => Assert.True(column.Length <= 512 + 17));
+        });
+    }
+
+    [Fact]
     public async Task GetMissingIndexes_ReturnsStructuredSuggestions()
     {
         var operations = new PlanOperations(new InMemoryPlanCatalog());
@@ -100,9 +186,46 @@ public sealed class PlanOperationsTests
         var first = await operations.OpenAsync(path, TestContext.Current.CancellationToken);
         var second = await operations.OpenAsync(path, TestContext.Current.CancellationToken);
 
-        Assert.Matches("^row_goal_plan-[0-9a-f]{32}$", first.SessionId);
-        Assert.Matches("^row_goal_plan-[0-9a-f]{32}$", second.SessionId);
+        Assert.Matches("^row_goal_plan-[0-9a-f]{12}$", first.SessionId);
+        Assert.Matches("^row_goal_plan-[0-9a-f]{12}$", second.SessionId);
         Assert.NotEqual(first.SessionId, second.SessionId);
+    }
+
+    [Fact]
+    public async Task OpenAsync_BoundsTheHumanReadableSessionIdentity()
+    {
+        var operations = new PlanOperations(new InMemoryPlanCatalog());
+        var source = Path.GetFullPath(Path.Combine("Plans", "row_goal_plan.sqlplan"));
+        var directory = Directory.CreateTempSubdirectory("plan-long-id-");
+        var path = Path.Combine(directory.FullName, $"{new string('a', 180)}.sqlplan");
+        try
+        {
+            File.Copy(source, path);
+
+            var opened = await operations.OpenAsync(path, TestContext.Current.CancellationToken);
+
+            Assert.True(opened.SessionId.Length <= 61, opened.SessionId);
+            Assert.Matches("^[a-z]{1,48}-[0-9a-f]{12}$", opened.SessionId);
+        }
+        finally
+        {
+            directory.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task OpenAsync_UsesPlanFallbackWhenTheTruncatedLabelHasNoReadableCharacters()
+    {
+        var operations = new PlanOperations(new InMemoryPlanCatalog());
+        var path = Path.GetFullPath(Path.Combine("Plans", "row_goal_plan.sqlplan"));
+        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+
+        var opened = await operations.OpenAsync(
+            stream,
+            $"{new string('.', 60)}.sqlplan",
+            TestContext.Current.CancellationToken);
+
+        Assert.Matches("^plan-[0-9a-f]{12}$", opened.SessionId);
     }
 
     [Fact]
@@ -129,17 +252,22 @@ public sealed class PlanOperationsTests
 
 
     [Fact]
-    public async Task OpenAsync_AllocatesUniqueIdsConcurrently()
+    public async Task OpenAsync_AllocatesUniqueIdsAcrossConcurrentAdmissionWaves()
     {
         var catalog = new InMemoryPlanCatalog();
         var operations = new PlanOperations(catalog);
         var path = Path.GetFullPath(Path.Combine("Plans", "row_goal_plan.sqlplan"));
+        var sessionIds = new HashSet<string>(StringComparer.Ordinal);
 
-        var opened = await Task.WhenAll(
-            Enumerable.Range(0, 8)
-                .Select(_ => operations.OpenAsync(path, TestContext.Current.CancellationToken)));
+        for (var wave = 0; wave < 4; wave++)
+        {
+            var opened = await Task.WhenAll(
+                operations.OpenAsync(path, TestContext.Current.CancellationToken),
+                operations.OpenAsync(path, TestContext.Current.CancellationToken));
+            Assert.All(opened, result => Assert.True(sessionIds.Add(result.SessionId), result.SessionId));
+        }
 
-        Assert.Equal(8, opened.Select(result => result.SessionId).Distinct().Count());
+        Assert.Equal(8, sessionIds.Count);
         Assert.Equal(8, catalog.GetAllSessions().Count);
     }
 
@@ -158,7 +286,7 @@ public sealed class PlanOperationsTests
 
             var opened = await operations.OpenAsync(path, TestContext.Current.CancellationToken);
 
-            Assert.Matches($"^plan-{reservedName}-[0-9a-f]{{32}}$", opened.SessionId);
+            Assert.Matches($"^plan-{reservedName}-[0-9a-f]{{12}}$", opened.SessionId);
         }
         finally
         {
@@ -313,8 +441,18 @@ public sealed class PlanOperationsTests
         var catalog = new InMemoryPlanCatalog();
         var operations = new PlanOperations(catalog);
         var path = Path.GetFullPath(Path.Combine("Plans", "row_goal_plan.sqlplan"));
+        for (var index = 0; index < PlanOperations.DefaultMaxSessions - 1; index++)
+        {
+            catalog.Register(new PlanViewer.Core.Models.PlanSession
+            {
+                SessionId = $"seed-{index}",
+                Label = $"seed-{index}.sqlplan",
+                Source = $"seed-{index}.sqlplan",
+                Plan = new PlanViewer.Core.Models.ParsedPlan()
+            });
+        }
 
-        var admitted = await Task.WhenAll(Enumerable.Range(0, 40).Select(async _ =>
+        var admitted = await Task.WhenAll(Enumerable.Range(0, 2).Select(async _ =>
         {
             try
             {
@@ -327,8 +465,40 @@ public sealed class PlanOperationsTests
             }
         }));
 
-        Assert.Equal(32, admitted.Count(value => value));
-        Assert.Equal(32, catalog.GetAllSessions().Count);
+        Assert.Single(admitted, value => value);
+        Assert.Equal(PlanOperations.DefaultMaxSessions, catalog.GetAllSessions().Count);
+    }
+
+    [Fact]
+    public async Task OpenAsync_BoundsEstimatedRetainedAnalysisMemoryByComplexity()
+    {
+        var operations = new PlanOperations(new InMemoryPlanCatalog());
+        var path = Path.Combine(Path.GetTempPath(), $"retained-complexity-{Guid.NewGuid():N}.sqlplan");
+        try
+        {
+            var xml = new System.Text.StringBuilder(
+                "<ShowPlanXML xmlns=\"http://schemas.microsoft.com/sqlserver/2004/07/showplan\"><BatchSequence><Batch><Statements>");
+            for (var id = 0; id < PlanOperations.DefaultMaxStatements; id++)
+            {
+                xml.Append($"<StmtSimple StatementId=\"{id}\" StatementText=\"SELECT 1\" StatementSubTreeCost=\"0\" />");
+            }
+            xml.Append("</Statements></Batch></BatchSequence></ShowPlanXML>");
+            await File.WriteAllTextAsync(path, xml.ToString(), TestContext.Current.CancellationToken);
+
+            var first = await operations.OpenAsync(path, TestContext.Current.CancellationToken);
+            await operations.OpenAsync(path, TestContext.Current.CancellationToken);
+            await operations.OpenAsync(path, TestContext.Current.CancellationToken);
+            var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+                () => operations.OpenAsync(path, TestContext.Current.CancellationToken));
+
+            Assert.Contains("retained-analysis", exception.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.True(operations.Close(first.SessionId));
+            await operations.OpenAsync(path, TestContext.Current.CancellationToken);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
     }
 
     [Fact]

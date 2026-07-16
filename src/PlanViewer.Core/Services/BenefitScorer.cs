@@ -25,16 +25,21 @@ public static class BenefitScorer
         "Bare Scan",            // Rule 34
     };
 
-    public static void Score(ParsedPlan plan)
+    public static void Score(ParsedPlan plan) =>
+        ScoreCancellable(plan, CancellationToken.None);
+
+    internal static void ScoreCancellable(ParsedPlan plan, CancellationToken cancellationToken)
     {
         foreach (var batch in plan.Batches)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             foreach (var stmt in batch.Statements)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 ScoreStatementWarnings(stmt);
 
                 if (stmt.RootNode != null)
-                    ScoreNodeTree(stmt.RootNode, stmt);
+                    ScoreNodeTree(stmt.RootNode, stmt, cancellationToken);
 
                 if (stmt.WaitStats.Count > 0 && stmt.QueryTimeStats != null)
                     ScoreWaitStats(stmt);
@@ -82,7 +87,7 @@ public static class BenefitScorer
             {
                 >= 50 => PlanWarningSeverity.Critical,
                 >= 10 => PlanWarningSeverity.Warning,
-                _     => PlanWarningSeverity.Info,
+                _ => PlanWarningSeverity.Info,
             };
 
             stmt.PlanWarnings.Add(new PlanWarning
@@ -99,8 +104,8 @@ public static class BenefitScorer
     private static string FormatLatency(double ms)
     {
         if (ms >= 1000) return $"{ms / 1000:N2} s";
-        if (ms >= 10)   return $"{ms:N0} ms";
-        if (ms >= 1)    return $"{ms:N1} ms";
+        if (ms >= 10) return $"{ms:N0} ms";
+        if (ms >= 1) return $"{ms:N1} ms";
         return $"{ms * 1000:N0} µs";
     }
 
@@ -145,19 +150,23 @@ public static class BenefitScorer
                     }
                     break;
 
-                // Rules that cannot be quantified: leave MaxBenefitPercent as null
-                // Rule 18 (Compile Memory Exceeded), Rule 20 (Local Variables),
-                // Rule 27 (Optimize For Unknown)
+                    // Rules that cannot be quantified: leave MaxBenefitPercent as null
+                    // Rule 18 (Compile Memory Exceeded), Rule 20 (Local Variables),
+                    // Rule 27 (Optimize For Unknown)
             }
         }
     }
 
-    private static void ScoreNodeTree(PlanNode node, PlanStatement stmt)
+    private static void ScoreNodeTree(
+        PlanNode node,
+        PlanStatement stmt,
+        CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         ScoreNodeWarnings(node, stmt);
 
         foreach (var child in node.Children)
-            ScoreNodeTree(child, stmt);
+            ScoreNodeTree(child, stmt, cancellationToken);
     }
 
     private static void ScoreNodeWarnings(PlanNode node, PlanStatement stmt)

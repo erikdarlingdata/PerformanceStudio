@@ -1,4 +1,3 @@
-using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
 using PlanViewer.Core.Interfaces;
 using PlanViewer.Core.Models;
@@ -11,22 +10,24 @@ namespace PlanViewer.Core.Services;
 /// </summary>
 public sealed class PlanOperations
 {
-    public const long DefaultMaxPlanFileBytes = 16L * 1024 * 1024;
-    public const int DefaultMaxSessions = 32;
-    public const int DefaultMaxStatements = 10_000;
-    public const int DefaultMaxOperators = 100_000;
-    public const int DefaultMaxConcurrentOpens = 2;
-
-    private static readonly ConditionalWeakTable<IPlanCatalog, object> CatalogRegistrationGates = new();
+    internal const long DefaultMaxPlanFileBytes = 16L * 1024 * 1024;
+    internal const int DefaultMaxSessions = 32;
+    internal const int DefaultMaxStatements = 10_000;
+    internal const int DefaultMaxOperators = 100_000;
+    internal const int DefaultMaxConcurrentOpens = 2;
+    internal const int DefaultMaxWarningResults = 500;
+    internal const int DefaultMaxMissingIndexResults = 100;
+    internal const int DefaultMaxResponseTextLength = 4_096;
 
     private readonly IPlanCatalog _catalog;
     private readonly AnalyzerConfig _config;
-    private readonly SemaphoreSlim _openSlots = new(DefaultMaxConcurrentOpens);
+    private readonly PlanResourceBudget _budget;
 
     public PlanOperations(IPlanCatalog catalog, AnalyzerConfig? config = null)
     {
         _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
         _config = config ?? ConfigLoader.Load();
+        _budget = PlanResourceBudget.ForCatalog(_catalog);
     }
 
     public async Task<PlanSessionSummary> OpenAsync(
@@ -37,15 +38,8 @@ public sealed class PlanOperations
         if (!Path.GetExtension(path).Equals(".sqlplan", StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("Only .sqlplan files can be opened.");
 
-        await _openSlots.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            return await OpenPathCoreAsync(path, cancellationToken).ConfigureAwait(false);
-        }
-        finally
-        {
-            _openSlots.Release();
-        }
+        using var openSlot = await _budget.AcquireOpenSlotAsync(cancellationToken).ConfigureAwait(false);
+        return await OpenPathCoreAsync(path, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<PlanSessionSummary> OpenAsync(
@@ -61,15 +55,27 @@ public sealed class PlanOperations
             throw new InvalidDataException("The plan label must be a .sqlplan file name.");
         }
 
-        await _openSlots.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
+        using var openSlot = await _budget.AcquireOpenSlotAsync(cancellationToken).ConfigureAwait(false);
+        return await OpenStreamCoreAsync(stream, label, cancellationToken).ConfigureAwait(false);
+    }
+
+    internal async Task<PlanSessionSummary> OpenOwnedStreamAsync(
+        Func<CancellationToken, ValueTask<(FileStream Stream, string Label, IAsyncDisposable Owner)>> streamFactory,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(streamFactory);
+        using var openSlot = await _budget.AcquireOpenSlotAsync(cancellationToken).ConfigureAwait(false);
+        var source = await streamFactory(cancellationToken).ConfigureAwait(false);
+        await using var owner = source.Owner.ConfigureAwait(false);
+        ArgumentNullException.ThrowIfNull(source.Stream);
+        ArgumentException.ThrowIfNullOrWhiteSpace(source.Label);
+        if (!Path.GetExtension(source.Label).Equals(".sqlplan", StringComparison.OrdinalIgnoreCase) ||
+            !Path.GetFileName(source.Label).Equals(source.Label, StringComparison.Ordinal))
         {
-            return await OpenStreamCoreAsync(stream, label, cancellationToken).ConfigureAwait(false);
+            throw new InvalidDataException("The plan label must be a .sqlplan file name.");
         }
-        finally
-        {
-            _openSlots.Release();
-        }
+
+        return await OpenStreamCoreAsync(source.Stream, source.Label, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<PlanSessionSummary> OpenPathCoreAsync(
@@ -95,7 +101,7 @@ public sealed class PlanOperations
         string label,
         CancellationToken cancellationToken)
     {
-        EnsureSessionCapacity();
+        _budget.EnsureSessionCapacity(DefaultMaxSessions);
         if (!stream.CanRead || !stream.CanSeek)
             throw new ArgumentException("The plan stream must be readable and seekable.", nameof(stream));
         if (stream.Position != 0)
@@ -106,36 +112,41 @@ public sealed class PlanOperations
                 $"Plan file exceeds the {DefaultMaxPlanFileBytes / (1024 * 1024)} MiB size limit.");
         }
 
+        var preflight = await PlanXmlPreflight.ValidateAsync(stream, cancellationToken).ConfigureAwait(false);
+        using var retainedEstimate = _budget.ReserveRetainedEstimate(
+            EstimateRetainedAnalysisBytes(stream.Length, preflight));
         var planXml = await ReadPlanXmlAsync(stream, cancellationToken).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
         if (string.IsNullOrWhiteSpace(planXml))
             throw new InvalidDataException("Plan file is empty.");
 
-        var plan = ShowPlanParser.Parse(planXml);
-        cancellationToken.ThrowIfCancellationRequested();
+        var plan = PlanAnalysisPipeline.Analyze(
+            planXml,
+            _config,
+            serverMetadata: null,
+            cancellationToken,
+            ValidateComplexity);
         if (!string.IsNullOrWhiteSpace(plan.ParseError))
             throw new InvalidDataException($"Could not parse plan XML: {plan.ParseError}");
         if (!plan.Batches.SelectMany(batch => batch.Statements).Any())
             throw new InvalidDataException("Could not parse any statements from the plan XML.");
 
-        ValidateComplexity(plan, cancellationToken);
-        PlanAnalyzer.Analyze(plan, _config);
-        cancellationToken.ThrowIfCancellationRequested();
-        BenefitScorer.Score(plan);
-        cancellationToken.ThrowIfCancellationRequested();
-
-        var analysis = ResultMapper.Map(plan, label);
+        var analysis = ResultMapper.MapCancellable(plan, label, metadata: null, cancellationToken);
+        plan.RawXml = string.Empty;
+        plan.Batches.Clear();
         var baseId = CreateBaseSessionId(Path.GetFileNameWithoutExtension(label));
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var sessionId = $"{baseId}-{Guid.NewGuid():N}";
+            var opaqueId = Guid.NewGuid().ToString("N")[..12];
+            var sessionId = $"{baseId}-{opaqueId}";
             var session = new PlanSession
             {
                 SessionId = sessionId,
                 Label = label,
                 Source = label,
                 Plan = plan,
+                Analysis = analysis,
                 StatementCount = analysis.Summary.TotalStatements,
                 HasActualStats = analysis.Summary.HasActualStats,
                 WarningCount = analysis.Summary.TotalWarnings,
@@ -143,11 +154,22 @@ public sealed class PlanOperations
                 MissingIndexCount = analysis.Summary.MissingIndexes
             };
 
-            if (TryRegisterBounded(session))
+            if (_budget.TryRegister(session, DefaultMaxSessions))
+            {
+                retainedEstimate.Commit(sessionId);
                 return ToSummary(session);
-            EnsureSessionCapacity();
+            }
+            _budget.EnsureSessionCapacity(DefaultMaxSessions);
         }
     }
+
+    private static long EstimateRetainedAnalysisBytes(
+        long sourceBytes,
+        PlanXmlPreflightResult preflight) =>
+        checked(
+            (sourceBytes * 2) +
+            ((long)preflight.StatementCount * 2 * 1024) +
+            ((long)preflight.OperatorCount * 4 * 1024));
 
     private static async Task<string> ReadPlanXmlAsync(
         FileStream stream,
@@ -177,7 +199,7 @@ public sealed class PlanOperations
     public bool Close(string sessionId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
-        return _catalog.Unregister(sessionId);
+        return _budget.TryUnregister(sessionId);
     }
 
     public PlanSummaryResult GetSummary(string sessionId) =>
@@ -208,22 +230,27 @@ public sealed class PlanOperations
     public MissingIndexesResult GetMissingIndexes(PlanSession session)
     {
         ArgumentNullException.ThrowIfNull(session);
-        var indexes = session.Plan.AllMissingIndexes.Select(index => new MissingIndexItem
+        var sourceIndexes = GetAnalysis(session).Statements
+            .SelectMany(statement => statement.MissingIndexes)
+            .ToList();
+        var indexes = sourceIndexes.Take(DefaultMaxMissingIndexResults).Select(index => new MissingIndexItem
         {
-            Database = index.Database,
-            SchemaName = index.Schema,
-            Table = index.Table,
+            Database = Truncate(index.Database, 512),
+            SchemaName = Truncate(index.SchemaName, 512),
+            Table = Truncate(index.BareTable, 512),
             Impact = index.Impact,
-            EqualityColumns = index.EqualityColumns,
-            InequalityColumns = index.InequalityColumns,
-            IncludeColumns = index.IncludeColumns,
-            CreateStatement = index.CreateStatement
+            EqualityColumns = BoundColumns(index.EqualityColumns),
+            InequalityColumns = BoundColumns(index.InequalityColumns),
+            IncludeColumns = BoundColumns(index.IncludeColumns),
+            CreateStatement = Truncate(index.CreateStatement, DefaultMaxResponseTextLength)
         }).ToList();
 
         return new MissingIndexesResult
         {
             SessionId = session.SessionId,
-            MissingIndexCount = indexes.Count,
+            MissingIndexCount = sourceIndexes.Count,
+            ReturnedIndexCount = indexes.Count,
+            Truncated = indexes.Count < sourceIndexes.Count,
             Indexes = indexes
         };
     }
@@ -308,11 +335,15 @@ public sealed class PlanOperations
                 .ToList();
         }
 
+        var totalWarningCount = warnings.Count;
+        var returnedWarnings = warnings.Take(DefaultMaxWarningResults).ToList();
         return new PlanWarningsResult
         {
             SessionId = session.SessionId,
-            WarningCount = warnings.Count,
-            Warnings = warnings
+            WarningCount = totalWarningCount,
+            ReturnedWarningCount = returnedWarnings.Count,
+            Truncated = returnedWarnings.Count < totalWarningCount,
+            Warnings = returnedWarnings
         };
     }
 
@@ -322,27 +353,7 @@ public sealed class PlanOperations
     public AnalysisResult GetAnalysis(PlanSession session)
     {
         ArgumentNullException.ThrowIfNull(session);
-        return ResultMapper.Map(session.Plan, session.Source);
-    }
-
-    private bool TryRegisterBounded(PlanSession session)
-    {
-        var gate = CatalogRegistrationGates.GetValue(_catalog, _ => new object());
-        lock (gate)
-        {
-            if (_catalog.GetAllSessions().Count >= DefaultMaxSessions)
-                return false;
-            return _catalog.TryRegister(session);
-        }
-    }
-
-    private void EnsureSessionCapacity()
-    {
-        if (_catalog.GetAllSessions().Count >= DefaultMaxSessions)
-        {
-            throw new InvalidOperationException(
-                $"The plan session limit of {DefaultMaxSessions} has been reached. Close a session before opening another plan.");
-        }
+        return session.Analysis ?? ResultMapper.Map(session.Plan, session.Source);
     }
 
     private static void ValidateComplexity(ParsedPlan plan, CancellationToken cancellationToken)
@@ -398,9 +409,14 @@ public sealed class PlanOperations
         string statement,
         ICollection<(OperatorResult Node, string Statement)> operators)
     {
-        operators.Add((node, statement));
-        foreach (var child in node.Children)
-            CollectOperators(child, statement, operators);
+        var pending = new Stack<OperatorResult>();
+        pending.Push(node);
+        while (pending.TryPop(out var current))
+        {
+            operators.Add((current, statement));
+            for (var index = current.Children.Count - 1; index >= 0; index--)
+                pending.Push(current.Children[index]);
+        }
     }
 
     private static void CollectWarnings(
@@ -408,21 +424,29 @@ public sealed class PlanOperations
         string statement,
         ICollection<PlanWarningItem> warnings)
     {
-        foreach (var warning in node.Warnings)
-            warnings.Add(ToWarningItem(warning, statement));
-        foreach (var child in node.Children)
-            CollectWarnings(child, statement, warnings);
+        var pending = new Stack<OperatorResult>();
+        pending.Push(node);
+        while (pending.TryPop(out var current))
+        {
+            foreach (var warning in current.Warnings)
+                warnings.Add(ToWarningItem(warning, statement));
+            for (var index = current.Children.Count - 1; index >= 0; index--)
+                pending.Push(current.Children[index]);
+        }
     }
 
     private static PlanWarningItem ToWarningItem(WarningResult warning, string statement) => new()
     {
-        Severity = warning.Severity,
-        Type = warning.Type,
-        Message = warning.Message,
+        Severity = Truncate(warning.Severity, 32),
+        Type = Truncate(warning.Type, 256),
+        Message = Truncate(warning.Message, DefaultMaxResponseTextLength),
         NodeId = warning.NodeId,
-        Operator = warning.Operator,
+        Operator = warning.Operator is null ? null : Truncate(warning.Operator, 512),
         Statement = statement
     };
+
+    private static IReadOnlyList<string> BoundColumns(IEnumerable<string> columns) =>
+        columns.Take(64).Select(column => Truncate(column, 512)).ToList();
 
     private static string Truncate(string value, int maxLength) =>
         value.Length <= maxLength ? value : value[..maxLength] + "... (truncated)";
@@ -434,6 +458,10 @@ public sealed class PlanOperations
     private static string CreateBaseSessionId(string label)
     {
         var baseId = Regex.Replace(label.Trim(), "[^A-Za-z0-9._-]+", "-").Trim('-');
+        if (baseId.Length == 0)
+            return "plan";
+        if (baseId.Length > 48)
+            baseId = baseId[..48].TrimEnd('.', '_', '-');
         if (baseId.Length == 0)
             return "plan";
         return baseId.Equals("open", StringComparison.OrdinalIgnoreCase) ||
