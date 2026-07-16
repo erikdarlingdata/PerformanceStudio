@@ -374,14 +374,12 @@ public partial class PlanViewerControl : UserControl
         }
 
         const string sessionSource = "file";
-        var analysisSnapshot = ResultMapper.Map(_currentPlan, sessionSource);
         PlanSessionManager.Instance.Register(_mcpSessionId, new PlanViewer.App.Mcp.PlanSession
         {
             SessionId = _mcpSessionId,
             Label = label,
             Source = sessionSource,
             Plan = _currentPlan,
-            Analysis = analysisSnapshot,
             QueryText = queryText,
             StatementCount = allStatements.Count,
             HasActualStats = allStatements.Any(s => s.QueryTimeStats != null),

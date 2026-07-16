@@ -6,7 +6,7 @@ namespace PlanViewer.Core.Services;
 /// <summary>
 /// Thread-safe in-memory implementation of the shared plan catalog.
 /// </summary>
-internal sealed class InMemoryPlanCatalog : IPlanCatalog
+public sealed class InMemoryPlanCatalog : IPlanCatalog
 {
     private readonly object _syncRoot = new();
     private readonly Dictionary<string, PlanSession> _sessions =

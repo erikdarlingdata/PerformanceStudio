@@ -66,8 +66,8 @@ public sealed class PlanSession
     public required string Source { get; init; }
     public required ParsedPlan Plan { get; init; }
     public AnalysisResult? Analysis { get; init; }
-    internal string? CapturedRawXml { get; init; }
-    internal string? CapturedDatabaseName { get; init; }
+    public string? RawPlanXml { get; init; }
+    public string? DatabaseName { get; init; }
     public string? QueryText { get; init; }
     public string? ConnectionInfo { get; init; }
     public int StatementCount { get; init; }
@@ -83,6 +83,8 @@ public sealed class PlanSession
         Source = Source,
         Plan = Plan,
         Analysis = Analysis,
+        RawPlanXml = RawPlanXml,
+        DatabaseName = DatabaseName,
         QueryText = QueryText,
         ConnectionInfo = ConnectionInfo,
         StatementCount = StatementCount,
@@ -99,6 +101,8 @@ public sealed class PlanSession
         Source = session.Source,
         Plan = session.Plan,
         Analysis = session.Analysis,
+        RawPlanXml = session.RawPlanXml,
+        DatabaseName = session.DatabaseName,
         QueryText = session.QueryText,
         ConnectionInfo = session.ConnectionInfo,
         StatementCount = session.StatementCount,

@@ -1,9 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.IO;
 using System.Linq;
+using System.Text;
 using System.Text.Json;
 using System.Threading;
+using System.Threading.Tasks;
 using ModelContextProtocol.Server;
 using PlanViewer.App.Services;
 using PlanViewer.Core.Models;
@@ -42,6 +45,23 @@ public sealed class McpPlanTools
     private static PlanOperations CreateOperations(PlanSessionManager sessionManager) =>
         new(sessionManager, AnalyzerConfig.Default);
 
+    public static string AnalyzePlan(
+        PlanSessionManager sessionManager,
+        PlanOperations operations,
+        string session_id) =>
+        AnalyzePlan(sessionManager, operations, session_id, CancellationToken.None)
+            .GetAwaiter()
+            .GetResult();
+
+    public static string GetPlanSummary(
+        PlanSessionManager sessionManager,
+        PlanOperations operations,
+        string session_id) =>
+        GetPlanSummary(sessionManager, operations, session_id, CancellationToken.None)
+            .GetAwaiter()
+            .GetResult();
+
+
     [McpServerTool(Name = "list_plans")]
     [Description("Lists all execution plans currently loaded in the application. Returns session IDs, labels, " +
         "statement counts, warning counts, and source type. Use this first to discover available plans.")]
@@ -77,11 +97,11 @@ public sealed class McpPlanTools
     [Description("Returns the full JSON analysis result for a loaded plan. Includes all statements, warnings, " +
         "missing indexes, parameters, operator tree, memory grants, and wait stats. " +
         "This is the primary tool for understanding plan quality. Use list_plans first to get session_id values.")]
-    public static string AnalyzePlan(
+    public static async Task<string> AnalyzePlan(
         PlanSessionManager sessionManager,
         PlanOperations operations,
         [Description("The session_id from list_plans.")] string session_id,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken)
     {
         var session = sessionManager.GetSession(session_id);
         if (session == null)
@@ -91,9 +111,16 @@ public sealed class McpPlanTools
         {
             using var queryScope = operations.AcquireQueryScope(cancellationToken);
             var result = operations.GetAnalysisForRequest(session, cancellationToken);
-            var json = JsonSerializer.Serialize(result, McpHelpers.JsonOptions);
-            cancellationToken.ThrowIfCancellationRequested();
-            return json;
+            await using var output = new MemoryStream();
+            await JsonSerializer.SerializeAsync(
+                output,
+                result,
+                McpHelpers.JsonOptions,
+                cancellationToken).ConfigureAwait(false);
+            return Encoding.UTF8.GetString(
+                output.GetBuffer(),
+                0,
+                checked((int)output.Length));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -108,22 +135,23 @@ public sealed class McpPlanTools
     [McpServerTool(Name = "get_plan_summary")]
     [Description("Returns a concise human-readable text summary of a loaded plan: statement count, warnings, " +
         "missing indexes, cost, DOP, memory grants. Faster than analyze_plan for quick assessment.")]
-    public static string GetPlanSummary(
+    public static Task<string> GetPlanSummary(
         PlanSessionManager sessionManager,
         PlanOperations operations,
         [Description("The session_id from list_plans.")] string session_id,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken)
     {
         var session = sessionManager.GetSession(session_id);
         if (session == null)
-            return SessionNotFound(sessionManager, session_id);
+            return Task.FromResult(SessionNotFound(sessionManager, session_id));
 
         try
         {
             using var queryScope = operations.AcquireQueryScope(cancellationToken);
-            var summary = TextFormatter.Format(operations.GetAnalysisForRequest(session, cancellationToken));
-            cancellationToken.ThrowIfCancellationRequested();
-            return summary;
+            var summary = TextFormatter.FormatCancellable(
+                operations.GetAnalysisForRequest(session, cancellationToken),
+                cancellationToken);
+            return Task.FromResult(summary);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -131,7 +159,7 @@ public sealed class McpPlanTools
         }
         catch (Exception ex)
         {
-            return McpHelpers.FormatError("get_plan_summary", ex);
+            return Task.FromResult(McpHelpers.FormatError("get_plan_summary", ex));
         }
     }
 
@@ -323,7 +351,7 @@ public sealed class McpPlanTools
                 return "No executable statement found in this plan.";
 
             var queryText = session.QueryText ?? statement.StatementText ?? "";
-            var databaseName = session.CapturedDatabaseName ?? statement.OperatorTree?.DatabaseName;
+            var databaseName = session.DatabaseName ?? statement.OperatorTree?.DatabaseName;
 
             return ReproScriptBuilder.BuildReproScript(
                 queryText, databaseName, GetRawPlanXml(session), null);
@@ -338,7 +366,7 @@ public sealed class McpPlanTools
         session.Analysis ?? ResultMapper.Map(session.Plan, session.Source);
 
     private static string? GetRawPlanXml(PlanSession session) =>
-        session.CapturedRawXml ?? session.Plan.RawXml;
+        session.RawPlanXml ?? session.Plan.RawXml;
 
     private static string SessionNotFound(PlanSessionManager sessionManager, string sessionId)
     {

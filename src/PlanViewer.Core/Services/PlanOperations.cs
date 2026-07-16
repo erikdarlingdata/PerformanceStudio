@@ -63,7 +63,7 @@ public sealed class PlanOperations
         return await OpenStreamCoreAsync(stream, label, cancellationToken).ConfigureAwait(false);
     }
 
-    internal async Task<PlanSessionSummary> OpenOwnedStreamAsync(
+    public async Task<PlanSessionSummary> OpenOwnedStreamAsync(
         Func<CancellationToken, ValueTask<(FileStream Stream, string Label, IAsyncDisposable Owner)>> streamFactory,
         CancellationToken cancellationToken = default)
     {
@@ -161,13 +161,62 @@ public sealed class PlanOperations
                 MissingIndexCount = analysis.Summary.MissingIndexes
             };
 
-            if (_budget.TryRegister(session, DefaultMaxSessions))
-            {
-                retainedEstimate.Commit(sessionId);
+            if (_budget.TryRegister(session, DefaultMaxSessions, retainedEstimate))
                 return ToSummary(session);
-            }
             _budget.EnsureSessionCapacity(DefaultMaxSessions);
         }
+    }
+
+    public PlanSessionSummary AdmitSnapshot(
+        PlanSession session,
+        long sourceBytes,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        if (sourceBytes is < 0 or > DefaultMaxPlanFileBytes)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(sourceBytes),
+                sourceBytes,
+                $"Source bytes must be between 0 and {DefaultMaxPlanFileBytes}.");
+        }
+        if (session.Analysis is null)
+            throw new ArgumentException("A detached analysis snapshot is required.", nameof(session));
+        if (session.Plan.Batches.Count > 0 || !string.IsNullOrEmpty(session.Plan.RawXml))
+            throw new ArgumentException("The parser graph must be released before snapshot admission.", nameof(session));
+
+        cancellationToken.ThrowIfCancellationRequested();
+        var operatorCount = CountSnapshotOperators(session.Analysis, cancellationToken);
+        var estimate = checked(
+            (sourceBytes * 2) +
+            ((long)session.Analysis.Statements.Count * 2 * 1024) +
+            (operatorCount * 4 * 1024));
+        using var reservation = _budget.ReserveRetainedEstimate(estimate);
+        if (!_budget.TryRegister(session, DefaultMaxSessions, reservation))
+            throw new InvalidOperationException($"A plan session with ID '{session.SessionId}' is already registered.");
+        return ToSummary(session);
+    }
+
+    private static long CountSnapshotOperators(
+        AnalysisResult analysis,
+        CancellationToken cancellationToken)
+    {
+        var pending = new Stack<OperatorResult>(
+            analysis.Statements
+                .Select(statement => statement.OperatorTree)
+                .Where(operatorTree => operatorTree is not null)
+                .Cast<OperatorResult>());
+        long count = 0;
+        while (pending.TryPop(out var operatorResult))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            count++;
+            if (count > DefaultMaxOperators)
+                throw new InvalidDataException($"Plan exceeds the {DefaultMaxOperators} operator complexity limit.");
+            foreach (var child in operatorResult.Children)
+                pending.Push(child);
+        }
+        return count;
     }
 
     private static long EstimateRetainedAnalysisBytes(
@@ -262,7 +311,7 @@ public sealed class PlanOperations
     public MissingIndexesResult GetMissingIndexes(string sessionId) =>
         GetMissingIndexes(sessionId, CancellationToken.None);
 
-    internal MissingIndexesResult GetMissingIndexes(
+    public MissingIndexesResult GetMissingIndexes(
         string sessionId,
         CancellationToken cancellationToken) =>
         GetMissingIndexes(GetRequiredSession(sessionId), cancellationToken);
@@ -278,6 +327,7 @@ public sealed class PlanOperations
         using var querySlot = _budget.AcquireQuerySlot(cancellationToken);
         var indexes = new List<MissingIndexItem>(DefaultMaxMissingIndexResults);
         var totalIndexCount = 0;
+        var columnsTruncated = false;
         foreach (var statement in GetAnalysisCancellable(session, cancellationToken).Statements)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -287,16 +337,25 @@ public sealed class PlanOperations
                 totalIndexCount++;
                 if (indexes.Count >= DefaultMaxMissingIndexResults)
                     continue;
+                var equalityColumns = BoundColumns(index.EqualityColumns);
+                var inequalityColumns = BoundColumns(index.InequalityColumns);
+                var includeColumns = BoundColumns(index.IncludeColumns);
+                var itemColumnsTruncated =
+                    equalityColumns.Truncated ||
+                    inequalityColumns.Truncated ||
+                    includeColumns.Truncated;
+                columnsTruncated |= itemColumnsTruncated;
                 indexes.Add(new MissingIndexItem
                 {
                     Database = Truncate(index.Database, 512),
                     SchemaName = Truncate(index.SchemaName, 512),
                     Table = Truncate(index.BareTable, 512),
                     Impact = index.Impact,
-                    EqualityColumns = BoundColumns(index.EqualityColumns),
-                    InequalityColumns = BoundColumns(index.InequalityColumns),
-                    IncludeColumns = BoundColumns(index.IncludeColumns),
-                    CreateStatement = Truncate(index.CreateStatement, DefaultMaxResponseTextLength)
+                    EqualityColumns = equalityColumns.Values,
+                    InequalityColumns = inequalityColumns.Values,
+                    IncludeColumns = includeColumns.Values,
+                    CreateStatement = Truncate(index.CreateStatement, DefaultMaxResponseTextLength),
+                    ColumnsTruncated = itemColumnsTruncated
                 });
             }
         }
@@ -306,7 +365,7 @@ public sealed class PlanOperations
             SessionId = session.SessionId,
             MissingIndexCount = totalIndexCount,
             ReturnedIndexCount = indexes.Count,
-            Truncated = indexes.Count < totalIndexCount,
+            Truncated = indexes.Count < totalIndexCount || columnsTruncated,
             Indexes = indexes
         };
     }
@@ -314,7 +373,7 @@ public sealed class PlanOperations
     public ExpensiveOperatorsResult GetExpensiveOperators(string sessionId, int top = 10) =>
         GetExpensiveOperators(sessionId, top, CancellationToken.None);
 
-    internal ExpensiveOperatorsResult GetExpensiveOperators(
+    public ExpensiveOperatorsResult GetExpensiveOperators(
         string sessionId,
         int top,
         CancellationToken cancellationToken) =>
@@ -388,7 +447,7 @@ public sealed class PlanOperations
     public PlanWarningsResult GetWarnings(string sessionId, string? severity = null) =>
         GetWarnings(sessionId, severity, CancellationToken.None);
 
-    internal PlanWarningsResult GetWarnings(
+    public PlanWarningsResult GetWarnings(
         string sessionId,
         string? severity,
         CancellationToken cancellationToken) =>
@@ -470,10 +529,10 @@ public sealed class PlanOperations
         }
     }
 
-    internal IDisposable AcquireQueryScope(CancellationToken cancellationToken) =>
+    public IDisposable AcquireQueryScope(CancellationToken cancellationToken) =>
         _budget.AcquireQuerySlot(cancellationToken);
 
-    internal AnalysisResult GetAnalysisForRequest(
+    public AnalysisResult GetAnalysisForRequest(
         PlanSession session,
         CancellationToken cancellationToken)
     {
@@ -599,8 +658,27 @@ public sealed class PlanOperations
         Statement = statement
     };
 
-    private static IReadOnlyList<string> BoundColumns(IEnumerable<string> columns) =>
-        columns.Take(64).Select(column => Truncate(column, 512)).ToList();
+    private static BoundedColumnList BoundColumns(IEnumerable<string> columns)
+    {
+        var values = new List<string>(64);
+        var truncated = false;
+        foreach (var column in columns)
+        {
+            if (values.Count == 64)
+            {
+                truncated = true;
+                break;
+            }
+            if (column.Length > 512)
+                truncated = true;
+            values.Add(Truncate(column, 512));
+        }
+        return new BoundedColumnList(values, truncated);
+    }
+
+    private readonly record struct BoundedColumnList(
+        IReadOnlyList<string> Values,
+        bool Truncated);
 
     private static string Truncate(string value, int maxLength) =>
         value.Length <= maxLength ? value : value[..maxLength] + "... (truncated)";

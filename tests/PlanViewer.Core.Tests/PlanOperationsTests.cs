@@ -6,18 +6,60 @@ namespace PlanViewer.Core.Tests;
 public sealed class PlanOperationsTests
 {
     [Fact]
-    public async Task ParseAsync_ObservesCancellationDuringLargeDocumentLoading()
+    public async Task ParseAsync_ObservesCancellationBeforeCostComputation()
     {
-        var xml = new StringBuilder(
-            "<ShowPlanXML xmlns=\"http://schemas.microsoft.com/sqlserver/2004/07/showplan\"><BatchSequence>");
-        for (var index = 0; index < 200_000; index++)
-            xml.Append("<Unused Value=\"bounded\" />");
-        xml.Append("</BatchSequence></ShowPlanXML>");
+        var xml = await File.ReadAllTextAsync(
+            Path.GetFullPath(Path.Combine("Plans", "row_goal_plan.sqlplan")),
+            TestContext.Current.CancellationToken);
         using var cancellation = new CancellationTokenSource();
-        cancellation.CancelAfter(TimeSpan.FromMilliseconds(1));
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
-            () => ShowPlanParser.ParseAsync(xml.ToString(), cancellation.Token));
+            () => ShowPlanParser.ParseAsync(xml, cancellation.Token, cancellation.Cancel));
+    }
+
+    [Fact]
+    public void AdmitSnapshot_EnforcesSessionLimitAndReleasesCapacityOnClose()
+    {
+        var operations = new PlanOperations(new InMemoryPlanCatalog());
+        for (var index = 0; index < PlanOperations.DefaultMaxSessions; index++)
+            operations.AdmitSnapshot(CreateDetachedSession($"snapshot-{index}"), 0, TestContext.Current.CancellationToken);
+
+        Assert.Throws<InvalidOperationException>(
+            () => operations.AdmitSnapshot(
+                CreateDetachedSession("snapshot-rejected"),
+                0,
+                TestContext.Current.CancellationToken));
+        Assert.True(operations.Close("snapshot-0"));
+        operations.AdmitSnapshot(
+            CreateDetachedSession("snapshot-replacement"),
+            0,
+            TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public void AdmitSnapshot_ReleasesRetainedEstimateWhenClosed()
+    {
+        var operations = new PlanOperations(new InMemoryPlanCatalog());
+        const long retainedSourceBytes = 15L * 1024 * 1024;
+        operations.AdmitSnapshot(
+            CreateDetachedSession("retained-1"),
+            retainedSourceBytes,
+            TestContext.Current.CancellationToken);
+        operations.AdmitSnapshot(
+            CreateDetachedSession("retained-2"),
+            retainedSourceBytes,
+            TestContext.Current.CancellationToken);
+
+        Assert.Throws<InvalidOperationException>(
+            () => operations.AdmitSnapshot(
+                CreateDetachedSession("retained-3"),
+                retainedSourceBytes,
+                TestContext.Current.CancellationToken));
+        Assert.True(operations.Close("retained-1"));
+        operations.AdmitSnapshot(
+            CreateDetachedSession("retained-3"),
+            retainedSourceBytes,
+            TestContext.Current.CancellationToken);
     }
 
     [Fact]
@@ -225,6 +267,32 @@ public sealed class PlanOperationsTests
             Assert.True(index.EqualityColumns.Count <= 64);
             Assert.All(index.EqualityColumns, column => Assert.True(column.Length <= 512 + 17));
         });
+    }
+
+    [Fact]
+    public async Task GetMissingIndexes_ReportsColumnTruncation()
+    {
+        var catalog = new InMemoryPlanCatalog();
+        var operations = new PlanOperations(catalog);
+        var path = Path.GetFullPath(Path.Combine("Plans", "row_goal_plan.sqlplan"));
+        var opened = await operations.OpenAsync(path, TestContext.Current.CancellationToken);
+        var session = Assert.IsType<PlanViewer.Core.Models.PlanSession>(catalog.GetSession(opened.SessionId));
+        var statement = Assert.Single(Assert.IsType<PlanViewer.Core.Output.AnalysisResult>(session.Analysis).Statements);
+        statement.MissingIndexes =
+        [
+            new PlanViewer.Core.Output.MissingIndexResult
+            {
+                BareTable = "wide-index",
+                EqualityColumns = Enumerable.Range(0, 65).Select(index => $"column-{index}").ToList()
+            }
+        ];
+
+        var result = operations.GetMissingIndexes(session, TestContext.Current.CancellationToken);
+
+        Assert.True(result.Truncated);
+        var item = Assert.Single(result.Indexes);
+        Assert.True(item.ColumnsTruncated);
+        Assert.Equal(64, item.EqualityColumns.Count);
     }
 
     [Fact]
@@ -613,5 +681,14 @@ public sealed class PlanOperationsTests
             File.Delete(path);
         }
     }
+
+    private static PlanViewer.Core.Models.PlanSession CreateDetachedSession(string sessionId) => new()
+    {
+        SessionId = sessionId,
+        Label = $"{sessionId}.sqlplan",
+        Source = "query-store",
+        Plan = new PlanViewer.Core.Models.ParsedPlan(),
+        Analysis = new PlanViewer.Core.Output.AnalysisResult { PlanSource = "query-store" }
+    };
 
 }

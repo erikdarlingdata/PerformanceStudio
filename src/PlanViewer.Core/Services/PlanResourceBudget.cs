@@ -51,7 +51,10 @@ internal sealed class PlanResourceBudget
         return new SemaphoreLease(_querySlots);
     }
 
-    internal bool TryRegister(PlanSession session, int maxSessions)
+    internal bool TryRegister(
+        PlanSession session,
+        int maxSessions,
+        RetainedEstimateReservation reservation)
     {
         lock (_syncRoot)
         {
@@ -61,7 +64,19 @@ internal sealed class PlanResourceBudget
                     $"The plan session limit of {maxSessions} has been reached. Close a session before opening another plan.");
             }
 
-            return _catalog.TryRegister(session);
+            if (!_catalog.TryRegister(session))
+                return false;
+
+            try
+            {
+                CommitUnderLock(reservation, session.SessionId);
+                return true;
+            }
+            catch
+            {
+                _catalog.Unregister(session.SessionId);
+                throw;
+            }
         }
     }
 
@@ -107,14 +122,13 @@ internal sealed class PlanResourceBudget
         }
     }
 
-    private void Commit(RetainedEstimateReservation reservation, string sessionId)
+    private void CommitUnderLock(RetainedEstimateReservation reservation, string sessionId)
     {
-        lock (_syncRoot)
-        {
-            if (!_retainedEstimateBySession.TryAdd(sessionId, reservation.Bytes))
-                throw new InvalidOperationException($"A retained-byte reservation already exists for session {sessionId}.");
-            reservation.MarkCommitted();
-        }
+        if (!ReferenceEquals(reservation.Owner, this))
+            throw new InvalidOperationException("The retained-byte reservation belongs to another plan catalog.");
+        if (!_retainedEstimateBySession.TryAdd(sessionId, reservation.Bytes))
+            throw new InvalidOperationException($"A retained-byte reservation already exists for session {sessionId}.");
+        reservation.MarkCommitted();
     }
 
     private void ReleaseReservation(long bytes)
@@ -134,14 +148,8 @@ internal sealed class PlanResourceBudget
             Bytes = bytes;
         }
 
+        internal PlanResourceBudget? Owner => _owner;
         internal long Bytes { get; }
-
-        internal void Commit(string sessionId)
-        {
-            var owner = _owner ?? throw new ObjectDisposedException(nameof(RetainedEstimateReservation));
-            owner.Commit(this, sessionId);
-        }
-
         internal void MarkCommitted() => _committed = true;
 
         public void Dispose()

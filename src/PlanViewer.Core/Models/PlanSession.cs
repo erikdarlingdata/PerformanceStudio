@@ -13,6 +13,8 @@ public sealed class PlanSession
     public required string Source { get; init; }
     public required ParsedPlan Plan { get; init; }
     public AnalysisResult? Analysis { get; init; }
+    public string? RawPlanXml { get; init; }
+    public string? DatabaseName { get; init; }
     public string? QueryText { get; init; }
     public string? ConnectionInfo { get; init; }
     public int StatementCount { get; init; }

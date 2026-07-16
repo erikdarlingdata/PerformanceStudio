@@ -181,4 +181,7 @@ public sealed class MissingIndexItem
 
     [JsonPropertyName("create_statement")]
     public string CreateStatement { get; init; } = "";
+
+    [JsonPropertyName("columns_truncated")]
+    public bool ColumnsTruncated { get; init; }
 }

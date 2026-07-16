@@ -24,29 +24,18 @@ public sealed class PlanAnalysisPipelineTests
     }
 
     [Fact]
-    public void Analyze_ObservesCancellationDuringStatementAnalysis()
+    public void AnalyzeParsed_ObservesCancellationAtTheAnalysisBoundary()
     {
-        var plan = new ParsedPlan
-        {
-            Batches =
-            [
-                new PlanBatch
-                {
-                    Statements = Enumerable.Range(0, 20_000)
-                        .Select(index => new PlanStatement
-                        {
-                            StatementId = index,
-                            StatementText = "SELECT * FROM dbo.example WHERE name LIKE '%value'"
-                        })
-                        .ToList()
-                }
-            ]
-        };
+        var plan = PlanTestHelper.LoadAndAnalyze("row_goal_plan.sqlplan");
         using var cancellation = new CancellationTokenSource();
-        cancellation.CancelAfter(TimeSpan.FromMilliseconds(1));
 
         Assert.ThrowsAny<OperationCanceledException>(() =>
-            PlanAnalyzer.AnalyzeCancellable(plan, AnalyzerConfig.Default, serverMetadata: null, cancellation.Token));
+            PlanAnalysisPipeline.AnalyzeParsed(
+                plan,
+                AnalyzerConfig.Default,
+                serverMetadata: null,
+                cancellation.Token,
+                beforeAnalysis: (_, _) => cancellation.Cancel()));
     }
 
     [Fact]

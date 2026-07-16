@@ -62,8 +62,9 @@ public sealed class PlanResourceBudgetTests
         var budget = PlanResourceBudget.ForCatalog(catalog);
         Assert.True(catalog.TryRegister(CreateSession("first")));
 
+        using var reservation = budget.ReserveRetainedEstimate(0);
         var error = Assert.Throws<InvalidOperationException>(
-            () => budget.TryRegister(CreateSession("second"), maxSessions: 1));
+            () => budget.TryRegister(CreateSession("second"), maxSessions: 1, reservation));
 
         Assert.Contains("session limit of 1", error.Message, StringComparison.Ordinal);
     }

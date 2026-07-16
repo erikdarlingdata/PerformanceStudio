@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using PlanViewer.App.Mcp;
 using PlanViewer.Core.Interfaces;
@@ -130,7 +131,34 @@ public sealed class McpPlanToolsContractTests
 
 
     [Fact]
-    public void FullAnalysisHandlers_PropagateRequestCancellation()
+#pragma warning disable xUnit1051 // Intentionally verify an independently cancelled MCP request token.
+    public async Task QueryStoreHandlers_PropagateRequestCancellation()
+    {
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        var manager = new PlanSessionManager();
+
+        await Assert.ThrowsAsync<OperationCanceledException>(
+            () => McpQueryStoreTools.CheckQueryStore(
+                null!,
+                null!,
+                "server",
+                "database",
+                cancellation.Token));
+        await Assert.ThrowsAsync<OperationCanceledException>(
+            () => McpQueryStoreTools.GetQueryStoreTop(
+                manager,
+                new PlanOperations(manager),
+                null!,
+                null!,
+                "server",
+                "database",
+                cancellation.Token));
+    }
+#pragma warning restore xUnit1051
+
+    [Fact]
+    public async Task FullAnalysisHandlers_PropagateRequestCancellation()
     {
         var manager = new PlanSessionManager();
         var session = CreateEstimatedSession();
@@ -139,14 +167,14 @@ public sealed class McpPlanToolsContractTests
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
 
-        Assert.Throws<OperationCanceledException>(
+        await Assert.ThrowsAsync<OperationCanceledException>(
             () => McpPlanTools.AnalyzePlan(manager, operations, session.SessionId, cancellation.Token));
-        Assert.Throws<OperationCanceledException>(
+        await Assert.ThrowsAsync<OperationCanceledException>(
             () => McpPlanTools.GetPlanSummary(manager, operations, session.SessionId, cancellation.Token));
     }
 
     [Fact]
-    public void AnalyzePlan_PreservesTheUiSessionSourceWhenASnapshotIsPresent()
+    public void AnalyzePlan_PreservesTheUiSessionSourceWhenMappedOnDemand()
     {
         var manager = new PlanSessionManager();
         var plan = PlanTestHelper.LoadAndAnalyze("row_goal_plan.sqlplan");
@@ -156,8 +184,7 @@ public sealed class McpPlanToolsContractTests
             SessionId = sessionId,
             Label = "row_goal_plan.sqlplan",
             Source = "file",
-            Plan = plan,
-            Analysis = ResultMapper.Map(plan, "file")
+            Plan = plan
         });
 
         var json = McpPlanTools.AnalyzePlan(manager, sessionId);
@@ -189,18 +216,25 @@ public sealed class McpPlanToolsContractTests
             QueryText = queryText
         });
         var capturedManager = new PlanSessionManager();
+        var capturedOperations = new PlanOperations(capturedManager, AnalyzerConfig.Default);
         var captured = McpQueryStoreTools.CaptureSession(
             sessionId,
             label,
             capturedPlan,
             queryText,
             "server");
-        capturedManager.Register(sessionId, captured);
+        capturedOperations.AdmitSnapshot(
+            captured.ToCore(),
+            Encoding.UTF8.GetByteCount(captured.RawPlanXml!),
+            TestContext.Current.CancellationToken);
+        var registered = Assert.IsType<PlanViewer.App.Mcp.PlanSession>(capturedManager.GetSession(sessionId));
 
         Assert.Equal("query-store", captured.Source);
+        Assert.Equal(captured.RawPlanXml, registered.RawPlanXml);
+        Assert.Equal(captured.DatabaseName, registered.DatabaseName);
         Assert.Equal("query-store", captured.Analysis?.PlanSource);
         Assert.Equal(label, captured.Label);
-        Assert.False(string.IsNullOrEmpty(captured.CapturedRawXml));
+        Assert.False(string.IsNullOrEmpty(captured.RawPlanXml));
         Assert.Empty(captured.Plan.Batches);
         Assert.Empty(captured.Plan.RawXml);
         Assert.Equal(
@@ -217,6 +251,7 @@ public sealed class McpPlanToolsContractTests
             McpPlanTools.GetReproScript(capturedManager, sessionId));
     }
 
+#pragma warning disable xUnit1051 // Intentionally exercise synchronous compatibility overloads.
     [Fact]
     public void HistoricalOverloads_DelegateToTheSharedOperationsBehavior()
     {
@@ -226,18 +261,10 @@ public sealed class McpPlanToolsContractTests
         var operations = new PlanOperations(manager, AnalyzerConfig.Default);
 
         Assert.Equal(
-            McpPlanTools.AnalyzePlan(
-                manager,
-                operations,
-                session.SessionId,
-                TestContext.Current.CancellationToken),
+            McpPlanTools.AnalyzePlan(manager, operations, session.SessionId),
             McpPlanTools.AnalyzePlan(manager, session.SessionId));
         Assert.Equal(
-            McpPlanTools.GetPlanSummary(
-                manager,
-                operations,
-                session.SessionId,
-                TestContext.Current.CancellationToken),
+            McpPlanTools.GetPlanSummary(manager, operations, session.SessionId),
             McpPlanTools.GetPlanSummary(manager, session.SessionId));
         Assert.Equal(
             McpPlanTools.GetPlanWarnings(manager, operations, session.SessionId, "Warning"),
@@ -249,6 +276,8 @@ public sealed class McpPlanToolsContractTests
             McpPlanTools.GetExpensiveOperators(manager, operations, session.SessionId, 3),
             McpPlanTools.GetExpensiveOperators(manager, session.SessionId, 3));
     }
+
+#pragma warning restore xUnit1051
 
     private static CorePlanSession CreateEstimatedSession()
     {

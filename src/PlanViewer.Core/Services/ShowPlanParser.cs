@@ -34,7 +34,8 @@ public static partial class ShowPlanParser
 
     internal static async Task<ParsedPlan> ParseAsync(
         string xml,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Action? beforeCostComputation = null)
     {
         var plan = new ParsedPlan { RawXml = xml };
         try
@@ -51,7 +52,7 @@ public static partial class ShowPlanParser
             var document = await XDocument
                 .LoadAsync(xmlReader, LoadOptions.None, cancellationToken)
                 .ConfigureAwait(false);
-            return ParseDocument(document, plan, cancellationToken);
+            return ParseDocument(document, plan, cancellationToken, beforeCostComputation);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -67,7 +68,8 @@ public static partial class ShowPlanParser
     private static ParsedPlan ParseDocument(
         XDocument document,
         ParsedPlan plan,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Action? beforeCostComputation = null)
     {
         try
         {
@@ -116,7 +118,8 @@ public static partial class ShowPlanParser
             }
 
             cancellationToken.ThrowIfCancellationRequested();
-            ComputeOperatorCosts(plan);
+            beforeCostComputation?.Invoke();
+            ComputeOperatorCosts(plan, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
