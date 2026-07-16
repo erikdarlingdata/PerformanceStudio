@@ -2,6 +2,16 @@ using System.Text.Json.Serialization;
 
 namespace PlanViewer.Core.Output;
 
+
+public sealed class PlanCloseResult
+{
+    [JsonPropertyName("session_id")]
+    public string SessionId { get; init; } = "";
+
+    [JsonPropertyName("closed")]
+    public bool Closed { get; init; }
+}
+
 public sealed class PlanSummaryResult
 {
     [JsonPropertyName("session_id")]

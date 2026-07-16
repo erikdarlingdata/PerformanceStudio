@@ -1,5 +1,7 @@
 using System.ComponentModel;
 using PlanViewer.Core.Interfaces;
+using PlanViewer.Core.Models;
+using PlanViewer.Core.Output;
 using PlanViewer.Core.Services;
 using Repl;
 using Repl.Mcp;
@@ -13,9 +15,9 @@ public sealed class PlanReplModule(IPlanCatalog catalog, PlanOperations operatio
         map.Map(
                 "open {path}",
                 [Description("Open a .sqlplan file and enter its plan context")]
-        (string path, CancellationToken cancellationToken) => OpenAsync(path, cancellationToken))
-            .WithDescription("Open a SQL Server execution plan")
-            .ReadOnly();
+        (string path, CancellationToken cancellationToken, IMcpClientRoots? roots = null) =>
+                    OpenAsync(path, roots, cancellationToken))
+            .WithDescription("Open a SQL Server execution plan");
 
         map.Context("plan", plan =>
         {
@@ -26,15 +28,15 @@ public sealed class PlanReplModule(IPlanCatalog catalog, PlanOperations operatio
             plan.Map(
                     "open {path}",
                     [Description("Open a .sqlplan file and enter its plan context")]
-            (string path, CancellationToken cancellationToken) => OpenAsync(path, cancellationToken))
-                .WithDescription("Open a SQL Server execution plan")
-                .ReadOnly();
+            (string path, CancellationToken cancellationToken, IMcpClientRoots? roots = null) =>
+                        OpenAsync(path, roots, cancellationToken))
+                .WithDescription("Open a SQL Server execution plan");
 
             plan.Context(
                 "{id}",
                 scope =>
                 {
-                    scope.Map("summary", (string id) => operations.GetSummary(id))
+                    scope.Map("summary", (string id) => Execute(() => operations.GetSummary(id)))
                         .WithDescription("Show a concise plan summary")
                         .ReadOnly();
 
@@ -59,29 +61,78 @@ public sealed class PlanReplModule(IPlanCatalog catalog, PlanOperations operatio
                         .WithDescription("Alias for expensive-operators")
                         .ReadOnly();
 
-                    scope.Map("missing-indexes", (string id) => operations.GetMissingIndexes(id))
+                    scope.Map("missing-indexes", (string id) => Execute(() => operations.GetMissingIndexes(id)))
                         .WithDescription("List missing-index suggestions")
                         .ReadOnly();
+
+                    scope.Map("close", (string id) => Close(id))
+                        .WithDescription("Close this in-memory plan session");
                 },
                 validation: (string id) => catalog.GetSession(id) is not null);
         });
     }
 
-    private async Task<object> OpenAsync(string path, CancellationToken cancellationToken)
+    private async Task<object> OpenAsync(
+        string path,
+        IMcpClientRoots? roots,
+        CancellationToken cancellationToken)
     {
         try
         {
-            var opened = await operations.OpenAsync(path, cancellationToken).ConfigureAwait(false);
+            PlanSessionSummary opened;
+            if (roots is null)
+            {
+                opened = await operations.OpenAsync(path, cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                await using var authorized = await McpPlanPathPolicy
+                    .OpenAsync(path, roots, cancellationToken)
+                    .ConfigureAwait(false);
+                opened = await operations
+                    .OpenAsync(authorized.Stream, authorized.Label, cancellationToken)
+                    .ConfigureAwait(false);
+            }
             return Results.NavigateTo($"plan {opened.SessionId}", opened);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Results.Error("path_not_allowed", "Plan path is outside the allowed roots.");
         }
         catch (FileNotFoundException ex)
         {
-            return Results.NotFound(ex.Message);
+            return roots is null
+                ? Results.NotFound(ex.Message)
+                : Results.NotFound("Plan file was not found within the allowed roots.");
+        }
+        catch (IOException ex)
+        {
+            return roots is null
+                ? Results.Error("file_error", ex.Message)
+                : Results.Error("file_error", "Plan file could not be read within the allowed roots.");
+        }
+        catch (ArgumentException ex)
+        {
+            return roots is null
+                ? Results.Error("invalid_path", ex.Message)
+                : Results.Error("invalid_path", "Plan path is invalid.");
         }
         catch (InvalidDataException ex)
         {
             return Results.Error("invalid_plan", ex.Message);
         }
+        catch (InvalidOperationException ex)
+        {
+            return Results.Error("session_limit", ex.Message);
+        }
+    }
+
+    private object Close(string id)
+    {
+        if (!operations.Close(id))
+            return Results.NotFound("Plan session was not found.");
+
+        return Results.NavigateTo("plan", new PlanCloseResult { SessionId = id, Closed = true });
     }
 
     private static object Execute<T>(Func<T> operation)
@@ -93,6 +144,10 @@ public sealed class PlanReplModule(IPlanCatalog catalog, PlanOperations operatio
         catch (ArgumentException ex)
         {
             return Results.Error("invalid_argument", ex.Message);
+        }
+        catch (KeyNotFoundException)
+        {
+            return Results.NotFound("Plan session was not found.");
         }
     }
 }

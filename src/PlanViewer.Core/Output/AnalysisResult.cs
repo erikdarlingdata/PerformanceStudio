@@ -303,6 +303,9 @@ public class OperatorResult
     [JsonPropertyName("object_name")]
     public string? ObjectName { get; set; }
 
+    [JsonIgnore]
+    public string? BareObjectName { get; set; }
+
     [JsonPropertyName("index_name")]
     public string? IndexName { get; set; }
 

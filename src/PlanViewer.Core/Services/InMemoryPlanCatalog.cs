@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using PlanViewer.Core.Interfaces;
 using PlanViewer.Core.Models;
 
@@ -9,42 +8,59 @@ namespace PlanViewer.Core.Services;
 /// </summary>
 public class InMemoryPlanCatalog : IPlanCatalog
 {
-    private readonly ConcurrentDictionary<string, PlanSession> _sessions =
+    private readonly object _syncRoot = new();
+    private readonly Dictionary<string, PlanSession> _sessions =
         new(StringComparer.OrdinalIgnoreCase);
 
     public void Register(PlanSession session)
     {
         ArgumentNullException.ThrowIfNull(session);
-        _sessions[session.SessionId] = session;
+        ArgumentException.ThrowIfNullOrWhiteSpace(session.SessionId);
+        lock (_syncRoot)
+            _sessions[session.SessionId] = session;
     }
 
     public bool TryRegister(PlanSession session)
     {
         ArgumentNullException.ThrowIfNull(session);
         ArgumentException.ThrowIfNullOrWhiteSpace(session.SessionId);
-        return _sessions.TryAdd(session.SessionId, session);
+        lock (_syncRoot)
+            return _sessions.TryAdd(session.SessionId, session);
     }
 
-    public bool Unregister(string sessionId) =>
-        _sessions.TryRemove(sessionId, out _);
+    public bool Unregister(string sessionId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
+        lock (_syncRoot)
+            return _sessions.Remove(sessionId);
+    }
 
-    public PlanSession? GetSession(string sessionId) =>
-        _sessions.TryGetValue(sessionId, out var session) ? session : null;
+    public PlanSession? GetSession(string sessionId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
+        lock (_syncRoot)
+            return _sessions.GetValueOrDefault(sessionId);
+    }
 
-    public IReadOnlyList<PlanSessionSummary> GetAllSessions() =>
-        _sessions.Values
-            .OrderBy(session => session.Label, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(session => session.SessionId, StringComparer.OrdinalIgnoreCase)
-            .Select(session => new PlanSessionSummary
-            {
-                SessionId = session.SessionId,
-                Label = session.Label,
-                Source = session.Source,
-                StatementCount = session.StatementCount,
-                WarningCount = session.WarningCount,
-                CriticalWarningCount = session.CriticalWarningCount,
-                MissingIndexCount = session.MissingIndexCount,
-                HasActualStats = session.HasActualStats
-            })
-            .ToList();
+    public IReadOnlyList<PlanSessionSummary> GetAllSessions()
+    {
+        lock (_syncRoot)
+        {
+            return _sessions.Values
+                .OrderBy(session => session.Label, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(session => session.SessionId, StringComparer.OrdinalIgnoreCase)
+                .Select(session => new PlanSessionSummary
+                {
+                    SessionId = session.SessionId,
+                    Label = session.Label,
+                    Source = session.Source,
+                    StatementCount = session.StatementCount,
+                    WarningCount = session.WarningCount,
+                    CriticalWarningCount = session.CriticalWarningCount,
+                    MissingIndexCount = session.MissingIndexCount,
+                    HasActualStats = session.HasActualStats
+                })
+                .ToList();
+        }
+    }
 }

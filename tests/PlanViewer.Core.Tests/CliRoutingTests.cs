@@ -6,7 +6,7 @@ public sealed class CliRoutingTests
 {
     [Theory]
     [InlineData("analyze")]
-    [InlineData("querystore")]
+    [InlineData("query-store")]
     [InlineData("credential")]
     [InlineData("--help")]
     public void LegacyCommands_RemainOnSystemCommandLine(string command) =>

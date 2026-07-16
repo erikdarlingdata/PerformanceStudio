@@ -14,8 +14,12 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Repl" Version="0.11.0-dev.181" />
-    <PackageReference Include="Repl.Mcp" Version="0.11.0-dev.181" />
+    <InternalsVisibleTo Include="PlanViewer.Core.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Repl" Version="0.11.0" />
+    <PackageReference Include="Repl.Mcp" Version="0.11.0" />
     <PackageReference Include="System.CommandLine" Version="2.0.9" />
   </ItemGroup>
 

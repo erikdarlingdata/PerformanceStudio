@@ -7,6 +7,17 @@ namespace PlanViewer.Cli.ReplSurface;
 
 public static class PlanReplApp
 {
+    private static readonly HashSet<string> McpCommandPaths =
+    [
+        "plan list",
+        "plan open {path}",
+        "plan {id} summary",
+        "plan {id} warnings",
+        "plan {id} expensive-operators",
+        "plan {id} missing-indexes",
+        "plan {id} close"
+    ];
+
     public static ReplApp Create() => Create(new InMemoryPlanCatalog());
 
     public static ReplApp Create(IPlanCatalog catalog)
@@ -20,7 +31,12 @@ public static class PlanReplApp
             .UseCliProfile();
 
         app.MapModule(new PlanReplModule(catalog, operations));
-        app.UseMcpServer(options => options.ServerName = "PerformanceStudio");
+        app.UseMcpServer(options =>
+        {
+            options.ServerName = "planview";
+            options.CommandFilter = command => McpCommandPaths.Contains(command.Path);
+            options.AutoPromoteReadOnlyToResources = false;
+        });
         return app;
     }
 }

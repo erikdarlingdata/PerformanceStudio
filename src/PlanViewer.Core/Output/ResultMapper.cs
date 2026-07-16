@@ -249,6 +249,7 @@ public static class ResultMapper
             EstimatedCPU = node.EstimateCPU,
             EstimatedRowSize = node.EstimatedRowSize,
             ObjectName = node.FullObjectName ?? node.ObjectName,
+            BareObjectName = node.ObjectName,
             IndexName = node.IndexName,
             DatabaseName = node.DatabaseName,
             SeekPredicates = node.SeekPredicates,

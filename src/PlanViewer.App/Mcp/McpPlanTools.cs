@@ -62,7 +62,7 @@ public sealed class McpPlanTools
 
         try
         {
-            var result = operations.GetAnalysis(session_id);
+            var result = operations.GetAnalysis(session);
             return JsonSerializer.Serialize(result, McpHelpers.JsonOptions);
         }
         catch (Exception ex)
@@ -85,7 +85,7 @@ public sealed class McpPlanTools
 
         try
         {
-            return TextFormatter.Format(operations.GetAnalysis(session_id));
+            return TextFormatter.Format(operations.GetAnalysis(session));
         }
         catch (Exception ex)
         {
@@ -108,7 +108,11 @@ public sealed class McpPlanTools
 
         try
         {
-            var result = operations.GetWarnings(session_id, severity);
+            var result = operations.GetWarnings(
+                session,
+                severity,
+                includeOperatorWarnings: false,
+                validateSeverity: false);
             if (result.WarningCount == 0)
             {
                 return severity != null
@@ -138,7 +142,7 @@ public sealed class McpPlanTools
         if (session == null)
             return SessionNotFound(sessionManager, session_id);
 
-        var result = operations.GetMissingIndexes(session_id);
+        var result = operations.GetMissingIndexes(session);
         if (result.MissingIndexCount == 0)
             return "No missing index suggestions in this plan.";
 
@@ -198,7 +202,7 @@ public sealed class McpPlanTools
         var topError = McpHelpers.ValidateTop(top);
         if (topError != null) return topError;
 
-        var result = operations.GetExpensiveOperators(session_id, top);
+        var result = operations.GetExpensiveOperators(session, top, useBareObjectNames: true);
         return JsonSerializer.Serialize(
             new { ranked_by = result.RankedBy, operators = result.Operators },
             McpHelpers.JsonOptions);

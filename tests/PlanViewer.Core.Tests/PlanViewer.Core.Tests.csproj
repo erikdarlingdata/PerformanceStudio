@@ -12,7 +12,7 @@
   <ItemGroup>
     <PackageReference Include="coverlet.collector" Version="10.0.1" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.6.0" />
-    <PackageReference Include="Repl.Testing" Version="0.11.0-dev.181" />
+    <PackageReference Include="Repl.Testing" Version="0.11.0" />
     <PackageReference Include="xunit.v3" Version="3.2.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
   </ItemGroup>
@@ -20,6 +20,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\PlanViewer.Core\PlanViewer.Core.csproj" />
     <ProjectReference Include="..\..\src\PlanViewer.Cli\PlanViewer.Cli.csproj" />
+    <ProjectReference Include="..\..\src\PlanViewer.App\PlanViewer.App.csproj" />
   </ItemGroup>
 
   <ItemGroup>

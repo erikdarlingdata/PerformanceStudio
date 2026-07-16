@@ -16,7 +16,7 @@ public sealed class PlanReplTests
         await using var session = await host.OpenSessionAsync(cancellationToken: cancellationToken);
         var path = Path.GetFullPath(Path.Combine("Plans", "top_above_scan_plan.sqlplan"));
 
-        var command = string.Concat("plan open ", (char)34, path, (char)34, " --no-logo");
+        var command = $"plan open \"{path}\" --no-logo";
         var opened = await session.RunCommandAsync(command, cancellationToken);
         var id = Assert.Single(catalog.GetAllSessions()).SessionId;
         var summary = await session.RunCommandAsync($"plan {id} summary --json --no-logo", cancellationToken);
@@ -46,5 +46,25 @@ public sealed class PlanReplTests
 
         Assert.Equal(0, execution.ExitCode);
         Assert.Contains("[]", execution.OutputText);
+    }
+
+    [Fact]
+    public async Task InteractiveSession_CloseEvictsTheLoadedPlan()
+    {
+        var catalog = new InMemoryPlanCatalog();
+        await using var host = ReplTestHost.Create(() => PlanReplApp.Create(catalog));
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await using var session = await host.OpenSessionAsync(cancellationToken: cancellationToken);
+        var path = Path.GetFullPath(Path.Combine("Plans", "row_goal_plan.sqlplan"));
+
+        var opened = await session.RunCommandAsync(
+            $"plan open \"{path}\" --no-logo",
+            cancellationToken);
+        var id = Assert.Single(catalog.GetAllSessions()).SessionId;
+        var closed = await session.RunCommandAsync($"plan {id} close --no-logo", cancellationToken);
+
+        Assert.Equal(0, opened.ExitCode);
+        Assert.Equal(0, closed.ExitCode);
+        Assert.Empty(catalog.GetAllSessions());
     }
 }
