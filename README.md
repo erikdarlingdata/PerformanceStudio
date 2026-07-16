@@ -173,8 +173,8 @@ planview repl                         # explicit interactive alias
 planview mcp serve                    # stdio MCP server generated from the graph
 ```
 
-Bare `planview` is intentionally interactive and waits on stdin; scripts should use an
-explicit legacy command, a one-shot `plan` command, or `planview --help`.
+Bare `planview` preserves the legacy System.CommandLine behavior. Interactive exploration is
+entered only through `planview repl`; scripts can use explicit legacy or one-shot `plan` commands.
 
 The pilot uses the stable `Repl` `0.11.0` release. Loaded plans live only for the lifetime of
 the process; `open` and `close` change only that in-memory catalog and never write the

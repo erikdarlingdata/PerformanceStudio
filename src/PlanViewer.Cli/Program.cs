@@ -22,7 +22,7 @@ catch (PlatformNotSupportedException)
     // Credential storage not available — analyze-only mode still works
 }
 
-var root = new RootCommand("SQL Server execution plan analyzer (run without arguments for interactive plan exploration)")
+var root = new RootCommand("SQL Server execution plan analyzer (use 'planview repl' for interactive plan exploration)")
 {
     AnalyzeCommand.Create(credentialService),
     QueryStoreCommand.Create(credentialService),
