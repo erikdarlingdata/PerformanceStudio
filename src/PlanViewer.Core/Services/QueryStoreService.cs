@@ -163,6 +163,19 @@ FROM sys.database_query_store_options;";
             needsQueryJoin = true;
         }
 
+        var queryTextPattern = QueryStoreFilter.BuildQueryTextSearchPattern(filter?.QueryTextSearch);
+        if (queryTextPattern != null)
+        {
+            filterClauses.Add(@"AND EXISTS (
+            SELECT 1
+            FROM sys.query_store_query AS qsq
+            JOIN sys.query_store_query_text AS qsqt
+                ON qsqt.query_text_id = qsq.query_text_id
+            WHERE qsq.query_id = p.query_id
+            AND qsqt.query_sql_text LIKE @filterQueryText)");
+            parameters.Add(new SqlParameter("@filterQueryText", queryTextPattern));
+        }
+
         var rnClause = filter?.PlanId != null ? "" : "AND r.rn = 1";
         var filterSql = filterClauses.Count > 0
             ? "\n        " + string.Join("\n        ", filterClauses)

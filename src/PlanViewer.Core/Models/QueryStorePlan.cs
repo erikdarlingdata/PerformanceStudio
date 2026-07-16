@@ -19,6 +19,8 @@ public class QueryStoreFilter
     /// </summary>
     public string[]? ExecutionTypeDescs { get; set; }
 
+    public string? QueryTextSearch { get; set; }
+
     /// <summary>
     /// Parses a user-friendly execution-type string into the matching SQL execution_type_desc values.
     /// Accepts (case-insensitive): regular, aborted, exception, failed (= aborted + exception), any.
@@ -37,6 +39,22 @@ public class QueryStoreFilter
             _ => throw new ArgumentException(
                 $"Unknown execution type '{input}'. Valid values: regular, aborted, exception, failed, any."),
         };
+    }
+
+    /// <summary>
+    /// Builds the LIKE pattern for a query-text search, mirroring sp_QuickieStore's
+    /// @query_text_search default behavior: trims, then wraps the term in leading/
+    /// trailing % wildcards when not already present. %, _, [, ] remain LIKE
+    /// wildcards (sp_QuickieStore's default @escape_brackets = 0). Returns null for
+    /// null/whitespace input (no filter), matching ParseExecutionType's contract.
+    /// </summary>
+    public static string? BuildQueryTextSearchPattern(string? input)
+    {
+        if (string.IsNullOrWhiteSpace(input)) return null;
+        var s = input.Trim();
+        if (!s.StartsWith('%')) s = "%" + s;
+        if (!s.EndsWith('%')) s += "%";
+        return s;
     }
 }
 

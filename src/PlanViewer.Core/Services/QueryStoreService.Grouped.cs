@@ -60,6 +60,18 @@ public static partial class QueryStoreService
                 filterClauses.Add("AND OBJECT_SCHEMA_NAME(q.object_id) + N'.' + OBJECT_NAME(q.object_id) = @filterModule");
             parameters.Add(new SqlParameter("@filterModule", moduleVal));
         }
+        var queryTextPattern = QueryStoreFilter.BuildQueryTextSearchPattern(filter?.QueryTextSearch);
+        if (queryTextPattern != null)
+        {
+            filterClauses.Add(@"AND EXISTS (
+            SELECT 1
+            FROM sys.query_store_query AS qsq
+            JOIN sys.query_store_query_text AS qsqt
+                ON qsqt.query_text_id = qsq.query_text_id
+            WHERE qsq.query_id = p.query_id
+            AND qsqt.query_sql_text LIKE @filterQueryText)");
+            parameters.Add(new SqlParameter("@filterQueryText", queryTextPattern));
+        }
         var filterSql = filterClauses.Count > 0 ? "\n" + string.Join("\n", filterClauses) : "";
         var phase2ExecutionTypeClause = "";
         if (filter?.ExecutionTypeDescs?.Length > 0)
@@ -339,6 +351,18 @@ SELECT * FROM #plan_hash_rows ORDER BY query_hash, total_executions DESC;
         {
             filterClauses.Add("AND q.query_hash = CONVERT(binary(8), @filterQueryHash, 1)");
             parameters.Add(new SqlParameter("@filterQueryHash", filter.QueryHash.Trim()));
+        }
+        var queryTextPattern = QueryStoreFilter.BuildQueryTextSearchPattern(filter?.QueryTextSearch);
+        if (queryTextPattern != null)
+        {
+            filterClauses.Add(@"AND EXISTS (
+            SELECT 1
+            FROM sys.query_store_query AS qsq
+            JOIN sys.query_store_query_text AS qsqt
+                ON qsqt.query_text_id = qsq.query_text_id
+            WHERE qsq.query_id = p.query_id
+            AND qsqt.query_sql_text LIKE @filterQueryText)");
+            parameters.Add(new SqlParameter("@filterQueryText", queryTextPattern));
         }
         var filterSql = filterClauses.Count > 0 ? "\n" + string.Join("\n", filterClauses) : "";
         var phase2ExecutionTypeClause = "";

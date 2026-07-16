@@ -84,6 +84,9 @@ public partial class QueryStoreGridControl : UserControl
                 // Default to dbo schema if no schema specified, following sp_QuickieStore pattern
                 filter.ModuleName = searchValue.Contains('.') ? searchValue : $"dbo.{searchValue}";
                 break;
+            case "query-text":
+                filter.QueryTextSearch = searchValue;
+                break;
             default:
                 return null;
         }

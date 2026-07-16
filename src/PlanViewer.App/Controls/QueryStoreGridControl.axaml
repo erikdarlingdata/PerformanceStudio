@@ -86,6 +86,7 @@
                         <ComboBoxItem Content="Query Hash" Tag="query-hash"/>
                         <ComboBoxItem Content="Plan Hash" Tag="plan-hash"/>
                         <ComboBoxItem Content="Module" Tag="module"/>
+                        <ComboBoxItem Content="Query Text" Tag="query-text"/>
                         <ComboBoxItem Content="Execution Type" Tag="execution-type"/>
                     </ComboBox>
                 </StackPanel>
