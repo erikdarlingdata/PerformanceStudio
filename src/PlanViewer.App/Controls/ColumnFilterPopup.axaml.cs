@@ -9,6 +9,7 @@ public partial class ColumnFilterPopup : UserControl
 {
     public event EventHandler<FilterAppliedEventArgs>? FilterApplied;
     public event EventHandler? FilterCleared;
+    public event EventHandler<FilterAppliedEventArgs>? SearchServerRequested;
 
     private string _currentColumnName = "";
 
@@ -35,10 +36,11 @@ public partial class ColumnFilterPopup : UserControl
         OperatorComboBox.SelectedIndex = 0;
     }
 
-    public void Initialize(string columnName, ColumnFilterState? existingFilter)
+    public void Initialize(string columnName, ColumnFilterState? existingFilter, bool canSearchServer)
     {
         _currentColumnName = columnName;
         HeaderText.Text = $"Filter: {columnName}";
+        SearchServerButton.IsVisible = canSearchServer;
 
         if (existingFilter?.IsActive == true)
         {
@@ -70,12 +72,12 @@ public partial class ColumnFilterPopup : UserControl
         UpdateValueVisibility();
     }
 
-    private void ApplyFilter()
+    private FilterAppliedEventArgs? BuildFilterArgs()
     {
         var idx = OperatorComboBox.SelectedIndex;
-        if (idx < 0 || idx >= Operators.Length) return;
+        if (idx < 0 || idx >= Operators.Length) return null;
 
-        FilterApplied?.Invoke(this, new FilterAppliedEventArgs
+        return new FilterAppliedEventArgs
         {
             FilterState = new ColumnFilterState
             {
@@ -83,10 +85,22 @@ public partial class ColumnFilterPopup : UserControl
                 Operator   = Operators[idx].Op,
                 Value      = ValueTextBox.Text ?? "",
             }
-        });
+        };
+    }
+
+    private void ApplyFilter()
+    {
+        if (BuildFilterArgs() is { } args)
+            FilterApplied?.Invoke(this, args);
     }
 
     private void ApplyButton_Click(object? sender, RoutedEventArgs e) => ApplyFilter();
+
+    private void SearchServerButton_Click(object? sender, RoutedEventArgs e)
+    {
+        if (BuildFilterArgs() is { } args)
+            SearchServerRequested?.Invoke(this, args);
+    }
 
     private void ClearButton_Click(object? sender, RoutedEventArgs e)
     {
