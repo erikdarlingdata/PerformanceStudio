@@ -265,6 +265,12 @@ internal sealed class AppSettings
     [JsonPropertyName("query_store_default_group_by")]
     public string QueryStoreDefaultGroupBy { get; set; } = "QueryHash";
 
+    /// <summary>
+    /// Whether the Query Store server-filter panel is expanded. Default false (collapsed).
+    /// </summary>
+    [JsonPropertyName("query_store_filter_panel_expanded")]
+    public bool QueryStoreFilterPanelExpanded { get; set; }
+
     // ── Multi QS Overview Settings ───────────────────────────────────
 
     /// <summary>

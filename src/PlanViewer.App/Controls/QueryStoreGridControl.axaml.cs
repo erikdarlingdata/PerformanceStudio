@@ -78,6 +78,12 @@ public partial class QueryStoreGridControl : UserControl
             _ => "query-hash"
         });
 
+        // Restore the server-filter panel's expanded state, then subscribe — restoring first
+        // means the restore itself never triggers a save.
+        ServerFilterExpander.IsExpanded = userSettings.QueryStoreFilterPanelExpanded;
+        ServerFilterExpander.Expanded += ServerFilterExpander_StateChanged;
+        ServerFilterExpander.Collapsed += ServerFilterExpander_StateChanged;
+
         ResultsGrid.ItemsSource = _filteredRows;
         Helpers.DataGridBehaviors.Attach(ResultsGrid);
         EnsureFilterPopup();

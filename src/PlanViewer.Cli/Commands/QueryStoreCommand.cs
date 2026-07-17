@@ -134,9 +134,54 @@ public static class QueryStoreCommand
             Description = "Filter to queries whose text contains this string (SQL LIKE match, auto-wrapped in %; % _ [ ] are wildcards)"
         };
 
+        var queryTextSearchNotOption = new Option<string?>("--query-text-search-not")
+        {
+            Description = "Exclude queries whose text contains this string (SQL LIKE match, auto-wrapped in %; % _ [ ] are wildcards)"
+        };
+
+        var escapeBracketsOption = new Option<bool>("--escape-brackets")
+        {
+            Description = "Treat [ ] _ in --query-text-search/--query-text-search-not as literals, not wildcards"
+        };
+
         var executionTypeOption = new Option<string?>("--execution-type")
         {
             Description = "Filter by execution type: regular, aborted, exception, or failed (= aborted + exception)"
+        };
+
+        var minExecutionsOption = new Option<long?>("--min-executions")
+        {
+            Description = "Only include plans executed at least this many times (total count over the window)"
+        };
+
+        var minDurationMsOption = new Option<long?>("--min-duration-ms")
+        {
+            Description = "Only include plans whose average duration per execution is at least this many ms"
+        };
+
+        var minCpuMsOption = new Option<long?>("--min-cpu-ms")
+        {
+            Description = "Only include plans whose average CPU per execution is at least this many ms"
+        };
+
+        var includeQueryIdsOption = new Option<string?>("--include-query-ids")
+        {
+            Description = "Comma-separated Query Store query IDs to include (e.g. 123,456)"
+        };
+
+        var ignoreQueryIdsOption = new Option<string?>("--ignore-query-ids")
+        {
+            Description = "Comma-separated Query Store query IDs to exclude (e.g. 123,456)"
+        };
+
+        var includePlanIdsOption = new Option<string?>("--include-plan-ids")
+        {
+            Description = "Comma-separated Query Store plan IDs to include (e.g. 12,34)"
+        };
+
+        var ignorePlanIdsOption = new Option<string?>("--ignore-plan-ids")
+        {
+            Description = "Comma-separated Query Store plan IDs to exclude (e.g. 12,34)"
         };
 
         var cmd = new Command("query-store", "Analyze top queries from Query Store")
@@ -145,7 +190,9 @@ public static class QueryStoreCommand
             outputDirOption, outputOption, compactOption, warningsOnlyOption, configOption,
             authOption, trustCertOption, loginOption, passwordOption, passwordStdinOption,
             queryIdOption, planIdOption, queryHashOption, planHashOption, moduleOption,
-            queryTextSearchOption, executionTypeOption
+            queryTextSearchOption, queryTextSearchNotOption, escapeBracketsOption, executionTypeOption,
+            minExecutionsOption, minDurationMsOption, minCpuMsOption,
+            includeQueryIdsOption, ignoreQueryIdsOption, includePlanIdsOption, ignorePlanIdsOption
         };
 
         cmd.SetAction(async (parseResult, ct) =>
@@ -171,7 +218,16 @@ public static class QueryStoreCommand
             var filterPlanHash = parseResult.GetValue(planHashOption);
             var filterModule = parseResult.GetValue(moduleOption);
             var filterQueryTextSearch = parseResult.GetValue(queryTextSearchOption);
+            var filterQueryTextSearchNot = parseResult.GetValue(queryTextSearchNotOption);
+            var filterEscapeBrackets = parseResult.GetValue(escapeBracketsOption);
             var filterExecutionType = parseResult.GetValue(executionTypeOption);
+            var filterMinExecutions = parseResult.GetValue(minExecutionsOption);
+            var filterMinDurationMs = parseResult.GetValue(minDurationMsOption);
+            var filterMinCpuMs = parseResult.GetValue(minCpuMsOption);
+            var filterIncludeQueryIds = parseResult.GetValue(includeQueryIdsOption);
+            var filterIgnoreQueryIds = parseResult.GetValue(ignoreQueryIdsOption);
+            var filterIncludePlanIds = parseResult.GetValue(includePlanIdsOption);
+            var filterIgnorePlanIds = parseResult.GetValue(ignorePlanIdsOption);
 
             // Load .env file if present (CLI args take precedence)
             var env = ConnectionHelper.LoadEnvFile();
@@ -204,9 +260,17 @@ public static class QueryStoreCommand
             }
 
             string[]? executionTypes;
+            long[]? includeQueryIds;
+            long[]? ignoreQueryIds;
+            long[]? includePlanIds;
+            long[]? ignorePlanIds;
             try
             {
                 executionTypes = QueryStoreFilter.ParseExecutionType(filterExecutionType);
+                includeQueryIds = QueryStoreFilter.ParseIdList(filterIncludeQueryIds);
+                ignoreQueryIds = QueryStoreFilter.ParseIdList(filterIgnoreQueryIds);
+                includePlanIds = QueryStoreFilter.ParseIdList(filterIncludePlanIds);
+                ignorePlanIds = QueryStoreFilter.ParseIdList(filterIgnorePlanIds);
             }
             catch (ArgumentException ex)
             {
@@ -218,7 +282,9 @@ public static class QueryStoreCommand
             QueryStoreFilter? filter = null;
             if (filterQueryId != null || filterPlanId != null ||
                 filterQueryHash != null || filterPlanHash != null || filterModule != null || filterQueryTextSearch != null ||
-                executionTypes != null)
+                executionTypes != null ||
+                filterQueryTextSearchNot != null || filterMinExecutions != null || filterMinDurationMs != null || filterMinCpuMs != null ||
+                includeQueryIds != null || ignoreQueryIds != null || includePlanIds != null || ignorePlanIds != null)
             {
                 filter = new QueryStoreFilter
                 {
@@ -228,7 +294,16 @@ public static class QueryStoreCommand
                     QueryPlanHash = filterPlanHash,
                     ModuleName = filterModule,
                     QueryTextSearch = filterQueryTextSearch,
+                    QueryTextSearchNot = filterQueryTextSearchNot,
+                    EscapeBrackets = filterEscapeBrackets,
                     ExecutionTypeDescs = executionTypes,
+                    MinExecutions = filterMinExecutions,
+                    MinDurationMs = filterMinDurationMs,
+                    MinCpuMs = filterMinCpuMs,
+                    IncludeQueryIds = includeQueryIds,
+                    IgnoreQueryIds = ignoreQueryIds,
+                    IncludePlanIds = includePlanIds,
+                    IgnorePlanIds = ignorePlanIds,
                 };
             }
 

@@ -39,6 +39,32 @@ public class QueryTextSearchPatternTests
     }
 
     [Theory]
+    // escape_brackets = 1 (sp_QuickieStore @escape_brackets = 1): [ ] and _ become
+    // literals, backslash-escaped for ESCAPE '\', while % stays a live LIKE wildcard.
+    [InlineData("[dbo]", @"%\[dbo\]%")]
+    [InlineData("a_b", @"%a\_b%")]
+    [InlineData("[a_b]", @"%\[a\_b\]%")]
+    [InlineData("[dbo].[t]", @"%\[dbo\].\[t\]%")]
+    [InlineData("_", @"%\_%")]
+    // Pre-wrapped term keeps its % ends; interior brackets are still escaped.
+    [InlineData("%[x]%", @"%\[x\]%")]
+    // No bracket/underscore metacharacters -> escaping is a no-op.
+    [InlineData("SELECT", "%SELECT%")]
+    // Discriminator: % is a wildcard even in escape mode and is never escaped.
+    [InlineData("a%b", "%a%b%")]
+    // Known parity limitation: a literal backslash in the term is passed through
+    // unescaped, so it collides with ESCAPE '\'. Documented here, not fixed.
+    [InlineData(@"a\b", @"%a\b%")]
+    // Null / empty / whitespace -> no filter, regardless of escape mode.
+    [InlineData(null, null)]
+    [InlineData("", null)]
+    [InlineData("   ", null)]
+    public void BuildQueryTextSearchPattern_EscapeBrackets_EscapesBracketsAndUnderscore(string? input, string? expected)
+    {
+        Assert.Equal(expected, QueryStoreFilter.BuildQueryTextSearchPattern(input, escapeBrackets: true));
+    }
+
+    [Theory]
     // Single friendly value -> single execution_type_desc.
     [InlineData("regular", new[] { "Regular" })]
     [InlineData("aborted", new[] { "Aborted" })]

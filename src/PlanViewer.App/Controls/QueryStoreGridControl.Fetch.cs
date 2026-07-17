@@ -26,6 +26,11 @@ public partial class QueryStoreGridControl : UserControl
 {
     private async void Fetch_Click(object? sender, RoutedEventArgs e)
     {
+        // Commit any pending toolbar "Search by" entry into the server-filter state first,
+        // then refresh the chip strip, before running the fetch.
+        CommitSearchByCriterion();
+        RebuildChips();
+
         _fetchCts?.Cancel();
         _fetchCts?.Dispose();
         _fetchCts = new CancellationTokenSource();
@@ -69,7 +74,7 @@ public partial class QueryStoreGridControl : UserControl
 
         var topN = (int)(TopNBox.Value ?? 25);
         var orderBy = _lastFetchedOrderBy;
-        var filter = BuildSearchFilter();
+        var filter = _serverFilterState.BuildFilter();
 
         FetchButton.IsEnabled = false;
         LoadButton.IsEnabled = false;
