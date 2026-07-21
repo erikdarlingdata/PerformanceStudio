@@ -93,7 +93,7 @@ Filter Operator | Warning | Filter operator discarding rows late in the plan.\nâ
 Nested Loops High Executions | Critical | Nested Loops inner side executed 17,091,572 times (DOP 8). Inner side total: 93,279,732 logical reads. Inner side time: 30,655ms (93% of statement). Consider whether a hash or merge join would be more appropriate for this row count.
 Scan With Predicate | Warning | Scan with residual predicate â€” SQL Server is reading every row and filtering after the fact. Check that you have appropriate indexes.\nPredicate: [StackOverflow2013].[dbo].[Posts].[PostTypeId] as [p].[PostTypeId]=(1) OR [StackOverflow2013].[dbo].[Posts].[PostTypeId] as [p].[PostTypeId]=(2)
 Nested Loops High Executions | Critical | Nested Loops inner side executed 30,700,008 times (DOP 8). Inner side total: 93,279,732 logical reads. Inner side time: 14,355ms (43% of statement). Consider whether a hash or merge join would be more appropriate for this row count.
-Expensive Operator | Critical | Sort took 19,602ms (59.3% of statement elapsed) but no specific rule identified a fix. Worth investigating: is the row volume necessary? Are upstream estimates driving this operator harder than it should be?
+Expensive Operator | Critical | Sort took 18,580ms (56.2% of statement elapsed) but no specific rule identified a fix. Worth investigating: is the row volume necessary? Are upstream estimates driving this operator harder than it should be?
 Join OR Clause | Warning | OR in a join predicate. SQL Server rewrote the OR as 2 separate lookups, each evaluated independently â€” this multiplies the work on the inner side. Rewrite as separate queries joined with UNION ALL. For example, change "FROM a JOIN b ON a.x = b.x OR a.y = b.y" to "FROM a JOIN b ON a.x = b.x UNION ALL FROM a JOIN b ON a.y = b.y".
 Expensive Operator | Warning | Clustered Index Seek took 14,355ms (43.4% of statement elapsed) but no specific rule identified a fix. Worth investigating: is the row volume necessary? Are upstream estimates driving this operator harder than it should be?
 
@@ -209,6 +209,10 @@ Filter Operator | Warning | Filter operator discarding rows late in the plan.\nâ
 Row Estimate Mismatch | Critical | Estimated 5,292,870 vs Actual 53,946 (13,486 rows x 4 executions) â€” 392x overestimated. The overestimate may have caused the optimizer to make poor choices.
 Parallel Skew | Warning | Thread 3 processed 100% of rows (53,946/53,946). Work is heavily skewed to one thread, so parallelism isn't helping much. Common causes: uneven data distribution across partitions or hash buckets, or a scan/seek whose predicate sends most rows to one range. Reducing DOP or rewriting the query to avoid the skewed operation may help.
 Bare Scan | Warning | Clustered index scan reads the full table with no predicate, outputting 1 column(s): Votes.PostId. Consider a nonclustered index on the output columns (as key or INCLUDE) so SQL Server can read a narrower structure. For analytical workloads, a columnstore index may be a better fit.
+
+### parallel_row_over_batch_plan.sqlplan
+Standard Edition DOP Limitation | Info | DOP is limited to 2 and the plan uses batch mode operators. This may be caused by the SQL Server Standard Edition limitation, which caps parallelism at 2 when batch mode is in use. If this server runs Standard Edition, Developer or Enterprise Edition would allow higher DOP.
+Expensive Operator | Critical | Hash Match took 900ms (90.0% of statement elapsed) but no specific rule identified a fix. Worth investigating: is the row volume necessary? Are upstream estimates driving this operator harder than it should be?
 
 ### param-sniffing-posttypeid2.sqlplan
 Wait: RESERVED_MEMORY_ALLOCATION_EXT | Info | RESERVED_MEMORY_ALLOCATION_EXT Observed 1,051 ms across 2,052,049 waits.

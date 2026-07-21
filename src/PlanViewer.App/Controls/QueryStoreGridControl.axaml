@@ -1,9 +1,10 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:local="using:PlanViewer.App.Controls"
+             xmlns:models="using:PlanViewer.Core.Models"
              x:Class="PlanViewer.App.Controls.QueryStoreGridControl"
              Background="{DynamicResource BackgroundBrush}">
-    <Grid RowDefinitions="Auto,Auto,*">
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto,*">
         <!-- Time Range Slicer + Wait Stats Profile -->
         <Grid Grid.Row="0" x:Name="SlicerRow" ColumnDefinitions="2*,Auto,*">
             <local:TimeRangeSlicerControl x:Name="TimeRangeSlicer" Grid.Column="0"/>
@@ -86,6 +87,7 @@
                         <ComboBoxItem Content="Query Hash" Tag="query-hash"/>
                         <ComboBoxItem Content="Plan Hash" Tag="plan-hash"/>
                         <ComboBoxItem Content="Module" Tag="module"/>
+                        <ComboBoxItem Content="Query Text" Tag="query-text"/>
                         <ComboBoxItem Content="Execution Type" Tag="execution-type"/>
                     </ComboBox>
                 </StackPanel>
@@ -130,8 +132,122 @@
             </StackPanel>
         </Border>
 
+        <!-- Server Filters panel (collapsible) -->
+        <Border Grid.Row="2" Background="{DynamicResource BackgroundDarkBrush}"
+                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
+            <Expander x:Name="ServerFilterExpander" IsExpanded="False"
+                      Foreground="{DynamicResource ForegroundBrush}"
+                      Background="Transparent"
+                      BorderThickness="0"
+                      Padding="0"
+                      HorizontalAlignment="Stretch"
+                      HorizontalContentAlignment="Stretch">
+                <Expander.Header>
+                    <TextBlock Text="  Server Filters" FontWeight="SemiBold"
+                               Foreground="{DynamicResource ForegroundBrush}"/>
+                </Expander.Header>
+                <StackPanel Margin="12,6" Spacing="10">
+                    <!-- Row A: numeric thresholds -->
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Min executions" FontSize="11"
+                                       Foreground="{DynamicResource ForegroundBrush}"/>
+                            <NumericUpDown x:Name="MinExecBox" Minimum="0" Width="130" Height="32" FormatString="0"/>
+                        </StackPanel>
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Min avg CPU (ms)" FontSize="11"
+                                       Foreground="{DynamicResource ForegroundBrush}"/>
+                            <NumericUpDown x:Name="MinCpuBox" Minimum="0" Width="130" Height="32" FormatString="0"/>
+                        </StackPanel>
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Min avg duration (ms)" FontSize="11"
+                                       Foreground="{DynamicResource ForegroundBrush}"/>
+                            <NumericUpDown x:Name="MinDurBox" Minimum="0" Width="130" Height="32" FormatString="0"/>
+                        </StackPanel>
+                    </StackPanel>
+                    <!-- Row B: query text search -->
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Query text contains" FontSize="11"
+                                       Foreground="{DynamicResource ForegroundBrush}"/>
+                            <TextBox x:Name="TextSearchBox" Width="220" Height="32" Watermark="e.g. Votes"/>
+                        </StackPanel>
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Query text excludes" FontSize="11"
+                                       Foreground="{DynamicResource ForegroundBrush}"/>
+                            <TextBox x:Name="TextExcludeBox" Width="220" Height="32" Watermark="e.g. #temp"/>
+                        </StackPanel>
+                        <CheckBox x:Name="EscapeBracketsBox" Content="Treat [ ] _ as literals"
+                                  VerticalAlignment="Bottom"
+                                  Foreground="{DynamicResource ForegroundBrush}"/>
+                    </StackPanel>
+                    <!-- Row C: id lists -->
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Include query IDs" FontSize="11"
+                                       Foreground="{DynamicResource ForegroundBrush}"/>
+                            <TextBox x:Name="IncludeQueryIdsBox" Width="180" Height="32" Watermark="1, 2, 3"/>
+                        </StackPanel>
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Ignore query IDs" FontSize="11"
+                                       Foreground="{DynamicResource ForegroundBrush}"/>
+                            <TextBox x:Name="IgnoreQueryIdsBox" Width="180" Height="32" Watermark="4, 5"/>
+                        </StackPanel>
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Include plan IDs" FontSize="11"
+                                       Foreground="{DynamicResource ForegroundBrush}"/>
+                            <TextBox x:Name="IncludePlanIdsBox" Width="180" Height="32" Watermark="10, 11"/>
+                        </StackPanel>
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Ignore plan IDs" FontSize="11"
+                                       Foreground="{DynamicResource ForegroundBrush}"/>
+                            <TextBox x:Name="IgnorePlanIdsBox" Width="180" Height="32" Watermark="12"/>
+                        </StackPanel>
+                    </StackPanel>
+                    <!-- Actions -->
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+                        <Button Content="Clear filters" Click="ClearServerFilters_Click"
+                                Height="28" FontSize="12" Theme="{StaticResource AppButton}"/>
+                        <Button Content="Apply &amp; Fetch" Click="ApplyServerFilters_Click"
+                                Height="28" FontSize="12" Theme="{StaticResource AppButton}"/>
+                    </StackPanel>
+                </StackPanel>
+            </Expander>
+        </Border>
+
+        <!-- Active server-filter chips -->
+        <Border Grid.Row="3" x:Name="ChipStrip" IsVisible="False"
+                Background="{DynamicResource BackgroundDarkBrush}"
+                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1"
+                Padding="8,4">
+            <ItemsControl x:Name="ChipItems">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <WrapPanel Orientation="Horizontal"/>
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="models:ServerFilterChip">
+                        <Border Background="{DynamicResource BackgroundLightBrush}"
+                                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                                CornerRadius="10" Padding="8,2" Margin="0,2,6,2">
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <TextBlock Text="{Binding Label}" FontSize="11"
+                                           VerticalAlignment="Center"
+                                           Foreground="{DynamicResource ForegroundBrush}"/>
+                                <Button Content="✕" Tag="{Binding Kind}" Click="ChipRemove_Click"
+                                        Width="16" Height="16" Padding="0" FontSize="10"
+                                        Background="Transparent" BorderThickness="0"
+                                        Foreground="{DynamicResource ForegroundMutedBrush}"/>
+                            </StackPanel>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </Border>
+
         <!-- DataGrid + loading overlay -->
-        <Grid Grid.Row="2">
+        <Grid Grid.Row="4">
         <DataGrid x:Name="ResultsGrid"
                   AutoGenerateColumns="False"
                   CanUserSortColumns="True"
