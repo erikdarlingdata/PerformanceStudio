@@ -1,0 +1,103 @@
+name: Claude Code Review
+
+# Automatic review on every PR. Fork PRs are skipped on purpose - see the note
+# at the bottom of this file.
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review]
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE'
+      - '.gitattributes'
+      - '.gitignore'
+      - 'CITATION.cff'
+      - 'llms.txt'
+      - '.github/ISSUE_TEMPLATE/**'
+      - 'docs/**'
+      - 'screenshots/**'
+
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write
+
+# One review at a time per PR; a rapid second push cancels the in-flight run
+# instead of paying for two reviews of the same branch.
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    # Drafts aren't ready for review, and a fork PR gets no secrets (so
+    # CLAUDE_CODE_OAUTH_TOKEN would be empty) and a read-only token it could
+    # not post with. Skip rather than fail a contributor's PR with a red X.
+    if: |
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
+            Review this pull request. The PR branch is already checked out in
+            the working directory.
+
+            Performance Studio is a cross-platform Avalonia desktop app (plus a
+            CLI, a Blazor WASM viewer, and an SSMS extension) that analyzes SQL
+            Server execution plans. Prioritize, in this order:
+
+            1. Correctness and crashes - null/empty plan XML, malformed
+               showplan attributes, off-by-one in operator tree walking.
+            2. Untrusted input. Execution plan XML is untrusted (users open
+               .sqlplan files they were emailed). Any generated T-SQL must stay
+               inert: identifiers bracket-escaped with ']' doubled, values
+               emitted only as self-contained literals. Flag string
+               concatenation into SQL that isn't a SqlParameter.
+            3. Security, calibrated to the deployment. This runs on a
+               single-user personal machine and its MCP tools are read-only, so
+               loopback-bound, opt-in, or local-IPC issues are Low here. Reserve
+               High for remotely reachable vectors (missing Host/Origin checks,
+               DNS rebinding) or credential disclosure.
+            4. Repo conventions that CI does not catch:
+               - The build standard is zero warnings. Flag new warnings and any
+                 new NoWarn that lacks a comment explaining it.
+               - src/Directory.Build.props <Version> is the single source of
+                 truth, but PlanViewer.Ssms is a legacy non-SDK project: its
+                 version must be bumped by hand in
+                 source.extension.vsixmanifest AND Properties/AssemblyInfo.cs.
+                 Flag a version bump that updates one and not the others.
+               - A PlanViewer.Core file the Blazor app needs must also be added
+                 as a linked <Compile Include> in PlanViewer.Web.csproj - a
+                 ProjectReference is deliberately not used.
+               - T-SQL uses TRY_CAST, never TRY_CONVERT.
+            5. Test coverage for the behavior actually changed.
+
+            Be specific and concrete. Skip praise, style nits already handled by
+            the compiler, and restating what the diff does. If the PR looks good,
+            say so briefly rather than inventing findings.
+
+            Use `gh pr comment` for top-level feedback.
+            Use `mcp__github_inline_comment__create_inline_comment` (with
+            `confirmed: true`) to flag specific lines.
+            Only post GitHub comments - do not return review text as a message.
+
+          claude_args: |
+            --max-turns 20
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
+
+# Fork PRs: GitHub withholds repository secrets from `pull_request` runs on
+# forks and issues a read-only GITHUB_TOKEN, so this workflow cannot review
+# them. The fix is NOT `pull_request_target` - that would hand a writable token
+# and this repo's secrets to an agent running untrusted fork code. To review a
+# fork PR, comment `@claude review this` on it (claude.yml), which runs in the
+# base-repo context and checks the commenter's write permission first.
