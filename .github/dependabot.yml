@@ -1,0 +1,96 @@
+version: 2
+
+# Coverage note: PlanViewer.sln does NOT contain server/PlanShare, PlanViewer.Ssms,
+# or PlanViewer.Ssms.Installer, so any solution-level scan silently skips them.
+# Every project directory is therefore listed explicitly below. If a new .csproj
+# is added anywhere, add its directory here too.
+updates:
+  - package-ecosystem: nuget
+    directories:
+      - "/src/PlanViewer.App"
+      - "/src/PlanViewer.Core"
+      - "/src/PlanViewer.Cli"
+      - "/src/PlanViewer.Web"
+      - "/src/PlanViewer.Ssms"
+      - "/src/PlanViewer.Ssms.Installer"
+      - "/tests/PlanViewer.Core.Tests"
+      - "/server/PlanShare"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: America/New_York
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "deps"
+    labels:
+      - dependencies
+    # One PR per batch instead of per package. Majors stay separate so a breaking
+    # change is never buried in a routine batch.
+    groups:
+      patch-and-minor:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+    ignore:
+      # --- Deliberate pins. Removing an ignore here without doing the matching
+      #     migration will produce a PR that builds but breaks at runtime. ---
+
+      # Avalonia 12 is a completed-but-parked migration on branch
+      # upgrade/avalonia-12. Take 11.x servicing, never the major.
+      - dependency-name: "Avalonia*"
+        update-types:
+          - version-update:semver-major
+
+      # 5.1.58 is the last build targeting Avalonia 11; 5.1.59+ requires
+      # Avalonia >= 12 and hard-fails restore with NU1605. This is a PATCH bump,
+      # so an update-type ignore would not catch it. Drop this entry as part of
+      # the Avalonia 12 migration.
+      - dependency-name: "ScottPlot.Avalonia"
+        versions:
+          - ">= 5.1.59"
+
+      # Pinned to keep the native libs in the [119.0, 120.0) range that managed
+      # SkiaSharp 3.x requires. A 4.x bump reintroduces GitHub issue #139
+      # (TypeInitializationException on Linux at startup).
+      - dependency-name: "SkiaSharp.NativeAssets.*"
+        update-types:
+          - version-update:semver-major
+
+      # The VSIX targets VS 2022. The 18.x line targets VS 18 and is not
+      # restorable from nuget.org, so the 17.x line is intentional.
+      - dependency-name: "Microsoft.VisualStudio.SDK"
+        update-types:
+          - version-update:semver-major
+      - dependency-name: "Microsoft.VSSDK.BuildTools"
+        update-types:
+          - version-update:semver-major
+
+      # The Velopack library version must move in lockstep with the `vpk` CLI
+      # pin in .github/workflows/release.yml. A PR bumping only the library
+      # would desync them and can produce incompatible update packages, so this
+      # one is handled by hand.
+      - dependency-name: "Velopack"
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: America/New_York
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci"
+    labels:
+      - dependencies
+      - github-actions
+    groups:
+      actions:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
