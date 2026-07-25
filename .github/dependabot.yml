@@ -80,6 +80,25 @@ updates:
       # one is handled by hand.
       - dependency-name: "Velopack"
 
+      # Repl / Repl.Mcp / Repl.Testing (#388) are pre-1.0. Under semver a 0.x
+      # minor bump is allowed to break, and Dependabot classifies 0.11 -> 0.12
+      # as a *minor*, so the usual "majors only get their own PR" split does not
+      # protect anything here. Patch bumps still flow, so genuine fixes arrive.
+      # This matters more than for a normal dependency: the app ships an
+      # auto-updater, so a breaking bump reaches users without them choosing it.
+      - dependency-name: "Repl"
+        update-types:
+          - version-update:semver-major
+          - version-update:semver-minor
+      - dependency-name: "Repl.Mcp"
+        update-types:
+          - version-update:semver-major
+          - version-update:semver-minor
+      - dependency-name: "Repl.Testing"
+        update-types:
+          - version-update:semver-major
+          - version-update:semver-minor
+
   - package-ecosystem: github-actions
     target-branch: dev
     directory: "/"
