@@ -388,6 +388,25 @@ public partial class MainWindow : Window
             return;
 
         var database = dialog.ResultDatabase ?? ExtractDatabaseFromPlanXml(viewer.RawXml);
+
+        /* Confirm before running it. The query session asks first; this path did
+           not, and it is the riskier of the two: the SQL comes out of a .sqlplan
+           the user opened rather than something they typed, and plan files get
+           emailed around. Name the target so "which server was that?" is answered
+           before the query runs, not after. */
+        var target = string.IsNullOrEmpty(database)
+            ? dialog.ResultConnection.ServerName
+            : $"{dialog.ResultConnection.ServerName}, database [{database}]";
+
+        var confirmed = await Dialogs.ConfirmationDialog.ShowAsync(
+            this,
+            "Get Actual Plan",
+            $"This will execute the query stored in this plan file against:\n\n{target}\n\n" +
+            "The query text comes from the plan file, not from you. Review it first if the file did not originate on this machine.\n\n" +
+            "It runs with SET STATISTICS XML ON and all data results are discarded.\n\nContinue?");
+
+        if (!confirmed) return;
+
         var connectionString = dialog.ResultConnection.GetConnectionString(_credentialService, database);
         var isAzure = dialog.ResultConnection.ServerName.Contains(".database.windows.net",
                           StringComparison.OrdinalIgnoreCase) ||
