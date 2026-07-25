@@ -78,6 +78,24 @@ public static class ReproScriptBuilder
             warnings.Add($"Parameters with missing values (set to ?): {string.Join(", ", missingValueParams.Select(p => p.Name))}. Fill in values before executing.");
         }
 
+        /* Values that aren't a single self-contained literal also become ?, so say why
+           rather than leaving an unexplained placeholder. */
+        var unsafeValueParams = safeParameters
+            .Where(p => !string.IsNullOrEmpty(p.CompiledValue) && !IsSafeLiteral(p.CompiledValue))
+            .ToList();
+        if (unsafeValueParams.Count > 0)
+        {
+            warnings.Add($"Parameters whose compiled value was not a simple literal (set to ?): {string.Join(", ", unsafeValueParams.Select(p => p.Name))}. Fill in values before executing.");
+        }
+
+        /* Parameters dropped entirely because the plan's name or data type wasn't a
+           plain T-SQL token — the script would be incomplete, so don't stay silent. */
+        var droppedCount = parameters.Count - safeParameters.Count;
+        if (droppedCount > 0)
+        {
+            warnings.Add($"{droppedCount} parameter(s) omitted — the plan's parameter name or data type was not a valid T-SQL identifier. Declare them manually before executing.");
+        }
+
         /* Check for local variables: query has parameter prefix but plan has no/few parameters */
         var trimmedQuery = queryText.Trim();
         var cleanedQuery = StripParameterPrefix(trimmedQuery);

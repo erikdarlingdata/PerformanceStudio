@@ -84,6 +84,49 @@ public class ReproScriptBuilderSafetyTests
     }
 
     [Fact]
+    public void BuildReproScript_UnsafeValue_ExplainsThePlaceholder()
+    {
+        // A bare ? with no explanation would read as a tool bug rather than a
+        // deliberate refusal to emit the plan's value.
+        var plan = PlanWithParameter("@id", "int", "1; DROP TABLE dbo.Orders --");
+        var sql = ReproScriptBuilder.BuildReproScript("SELECT 1", "db", plan, null);
+
+        Assert.Contains("not a simple literal", sql);
+        Assert.Contains("@id", sql);
+    }
+
+    [Fact]
+    public void BuildReproScript_DroppedParameter_IsReportedInWarnings()
+    {
+        var plan = PlanWithParameter("@id", "int; DROP TABLE dbo.Orders --", "(1)");
+        var sql = ReproScriptBuilder.BuildReproScript("SELECT 1", "db", plan, null);
+
+        Assert.Contains("1 parameter(s) omitted", sql);
+    }
+
+    [Theory]
+    [InlineData("int", "(42)", "42")]                                  // parenthesized integer
+    [InlineData("int", "(-7)", "-7")]                                  // negative
+    [InlineData("bit", "(0)", "0")]                                    // bit
+    [InlineData("decimal(18,2)", "(1.50)", "1.50")]                    // decimal
+    [InlineData("float", "(1.0000000000000000e+000)", "1.0000000000000000e+000")] // scientific
+    [InlineData("money", "($10.50)", "$10.50")]                        // money
+    [InlineData("varbinary(8)", "(0x1234ABCD)", "0x1234ABCD")]         // binary
+    [InlineData("datetime", "('2024-01-01 00:00:00.000')", "'2024-01-01 00:00:00.000'")] // date literal
+    [InlineData("nvarchar(50)", "N'O''Brien'", "N'O''Brien'")]         // doubled quote inside
+    [InlineData("int", "NULL", "NULL")]                                // null
+    public void BuildReproScript_RealWorldCompiledValues_SurviveTheFilter(
+        string dataType, string compiledValue, string expected)
+    {
+        // Guards against the filter being so strict it degrades ordinary repro scripts.
+        var plan = PlanWithParameter("@p", dataType, compiledValue.Replace("\"", "&quot;"));
+        var sql = ReproScriptBuilder.BuildReproScript("SELECT 1", "db", plan, null);
+
+        Assert.Contains($"@p = {expected}", sql);
+        Assert.DoesNotContain("@p = ?", sql);
+    }
+
+    [Fact]
     public void ExtractParametersFromPlan_StillReturnsRawParameters()
     {
         // The filter lives in script generation, not extraction — callers that only
