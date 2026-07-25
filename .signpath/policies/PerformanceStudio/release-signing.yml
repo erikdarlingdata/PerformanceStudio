@@ -1,0 +1,40 @@
+# SignPath GitHub policy for the "release-signing" signing policy.
+#
+# Path is significant and must match the SignPath project + policy slugs used in
+# .github/workflows/release.yml:
+#   project-slug:        PerformanceStudio
+#   signing-policy-slug: release-signing
+#
+# This file only takes effect from the repository's DEFAULT branch (main). On any
+# other branch it is inert, so changes here do nothing until they are merged to
+# main via the usual dev -> main release merge.
+#
+# What this file does NOT do: it does not enable automatic approval. Approval mode
+# lives on the signing policy in the SignPath dashboard. This file adds constraints
+# that SignPath enforces on a build before it is willing to sign it.
+
+github-policies:
+  runners:
+    # release.yml runs on `windows-latest`. Requiring GitHub-hosted runners means a
+    # self-hosted runner (which an attacker could register, or which could carry
+    # dirty state between jobs) can never produce a signed build.
+    require_github_hosted: true
+
+# Deliberately omitted, with reasons - do not add these without the matching
+# repository change, or releases will start failing to sign:
+#
+#   build.disallow_reruns: true
+#     Blocks signing any build produced by a workflow re-run. A re-run is
+#     currently the documented recovery path for this repo: `gh release create`
+#     runs before signing, so a signing failure leaves a published-but-empty
+#     release that is fixed by re-running (all uploads use --clobber). v1.17.0
+#     was recovered exactly this way. Enabling this would make that recovery
+#     impossible. Revisit only if release.yml is restructured so a failed
+#     signing never publishes anything.
+#
+#   branch_rulesets:
+#     Requires the protections it lists to actually exist on the branch. `main`
+#     currently has NO branch protection configured at all, so any ruleset
+#     requirement here would reject every signing request. Add protection to
+#     `main` first (e.g. block force pushes, require PRs), then encode the same
+#     rules here so SignPath verifies they were in force.

@@ -91,9 +91,14 @@ jobs:
             `confirmed: true`) to flag specific lines.
             Only post GitHub comments - do not return review text as a message.
 
+          # --allowedTools REPLACES the default tool set rather than adding to it.
+          # Without Read/Grep/Glob the reviewer cannot open a single file in the
+          # checked-out branch, which is exactly what the prompt above asks it to
+          # do. PR #399 burned all 20 turns on denied calls
+          # (permission_denials_count was 10) and failed without posting anything.
           claude_args: |
-            --max-turns 20
-            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
+            --max-turns 40
+            --allowedTools "Read,Grep,Glob,mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(git diff:*),Bash(git log:*)"
 
 # Fork PRs: GitHub withholds repository secrets from `pull_request` runs on
 # forks and issues a read-only GITHUB_TOKEN, so this workflow cannot review
