@@ -91,13 +91,24 @@ public class DdlScripterTests
     }
 
     [Fact]
-    public void FormatIndexes_AlreadyBracketedName_IsNotDoubleBracketed()
+    public void FormatIndexes_NameContainingBracket_IsEscapedNotPassedThrough()
     {
-        // Canonical behavior: BracketName leaves an already-bracketed identifier alone.
+        // These scripts exist to be copy/pasted and executed, so a ']' in a catalog
+        // name must not be able to close the identifier early and start new T-SQL.
+        var sql = DdlScripter.FormatIndexes("dbo.T", new[] { Index("IX] ; DROP TABLE dbo.T --", "NONCLUSTERED", "A") });
+
+        Assert.Contains("[IX]] ; DROP TABLE dbo.T --]", sql);
+        Assert.DoesNotContain("[IX] ; DROP TABLE dbo.T --]", sql);
+    }
+
+    [Fact]
+    public void FormatIndexes_NameLookingBracketed_IsStillEscaped()
+    {
+        // Catalog names are always raw, so a leading '[' is part of the name, not
+        // pre-quoting — escaping it is what keeps a crafted name inert.
         var sql = DdlScripter.FormatIndexes("dbo.T", new[] { Index("[IX_T]", "NONCLUSTERED", "A") });
 
-        Assert.Contains("[IX_T]", sql);
-        Assert.DoesNotContain("[[IX_T]]", sql);
+        Assert.Contains("[[IX_T]]]", sql);
     }
 
     [Fact]

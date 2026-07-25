@@ -67,14 +67,14 @@ public sealed class PlanShareService : IPlanShareService
 
     public async Task DeleteAsync(string shareId, string deleteToken)
     {
-        var response = await _http.DeleteAsync($"{ApiBase}/api/plans/{shareId}?token={deleteToken}");
+        var response = await _http.DeleteAsync($"{ApiBase}/api/plans/{Uri.EscapeDataString(shareId)}?token={Uri.EscapeDataString(deleteToken)}");
         if (!response.IsSuccessStatusCode)
             throw new PlanShareException("Failed to delete shared plan.");
     }
 
     public async Task<SharedPlan> LoadAsync(string id)
     {
-        var response = await _http.GetAsync($"{ApiBase}/api/plans/{id}");
+        var response = await _http.GetAsync($"{ApiBase}/api/plans/{Uri.EscapeDataString(id)}");
         if (!response.IsSuccessStatusCode)
         {
             throw new PlanShareException(response.StatusCode == HttpStatusCode.NotFound

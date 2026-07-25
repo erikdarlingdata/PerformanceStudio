@@ -57,7 +57,7 @@ SELECT
     i.is_unique,
     i.is_primary_key,
     STUFF((
-        SELECT ', ' + c.name + CASE WHEN ic2.is_descending_key = 1 THEN ' DESC' ELSE '' END
+        SELECT ', ' + QUOTENAME(c.name) + CASE WHEN ic2.is_descending_key = 1 THEN ' DESC' ELSE '' END
         FROM sys.index_columns AS ic2
         JOIN sys.columns AS c ON c.object_id = ic2.object_id AND c.column_id = ic2.column_id
         WHERE ic2.object_id = i.object_id AND ic2.index_id = i.index_id AND ic2.is_included_column = 0
@@ -65,7 +65,7 @@ SELECT
         FOR XML PATH('')
     ), 1, 2, '') AS key_columns,
     ISNULL(STUFF((
-        SELECT ', ' + c.name
+        SELECT ', ' + QUOTENAME(c.name)
         FROM sys.index_columns AS ic2
         JOIN sys.columns AS c ON c.object_id = ic2.object_id AND c.column_id = ic2.column_id
         WHERE ic2.object_id = i.object_id AND ic2.index_id = i.index_id AND ic2.is_included_column = 1

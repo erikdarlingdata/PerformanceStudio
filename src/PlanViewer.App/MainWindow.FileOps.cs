@@ -88,9 +88,9 @@ public partial class MainWindow : Window
     {
         e.DragEffects = DragDropEffects.None;
 
-        if (e.Data.Contains(DataFormats.Files))
+        if (e.DataTransfer.Contains(DataFormat.File))
         {
-            var files = e.Data.GetFiles();
+            var files = e.DataTransfer.TryGetFiles();
             if (files != null && files.Any(f => IsSupportedFile(f.TryGetLocalPath())))
                 e.DragEffects = DragDropEffects.Copy;
         }
@@ -98,9 +98,9 @@ public partial class MainWindow : Window
 
     private void OnDrop(object? sender, DragEventArgs e)
     {
-        if (!e.Data.Contains(DataFormats.Files)) return;
+        if (!e.DataTransfer.Contains(DataFormat.File)) return;
 
-        var files = e.Data.GetFiles();
+        var files = e.DataTransfer.TryGetFiles();
         if (files == null) return;
 
         foreach (var file in files)

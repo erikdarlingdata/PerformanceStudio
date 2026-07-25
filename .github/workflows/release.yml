@@ -16,7 +16,7 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Get version
         id: version
@@ -46,7 +46,7 @@ jobs:
           gh release create "v${{ steps.version.outputs.VERSION }}" --title "v${{ steps.version.outputs.VERSION }}" --generate-notes --target main
 
       - name: Setup .NET 10.0
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 10.0.x
 
@@ -143,7 +143,7 @@ jobs:
 
       - name: Upload Windows build for signing
         id: upload-unsigned
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: App-unsigned
           path: publish/win-x64/

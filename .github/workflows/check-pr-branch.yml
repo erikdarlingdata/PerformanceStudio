@@ -6,6 +6,10 @@ on:
       - reopened
       - synchronize
       - edited
+
+# pull_request_target runs with the base repo's token — this job needs none of it.
+permissions: {}
+
 jobs:
   check-branches:
     runs-on: ubuntu-latest
