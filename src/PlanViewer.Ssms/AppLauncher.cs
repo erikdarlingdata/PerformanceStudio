@@ -27,6 +27,8 @@ namespace PlanViewer.Ssms
         /// </summary>
         public static string SavePlanToTemp(string planXml)
         {
+            SweepOldTempPlans();
+
             var suffix = Path.GetFileNameWithoutExtension(Path.GetRandomFileName());
             var fileName = "ssms_plan_" + suffix + ".sqlplan";
             var tempPath = Path.Combine(Path.GetTempPath(), fileName);
@@ -36,6 +38,41 @@ namespace PlanViewer.Ssms
                 writer.Write(planXml);
             }
             return tempPath;
+        }
+
+        /// <summary>
+        /// Deletes plan files this extension left in %TEMP% on earlier runs. Each
+        /// one holds the query text and any literal parameter values from the plan,
+        /// so they should not accumulate at rest indefinitely.
+        ///
+        /// Swept on the way in rather than deleted after launch: the file is handed
+        /// to another process to open, so removing it immediately would race the
+        /// app's read. Anything older than the cutoff has certainly been read.
+        /// Best-effort throughout - a file we cannot delete (still open, denied)
+        /// must never break opening a plan.
+        /// </summary>
+        private static void SweepOldTempPlans()
+        {
+            try
+            {
+                var cutoff = DateTime.UtcNow.AddHours(-1);
+                foreach (var path in Directory.GetFiles(Path.GetTempPath(), "ssms_plan_*.sqlplan"))
+                {
+                    try
+                    {
+                        if (File.GetLastWriteTimeUtc(path) < cutoff)
+                            File.Delete(path);
+                    }
+                    catch
+                    {
+                        // In use or access denied — leave it and move on.
+                    }
+                }
+            }
+            catch
+            {
+                // Temp directory unreadable — cleanup is not worth failing over.
+            }
         }
 
         /// <summary>
@@ -93,20 +130,26 @@ namespace PlanViewer.Ssms
 
         private static string FindApp()
         {
-            // 1. Check registry
+            // Order matters. PATH is searched last because any writable directory
+            // on it is enough to hijack the launch: drop a PlanViewer.App.exe there
+            // and SSMS runs it instead of the installed app. The registry value is
+            // written by our own installer, and the common locations are the real
+            // install paths, so both are trusted ahead of it.
+
+            // 1. Registry (written by the installer)
             string registryPath = GetRegistryPath();
             if (registryPath != null)
                 return registryPath;
 
-            // 2. Check PATH
-            string pathResult = FindOnPath();
-            if (pathResult != null)
-                return pathResult;
-
-            // 3. Check common install locations
+            // 2. Known install locations
             string commonPath = FindInCommonLocations();
             if (commonPath != null)
                 return commonPath;
+
+            // 3. PATH, as a last resort
+            string pathResult = FindOnPath();
+            if (pathResult != null)
+                return pathResult;
 
             return null;
         }
