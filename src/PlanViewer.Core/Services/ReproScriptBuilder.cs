@@ -59,15 +59,41 @@ public static class ReproScriptBuilder
             warnings.Add("Plan XML not available — parameters could not be extracted");
         }
 
+        /* Plan XML is untrusted input: names, types, and compiled values come straight
+           off ParameterList attributes. Drop parameters whose name or type isn't a
+           plausible T-SQL token before anything is interpolated — the name lands in
+           the warning comment and the sp_executesql assignment list. */
+        var safeParameters = parameters
+            .Where(p => IsValidParameterName(p.Name) && IsValidDataType(p.DataType))
+            .ToList();
+
         /* Check for temp tables and table variables in query text */
         var tempTableWarnings = DetectTempTablesAndTableVariables(queryText);
         warnings.AddRange(tempTableWarnings);
 
         /* Check for parameters with missing compiled values */
-        var missingValueParams = parameters.Where(p => string.IsNullOrEmpty(p.CompiledValue)).ToList();
+        var missingValueParams = safeParameters.Where(p => string.IsNullOrEmpty(p.CompiledValue)).ToList();
         if (missingValueParams.Count > 0)
         {
             warnings.Add($"Parameters with missing values (set to ?): {string.Join(", ", missingValueParams.Select(p => p.Name))}. Fill in values before executing.");
+        }
+
+        /* Values that aren't a single self-contained literal also become ?, so say why
+           rather than leaving an unexplained placeholder. */
+        var unsafeValueParams = safeParameters
+            .Where(p => !string.IsNullOrEmpty(p.CompiledValue) && !IsSafeLiteral(p.CompiledValue))
+            .ToList();
+        if (unsafeValueParams.Count > 0)
+        {
+            warnings.Add($"Parameters whose compiled value was not a simple literal (set to ?): {string.Join(", ", unsafeValueParams.Select(p => p.Name))}. Fill in values before executing.");
+        }
+
+        /* Parameters dropped entirely because the plan's name or data type wasn't a
+           plain T-SQL token — the script would be incomplete, so don't stay silent. */
+        var droppedCount = parameters.Count - safeParameters.Count;
+        if (droppedCount > 0)
+        {
+            warnings.Add($"{droppedCount} parameter(s) omitted — the plan's parameter name or data type was not a valid T-SQL identifier. Declare them manually before executing.");
         }
 
         /* Check for local variables: query has parameter prefix but plan has no/few parameters */
@@ -138,15 +164,20 @@ public static class ReproScriptBuilder
         sb.AppendLine("SET NOCOUNT ON;");
         sb.AppendLine();
 
-        /* Query body — wrap in sp_executesql if parameters found */
-        if (parameters.Count > 0)
+        /* Query body — wrap in sp_executesql if parameters found. Values that
+           aren't a single self-contained literal are emitted as ? so a crafted
+           plan can't splice statements into the generated batch. */
+        if (safeParameters.Count > 0)
         {
             /* Build parameter declaration and value assignment */
-            var paramDecl = string.Join(", ", parameters.Select(p => $"{p.Name} {p.DataType}"));
-            var paramValues = parameters.Select(p =>
+            var paramDecl = string.Join(", ", safeParameters.Select(p => $"{p.Name} {p.DataType}"));
+            var paramValues = safeParameters.Select(p =>
             {
-                /* Use ? for missing values so query can't accidentally run with wrong data */
-                var value = string.IsNullOrEmpty(p.CompiledValue) ? "?" : p.CompiledValue;
+                /* Use ? for missing or unsafe values so query can't accidentally run
+                   with wrong data */
+                var value = string.IsNullOrEmpty(p.CompiledValue) || !IsSafeLiteral(p.CompiledValue)
+                    ? "?"
+                    : p.CompiledValue;
                 return $"    {p.Name} = {value}";
             });
 
@@ -401,6 +432,50 @@ public static class ReproScriptBuilder
     private static string EscapeSqlString(string value)
     {
         return value.Replace("'", "''");
+    }
+
+    /// <summary>
+    /// Validates a parameter name from plan XML as a plain @identifier.
+    /// Anything else is dropped from the generated script.
+    /// </summary>
+    private static bool IsValidParameterName(string name)
+    {
+        return Regex.IsMatch(name, @"^@[\p{L}_@#$][\p{L}\p{Nd}_@#$]*$");
+    }
+
+    /// <summary>
+    /// Validates a parameter data type from plan XML: type name with optional
+    /// schema prefix, brackets, and (size/precision) suffix. No quotes or comment
+    /// characters, so it can't disturb the sp_executesql declaration list.
+    /// </summary>
+    private static bool IsValidDataType(string dataType)
+    {
+        return Regex.IsMatch(dataType, @"^[\p{L}\p{Nd}_\[\]., ()]+$");
+    }
+
+    /// <summary>
+    /// Accepts a compiled value only when it's a single self-contained literal:
+    /// NULL, a number, a 0x binary value, or one complete N'...' string with every
+    /// embedded quote doubled. Such values can't escape the @param = value slot.
+    /// </summary>
+    private static bool IsSafeLiteral(string value)
+    {
+        if (value.Equals("NULL", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        /* Integer/decimal/float/money forms: -12, 3.14, 1.5E+3, $9.99 */
+        if (Regex.IsMatch(value, @"^-?\$?\d+(\.\d+)?([eE][+-]?\d+)?$"))
+            return true;
+
+        /* Binary literal */
+        if (Regex.IsMatch(value, @"^0x[0-9A-Fa-f]*$"))
+            return true;
+
+        /* One complete string literal — every embedded quote must be doubled */
+        if (Regex.IsMatch(value, @"^N?'([^']|'')*'$"))
+            return true;
+
+        return false;
     }
 
     /// <summary>

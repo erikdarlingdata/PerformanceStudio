@@ -3,6 +3,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -74,6 +75,30 @@ public sealed class McpHostService : BackgroundService
                 .WithTools<McpQueryStoreTools>();
 
             _app = builder.Build();
+
+            /* DNS-rebinding guard. Kestrel only listens on loopback, but a malicious
+               web page can point a DNS name it controls at 127.0.0.1 and reach this
+               server same-origin (CORS never applies). Reject any request whose Host
+               isn't a loopback name, and any browser request whose Origin isn't a
+               loopback origin, before it can touch an MCP endpoint. */
+            _app.Use(async (context, next) =>
+            {
+                if (!IsLoopbackHost(context.Request.Host.Host))
+                {
+                    context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                    return;
+                }
+
+                var origin = context.Request.Headers.Origin;
+                if (origin.Count > 0 && !IsLoopbackOrigin(origin[0]))
+                {
+                    context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                    return;
+                }
+
+                await next();
+            });
+
             _app.MapMcp();
 
             await _app.RunAsync(stoppingToken);
@@ -86,6 +111,22 @@ public sealed class McpHostService : BackgroundService
         {
             System.Diagnostics.Debug.WriteLine($"MCP server failed to start: {ex.Message}");
         }
+    }
+
+    private static bool IsLoopbackHost(string host)
+    {
+        /* HostString.Host keeps IPv6 brackets ([::1]); Uri.Host strips them. */
+        return host.Equals("localhost", StringComparison.OrdinalIgnoreCase)
+            || host == "127.0.0.1"
+            || host == "[::1]"
+            || host == "::1";
+    }
+
+    private static bool IsLoopbackOrigin(string? origin)
+    {
+        return origin != null
+            && Uri.TryCreate(origin, UriKind.Absolute, out var uri)
+            && IsLoopbackHost(uri.Host);
     }
 
     public override async Task StopAsync(CancellationToken cancellationToken)
