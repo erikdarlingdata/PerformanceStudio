@@ -19,6 +19,9 @@ on:
       - 'src/PlanViewer.Ssms/**'
       - 'src/PlanViewer.Ssms.Installer/**'
 
+permissions:
+  contents: read
+
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
