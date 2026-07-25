@@ -37,13 +37,11 @@ jobs:
             echo "EXISTS=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Create release
-        if: steps.check.outputs.EXISTS == 'false'
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release create "v${{ steps.version.outputs.VERSION }}" --title "v${{ steps.version.outputs.VERSION }}" --generate-notes --target main
+      # NOTE: the release is deliberately NOT created here. It is created after
+      # signing succeeds, further down. Creating it up front meant a signing
+      # failure left a published, publicly-visible release with no app assets -
+      # which is exactly what happened to v1.17.0 when the SignPath approval
+      # window lapsed. Nothing before the signing step publishes anything now.
 
       - name: Setup .NET 10.0
         uses: actions/setup-dotnet@v6
@@ -106,26 +104,9 @@ jobs:
             Write-Host "::warning::SSMS extension did not produce the expected artifacts - release published without the VSIX (issue 343)"
           }
 
-      - name: Upload SSMS extension to release
-        if: steps.ssms.outputs.BUILT == 'true'
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ steps.version.outputs.VERSION }}
-        run: gh release upload "v$env:VERSION" releases/PlanViewer.Ssms.vsix releases/InstallSsmsExtension.exe --clobber
-
-      # Publish to the SSMS Gallery (https://ssmsgallery.azurewebsites.net, issue 343).
-      # The gallery extracts version/description from the vsixmanifest, so the
-      # upload filename is irrelevant. continue-on-error: a gallery outage must
-      # never fail the release. bash so `curl` is curl.exe, not the pwsh alias.
-      - name: Publish SSMS extension to SSMS Gallery
-        if: steps.ssms.outputs.BUILT == 'true'
-        continue-on-error: true
-        shell: bash
-        run: |
-          echo "Uploading PlanViewer.Ssms.vsix to the SSMS Gallery..."
-          curl -sS -f "https://ssmsgallery.azurewebsites.net/api/upload" \
-            -F "file=@releases/PlanViewer.Ssms.vsix"
+      # The VSIX is built above but NOT uploaded here — uploading requires the
+      # release to exist, and the release is not created until signing succeeds.
+      # Both uploads happen after the signing step.
 
       # ── SignPath code signing (Windows). Signing is REQUIRED for a release:
       #    if the SignPath token is missing the job fails loudly rather than
@@ -171,6 +152,37 @@ jobs:
         run: |
           Remove-Item -Recurse -Force publish/win-x64
           Copy-Item -Recurse signed/win-x64 publish/win-x64
+
+      # ── Everything above this line is reversible: nothing has been published.
+      #    The release is created only now that signed binaries exist. ──
+      - name: Create release
+        if: steps.check.outputs.EXISTS == 'false'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "v${{ steps.version.outputs.VERSION }}" --title "v${{ steps.version.outputs.VERSION }}" --generate-notes --target main
+
+      - name: Upload SSMS extension to release
+        if: steps.ssms.outputs.BUILT == 'true'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.VERSION }}
+        run: gh release upload "v$env:VERSION" releases/PlanViewer.Ssms.vsix releases/InstallSsmsExtension.exe --clobber
+
+      # Publish to the SSMS Gallery (https://ssmsgallery.azurewebsites.net, issue 343).
+      # The gallery extracts version/description from the vsixmanifest, so the
+      # upload filename is irrelevant. continue-on-error: a gallery outage must
+      # never fail the release. bash so `curl` is curl.exe, not the pwsh alias.
+      - name: Publish SSMS extension to SSMS Gallery
+        if: steps.ssms.outputs.BUILT == 'true'
+        continue-on-error: true
+        shell: bash
+        run: |
+          echo "Uploading PlanViewer.Ssms.vsix to the SSMS Gallery..."
+          curl -sS -f "https://ssmsgallery.azurewebsites.net/api/upload" \
+            -F "file=@releases/PlanViewer.Ssms.vsix"
 
       # ── Velopack (uses signed Windows binaries) ───────────────────────
       - name: Create Velopack release (Windows)
