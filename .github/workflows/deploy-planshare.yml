@@ -1,0 +1,134 @@
+name: Deploy PlanShare
+
+# PlanShare is not built by ci.yml (server/** is paths-ignored) and is not in
+# PlanViewer.sln, so before this workflow existed a merged PR shipped nothing.
+# Production once drifted ~3.5 months behind main, missing two security fixes.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'server/PlanShare/**'
+      - '.github/workflows/deploy-planshare.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Never run two deploys at once, and never cancel one mid-flight - an
+# interrupted binary swap would leave the service down.
+concurrency:
+  group: deploy-planshare
+  cancel-in-progress: false
+
+env:
+  DEPLOY_HOST: stats.erikdarling.com
+  DEPLOY_USER: deploy
+  APP_DIR: /opt/planshare
+  PUBLIC_URL: https://stats.erikdarling.com
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup .NET 10.0
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Publish linux-x64 self-contained
+        run: |
+          dotnet publish server/PlanShare/PlanShare.csproj \
+            -c Release -r linux-x64 --self-contained \
+            -p:PublishSingleFile=true \
+            -o publish/planshare
+
+      - name: Verify build output
+        run: |
+          test -f publish/planshare/PlanShare      || { echo "::error::binary missing"; exit 1; }
+          test -f publish/planshare/libe_sqlite3.so || { echo "::error::libe_sqlite3.so missing"; exit 1; }
+          ls -la publish/planshare/
+
+      - name: Configure SSH
+        env:
+          DEPLOY_KEY: ${{ secrets.PLANSHARE_DEPLOY_KEY }}
+        run: |
+          if [ -z "$DEPLOY_KEY" ]; then
+            echo "::error::PLANSHARE_DEPLOY_KEY secret is not set - cannot deploy."
+            exit 1
+          fi
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          # Pinned host key: fail closed rather than trusting on first use.
+          echo 'stats.erikdarling.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICIrnTBiPVE5ulZiFZTBw9/DR/dPVwbAr8ZIvu47/w2J' > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Upload to staging paths
+        run: |
+          scp -i ~/.ssh/deploy_key -o BatchMode=yes \
+            publish/planshare/PlanShare \
+            "$DEPLOY_USER@$DEPLOY_HOST:$APP_DIR/planshare.new"
+          scp -i ~/.ssh/deploy_key -o BatchMode=yes \
+            publish/planshare/libe_sqlite3.so \
+            "$DEPLOY_USER@$DEPLOY_HOST:$APP_DIR/libe_sqlite3.so.new"
+
+      - name: Back up, swap, restart
+        run: |
+          ssh -i ~/.ssh/deploy_key -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" bash -euo pipefail <<'REMOTE'
+            APP_DIR=/opt/planshare
+            STAMP=$(date -u +%Y%m%d-%H%M%S)
+
+            # Keep one rollback set, plus a DB snapshot. Cheap insurance.
+            cp -a "$APP_DIR/planshare"        "$APP_DIR/planshare.bak-$STAMP"
+            cp -a "$APP_DIR/libe_sqlite3.so"  "$APP_DIR/libe_sqlite3.so.bak-$STAMP"
+            cp -a "$APP_DIR/data/plans.db"    "$APP_DIR/data/plans.db.bak-$STAMP"
+            echo "$STAMP" > "$APP_DIR/.last-deploy-stamp"
+
+            mv "$APP_DIR/planshare.new"       "$APP_DIR/planshare"
+            mv "$APP_DIR/libe_sqlite3.so.new" "$APP_DIR/libe_sqlite3.so"
+            chmod +x "$APP_DIR/planshare"
+
+            sudo /bin/systemctl restart planshare.service
+            sleep 5
+            sudo /bin/systemctl is-active planshare.service
+
+            # Prune all but the 3 most recent backup sets.
+            ls -1t "$APP_DIR"/planshare.bak-*       2>/dev/null | tail -n +4 | xargs -r rm -f
+            ls -1t "$APP_DIR"/libe_sqlite3.so.bak-* 2>/dev/null | tail -n +4 | xargs -r rm -f
+            ls -1t "$APP_DIR"/data/plans.db.bak-*   2>/dev/null | tail -n +4 | xargs -r rm -f
+          REMOTE
+
+      - name: Verify through nginx
+        id: verify
+        run: |
+          for i in 1 2 3 4 5; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' -m 20 "$PUBLIC_URL/api/stats" || echo 000)
+            echo "attempt $i: /api/stats -> $code"
+            if [ "$code" = "200" ]; then echo "verified=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+            sleep 5
+          done
+          echo "::error::PlanShare did not return 200 through nginx after deploy."
+          exit 1
+
+      - name: Roll back on failed verification
+        if: failure() && steps.verify.outcome == 'failure'
+        run: |
+          echo "::warning::Verification failed - restoring the previous binary."
+          ssh -i ~/.ssh/deploy_key -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" bash -euo pipefail <<'REMOTE'
+            APP_DIR=/opt/planshare
+            STAMP=$(cat "$APP_DIR/.last-deploy-stamp")
+            cp -a "$APP_DIR/planshare.bak-$STAMP"       "$APP_DIR/planshare"
+            cp -a "$APP_DIR/libe_sqlite3.so.bak-$STAMP" "$APP_DIR/libe_sqlite3.so"
+            chmod +x "$APP_DIR/planshare"
+            sudo /bin/systemctl restart planshare.service
+            sleep 5
+            sudo /bin/systemctl is-active planshare.service
+            echo "Rolled back to $STAMP"
+          REMOTE
+
+      - name: Clean up key
+        if: always()
+        run: rm -f ~/.ssh/deploy_key
