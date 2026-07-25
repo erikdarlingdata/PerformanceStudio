@@ -9,7 +9,7 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.SqlClient" Version="7.0.2" />
-    <PackageReference Include="Meziantou.Framework.Win32.CredentialManager" Version="2.0.1" />
+    <PackageReference Include="Meziantou.Framework.Win32.CredentialManager" Version="3.0.1" />
     <PackageReference Include="Microsoft.Data.SqlClient.Extensions.Azure" Version="7.0.2" />
     <PackageReference Include="Microsoft.SqlServer.TransactSql.ScriptDom" Version="180.59.2" />
   </ItemGroup>
