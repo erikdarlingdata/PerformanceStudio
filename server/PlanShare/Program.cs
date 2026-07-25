@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Data.Sqlite;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -72,13 +73,34 @@ var readRateLimiter = new RateLimiter(maxRequests: 120, windowSeconds: 60);
 
 // Register the cleanup background service
 builder.Services.AddSingleton(new PlanDbConfig(connectionString));
-builder.Services.AddSingleton(new RateLimiters(rateLimiter, analyticsRateLimiter));
+builder.Services.AddSingleton(new RateLimiters(rateLimiter, analyticsRateLimiter, readRateLimiter));
 builder.Services.AddHostedService<CleanupService>();
 
 // Request size limit (10 MB)
 builder.WebHost.ConfigureKestrel(o => o.Limits.MaxRequestBodySize = 10 * 1024 * 1024);
 
 var app = builder.Build();
+
+// This runs behind nginx on loopback, which sets X-Real-IP and X-Forwarded-For.
+// Without this middleware every request's RemoteIpAddress is 127.0.0.1, so all
+// three rate limiters key on the same value and become a single GLOBAL cap
+// shared by every visitor rather than per-IP limits — one busy client would
+// throttle everyone, and one abusive client could not be isolated.
+//
+// KnownProxies is restricted to loopback deliberately: trusting X-Forwarded-For
+// from arbitrary sources would let any caller spoof its address and bypass the
+// limits entirely. Only the local nginx is believed.
+var forwardedOptions = new ForwardedHeadersOptions
+{
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto,
+    ForwardLimit = 1
+};
+forwardedOptions.KnownProxies.Clear();
+forwardedOptions.KnownIPNetworks.Clear();
+forwardedOptions.KnownProxies.Add(System.Net.IPAddress.Loopback);
+forwardedOptions.KnownProxies.Add(System.Net.IPAddress.IPv6Loopback);
+app.UseForwardedHeaders(forwardedOptions);
+
 app.UseCors();
 
 const int MaxTtlDays = 365;
@@ -409,7 +431,7 @@ static string GenerateDeleteToken()
 
 record PlanDbConfig(string ConnectionString);
 
-record RateLimiters(RateLimiter Share, RateLimiter Analytics);
+record RateLimiters(RateLimiter Share, RateLimiter Analytics, RateLimiter Read);
 
 sealed class CleanupService : BackgroundService
 {
@@ -463,13 +485,16 @@ sealed class CleanupService : BackgroundService
                     _logger.LogInformation("Cleaned up {Count} old page views", deleted);
             }
 
-            // Evict stale rate-limiter keys so the dictionary doesn't grow forever.
+            // Evict stale rate-limiter keys so the dictionaries don't grow forever.
+            // Every limiter must be swept here: an unswept one keeps a permanent
+            // entry per unique client IP for the lifetime of the process.
             var shareEvicted = _rateLimiters.Share.Sweep();
             var analyticsEvicted = _rateLimiters.Analytics.Sweep();
-            if (shareEvicted + analyticsEvicted > 0)
+            var readEvicted = _rateLimiters.Read.Sweep();
+            if (shareEvicted + analyticsEvicted + readEvicted > 0)
                 _logger.LogInformation(
-                    "Evicted {Share} share + {Analytics} analytics rate-limit keys",
-                    shareEvicted, analyticsEvicted);
+                    "Evicted {Share} share + {Analytics} analytics + {Read} read rate-limit keys",
+                    shareEvicted, analyticsEvicted, readEvicted);
         }
         catch (Exception ex)
         {
