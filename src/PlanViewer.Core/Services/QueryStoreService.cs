@@ -163,7 +163,87 @@ FROM sys.database_query_store_options;";
             needsQueryJoin = true;
         }
 
-        var rnClause = filter?.PlanId != null ? "" : "AND r.rn = 1";
+        var escapeBrackets = filter?.EscapeBrackets ?? false;
+        var escapeSuffix = escapeBrackets ? " ESCAPE '\\'" : "";
+        var queryTextPattern = QueryStoreFilter.BuildQueryTextSearchPattern(filter?.QueryTextSearch, escapeBrackets);
+        if (queryTextPattern != null)
+        {
+            filterClauses.Add($@"AND EXISTS (
+            SELECT 1
+            FROM sys.query_store_query AS qsq
+            JOIN sys.query_store_query_text AS qsqt
+                ON qsqt.query_text_id = qsq.query_text_id
+            WHERE qsq.query_id = p.query_id
+            AND qsqt.query_sql_text LIKE @filterQueryText{escapeSuffix})");
+            parameters.Add(new SqlParameter("@filterQueryText", queryTextPattern));
+        }
+        var queryTextNotPattern = QueryStoreFilter.BuildQueryTextSearchPattern(filter?.QueryTextSearchNot, escapeBrackets);
+        if (queryTextNotPattern != null)
+        {
+            filterClauses.Add($@"AND NOT EXISTS (
+            SELECT 1
+            FROM sys.query_store_query AS qsq
+            JOIN sys.query_store_query_text AS qsqt
+                ON qsqt.query_text_id = qsq.query_text_id
+            WHERE qsq.query_id = p.query_id
+            AND qsqt.query_sql_text LIKE @filterQueryTextNot{escapeSuffix})");
+            parameters.Add(new SqlParameter("@filterQueryTextNot", queryTextNotPattern));
+        }
+        if (filter?.MinExecutions > 0)
+        {
+            filterClauses.Add("AND ps.total_executions >= @minExecutions");
+            parameters.Add(new SqlParameter("@minExecutions", filter.MinExecutions.Value));
+        }
+        if (filter?.MinDurationMs > 0)
+        {
+            filterClauses.Add("AND ps.total_duration_us >= (@minDurationMs * 1000e0 * ps.total_executions)");
+            parameters.Add(new SqlParameter("@minDurationMs", filter.MinDurationMs.Value));
+        }
+        if (filter?.MinCpuMs > 0)
+        {
+            filterClauses.Add("AND ps.total_cpu_us >= (@minCpuMs * 1000e0 * ps.total_executions)");
+            parameters.Add(new SqlParameter("@minCpuMs", filter.MinCpuMs.Value));
+        }
+        if (filter?.IncludeQueryIds is { Length: > 0 })
+        {
+            var paramNames = filter.IncludeQueryIds
+                .Select((_, i) => $"@includeQueryId{i}")
+                .ToList();
+            filterClauses.Add($"AND p.query_id IN ({string.Join(", ", paramNames)})");
+            for (var i = 0; i < filter.IncludeQueryIds.Length; i++)
+                parameters.Add(new SqlParameter($"@includeQueryId{i}", filter.IncludeQueryIds[i]));
+        }
+        if (filter?.IgnoreQueryIds is { Length: > 0 })
+        {
+            var paramNames = filter.IgnoreQueryIds
+                .Select((_, i) => $"@ignoreQueryId{i}")
+                .ToList();
+            filterClauses.Add($"AND p.query_id NOT IN ({string.Join(", ", paramNames)})");
+            for (var i = 0; i < filter.IgnoreQueryIds.Length; i++)
+                parameters.Add(new SqlParameter($"@ignoreQueryId{i}", filter.IgnoreQueryIds[i]));
+        }
+        if (filter?.IncludePlanIds is { Length: > 0 })
+        {
+            var paramNames = filter.IncludePlanIds
+                .Select((_, i) => $"@includePlanId{i}")
+                .ToList();
+            filterClauses.Add($"AND ps.plan_id IN ({string.Join(", ", paramNames)})");
+            for (var i = 0; i < filter.IncludePlanIds.Length; i++)
+                parameters.Add(new SqlParameter($"@includePlanId{i}", filter.IncludePlanIds[i]));
+        }
+        if (filter?.IgnorePlanIds is { Length: > 0 })
+        {
+            var paramNames = filter.IgnorePlanIds
+                .Select((_, i) => $"@ignorePlanId{i}")
+                .ToList();
+            filterClauses.Add($"AND ps.plan_id NOT IN ({string.Join(", ", paramNames)})");
+            for (var i = 0; i < filter.IgnorePlanIds.Length; i++)
+                parameters.Add(new SqlParameter($"@ignorePlanId{i}", filter.IgnorePlanIds[i]));
+        }
+
+        var rnClause = (filter?.PlanId != null || filter?.IncludePlanIds?.Length > 0)
+            ? ""
+            : "AND r.rn = 1";
         var filterSql = filterClauses.Count > 0
             ? "\n        " + string.Join("\n        ", filterClauses)
             : "";

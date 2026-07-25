@@ -66,7 +66,8 @@ public sealed class McpQueryStoreTools
         "Each fetched plan is automatically loaded into the application for further analysis " +
         "with analyze_plan, get_plan_warnings, etc. Returns summary stats and session IDs. " +
         "Optional filters narrow results server-side by query_id, plan_id, query_hash, " +
-        "plan_hash, or module name (schema.name, supports % wildcards).")]
+        "plan_hash, module name (schema.name, supports % wildcards), query text (query_text_search / query_text_search_not), " +
+        "minimum execution count or average duration/CPU thresholds, execution type, and query-id / plan-id include/ignore lists.")]
     public static async Task<string> GetQueryStoreTop(
         PlanSessionManager sessionManager,
         PlanOperations operations,
@@ -85,7 +86,17 @@ public sealed class McpQueryStoreTools
         [Description("Filter by query hash (hex, e.g. 0x1AB2C3D4).")] string? query_hash = null,
         [Description("Filter by query plan hash (hex, e.g. 0x1AB2C3D4).")] string? plan_hash = null,
         [Description("Filter by module name (schema.name, supports % wildcards).")] string? module = null,
-        [Description("Filter by execution type: regular, aborted, exception, or failed (= aborted + exception).")] string? execution_type = null)
+        [Description("Filter to queries whose SQL text contains this string. Matched with SQL LIKE (auto-wrapped in %); % _ [ ] act as wildcards.")] string? query_text_search = null,
+        [Description("Exclude queries whose SQL text contains this string. Matched with SQL LIKE (auto-wrapped in %); % _ [ ] act as wildcards. Inverse of query_text_search.")] string? query_text_search_not = null,
+        [Description("When true, treat [ ] _ in query_text_search / query_text_search_not as literal characters instead of LIKE wildcards. Default false.")] bool escape_brackets = false,
+        [Description("Filter by execution type: regular, aborted, exception, or failed (= aborted + exception).")] string? execution_type = null,
+        [Description("Only include plans executed at least this many times (the plan's total execution count over the selected time window). Values <= 0 mean no filter.")] long? min_executions = null,
+        [Description("Only include plans whose average duration per execution over the selected time window is at least this many milliseconds. Values <= 0 mean no filter.")] long? min_duration_ms = null,
+        [Description("Only include plans whose average CPU time per execution over the selected time window is at least this many milliseconds. Values <= 0 mean no filter.")] long? min_cpu_ms = null,
+        [Description("Comma-separated Query Store query IDs to include, e.g. \"123,456\". Only these query IDs are returned.")] string? include_query_ids = null,
+        [Description("Comma-separated Query Store query IDs to exclude, e.g. \"123,456\".")] string? ignore_query_ids = null,
+        [Description("Comma-separated Query Store plan IDs to include, e.g. \"12,34\".")] string? include_plan_ids = null,
+        [Description("Comma-separated Query Store plan IDs to exclude, e.g. \"12,34\".")] string? ignore_plan_ids = null)
     {
         cancellationToken.ThrowIfCancellationRequested();
         try
@@ -101,9 +112,17 @@ public sealed class McpQueryStoreTools
                 return "Invalid hours_back value. Must be between 1 and 168.";
 
             string[]? executionTypes;
+            long[]? includeQueryIds;
+            long[]? ignoreQueryIds;
+            long[]? includePlanIds;
+            long[]? ignorePlanIds;
             try
             {
                 executionTypes = QueryStoreFilter.ParseExecutionType(execution_type);
+                includeQueryIds = QueryStoreFilter.ParseIdList(include_query_ids);
+                ignoreQueryIds = QueryStoreFilter.ParseIdList(ignore_query_ids);
+                includePlanIds = QueryStoreFilter.ParseIdList(include_plan_ids);
+                ignorePlanIds = QueryStoreFilter.ParseIdList(ignore_plan_ids);
             }
             catch (ArgumentException ex)
             {
@@ -112,8 +131,10 @@ public sealed class McpQueryStoreTools
 
             QueryStoreFilter? filter = null;
             if (query_id != null || plan_id != null ||
-                query_hash != null || plan_hash != null || module != null ||
-                executionTypes != null)
+                query_hash != null || plan_hash != null || module != null || query_text_search != null ||
+                executionTypes != null ||
+                query_text_search_not != null || min_executions != null || min_duration_ms != null || min_cpu_ms != null ||
+                includeQueryIds != null || ignoreQueryIds != null || includePlanIds != null || ignorePlanIds != null)
             {
                 filter = new QueryStoreFilter
                 {
@@ -122,7 +143,17 @@ public sealed class McpQueryStoreTools
                     QueryHash = query_hash,
                     QueryPlanHash = plan_hash,
                     ModuleName = module,
+                    QueryTextSearch = query_text_search,
+                    QueryTextSearchNot = query_text_search_not,
+                    EscapeBrackets = escape_brackets,
                     ExecutionTypeDescs = executionTypes,
+                    MinExecutions = min_executions,
+                    MinDurationMs = min_duration_ms,
+                    MinCpuMs = min_cpu_ms,
+                    IncludeQueryIds = includeQueryIds,
+                    IgnoreQueryIds = ignoreQueryIds,
+                    IncludePlanIds = includePlanIds,
+                    IgnorePlanIds = ignorePlanIds,
                 };
             }
 

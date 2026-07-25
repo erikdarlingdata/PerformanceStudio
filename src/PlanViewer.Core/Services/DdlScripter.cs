@@ -237,9 +237,9 @@ public static class DdlScripter
 
     private static string BracketName(string name)
     {
-        // Already bracketed
-        if (name.StartsWith('['))
-            return name;
-        return $"[{name}]";
+        // Double embedded ']' so a name can't terminate the identifier early —
+        // this output exists to be copy/pasted and executed. Callers always pass
+        // raw catalog names, never pre-bracketed ones.
+        return "[" + name.Replace("]", "]]") + "]";
     }
 }

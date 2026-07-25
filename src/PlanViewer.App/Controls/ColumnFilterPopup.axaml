@@ -1,7 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="PlanViewer.App.Controls.ColumnFilterPopup"
-             Width="220">
+             Width="280">
     <Border Background="{DynamicResource BackgroundDarkBrush}"
             BorderBrush="{DynamicResource BorderBrush}"
             BorderThickness="1" CornerRadius="6">
@@ -20,6 +20,9 @@
                      Height="28" FontSize="12" Margin="0,0,0,12"
                      KeyDown="ValueTextBox_KeyDown"/>
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+                <Button x:Name="SearchServerButton" Content="Search server" IsVisible="False" Height="28"
+                        Click="SearchServerButton_Click"
+                        Theme="{StaticResource AppButton}"/>
                 <Button Content="Clear" Width="65" Height="28"
                         Click="ClearButton_Click"
                         Theme="{StaticResource AppButton}"/>

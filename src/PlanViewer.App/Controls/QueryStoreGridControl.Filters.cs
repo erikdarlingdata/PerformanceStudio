@@ -35,60 +35,70 @@ public partial class QueryStoreGridControl : UserControl
         ExecutionTypePanel.IsVisible = isExecutionType;
     }
 
-    private QueryStoreFilter? BuildSearchFilter()
+    /// <summary>
+    /// Commits the toolbar "Search by" selection into <see cref="_serverFilterState"/>.
+    /// No-ops when no search type is chosen or the value is empty; sets StatusText and does
+    /// not commit on a malformed query-id/plan-id. On a successful commit the toolbar inputs
+    /// are reset (the criterion now lives as a chip).
+    /// </summary>
+    private void CommitSearchByCriterion()
     {
         var searchType = (SearchTypeBox.SelectedItem as ComboBoxItem)?.Tag?.ToString();
 
         if (string.IsNullOrEmpty(searchType))
-            return null;
+            return;
 
         if (searchType == "execution-type")
         {
             var tag = (ExecutionTypeBox.SelectedItem as ComboBoxItem)?.Tag?.ToString();
-            // "any" tag (first item) means no filter
-            if (string.IsNullOrEmpty(tag) || tag == "any")
-                return null;
-            // "Failed" bundles Aborted + Exception into an IN predicate
-            if (tag == "Failed")
-                return new QueryStoreFilter { ExecutionTypeDescs = ["Aborted", "Exception"] };
-            return new QueryStoreFilter { ExecutionTypeDescs = [tag] };
+            _serverFilterState.SetExecutionType(QueryStoreFilter.ParseExecutionType(tag));
+            ResetSearchInputs();
+            return;
         }
 
         var searchValue = SearchValueBox.Text?.Trim();
         if (string.IsNullOrEmpty(searchValue))
-            return null;
-
-        var filter = new QueryStoreFilter();
+            return;
 
         switch (searchType)
         {
             case "query-id" when long.TryParse(searchValue, out var qid):
-                filter.QueryId = qid;
+                _serverFilterState.SetQueryId(qid);
                 break;
             case "query-id":
                 StatusText.Text = "Invalid Query ID";
-                return null;
+                return;
             case "plan-id" when long.TryParse(searchValue, out var pid):
-                filter.PlanId = pid;
+                _serverFilterState.SetPlanId(pid);
                 break;
             case "plan-id":
                 StatusText.Text = "Invalid Plan ID";
-                return null;
+                return;
             case "query-hash":
-                filter.QueryHash = searchValue;
+                _serverFilterState.SetQueryHash(searchValue);
                 break;
             case "plan-hash":
-                filter.QueryPlanHash = searchValue;
+                _serverFilterState.SetQueryPlanHash(searchValue);
                 break;
             case "module":
                 // Default to dbo schema if no schema specified, following sp_QuickieStore pattern
-                filter.ModuleName = searchValue.Contains('.') ? searchValue : $"dbo.{searchValue}";
+                _serverFilterState.SetModule(searchValue.Contains('.') ? searchValue : $"dbo.{searchValue}");
+                break;
+            case "query-text":
+                _serverFilterState.SetQueryTextSearch(searchValue);
                 break;
             default:
-                return null;
+                return;
         }
 
-        return filter;
+        ResetSearchInputs();
+    }
+
+    /// <summary>Resets the toolbar search inputs after a criterion is committed.</summary>
+    private void ResetSearchInputs()
+    {
+        SearchTypeBox.SelectedIndex = 0;
+        SearchValueBox.Text = "";
     }
 
     private void SearchValue_KeyDown(object? sender, Avalonia.Input.KeyEventArgs e)
@@ -100,12 +110,18 @@ public partial class QueryStoreGridControl : UserControl
         }
     }
 
-    private void ClearSearch_Click(object? sender, RoutedEventArgs e)
+    private async void ClearSearch_Click(object? sender, RoutedEventArgs e)
     {
         SearchTypeBox.SelectedIndex = 0;
         SearchValueBox.Text = "";
         // Resetting SearchTypeBox triggers SearchType_SelectionChanged which hides ExecutionTypePanel.
         ExecutionTypeBox.SelectedIndex = 0;
+
+        // Also clear every accumulated server filter and its panel input, then re-fetch.
+        _serverFilterState.Clear();
+        ResetServerFilterPanelInputs();
+        RebuildChips();
+        await FetchPlansForRangeAsync();
     }
 
     private void SetupColumnHeaders()
@@ -190,6 +206,7 @@ public partial class QueryStoreGridControl : UserControl
         ((Grid)Content!).Children.Add(_filterPopup);
         _filterPopupContent.FilterApplied += OnFilterApplied;
         _filterPopupContent.FilterCleared += OnFilterCleared;
+        _filterPopupContent.SearchServerRequested += OnSearchServerRequested;
     }
 
     private void ColumnFilter_Click(object? sender, RoutedEventArgs e)
@@ -197,7 +214,8 @@ public partial class QueryStoreGridControl : UserControl
         if (sender is not Button button || button.Tag is not string columnId) return;
         EnsureFilterPopup();
         _activeFilters.TryGetValue(columnId, out var existing);
-        _filterPopupContent!.Initialize(columnId, existing);
+        var canSearchServer = MapColumnToServerKind(columnId) is not null;
+        _filterPopupContent!.Initialize(columnId, existing, canSearchServer);
         _filterPopup!.PlacementTarget = button;
         _filterPopup.IsOpen = true;
     }
