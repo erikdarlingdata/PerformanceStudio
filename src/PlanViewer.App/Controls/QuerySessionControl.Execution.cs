@@ -404,78 +404,8 @@ public partial class QuerySessionControl : UserControl
     /// <summary>
     /// Shows a modal confirmation dialog and returns true if the user clicked OK.
     /// </summary>
-    private async Task<bool> ShowConfirmationDialog(string title, string message)
-    {
-        var result = false;
-
-        var messageText = new TextBlock
-        {
-            Text = message,
-            TextWrapping = TextWrapping.Wrap,
-            FontSize = 13,
-            Foreground = new SolidColorBrush(Color.Parse("#E4E6EB")),
-            Margin = new Avalonia.Thickness(0, 0, 0, 16)
-        };
-
-        var okBtn = new Button
-        {
-            Content = "OK",
-            Height = 32,
-            Width = 80,
-            Padding = new Avalonia.Thickness(16, 0),
-            FontSize = 12,
-            HorizontalContentAlignment = HorizontalAlignment.Center,
-            VerticalContentAlignment = VerticalAlignment.Center,
-            Theme = (Avalonia.Styling.ControlTheme)this.FindResource("AppButton")!
-        };
-
-        var cancelBtn = new Button
-        {
-            Content = "Cancel",
-            Height = 32,
-            Width = 80,
-            Padding = new Avalonia.Thickness(16, 0),
-            FontSize = 12,
-            Margin = new Avalonia.Thickness(8, 0, 0, 0),
-            HorizontalContentAlignment = HorizontalAlignment.Center,
-            VerticalContentAlignment = VerticalAlignment.Center,
-            Theme = (Avalonia.Styling.ControlTheme)this.FindResource("AppButton")!
-        };
-
-        var buttonPanel = new StackPanel
-        {
-            Orientation = Avalonia.Layout.Orientation.Horizontal,
-            HorizontalAlignment = HorizontalAlignment.Right
-        };
-        buttonPanel.Children.Add(okBtn);
-        buttonPanel.Children.Add(cancelBtn);
-
-        var content = new StackPanel
-        {
-            Margin = new Avalonia.Thickness(20),
-            Children = { messageText, buttonPanel }
-        };
-
-        var dialog = new Window
-        {
-            Title = title,
-            Width = 420,
-            Height = 200,
-            MinWidth = 420,
-            MinHeight = 200,
-            Icon = GetParentWindow().Icon,
-            Background = new SolidColorBrush(Color.Parse("#1A1D23")),
-            Foreground = new SolidColorBrush(Color.Parse("#E4E6EB")),
-            Content = content,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner
-        };
-
-        okBtn.Click += (_, _) => { result = true; dialog.Close(); };
-        cancelBtn.Click += (_, _) => dialog.Close();
-
-        await dialog.ShowDialog(GetParentWindow());
-        return result;
-    }
+    private Task<bool> ShowConfirmationDialog(string title, string message)
+        => Dialogs.ConfirmationDialog.ShowAsync(GetParentWindow(), title, message);
 
     /// <summary>
     /// Extracts the database name from plan XML's StmtSimple DatabaseContext attribute.
