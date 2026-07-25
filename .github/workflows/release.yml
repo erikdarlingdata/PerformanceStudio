@@ -159,6 +159,12 @@ jobs:
           github-artifact-id: '${{ steps.upload-unsigned.outputs.artifact-id }}'
           wait-for-completion: true
           output-artifact-directory: 'signed/win-x64'
+          # The action's 600s default means a signing policy that requires manual
+          # approval has to be approved inside a 10-minute window or the release
+          # fails partway, leaving a published release with no app assets (this
+          # happened on v1.17.0). 30 minutes is enough to notice the mail and
+          # approve. Irrelevant once approval is automatic, but harmless.
+          wait-for-completion-timeout-in-seconds: 1800
 
       - name: Replace unsigned Windows build with signed
         shell: pwsh
