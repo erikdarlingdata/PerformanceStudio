@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Security.Cryptography;
+using System.Text;
 
 namespace PlanViewer.Core.Tests;
 
@@ -53,7 +54,13 @@ public sealed class HistoricalCliContractTests
             Assert.True(
                 process.ExitCode == 0,
                 $"Historical analyze command exited with {process.ExitCode}: {standardError}");
-            var actualHash = Convert.ToHexString(SHA256.HashData(stdout.ToArray())).ToLowerInvariant();
+            // Normalize line endings before hashing. Console.WriteLine emits CRLF on
+            // Windows and LF elsewhere, so hashing raw stdout pins the contract to
+            // whichever OS produced the baseline — this hash was generated on the
+            // Linux CI runner and therefore failed on every Windows machine.
+            var text = Encoding.UTF8.GetString(stdout.ToArray()).Replace("\r\n", "\n");
+            var actualHash = Convert.ToHexString(
+                SHA256.HashData(Encoding.UTF8.GetBytes(text))).ToLowerInvariant();
             Assert.Equal(ExpectedCompactOutputSha256, actualHash);
         }
         finally
