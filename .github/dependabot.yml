@@ -4,8 +4,14 @@ version: 2
 # or PlanViewer.Ssms.Installer, so any solution-level scan silently skips them.
 # Every project directory is therefore listed explicitly below. If a new .csproj
 # is added anywhere, add its directory here too.
+#
+# target-branch is REQUIRED on every entry here. Without it Dependabot opens PRs
+# against the *default* branch, which is `main` — and in this repo `main` is only
+# ever updated by a dev -> main release merge. Omitting it once already put two
+# dependency bumps directly onto `main`, behind `dev`.
 updates:
   - package-ecosystem: nuget
+    target-branch: dev
     directories:
       - "/src/PlanViewer.App"
       - "/src/PlanViewer.Core"
@@ -75,6 +81,7 @@ updates:
       - dependency-name: "Velopack"
 
   - package-ecosystem: github-actions
+    target-branch: dev
     directory: "/"
     schedule:
       interval: weekly
