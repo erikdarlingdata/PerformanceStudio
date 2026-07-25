@@ -24,22 +24,33 @@ public static partial class PlanAnalyzer
         @"\bCASE\s+(WHEN\b|$)",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-    public static void Analyze(ParsedPlan plan, AnalyzerConfig? config = null, ServerMetadata? serverMetadata = null)
+    public static void Analyze(ParsedPlan plan, AnalyzerConfig? config = null, ServerMetadata? serverMetadata = null) =>
+        AnalyzeCancellable(plan, config, serverMetadata, CancellationToken.None);
+
+    internal static void AnalyzeCancellable(
+        ParsedPlan plan,
+        AnalyzerConfig? config,
+        ServerMetadata? serverMetadata,
+        CancellationToken cancellationToken)
     {
         var cfg = config ?? AnalyzerConfig.Default;
         foreach (var batch in plan.Batches)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             foreach (var stmt in batch.Statements)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 AnalyzeStatement(stmt, cfg, serverMetadata);
 
                 if (stmt.RootNode != null)
-                    AnalyzeNodeTree(stmt.RootNode, stmt, cfg);
+                    AnalyzeNodeTree(stmt.RootNode, stmt, cfg, cancellationToken);
 
+                cancellationToken.ThrowIfCancellationRequested();
                 MarkLegacyWarnings(stmt);
             }
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
         // Apply severity overrides to all warnings
         if (cfg.Rules?.SeverityOverrides?.Count > 0)
             ApplySeverityOverrides(plan, cfg);
@@ -80,17 +91,35 @@ public static partial class PlanAnalyzer
     // Rule number → WarningType mapping for severity overrides
     private static readonly Dictionary<int, string> RuleWarningTypes = new()
     {
-        [1] = "Filter Operator", [2] = "Eager Index Spool", [3] = "Serial Plan",
-        [4] = "UDF Execution", [5] = "Row Estimate Mismatch", [6] = "Scalar UDF",
-        [7] = "Spill", [8] = "Parallel Skew", [9] = "Memory Grant",
-        [10] = "Key Lookup", [11] = "Scan With Predicate", [12] = "Non-SARGable Predicate",
-        [13] = "Data Type Mismatch", [14] = "Lazy Spool Ineffective", [15] = "Join OR Clause",
-        [16] = "Nested Loops High Executions", [17] = "Many-to-Many Merge Join",
-        [18] = "Compile Memory Exceeded", [19] = "High Compile CPU", [20] = "Local Variables",
-        [22] = "Table Variable", [23] = "Table-Valued Function",
-        [24] = "Top Above Scan", [25] = "Ineffective Parallelism", [26] = "Row Goal",
-        [27] = "Optimize For Unknown", [28] = "NOT IN with Nullable Column",
-        [29] = "Implicit Conversion", [30] = "Wide Index Suggestion",
+        [1] = "Filter Operator",
+        [2] = "Eager Index Spool",
+        [3] = "Serial Plan",
+        [4] = "UDF Execution",
+        [5] = "Row Estimate Mismatch",
+        [6] = "Scalar UDF",
+        [7] = "Spill",
+        [8] = "Parallel Skew",
+        [9] = "Memory Grant",
+        [10] = "Key Lookup",
+        [11] = "Scan With Predicate",
+        [12] = "Non-SARGable Predicate",
+        [13] = "Data Type Mismatch",
+        [14] = "Lazy Spool Ineffective",
+        [15] = "Join OR Clause",
+        [16] = "Nested Loops High Executions",
+        [17] = "Many-to-Many Merge Join",
+        [18] = "Compile Memory Exceeded",
+        [19] = "High Compile CPU",
+        [20] = "Local Variables",
+        [22] = "Table Variable",
+        [23] = "Table-Valued Function",
+        [24] = "Top Above Scan",
+        [25] = "Ineffective Parallelism",
+        [26] = "Row Goal",
+        [27] = "Optimize For Unknown",
+        [28] = "NOT IN with Nullable Column",
+        [29] = "Implicit Conversion",
+        [30] = "Wide Index Suggestion",
         [31] = "Parallel Wait Bottleneck",
         [32] = "Scan Cardinality Misestimate",
         [33] = "Estimated Plan CE Guess",

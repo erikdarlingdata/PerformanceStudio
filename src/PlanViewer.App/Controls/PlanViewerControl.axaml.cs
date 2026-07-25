@@ -339,8 +339,7 @@ public partial class PlanViewerControl : UserControl
             return false;
         }
 
-        PlanAnalyzer.Analyze(_currentPlan, ConfigLoader.Load(), _serverMetadata);
-        BenefitScorer.Score(_currentPlan);
+        PlanAnalysisPipeline.AnalyzeParsed(_currentPlan, ConfigLoader.Load(), _serverMetadata);
 
         var allStatements = _currentPlan.Batches
             .SelectMany(b => b.Statements)
@@ -374,11 +373,12 @@ public partial class PlanViewerControl : UserControl
                 CountNodeWarnings(s.RootNode, ref warningCount, ref criticalCount);
         }
 
-        PlanSessionManager.Instance.Register(_mcpSessionId, new PlanSession
+        const string sessionSource = "file";
+        PlanSessionManager.Instance.Register(new PlanViewer.Core.Models.PlanSession
         {
             SessionId = _mcpSessionId,
             Label = label,
-            Source = "file",
+            Source = sessionSource,
             Plan = _currentPlan,
             QueryText = queryText,
             StatementCount = allStatements.Count,

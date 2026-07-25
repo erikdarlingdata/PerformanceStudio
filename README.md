@@ -128,7 +128,7 @@ dotnet build
 To verify the build:
 
 ```bash
-dotnet test tests/PlanViewer.Core.Tests    # 37 tests should pass
+dotnet test PlanViewer.sln
 dotnet run --project src/PlanViewer.Cli -- analyze --help
 ```
 
@@ -148,6 +148,41 @@ planview analyze my_query.sqlplan --output text
 # Text output, warnings and missing indexes only (skip operator tree)
 planview analyze my_query.sqlplan --output text --warnings-only
 ```
+
+### Explore plans interactively (Repl pilot)
+
+Run `planview repl` to start a long-lived plan-exploration session. Zero arguments and the
+existing `analyze`, `query-store`, and `credential` commands continue to use the legacy
+System.CommandLine graph.
+
+```text
+planview repl
+> open slow-query.sqlplan
+[plan slow-query-<opaque-id>]> summary
+[plan slow-query-<opaque-id>]> warnings --severity critical
+[plan slow-query-<opaque-id>]> operators --top 10
+[plan slow-query-<opaque-id>]> missing-indexes --json
+[plan slow-query-<opaque-id>]> close
+```
+
+The same graph also works in one-shot and MCP modes:
+
+```bash
+planview plan open slow-query.sqlplan --json --no-logo
+planview repl                         # explicit interactive alias
+planview mcp serve                    # stdio MCP server generated from the graph
+```
+
+Bare `planview` preserves the legacy System.CommandLine behavior. Interactive exploration is
+entered only through `planview repl`; scripts can use explicit legacy or one-shot `plan` commands.
+
+The pilot uses the stable `Repl` `0.11.0` release. Loaded plans live only for the lifetime of
+the process; `open` and `close` change only that in-memory catalog and never write the
+source plan. MCP `plan_open` validates and reads the same opened file handle inside client
+roots, accepts only `.sqlplan` files, and uses the server launch directory only when native
+roots are unsupported and no soft roots exist. Advertised empty roots deny access. MCP and
+local mode share the 16 MiB file/2-concurrent-open/32-session resource limits. See
+[`docs/repl-pilot.md`](docs/repl-pilot.md) for architecture, security, and compatibility notes.
 
 ### Capture and analyze plans from a live server
 

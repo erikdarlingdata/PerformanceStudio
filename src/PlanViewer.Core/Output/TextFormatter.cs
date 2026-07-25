@@ -4,19 +4,29 @@ namespace PlanViewer.Core.Output;
 
 public static class TextFormatter
 {
-    public static string Format(AnalysisResult result)
+    public static string Format(AnalysisResult result) =>
+        FormatCancellable(result, CancellationToken.None);
+
+    internal static string FormatCancellable(AnalysisResult result, CancellationToken cancellationToken)
     {
         using var writer = new StringWriter();
-        WriteText(result, writer);
+        WriteTextCancellable(result, writer, cancellationToken);
         return writer.ToString();
     }
 
-    public static void WriteText(AnalysisResult result, TextWriter writer)
+    public static void WriteText(AnalysisResult result, TextWriter writer) =>
+        WriteTextCancellable(result, writer, CancellationToken.None);
+
+    internal static void WriteTextCancellable(
+        AnalysisResult result,
+        TextWriter writer,
+        CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         // Server context (connected mode only)
         if (result.ServerContext != null)
         {
-            WriteServerContext(result.ServerContext, writer);
+            WriteServerContext(result.ServerContext, writer, cancellationToken);
         }
         else if (result.SqlServerBuild != null)
         {
@@ -32,12 +42,16 @@ public static class TextFormatter
         {
             writer.WriteLine("Warning types:");
             foreach (var wt in result.Summary.WarningTypes)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
                 writer.WriteLine($"  {wt}");
+            }
         }
         writer.WriteLine();
 
         for (int i = 0; i < result.Statements.Count; i++)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var stmt = result.Statements[i];
             writer.WriteLine($"=== Statement {i + 1}: ===");
             writer.WriteLine(stmt.StatementText);
@@ -78,7 +92,7 @@ public static class TextFormatter
             if (stmt.OperatorTree != null)
             {
                 var nodeTimings = new List<(OperatorResult Node, long OwnCpuMs, long OwnElapsedMs)>();
-                CollectNodeTimings(stmt.OperatorTree, nodeTimings);
+                CollectNodeTimings(stmt.OperatorTree, nodeTimings, cancellationToken);
 
                 var topNodes = nodeTimings
                     .Where(t => t.OwnCpuMs > 0 || t.OwnElapsedMs > 0)
@@ -93,6 +107,7 @@ public static class TextFormatter
                     var totalElapsed = stmt.QueryTime?.ElapsedTimeMs ?? 0;
                     foreach (var (n, ownCpu, ownElapsed) in topNodes)
                     {
+                        cancellationToken.ThrowIfCancellationRequested();
                         var label = n.ObjectName != null
                             ? $"{n.PhysicalOp} ({n.ObjectName})"
                             : n.PhysicalOp;
@@ -134,10 +149,14 @@ public static class TextFormatter
                 // Build a lookup from wait type to benefit %
                 var benefitLookup = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
                 foreach (var wb in stmt.WaitBenefits)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
                     benefitLookup[wb.WaitType] = wb.MaxBenefitPercent;
+                }
 
                 foreach (var w in stmt.WaitStats.OrderByDescending(w => w.WaitTimeMs))
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
                     var benefitTag = benefitLookup.TryGetValue(w.WaitType, out var pct)
                         ? $" (up to {(pct >= 100 ? pct.ToString("N0") : pct.ToString("N1"))}% benefit)"
                         : "";
@@ -150,6 +169,7 @@ public static class TextFormatter
                 writer.WriteLine("Parameters:");
                 foreach (var p in stmt.Parameters)
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
                     var sniff = p.SniffingIssue ? " [SNIFFING]" : "";
                     writer.WriteLine($"  {p.Name} {p.DataType} = {p.CompiledValue ?? "?"}{sniff}");
                 }
@@ -168,6 +188,7 @@ public static class TextFormatter
                     .ThenBy(w => w.Type);
                 foreach (var w in sortedWarnings)
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
                     var benefitTag = w.MaxBenefitPercent.HasValue
                         ? $" (up to {(w.MaxBenefitPercent.Value >= 100 ? w.MaxBenefitPercent.Value.ToString("N0") : w.MaxBenefitPercent.Value.ToString("N1"))}% benefit)"
                         : "";
@@ -181,12 +202,12 @@ public static class TextFormatter
             if (stmt.OperatorTree != null)
             {
                 var nodeWarnings = new List<WarningResult>();
-                CollectNodeWarnings(stmt.OperatorTree, nodeWarnings);
+                CollectNodeWarnings(stmt.OperatorTree, nodeWarnings, cancellationToken);
                 if (nodeWarnings.Count > 0)
                 {
                     writer.WriteLine();
                     writer.WriteLine("Operator warnings:");
-                    WriteGroupedOperatorWarnings(nodeWarnings, writer);
+                    WriteGroupedOperatorWarnings(nodeWarnings, writer, cancellationToken);
                 }
             }
 
@@ -196,6 +217,7 @@ public static class TextFormatter
                 writer.WriteLine("Missing indexes:");
                 foreach (var mi in stmt.MissingIndexes)
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
                     writer.WriteLine($"  {mi.Table} (impact: {mi.Impact:F0}%)");
                     writer.WriteLine($"    {mi.CreateStatement}");
                 }
@@ -205,8 +227,12 @@ public static class TextFormatter
         }
     }
 
-    private static void WriteServerContext(ServerContextResult ctx, TextWriter writer)
+    private static void WriteServerContext(
+        ServerContextResult ctx,
+        TextWriter writer,
+        CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         writer.WriteLine("=== Server Context ===");
 
         // Server line: name + edition + version
@@ -267,29 +293,43 @@ public static class TextFormatter
             if (notable.Count > 0)
             {
                 foreach (var n in notable)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
                     writer.WriteLine($"    {n}");
+                }
             }
 
             if (db.NonDefaultScopedConfigs.Count > 0)
             {
                 writer.WriteLine("  Non-default scoped configs:");
                 foreach (var sc in db.NonDefaultScopedConfigs)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
                     writer.WriteLine($"    {sc.Name} = {sc.Value}");
+                }
             }
         }
 
         writer.WriteLine();
     }
 
-    private static void CollectNodeWarnings(OperatorResult node, List<WarningResult> warnings)
+    private static void CollectNodeWarnings(
+        OperatorResult node,
+        List<WarningResult> warnings,
+        CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         warnings.AddRange(node.Warnings);
         foreach (var child in node.Children)
-            CollectNodeWarnings(child, warnings);
+            CollectNodeWarnings(child, warnings, cancellationToken);
     }
 
-    private static void WriteGroupedOperatorWarnings(List<WarningResult> warnings, TextWriter writer)
+    private static void WriteGroupedOperatorWarnings(
+        List<WarningResult> warnings,
+        TextWriter writer,
+        CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         // Sort by benefit descending (nulls last), then severity, then type
         var sorted = warnings
             .OrderByDescending(w => w.MaxBenefitPercent ?? -1)
@@ -329,6 +369,7 @@ public static class TextFormatter
 
         foreach (var group in grouped)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var items = group.ToList();
             if (items.Count > 1 && group.Key.Item2 != "")
             {
@@ -381,8 +422,12 @@ public static class TextFormatter
     /// </summary>
     private static string EscapeNewlines(string text) => text.Replace('\n', '\x1F');
 
-    private static void CollectNodeTimings(OperatorResult node, List<(OperatorResult Node, long OwnCpuMs, long OwnElapsedMs)> timings)
+    private static void CollectNodeTimings(
+        OperatorResult node,
+        List<(OperatorResult Node, long OwnCpuMs, long OwnElapsedMs)> timings,
+        CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         // Skip exchanges — negligible own work, misleading elapsed times
         if (node.PhysicalOp != "Parallelism")
         {
@@ -396,7 +441,7 @@ public static class TextFormatter
                     ownCpu = node.ActualCpuMs.Value;
                 else
                 {
-                    var childCpuSum = GetChildCpuSum(node);
+                    var childCpuSum = GetChildCpuSum(node, cancellationToken);
                     ownCpu = Math.Max(0, node.ActualCpuMs.Value - childCpuSum);
                 }
             }
@@ -409,7 +454,7 @@ public static class TextFormatter
                     ownElapsed = node.ActualElapsedMs.Value;
                 else
                 {
-                    var childSum = GetChildElapsedSum(node);
+                    var childSum = GetChildElapsedSum(node, cancellationToken);
                     ownElapsed = Math.Max(0, node.ActualElapsedMs.Value - childSum);
                 }
             }
@@ -429,15 +474,18 @@ public static class TextFormatter
         }
 
         foreach (var child in node.Children)
-            CollectNodeTimings(child, timings);
+            CollectNodeTimings(child, timings, cancellationToken);
     }
 
     /// <summary>
     /// Sums CPU time from all direct children, skipping through transparent
     /// operators (Compute Scalar, etc.) that have no runtime stats.
     /// </summary>
-    private static long GetChildCpuSum(OperatorResult node)
+    private static long GetChildCpuSum(
+        OperatorResult node,
+        CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         long sum = 0;
         foreach (var child in node.Children)
         {
@@ -448,7 +496,7 @@ public static class TextFormatter
             else
             {
                 // Transparent operator (e.g. Compute Scalar) — skip through
-                sum += GetChildCpuSum(child);
+                sum += GetChildCpuSum(child, cancellationToken);
             }
         }
         return sum;
@@ -458,8 +506,11 @@ public static class TextFormatter
     /// Sums elapsed time from all direct children, skipping through exchange
     /// and transparent operators.
     /// </summary>
-    private static long GetChildElapsedSum(OperatorResult node)
+    private static long GetChildElapsedSum(
+        OperatorResult node,
+        CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         long sum = 0;
         foreach (var child in node.Children)
         {
@@ -478,7 +529,7 @@ public static class TextFormatter
             }
             else
             {
-                childTime = GetChildElapsedSum(child);
+                childTime = GetChildElapsedSum(child, cancellationToken);
             }
             sum += childTime;
         }

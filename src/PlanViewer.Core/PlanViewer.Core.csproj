@@ -20,8 +20,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Self-time attribution (PlanAnalyzer.Timing) is internal but is the
-         source of every operator timing the UI and BenefitScorer report. -->
+    <!-- App and CLI are executable hosts in this repository; keep host-only orchestration internal. -->
+    <InternalsVisibleTo Include="PlanViewer.App" />
+    <InternalsVisibleTo Include="planview" />
     <InternalsVisibleTo Include="PlanViewer.Core.Tests" />
   </ItemGroup>
 
