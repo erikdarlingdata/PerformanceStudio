@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Data.Sqlite;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -44,20 +45,62 @@ using (var conn = new SqliteConnection(connectionString))
     cmd.ExecuteNonQuery();
 }
 
+// --- Visitor hash salt ---
+// SHA256(ip|ua|day) truncated to 16 hex is brute-forceable straight back to the
+// source IP: IPv4 is only 2^32, the User-Agent is guessable, and the day is
+// known. Without a secret in the mix, "no PII stored" is not true. The salt is
+// generated once and kept in a file beside the DB, never in the DB itself, so
+// a copy of plans.db does not carry the means to reverse its own hashes.
+var saltPath = Path.Combine(dataDir, "visitor-salt.bin");
+byte[] visitorSalt;
+if (File.Exists(saltPath))
+{
+    visitorSalt = File.ReadAllBytes(saltPath);
+}
+else
+{
+    visitorSalt = RandomNumberGenerator.GetBytes(32);
+    File.WriteAllBytes(saltPath, visitorSalt);
+}
+
 // --- Rate limiters (in-memory) ---
 // Created before Build() so they can be DI-registered and swept by CleanupService.
 var rateLimiter = new RateLimiter(maxRequests: 10, windowSeconds: 60);
 var analyticsRateLimiter = new RateLimiter(maxRequests: 30, windowSeconds: 60);
+// Plan reads are cheap but unbounded reads let anyone enumerate or scrape the
+// store; 120/min per IP is far above any human's browsing rate.
+var readRateLimiter = new RateLimiter(maxRequests: 120, windowSeconds: 60);
 
 // Register the cleanup background service
 builder.Services.AddSingleton(new PlanDbConfig(connectionString));
-builder.Services.AddSingleton(new RateLimiters(rateLimiter, analyticsRateLimiter));
+builder.Services.AddSingleton(new RateLimiters(rateLimiter, analyticsRateLimiter, readRateLimiter));
 builder.Services.AddHostedService<CleanupService>();
 
 // Request size limit (10 MB)
 builder.WebHost.ConfigureKestrel(o => o.Limits.MaxRequestBodySize = 10 * 1024 * 1024);
 
 var app = builder.Build();
+
+// This runs behind nginx on loopback, which sets X-Real-IP and X-Forwarded-For.
+// Without this middleware every request's RemoteIpAddress is 127.0.0.1, so all
+// three rate limiters key on the same value and become a single GLOBAL cap
+// shared by every visitor rather than per-IP limits — one busy client would
+// throttle everyone, and one abusive client could not be isolated.
+//
+// KnownProxies is restricted to loopback deliberately: trusting X-Forwarded-For
+// from arbitrary sources would let any caller spoof its address and bypass the
+// limits entirely. Only the local nginx is believed.
+var forwardedOptions = new ForwardedHeadersOptions
+{
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto,
+    ForwardLimit = 1
+};
+forwardedOptions.KnownProxies.Clear();
+forwardedOptions.KnownIPNetworks.Clear();
+forwardedOptions.KnownProxies.Add(System.Net.IPAddress.Loopback);
+forwardedOptions.KnownProxies.Add(System.Net.IPAddress.IPv6Loopback);
+app.UseForwardedHeaders(forwardedOptions);
+
 app.UseCors();
 
 const int MaxTtlDays = 365;
@@ -118,8 +161,12 @@ app.MapPost("/api/share", async (HttpContext ctx) =>
         "application/json");
 });
 
-app.MapGet("/api/plans/{id}", (string id) =>
+app.MapGet("/api/plans/{id}", (string id, HttpContext ctx) =>
 {
+    var readIp = ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+    if (!readRateLimiter.IsAllowed(readIp))
+        return Results.StatusCode(429);
+
     using var conn = new SqliteConnection(connectionString);
     conn.Open();
     using var cmd = conn.CreateCommand();
@@ -173,11 +220,15 @@ app.MapPost("/api/event", async (HttpContext ctx) =>
             : null;
     }
 
-    // Visitor hash: SHA256(IP + User-Agent + date) — unique per day, no PII stored
+    // Visitor hash: HMAC-SHA256(secret salt, IP + User-Agent + date) — unique per
+    // day. The salt is what makes this one-way in practice: without it the input
+    // space (IPv4 = 2^32, guessable UA, known date) is small enough to brute
+    // force straight back to the source IP, so an unsalted digest would still be
+    // personal data despite looking like a hash.
     var ua = ctx.Request.Headers.UserAgent.FirstOrDefault() ?? "";
     var day = DateTime.UtcNow.ToString("yyyy-MM-dd");
     var visitorHash = Convert.ToHexString(
-        SHA256.HashData(Encoding.UTF8.GetBytes($"{ip}|{ua}|{day}"))).ToLower()[..16];
+        HMACSHA256.HashData(visitorSalt, Encoding.UTF8.GetBytes($"{ip}|{ua}|{day}"))).ToLower()[..16];
 
     using var conn = new SqliteConnection(connectionString);
     conn.Open();
@@ -192,8 +243,26 @@ app.MapPost("/api/event", async (HttpContext ctx) =>
     return Results.Ok();
 });
 
-app.MapGet("/api/stats", () =>
+app.MapGet("/api/stats", (HttpContext ctx) =>
 {
+    // Opt-in auth. /api/stats exposes share counts, daily traffic, unique
+    // visitors and top referrers — operational data, not something that needs
+    // to be world-readable. Set STATS_TOKEN to require it; leaving it unset
+    // keeps the current public behaviour so the dashboard cannot break just by
+    // deploying this. Compared with a fixed-time comparison so the token cannot
+    // be recovered a byte at a time.
+    var expectedToken = Environment.GetEnvironmentVariable("STATS_TOKEN");
+    if (!string.IsNullOrEmpty(expectedToken))
+    {
+        var supplied = ctx.Request.Headers["X-Stats-Token"].FirstOrDefault()
+                       ?? ctx.Request.Query["token"].FirstOrDefault()
+                       ?? "";
+        var a = Encoding.UTF8.GetBytes(supplied);
+        var b = Encoding.UTF8.GetBytes(expectedToken);
+        if (a.Length != b.Length || !CryptographicOperations.FixedTimeEquals(a, b))
+            return Results.StatusCode(401);
+    }
+
     using var conn = new SqliteConnection(connectionString);
     conn.Open();
     var now = DateTime.UtcNow.ToString("o");
@@ -362,7 +431,7 @@ static string GenerateDeleteToken()
 
 record PlanDbConfig(string ConnectionString);
 
-record RateLimiters(RateLimiter Share, RateLimiter Analytics);
+record RateLimiters(RateLimiter Share, RateLimiter Analytics, RateLimiter Read);
 
 sealed class CleanupService : BackgroundService
 {
@@ -416,13 +485,16 @@ sealed class CleanupService : BackgroundService
                     _logger.LogInformation("Cleaned up {Count} old page views", deleted);
             }
 
-            // Evict stale rate-limiter keys so the dictionary doesn't grow forever.
+            // Evict stale rate-limiter keys so the dictionaries don't grow forever.
+            // Every limiter must be swept here: an unswept one keeps a permanent
+            // entry per unique client IP for the lifetime of the process.
             var shareEvicted = _rateLimiters.Share.Sweep();
             var analyticsEvicted = _rateLimiters.Analytics.Sweep();
-            if (shareEvicted + analyticsEvicted > 0)
+            var readEvicted = _rateLimiters.Read.Sweep();
+            if (shareEvicted + analyticsEvicted + readEvicted > 0)
                 _logger.LogInformation(
-                    "Evicted {Share} share + {Analytics} analytics rate-limit keys",
-                    shareEvicted, analyticsEvicted);
+                    "Evicted {Share} share + {Analytics} analytics + {Read} read rate-limit keys",
+                    shareEvicted, analyticsEvicted, readEvicted);
         }
         catch (Exception ex)
         {
