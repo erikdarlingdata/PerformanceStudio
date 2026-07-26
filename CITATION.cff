@@ -9,7 +9,7 @@ authors:
     website: "https://erikdarling.com"
 repository-code: "https://github.com/erikdarlingdata/PerformanceStudio"
 license: MIT
-version: "1.18.0"
+version: "1.19.0"
 date-released: "2026-07-25"
 keywords:
   - sql-server
