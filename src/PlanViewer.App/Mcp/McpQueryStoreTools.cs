@@ -1,12 +1,15 @@
 using System;
 using System.ComponentModel;
 using System.Linq;
+using System.Text;
+using System.Threading;
 using System.Text.Json;
 using System.Threading.Tasks;
 using ModelContextProtocol.Server;
 using PlanViewer.App.Services;
 using PlanViewer.Core.Interfaces;
 using PlanViewer.Core.Models;
+using PlanViewer.Core.Output;
 using PlanViewer.Core.Services;
 
 #pragma warning disable CA1707 // Identifiers should not contain underscores (MCP snake_case convention)
@@ -23,8 +26,10 @@ public sealed class McpQueryStoreTools
         ConnectionStore connectionStore,
         ICredentialService credentialService,
         [Description("Server name from get_connections.")] string connection_name,
-        [Description("Database name to check.")] string database)
+        [Description("Database name to check.")] string database,
+        CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         try
         {
             var conn = FindConnection(connectionStore, connection_name);
@@ -32,7 +37,9 @@ public sealed class McpQueryStoreTools
                 return ConnectionNotFound(connectionStore, connection_name);
 
             var connectionString = conn.GetConnectionString(credentialService, database);
-            var (enabled, state, readOnlyReplica) = await QueryStoreService.CheckEnabledAsync(connectionString);
+            var (enabled, state, readOnlyReplica) = await QueryStoreService
+                .CheckEnabledAsync(connectionString, cancellationToken)
+                .ConfigureAwait(false);
 
             return JsonSerializer.Serialize(new
             {
@@ -42,6 +49,10 @@ public sealed class McpQueryStoreTools
                 state,
                 read_only_replica = readOnlyReplica
             }, McpHelpers.JsonOptions);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -59,10 +70,12 @@ public sealed class McpQueryStoreTools
         "minimum execution count or average duration/CPU thresholds, execution type, and query-id / plan-id include/ignore lists.")]
     public static async Task<string> GetQueryStoreTop(
         PlanSessionManager sessionManager,
+        PlanOperations operations,
         ConnectionStore connectionStore,
         ICredentialService credentialService,
         [Description("Server name from get_connections.")] string connection_name,
         [Description("Database name to query.")] string database,
+        CancellationToken cancellationToken,
         [Description("Number of top queries to return. Default 10, max 50.")] int top = 10,
         [Description("Ranking metric: cpu, avg-cpu, duration, avg-duration, reads, avg-reads, " +
             "writes, avg-writes, physical-reads, avg-physical-reads, memory, avg-memory, executions. " +
@@ -85,6 +98,7 @@ public sealed class McpQueryStoreTools
         [Description("Comma-separated Query Store plan IDs to include, e.g. \"12,34\".")] string? include_plan_ids = null,
         [Description("Comma-separated Query Store plan IDs to exclude, e.g. \"12,34\".")] string? ignore_plan_ids = null)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         try
         {
             var conn = FindConnection(connectionStore, connection_name);
@@ -146,7 +160,9 @@ public sealed class McpQueryStoreTools
             var connectionString = conn.GetConnectionString(credentialService, database);
 
             // Check Query Store is enabled first
-            var (enabled, state, readOnlyReplica) = await QueryStoreService.CheckEnabledAsync(connectionString);
+            var (enabled, state, readOnlyReplica) = await QueryStoreService
+                .CheckEnabledAsync(connectionString, cancellationToken)
+                .ConfigureAwait(false);
             if (!enabled)
                 return readOnlyReplica
                     ? $"[{database}] is a read-only replica with no Query Store data to read (state: {state ?? "unknown"}). Enable Query Store on the primary replica."
@@ -154,7 +170,12 @@ public sealed class McpQueryStoreTools
 
             // Fetch plans using the app's built-in query
             var plans = await QueryStoreService.FetchTopPlansAsync(
-                connectionString, top, order_by, hours_back, filter);
+                connectionString,
+                top,
+                order_by,
+                hours_back,
+                filter,
+                cancellationToken).ConfigureAwait(false);
 
             if (plans.Count == 0)
                 return $"No Query Store data found in [{database}] for the last {hours_back} hours.";
@@ -165,7 +186,13 @@ public sealed class McpQueryStoreTools
             {
                 var isAzure = conn.ServerName.Contains(".database.windows.net", StringComparison.OrdinalIgnoreCase) ||
                               conn.ServerName.Contains(".database.azure.com", StringComparison.OrdinalIgnoreCase);
-                serverMetadata = await ServerMetadataService.FetchServerMetadataAsync(connectionString, isAzure);
+                serverMetadata = await ServerMetadataService
+                    .FetchServerMetadataAsync(connectionString, isAzure, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
             }
             catch
             {
@@ -182,27 +209,22 @@ public sealed class McpQueryStoreTools
                 {
                     var xml = qsPlan.PlanXml
                         .Replace("encoding=\"utf-16\"", "encoding=\"utf-8\"");
-                    var parsed = ShowPlanParser.Parse(xml);
-                    PlanAnalyzer.Analyze(parsed, serverMetadata: serverMetadata);
-                    BenefitScorer.Score(parsed);
-
-                    var allStatements = parsed.Batches.SelectMany(b => b.Statements).ToList();
-
-                    sessionManager.Register(sessionId, new PlanSession
-                    {
-                        SessionId = sessionId,
-                        Label = label,
-                        Source = "query-store",
-                        Plan = parsed,
-                        QueryText = qsPlan.QueryText,
-                        ConnectionInfo = conn.ServerName,
-                        StatementCount = allStatements.Count,
-                        HasActualStats = false, // Query Store plans are always estimated
-                        WarningCount = allStatements.Sum(s => s.PlanWarnings.Count),
-                        CriticalWarningCount = allStatements.Sum(s =>
-                            s.PlanWarnings.Count(w => w.Severity == Core.Models.PlanWarningSeverity.Critical)),
-                        MissingIndexCount = parsed.AllMissingIndexes.Count
-                    });
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var parsed = PlanAnalysisPipeline.Analyze(
+                        xml,
+                        AnalyzerConfig.Default,
+                        serverMetadata,
+                        cancellationToken);
+                    var session = CaptureSession(
+                        sessionId,
+                        label,
+                        parsed,
+                        qsPlan.QueryText,
+                        conn.ServerName);
+                    operations.AdmitSnapshot(
+                        session,
+                        Encoding.UTF8.GetByteCount(xml),
+                        cancellationToken);
 
                     return new
                     {
@@ -221,15 +243,20 @@ public sealed class McpQueryStoreTools
                         avg_duration_ms = qsPlan.AvgDurationUs / 1000.0,
                         total_logical_reads = qsPlan.TotalLogicalIoReads,
                         avg_logical_reads = qsPlan.AvgLogicalIoReads,
-                        warning_count = allStatements.Sum(s => s.PlanWarnings.Count),
-                        missing_index_count = parsed.AllMissingIndexes.Count,
+                        warning_count = session.WarningCount,
+                        missing_index_count = session.MissingIndexCount,
                         last_executed_utc = qsPlan.LastExecutedUtc.ToString("yyyy-MM-dd HH:mm:ss"),
-                        loaded = true
+                        loaded = true,
+                        load_error = (string?)null
                     };
                 }
-                catch
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
-                    // Plan XML couldn't be parsed — return stats without loading
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    // Return bounded failure context without exposing a stack trace.
                     return new
                     {
                         session_id = (string)"",
@@ -250,7 +277,8 @@ public sealed class McpQueryStoreTools
                         warning_count = 0,
                         missing_index_count = 0,
                         last_executed_utc = qsPlan.LastExecutedUtc.ToString("yyyy-MM-dd HH:mm:ss"),
-                        loaded = false
+                        loaded = false,
+                        load_error = McpHelpers.Truncate(ex.Message, 512)
                     };
                 }
             }).ToList();
@@ -265,10 +293,48 @@ public sealed class McpQueryStoreTools
                 plans = results
             }, McpHelpers.JsonOptions);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             return McpHelpers.FormatError("get_query_store_top", ex);
         }
+    }
+
+    internal static PlanSession CaptureSession(
+        string sessionId,
+        string label,
+        ParsedPlan parsed,
+        string? queryText,
+        string connectionInfo)
+    {
+        var analysis = ResultMapper.Map(parsed, "query-store");
+        var allStatements = parsed.Batches.SelectMany(batch => batch.Statements).ToList();
+        var executableStatement = allStatements.FirstOrDefault(statement => statement.RootNode is not null);
+        var session = new PlanSession
+        {
+            SessionId = sessionId,
+            Label = label,
+            Source = "query-store",
+            Plan = parsed,
+            Analysis = analysis,
+            RawPlanXml = parsed.RawXml,
+            DatabaseName = executableStatement?.RootNode?.DatabaseName,
+            QueryText = queryText,
+            ConnectionInfo = connectionInfo,
+            StatementCount = allStatements.Count,
+            HasActualStats = false,
+            WarningCount = allStatements.Sum(statement => statement.PlanWarnings.Count),
+            CriticalWarningCount = allStatements.Sum(statement =>
+                statement.PlanWarnings.Count(warning => warning.Severity == Core.Models.PlanWarningSeverity.Critical)),
+            MissingIndexCount = parsed.AllMissingIndexes.Count
+        };
+
+        parsed.RawXml = string.Empty;
+        parsed.Batches.Clear();
+        return session;
     }
 
     private static Core.Models.ServerConnection? FindConnection(

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Xml;
 using System.Xml.Linq;
 using PlanViewer.Core.Models;
 
@@ -15,72 +16,119 @@ public static partial class ShowPlanParser
     // maliciously deep tree throws a catchable exception instead of an uncatchable
     // StackOverflowException that takes the whole process down.
     private const int MaxParseDepth = 1000;
+    private const int MaxParseCharacters = 16 * 1024 * 1024;
 
     public static ParsedPlan Parse(string xml)
     {
         var plan = new ParsedPlan { RawXml = xml };
-
-        XDocument doc;
         try
         {
-            doc = XDocument.Parse(xml);
+            return ParseDocument(XDocument.Parse(xml), plan, CancellationToken.None);
         }
-        catch (Exception ex)
+        catch (Exception exception)
         {
-            plan.ParseError = ex.Message;
+            plan.ParseError = exception.Message;
             return plan;
         }
+    }
 
-        // The tree walk below can throw on hostile/malformed plans (including the depth
-        // guards in ParseRelOp/ParseStatementAndChildren that stop unbounded recursion).
-        // Contain it so a bad plan becomes a ParseError, never a crash for the caller.
+    internal static async Task<ParsedPlan> ParseAsync(
+        string xml,
+        CancellationToken cancellationToken,
+        Action? beforeCostComputation = null)
+    {
+        var plan = new ParsedPlan { RawXml = xml };
         try
         {
-        var root = doc.Root;
-        if (root == null) return plan;
-
-        plan.BuildVersion = root.Attribute("Version")?.Value;
-        plan.Build = root.Attribute("Build")?.Value;
-        plan.ClusteredMode = root.Attribute("ClusteredMode")?.Value is "true" or "1";
-
-        // Standard path: ShowPlanXML → BatchSequence → Batch → Statements
-        var batches = root.Descendants(Ns + "Batch");
-        foreach (var batchEl in batches)
-        {
-            var batch = new PlanBatch();
-            // A Batch can contain multiple <Statements> elements (e.g., DECLARE + SELECT).
-            // Use Elements() to iterate all of them, not just the first.
-            foreach (var statementsEl in batchEl.Elements(Ns + "Statements"))
+            var settings = new XmlReaderSettings
             {
-                foreach (var stmtEl in statementsEl.Elements())
+                Async = true,
+                DtdProcessing = DtdProcessing.Prohibit,
+                MaxCharactersInDocument = MaxParseCharacters,
+                XmlResolver = null
+            };
+            using var textReader = new StringReader(xml);
+            using var xmlReader = XmlReader.Create(textReader, settings);
+            var document = await XDocument
+                .LoadAsync(xmlReader, LoadOptions.None, cancellationToken)
+                .ConfigureAwait(false);
+            return ParseDocument(document, plan, cancellationToken, beforeCostComputation);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            plan.ParseError = exception.Message;
+            return plan;
+        }
+    }
+
+    private static ParsedPlan ParseDocument(
+        XDocument document,
+        ParsedPlan plan,
+        CancellationToken cancellationToken,
+        Action? beforeCostComputation = null)
+    {
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var root = document.Root;
+            if (root is null)
+                return plan;
+
+            plan.BuildVersion = root.Attribute("Version")?.Value;
+            plan.Build = root.Attribute("Build")?.Value;
+            plan.ClusteredMode = root.Attribute("ClusteredMode")?.Value is "true" or "1";
+
+            // Standard path: ShowPlanXML → BatchSequence → Batch → Statements
+            foreach (var batchEl in root.Descendants(Ns + "Batch"))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var batch = new PlanBatch();
+                foreach (var statementsEl in batchEl.Elements(Ns + "Statements"))
                 {
-                    var stmts = ParseStatementAndChildren(stmtEl);
-                    batch.Statements.AddRange(stmts);
+                    foreach (var statementElement in statementsEl.Elements())
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        batch.Statements.AddRange(ParseStatementAndChildren(
+                            statementElement,
+                            depth: 0,
+                            cancellationToken));
+                    }
                 }
+                if (batch.Statements.Count > 0)
+                    plan.Batches.Add(batch);
             }
-            if (batch.Statements.Count > 0)
-                plan.Batches.Add(batch);
-        }
 
-        // Fallback: some plan XML has StmtSimple directly under QueryPlan
-        if (plan.Batches.Count == 0)
-        {
-            var batch = new PlanBatch();
-            foreach (var stmtEl in root.Descendants(Ns + "StmtSimple"))
+            // Fallback: some plan XML has StmtSimple directly under QueryPlan.
+            if (plan.Batches.Count == 0)
             {
-                var stmt = ParseStatement(stmtEl);
-                if (stmt != null)
-                    batch.Statements.Add(stmt);
+                var batch = new PlanBatch();
+                foreach (var statementElement in root.Descendants(Ns + "StmtSimple"))
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var statement = ParseStatement(statementElement, cancellationToken);
+                    if (statement is not null)
+                        batch.Statements.Add(statement);
+                }
+                if (batch.Statements.Count > 0)
+                    plan.Batches.Add(batch);
             }
-            if (batch.Statements.Count > 0)
-                plan.Batches.Add(batch);
-        }
 
-        ComputeOperatorCosts(plan);
+            cancellationToken.ThrowIfCancellationRequested();
+            beforeCostComputation?.Invoke();
+            ComputeOperatorCosts(plan, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
         }
-        catch (Exception ex)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            plan.ParseError = ex.Message;
+            throw;
+        }
+        catch (Exception exception)
+        {
+            plan.ParseError = exception.Message;
         }
         return plan;
     }
@@ -89,8 +137,12 @@ public static partial class ShowPlanParser
     /// Handles StmtSimple, StmtCond (IF/ELSE), and StmtCursor recursively.
     /// Returns a flat list of all parseable statements found.
     /// </summary>
-    private static List<PlanStatement> ParseStatementAndChildren(XElement stmtEl, int depth = 0)
+    private static List<PlanStatement> ParseStatementAndChildren(
+        XElement stmtEl,
+        int depth = 0,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var results = new List<PlanStatement>();
         if (depth > MaxParseDepth)
             throw new InvalidOperationException("Plan statement nesting exceeds the supported depth limit.");
@@ -103,21 +155,21 @@ public static partial class ShowPlanParser
             if (condEl != null)
             {
                 foreach (var child in condEl.Elements())
-                    results.AddRange(ParseStatementAndChildren(child, depth + 1));
+                    results.AddRange(ParseStatementAndChildren(child, depth + 1, cancellationToken));
             }
 
             var thenStmts = stmtEl.Element(Ns + "Then")?.Element(Ns + "Statements");
             if (thenStmts != null)
             {
                 foreach (var child in thenStmts.Elements())
-                    results.AddRange(ParseStatementAndChildren(child, depth + 1));
+                    results.AddRange(ParseStatementAndChildren(child, depth + 1, cancellationToken));
             }
 
             var elseStmts = stmtEl.Element(Ns + "Else")?.Element(Ns + "Statements");
             if (elseStmts != null)
             {
                 foreach (var child in elseStmts.Elements())
-                    results.AddRange(ParseStatementAndChildren(child, depth + 1));
+                    results.AddRange(ParseStatementAndChildren(child, depth + 1, cancellationToken));
             }
         }
         else if (localName == "StmtCursor")
@@ -142,7 +194,7 @@ public static partial class ShowPlanParser
                     var relOpEl = qpEl.Element(Ns + "RelOp");
                     if (relOpEl == null) continue;
 
-                    var stmt = ParseQueryPlanAsStatement(stmtEl, qpEl, relOpEl);
+                    var stmt = ParseQueryPlanAsStatement(stmtEl, qpEl, relOpEl, cancellationToken);
                     if (stmt != null)
                     {
                         // Override statement text with cursor context
@@ -161,7 +213,7 @@ public static partial class ShowPlanParser
         else
         {
             // StmtSimple or any other statement type
-            var stmt = ParseStatement(stmtEl);
+            var stmt = ParseStatement(stmtEl, cancellationToken);
             if (stmt != null)
                 results.Add(stmt);
         }
@@ -169,8 +221,11 @@ public static partial class ShowPlanParser
         return results;
     }
 
-    private static PlanStatement? ParseStatement(XElement stmtEl)
+    private static PlanStatement? ParseStatement(
+        XElement stmtEl,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var stmt = new PlanStatement
         {
             StatementText = stmtEl.Attribute("StatementText")?.Value ?? "",
@@ -252,7 +307,7 @@ public static partial class ShowPlanParser
         var relOpEl = queryPlanEl.Element(Ns + "RelOp");
         if (relOpEl != null)
         {
-            var opNode = ParseRelOp(relOpEl);
+            var opNode = ParseRelOp(relOpEl, cancellationToken: cancellationToken);
             var stmtType = stmt.StatementType.Length > 0
                 ? stmt.StatementType.ToUpperInvariant()
                 : "QUERY";
@@ -291,7 +346,7 @@ public static partial class ShowPlanParser
             {
                 foreach (var childStmt in udfStmts.Elements())
                 {
-                    var parsed = ParseStatementAndChildren(childStmt);
+                    var parsed = ParseStatementAndChildren(childStmt, cancellationToken: cancellationToken);
                     udfInfo.Statements.AddRange(parsed);
                 }
             }
@@ -312,7 +367,7 @@ public static partial class ShowPlanParser
             {
                 foreach (var childStmt in spStmts.Elements())
                 {
-                    var parsed = ParseStatementAndChildren(childStmt);
+                    var parsed = ParseStatementAndChildren(childStmt, cancellationToken: cancellationToken);
                     spInfo.Statements.AddRange(parsed);
                 }
             }
@@ -325,8 +380,13 @@ public static partial class ShowPlanParser
     /// <summary>
     /// Parse a QueryPlan element that comes from a cursor Operation (no parent StmtSimple attributes).
     /// </summary>
-    private static PlanStatement? ParseQueryPlanAsStatement(XElement stmtEl, XElement queryPlanEl, XElement relOpEl)
+    private static PlanStatement? ParseQueryPlanAsStatement(
+        XElement stmtEl,
+        XElement queryPlanEl,
+        XElement relOpEl,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var stmt = new PlanStatement
         {
             StatementText = stmtEl.Attribute("StatementText")?.Value ?? "",
@@ -337,7 +397,7 @@ public static partial class ShowPlanParser
         ParseStmtAttributes(stmt, stmtEl);
         ParseQueryPlanElements(stmt, stmtEl, queryPlanEl);
 
-        var opNode = ParseRelOp(relOpEl);
+        var opNode = ParseRelOp(relOpEl, cancellationToken: cancellationToken);
         var stmtType = stmt.StatementType.Length > 0
             ? stmt.StatementType.ToUpperInvariant()
             : "QUERY";

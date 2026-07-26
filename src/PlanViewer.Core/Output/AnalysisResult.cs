@@ -251,6 +251,15 @@ public class WarningResult
 
 public class MissingIndexResult
 {
+    [JsonIgnore]
+    public string Database { get; set; } = "";
+
+    [JsonIgnore]
+    public string SchemaName { get; set; } = "";
+
+    [JsonIgnore]
+    public string BareTable { get; set; } = "";
+
     [JsonPropertyName("table")]
     public string Table { get; set; } = "";
 
@@ -302,6 +311,9 @@ public class OperatorResult
     // Object context
     [JsonPropertyName("object_name")]
     public string? ObjectName { get; set; }
+
+    [JsonIgnore]
+    public string? BareObjectName { get; set; }
 
     [JsonPropertyName("index_name")]
     public string? IndexName { get; set; }

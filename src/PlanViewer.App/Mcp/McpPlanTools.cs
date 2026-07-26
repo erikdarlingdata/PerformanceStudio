@@ -1,8 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.IO;
 using System.Linq;
+using System.Text;
 using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
 using ModelContextProtocol.Server;
 using PlanViewer.App.Services;
 using PlanViewer.Core.Models;
@@ -51,9 +55,11 @@ public sealed class McpPlanTools
     [Description("Returns the full JSON analysis result for a loaded plan. Includes all statements, warnings, " +
         "missing indexes, parameters, operator tree, memory grants, and wait stats. " +
         "This is the primary tool for understanding plan quality. Use list_plans first to get session_id values.")]
-    public static string AnalyzePlan(
+    public static async Task<string> AnalyzePlan(
         PlanSessionManager sessionManager,
-        [Description("The session_id from list_plans.")] string session_id)
+        PlanOperations operations,
+        [Description("The session_id from list_plans.")] string session_id,
+        CancellationToken cancellationToken)
     {
         var session = sessionManager.GetSession(session_id);
         if (session == null)
@@ -61,8 +67,22 @@ public sealed class McpPlanTools
 
         try
         {
-            var result = ResultMapper.Map(session.Plan, session.Source);
-            return JsonSerializer.Serialize(result, McpHelpers.JsonOptions);
+            using var queryScope = operations.AcquireQueryScope(cancellationToken);
+            var result = operations.GetAnalysisForRequest(session, cancellationToken);
+            await using var output = new MemoryStream();
+            await JsonSerializer.SerializeAsync(
+                output,
+                result,
+                McpHelpers.JsonOptions,
+                cancellationToken).ConfigureAwait(false);
+            return Encoding.UTF8.GetString(
+                output.GetBuffer(),
+                0,
+                checked((int)output.Length));
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -73,22 +93,31 @@ public sealed class McpPlanTools
     [McpServerTool(Name = "get_plan_summary")]
     [Description("Returns a concise human-readable text summary of a loaded plan: statement count, warnings, " +
         "missing indexes, cost, DOP, memory grants. Faster than analyze_plan for quick assessment.")]
-    public static string GetPlanSummary(
+    public static Task<string> GetPlanSummary(
         PlanSessionManager sessionManager,
-        [Description("The session_id from list_plans.")] string session_id)
+        PlanOperations operations,
+        [Description("The session_id from list_plans.")] string session_id,
+        CancellationToken cancellationToken)
     {
         var session = sessionManager.GetSession(session_id);
         if (session == null)
-            return SessionNotFound(sessionManager, session_id);
+            return Task.FromResult(SessionNotFound(sessionManager, session_id));
 
         try
         {
-            var result = ResultMapper.Map(session.Plan, session.Source);
-            return TextFormatter.Format(result);
+            using var queryScope = operations.AcquireQueryScope(cancellationToken);
+            var summary = TextFormatter.FormatCancellable(
+                operations.GetAnalysisForRequest(session, cancellationToken),
+                cancellationToken);
+            return Task.FromResult(summary);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {
-            return McpHelpers.FormatError("get_plan_summary", ex);
+            return Task.FromResult(McpHelpers.FormatError("get_plan_summary", ex));
         }
     }
 
@@ -97,6 +126,7 @@ public sealed class McpPlanTools
         "Optionally filter by severity (Critical, Warning, or Info).")]
     public static string GetPlanWarnings(
         PlanSessionManager sessionManager,
+        PlanOperations operations,
         [Description("The session_id from list_plans.")] string session_id,
         [Description("Optional severity filter: Critical, Warning, or Info.")] string? severity = null)
     {
@@ -106,29 +136,26 @@ public sealed class McpPlanTools
 
         try
         {
-            var result = ResultMapper.Map(session.Plan, session.Source);
-            var allWarnings = result.Statements
-                .SelectMany(s => s.Warnings.Select(w => new
-                {
-                    severity = w.Severity,
-                    type = w.Type,
-                    message = w.Message,
-                    node_id = w.NodeId,
-                    @operator = w.Operator,
-                    statement = McpHelpers.Truncate(s.StatementText, 200)
-                }))
-                .Where(w => severity == null ||
-                    w.severity.Equals(severity, StringComparison.OrdinalIgnoreCase))
-                .ToList();
-
-            if (allWarnings.Count == 0)
+            var result = operations.GetWarnings(
+                session,
+                severity,
+                includeOperatorWarnings: false,
+                validateSeverity: false);
+            if (result.WarningCount == 0)
             {
                 return severity != null
                     ? $"No {severity} warnings found in this plan."
                     : "No warnings found in this plan.";
             }
 
-            return JsonSerializer.Serialize(new { warning_count = allWarnings.Count, warnings = allWarnings },
+            return JsonSerializer.Serialize(
+                new
+                {
+                    warning_count = result.WarningCount,
+                    returned_warning_count = result.ReturnedWarningCount,
+                    truncated = result.Truncated,
+                    warnings = result.Warnings
+                },
                 McpHelpers.JsonOptions);
         }
         catch (Exception ex)
@@ -142,29 +169,25 @@ public sealed class McpPlanTools
         "ready-to-run CREATE INDEX statements.")]
     public static string GetMissingIndexes(
         PlanSessionManager sessionManager,
+        PlanOperations operations,
         [Description("The session_id from list_plans.")] string session_id)
     {
         var session = sessionManager.GetSession(session_id);
         if (session == null)
             return SessionNotFound(sessionManager, session_id);
 
-        var indexes = session.Plan.AllMissingIndexes;
-        if (indexes.Count == 0)
+        var result = operations.GetMissingIndexes(session);
+        if (result.MissingIndexCount == 0)
             return "No missing index suggestions in this plan.";
 
-        var result = indexes.Select(idx => new
-        {
-            database = idx.Database,
-            schema_name = idx.Schema,
-            table = idx.Table,
-            impact = idx.Impact,
-            equality_columns = idx.EqualityColumns,
-            inequality_columns = idx.InequalityColumns,
-            include_columns = idx.IncludeColumns,
-            create_statement = idx.CreateStatement
-        });
-
-        return JsonSerializer.Serialize(new { missing_index_count = indexes.Count, indexes = result },
+        return JsonSerializer.Serialize(
+            new
+            {
+                missing_index_count = result.MissingIndexCount,
+                returned_index_count = result.ReturnedIndexCount,
+                truncated = result.Truncated,
+                indexes = result.Indexes
+            },
             McpHelpers.JsonOptions);
     }
 
@@ -179,20 +202,19 @@ public sealed class McpPlanTools
         if (session == null)
             return SessionNotFound(sessionManager, session_id);
 
-        var statements = session.Plan.Batches
-            .SelectMany(b => b.Statements)
-            .Where(s => s.Parameters.Count > 0)
-            .Select(s => new
+        var statements = GetAnalysisSnapshot(session).Statements
+            .Where(statement => statement.Parameters.Count > 0)
+            .Select(statement => new
             {
-                statement = McpHelpers.Truncate(s.StatementText, 200),
-                parameters = s.Parameters.Select(p => new
+                statement = McpHelpers.Truncate(statement.StatementText, 200),
+                parameters = statement.Parameters.Select(parameter => new
                 {
-                    name = p.Name,
-                    data_type = p.DataType,
-                    compiled_value = p.CompiledValue,
-                    runtime_value = p.RuntimeValue,
-                    sniffing_mismatch = p.CompiledValue != null && p.RuntimeValue != null
-                        && p.CompiledValue != p.RuntimeValue
+                    name = parameter.Name,
+                    data_type = parameter.DataType,
+                    compiled_value = parameter.CompiledValue,
+                    runtime_value = parameter.RuntimeValue,
+                    sniffing_mismatch = parameter.CompiledValue != null && parameter.RuntimeValue != null
+                        && parameter.CompiledValue != parameter.RuntimeValue
                 })
             })
             .ToList();
@@ -208,6 +230,7 @@ public sealed class McpPlanTools
         "or actual elapsed time (if available). Useful for quickly finding bottleneck operators.")]
     public static string GetExpensiveOperators(
         PlanSessionManager sessionManager,
+        PlanOperations operations,
         [Description("The session_id from list_plans.")] string session_id,
         [Description("Number of operators to return. Default 10.")] int top = 10)
     {
@@ -218,35 +241,9 @@ public sealed class McpPlanTools
         var topError = McpHelpers.ValidateTop(top);
         if (topError != null) return topError;
 
-        var allNodes = new List<(PlanNode Node, string Statement)>();
-        foreach (var stmt in session.Plan.Batches.SelectMany(b => b.Statements))
-        {
-            if (stmt.RootNode == null) continue;
-            CollectNodes(stmt.RootNode, McpHelpers.Truncate(stmt.StatementText, 100) ?? "", allNodes);
-        }
-
-        var hasActuals = allNodes.Any(n => n.Node.ActualElapsedMs > 0);
-        var ranked = hasActuals
-            ? allNodes.OrderByDescending(n => n.Node.ActualElapsedMs)
-            : allNodes.OrderByDescending(n => n.Node.CostPercent);
-
-        var result = ranked.Take(top).Select(n => new
-        {
-            node_id = n.Node.NodeId,
-            physical_op = n.Node.PhysicalOp,
-            logical_op = n.Node.LogicalOp,
-            cost_percent = n.Node.CostPercent,
-            estimated_rows = n.Node.EstimateRows,
-            actual_rows = n.Node.ActualRows,
-            actual_elapsed_ms = n.Node.ActualElapsedMs,
-            actual_cpu_ms = n.Node.ActualCPUMs,
-            logical_reads = n.Node.ActualLogicalReads,
-            physical_reads = n.Node.ActualPhysicalReads,
-            object_name = n.Node.ObjectName,
-            statement = n.Statement
-        });
-
-        return JsonSerializer.Serialize(new { ranked_by = hasActuals ? "actual_elapsed_ms" : "cost_percent", operators = result },
+        var result = operations.GetExpensiveOperators(session, top, useBareObjectNames: true);
+        return JsonSerializer.Serialize(
+            new { ranked_by = result.RankedBy, operators = result.Operators },
             McpHelpers.JsonOptions);
     }
 
@@ -261,7 +258,7 @@ public sealed class McpPlanTools
         if (session == null)
             return SessionNotFound(sessionManager, session_id);
 
-        return McpHelpers.Truncate(session.Plan.RawXml, 512_000) ?? "No plan XML available.";
+        return McpHelpers.Truncate(GetRawPlanXml(session), 512_000) ?? "No plan XML available.";
     }
 
     [McpServerTool(Name = "compare_plans")]
@@ -282,8 +279,8 @@ public sealed class McpPlanTools
 
         try
         {
-            var resultA = ResultMapper.Map(sessionA.Plan, sessionA.Source);
-            var resultB = ResultMapper.Map(sessionB.Plan, sessionB.Source);
+            var resultA = GetAnalysisSnapshot(sessionA);
+            var resultB = GetAnalysisSnapshot(sessionB);
             return ComparisonFormatter.Compare(resultA, resultB, sessionA.Label, sessionB.Label);
         }
         catch (Exception ex)
@@ -305,28 +302,29 @@ public sealed class McpPlanTools
 
         try
         {
-            var stmt = session.Plan.Batches
-                .SelectMany(b => b.Statements)
-                .FirstOrDefault(s => s.RootNode != null);
+            var statement = GetAnalysisSnapshot(session).Statements
+                .FirstOrDefault(candidate => candidate.OperatorTree is not null);
 
-            if (stmt == null)
+            if (statement is null)
                 return "No executable statement found in this plan.";
 
-            var queryText = session.QueryText ?? stmt.StatementText ?? "";
-
-            // Extract database from first operator node's DatabaseName property
-            string? databaseName = null;
-            if (stmt.RootNode?.DatabaseName != null)
-                databaseName = stmt.RootNode.DatabaseName;
+            var queryText = session.QueryText ?? statement.StatementText ?? "";
+            var databaseName = session.DatabaseName ?? statement.OperatorTree?.DatabaseName;
 
             return ReproScriptBuilder.BuildReproScript(
-                queryText, databaseName, session.Plan.RawXml, null);
+                queryText, databaseName, GetRawPlanXml(session), null);
         }
         catch (Exception ex)
         {
             return McpHelpers.FormatError("get_repro_script", ex);
         }
     }
+
+    private static AnalysisResult GetAnalysisSnapshot(PlanSession session) =>
+        session.Analysis ?? ResultMapper.Map(session.Plan, session.Source);
+
+    private static string? GetRawPlanXml(PlanSession session) =>
+        session.RawPlanXml ?? session.Plan.RawXml;
 
     private static string SessionNotFound(PlanSessionManager sessionManager, string sessionId)
     {

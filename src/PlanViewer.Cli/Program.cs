@@ -1,7 +1,15 @@
 using System.CommandLine;
+using PlanViewer.Cli;
 using PlanViewer.Cli.Commands;
 using PlanViewer.Core.Services;
 using PlanViewer.Core.Interfaces;
+using PlanViewer.Cli.ReplSurface;
+
+if (CliRouting.ShouldUseRepl(args))
+{
+    var repl = PlanReplApp.Create();
+    return await repl.RunAsync(CliRouting.GetReplArgs(args));
+}
 
 // Create credential service (platform-specific)
 ICredentialService? credentialService = null;
@@ -14,7 +22,7 @@ catch (PlatformNotSupportedException)
     // Credential storage not available — analyze-only mode still works
 }
 
-var root = new RootCommand("SQL Server execution plan analyzer")
+var root = new RootCommand("SQL Server execution plan analyzer (use 'planview repl' for interactive plan exploration)")
 {
     AnalyzeCommand.Create(credentialService),
     QueryStoreCommand.Create(credentialService),

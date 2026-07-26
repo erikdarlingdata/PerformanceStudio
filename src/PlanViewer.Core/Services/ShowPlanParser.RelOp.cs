@@ -9,8 +9,12 @@ namespace PlanViewer.Core.Services;
 
 public static partial class ShowPlanParser
 {
-    private static PlanNode ParseRelOp(XElement relOpEl, int depth = 0)
+    private static PlanNode ParseRelOp(
+        XElement relOpEl,
+        int depth = 0,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (depth > MaxParseDepth)
             throw new InvalidOperationException("Plan operator nesting exceeds the supported depth limit.");
 
@@ -132,7 +136,7 @@ public static partial class ShowPlanParser
         // Recurse into child RelOps
         foreach (var childRelOp in FindChildRelOps(relOpEl))
         {
-            var childNode = ParseRelOp(childRelOp, depth + 1);
+            var childNode = ParseRelOp(childRelOp, depth + 1, cancellationToken);
             childNode.Parent = node;
             node.Children.Add(childNode);
         }
@@ -242,8 +246,12 @@ public static partial class ShowPlanParser
                     {
                         var op = scanType switch
                         {
-                            "EQ" => "=", "GT" => ">", "GE" => ">=",
-                            "LT" => "<", "LE" => "<=", _ => scanType ?? "="
+                            "EQ" => "=",
+                            "GT" => ">",
+                            "GE" => ">=",
+                            "LT" => "<",
+                            "LE" => "<=",
+                            _ => scanType ?? "="
                         };
                         for (int ci = 0; ci < cols.Count && ci < exprs.Count; ci++)
                             seekParts.Add($"{cols[ci]} {op} {exprs[ci]}");
@@ -385,8 +393,8 @@ public static partial class ShowPlanParser
             var isHeap = node.IndexKind?.Equals("Heap", StringComparison.OrdinalIgnoreCase) == true
                          || node.PhysicalOp.StartsWith("RID Lookup", StringComparison.OrdinalIgnoreCase);
             node.PhysicalOp = isHeap ? "RID Lookup (Heap)" : "Key Lookup (Clustered)";
-            node.LogicalOp  = isHeap ? "RID Lookup" : "Key Lookup";
-            node.IconName   = isHeap ? "rid_lookup" : "bookmark_lookup";
+            node.LogicalOp = isHeap ? "RID Lookup" : "Key Lookup";
+            node.IconName = isHeap ? "rid_lookup" : "bookmark_lookup";
         }
 
         // Table cardinality and rows to be read (on <RelOp> per XSD)
