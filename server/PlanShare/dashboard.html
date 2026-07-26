@@ -219,15 +219,24 @@
         }).join("");
         updateCharts(); updateReleases(repo);
     }
-    // Token for /api/stats when the server has STATS_TOKEN set. Taken from
-    // ?token=... once and remembered, so the token is not left sitting in the
-    // address bar (and in browser history) on every subsequent visit.
+    // Token for /api/stats when the server has STATS_TOKEN set.
+    //
+    // Bootstrapped from the URL *fragment* (#token=...), not a query string.
+    // A fragment is never transmitted to the server, so the token cannot land
+    // in nginx access logs. A ?token= would be logged the moment the page is
+    // requested — before any client-side code could strip it — which would
+    // leave the secret sitting in plaintext logs forever.
+    //
+    // Stored once, then cleared from the address bar so it does not persist in
+    // browser history either. Requests always send it as a header.
     function statsToken() {
-        var fromUrl = new URLSearchParams(window.location.search).get("token");
-        if (fromUrl) {
-            try { localStorage.setItem("planshare_stats_token", fromUrl); } catch (e) { /* private mode */ }
-            history.replaceState(null, "", window.location.pathname);
-            return fromUrl;
+        var hash = window.location.hash || "";
+        var m = hash.match(/(?:^#|&)token=([^&]+)/);
+        if (m) {
+            var t = decodeURIComponent(m[1]);
+            try { localStorage.setItem("planshare_stats_token", t); } catch (e) { /* private mode */ }
+            history.replaceState(null, "", window.location.pathname + window.location.search);
+            return t;
         }
         try { return localStorage.getItem("planshare_stats_token") || ""; } catch (e) { return ""; }
     }
@@ -241,7 +250,7 @@
                 // Distinct from "no data": the server is fine, we are just not
                 // authorised. Swallowing this as an empty dashboard is how you
                 // spend an afternoon debugging the wrong thing.
-                planStatsError = "Stats require a token. Open this page once with ?token=YOUR_TOKEN";
+                planStatsError = "Stats require a token. Open this page once with #token=YOUR_TOKEN";
                 planStats = null;
             } else if (!resp.ok) {
                 planStatsError = "Stats unavailable (HTTP " + resp.status + ")";

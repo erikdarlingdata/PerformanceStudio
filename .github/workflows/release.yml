@@ -101,7 +101,7 @@ jobs:
             "BUILT=true" >> $env:GITHUB_OUTPUT
             Write-Host "SSMS extension built: $vsix"
           } else {
-            Write-Host "::warning::SSMS extension did not produce the expected artifacts - release published without the VSIX (issue 343)"
+            Write-Host "::warning::SSMS extension did not produce the expected artifacts - the release will be published without the VSIX (issue 343)"
           }
 
       # The VSIX is built above but NOT uploaded here — uploading requires the
