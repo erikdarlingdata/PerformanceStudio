@@ -219,10 +219,36 @@
         }).join("");
         updateCharts(); updateReleases(repo);
     }
+    // Token for /api/stats when the server has STATS_TOKEN set. Taken from
+    // ?token=... once and remembered, so the token is not left sitting in the
+    // address bar (and in browser history) on every subsequent visit.
+    function statsToken() {
+        var fromUrl = new URLSearchParams(window.location.search).get("token");
+        if (fromUrl) {
+            try { localStorage.setItem("planshare_stats_token", fromUrl); } catch (e) { /* private mode */ }
+            history.replaceState(null, "", window.location.pathname);
+            return fromUrl;
+        }
+        try { return localStorage.getItem("planshare_stats_token") || ""; } catch (e) { return ""; }
+    }
+    var planStatsError = null;
     async function loadPlanStats() {
+        planStatsError = null;
         try {
-            const resp = await fetch("/api/stats");
-            planStats = await resp.json();
+            var token = statsToken();
+            const resp = await fetch("/api/stats", token ? { headers: { "X-Stats-Token": token } } : undefined);
+            if (resp.status === 401) {
+                // Distinct from "no data": the server is fine, we are just not
+                // authorised. Swallowing this as an empty dashboard is how you
+                // spend an afternoon debugging the wrong thing.
+                planStatsError = "Stats require a token. Open this page once with ?token=YOUR_TOKEN";
+                planStats = null;
+            } else if (!resp.ok) {
+                planStatsError = "Stats unavailable (HTTP " + resp.status + ")";
+                planStats = null;
+            } else {
+                planStats = await resp.json();
+            }
         } catch (e) {
             planStats = null;
         }
@@ -231,7 +257,9 @@
     function updatePlanView() {
         var row = document.getElementById("statsRow");
         if (!planStats) {
-            row.innerHTML = "<div class='stat-card'><div class='stat-value'>-</div><div class='stat-label'>No data yet</div></div>";
+            var label = planStatsError || "No data yet";
+            row.innerHTML = "<div class='stat-card'><div class='stat-value'>-</div><div class='stat-label'></div></div>";
+            row.querySelector(".stat-label").textContent = label;
             return;
         }
         var t = planStats.traffic;
