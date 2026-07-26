@@ -32,9 +32,15 @@ jobs:
     # Drafts aren't ready for review, and a fork PR gets no secrets (so
     # CLAUDE_CODE_OAUTH_TOKEN would be empty) and a read-only token it could
     # not post with. Skip rather than fail a contributor's PR with a red X.
+    #
+    # Also skip the dev -> main release PR. It is an aggregation of commits that
+    # were each already reviewed on their own PR, so re-reviewing the whole
+    # release adds nothing — and the diff is large enough that it reliably
+    # exhausts the turn budget and fails, putting a red X on the release.
     if: |
       github.event.pull_request.draft == false &&
-      github.event.pull_request.head.repo.full_name == github.repository
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      !(github.event.pull_request.head.ref == 'dev' && github.event.pull_request.base.ref == 'main')
     runs-on: ubuntu-latest
 
     steps:
@@ -91,14 +97,16 @@ jobs:
             `confirmed: true`) to flag specific lines.
             Only post GitHub comments - do not return review text as a message.
 
-          # --allowedTools REPLACES the default tool set rather than adding to it.
-          # Without Read/Grep/Glob the reviewer cannot open a single file in the
-          # checked-out branch, which is exactly what the prompt above asks it to
-          # do. PR #399 burned all 20 turns on denied calls
-          # (permission_denials_count was 10) and failed without posting anything.
+          # --allowedTools REPLACES the default tool set rather than adding to it,
+          # so anything omitted here is denied at runtime. A denied call still
+          # consumes a turn, so a too-narrow list burns the budget and the review
+          # fails having posted nothing — that is how #399 (10 denials) and the
+          # v1.19.0 release PR (20 denials) both died.
+          #
+          # Everything here is read-only except the two comment-posting tools.
           claude_args: |
-            --max-turns 40
-            --allowedTools "Read,Grep,Glob,mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(git diff:*),Bash(git log:*)"
+            --max-turns 60
+            --allowedTools "Read,Grep,Glob,TodoWrite,mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh api:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git status:*),Bash(ls:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(wc:*),Bash(find:*),Bash(rg:*)"
 
 # Fork PRs: GitHub withholds repository secrets from `pull_request` runs on
 # forks and issues a read-only GITHUB_TOKEN, so this workflow cannot review
