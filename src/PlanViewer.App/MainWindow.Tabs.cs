@@ -142,7 +142,7 @@ public partial class MainWindow : Window
                 {
                     var path = GetTabFilePath(pathTab);
                     if (path != null)
-                        _ = this.Clipboard?.SetTextAsync(path);
+                        _ = ClipboardHelper.TrySetTextAsync(this, path);
                 }
                 break;
 

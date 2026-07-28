@@ -10,6 +10,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using AvaloniaEdit.TextMate;
 using Microsoft.Data.SqlClient;
+using PlanViewer.App.Services;
 using PlanViewer.Core.Interfaces;
 using PlanViewer.Core.Models;
 using PlanViewer.Core.Services;
@@ -117,19 +118,13 @@ public partial class PlanViewerControl : UserControl
         var copyItem = new MenuItem { Header = "Copy" };
         copyItem.Click += async (_, _) =>
         {
-            var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
-            if (clipboard == null) return;
             var sel = editor.TextArea.Selection;
             if (!sel.IsEmpty)
-                await clipboard.SetTextAsync(sel.GetText());
+                await ClipboardHelper.TrySetTextAsync(this, sel.GetText());
         };
         var copyAllItem = new MenuItem { Header = "Copy All" };
         copyAllItem.Click += async (_, _) =>
-        {
-            var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
-            if (clipboard == null) return;
-            await clipboard.SetTextAsync(editor.Text);
-        };
+            await ClipboardHelper.TrySetTextAsync(this, editor.Text);
         var selectAllItem = new MenuItem { Header = "Select All" };
         selectAllItem.Click += (_, _) => editor.SelectAll();
         editor.TextArea.ContextMenu = new ContextMenu

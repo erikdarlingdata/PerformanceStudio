@@ -159,7 +159,7 @@ public partial class QueryStoreGridControl : UserControl
         CopyPlanHashItem.Tag = row.QueryPlanHash;
         CopyModuleItem.Tag = row.ModuleName;
         CopyQueryTextItem.Tag = row.FullQueryText;
-        CopyRowItem.Tag = $"{row.QueryId}\t{row.PlanId}\t{row.QueryHash}\t{row.QueryPlanHash}\t{row.ModuleName}\t{row.LastExecutedLocal}\t{row.ExecsDisplay}\t{row.TotalCpuDisplay}\t{row.AvgCpuDisplay}\t{row.TotalDurDisplay}\t{row.AvgDurDisplay}\t{row.TotalReadsDisplay}\t{row.AvgReadsDisplay}\t{row.TotalWritesDisplay}\t{row.AvgWritesDisplay}\t{row.TotalPhysReadsDisplay}\t{row.AvgPhysReadsDisplay}\t{row.TotalMemDisplay}\t{row.AvgMemDisplay}\t{row.FullQueryText}";
+        CopyRowItem.Tag = FormatRowForClipboard(row);
 
         CopyQueryIdItem.Click += CopyMenuItem_Click;
         CopyPlanIdItem.Click += CopyMenuItem_Click;
@@ -176,10 +176,10 @@ public partial class QueryStoreGridControl : UserControl
             await SetClipboardTextAsync(text);
     }
 
-    private async System.Threading.Tasks.Task SetClipboardTextAsync(string text)
-    {
-        var topLevel = Avalonia.Controls.TopLevel.GetTopLevel(this);
-        if (topLevel?.Clipboard != null)
-            await topLevel.Clipboard.SetTextAsync(text);
-    }
+    /// <summary>One results row as a tab-separated line, shared by Copy Row and Ctrl+C.</summary>
+    private static string FormatRowForClipboard(QueryStoreRow row) =>
+        $"{row.QueryId}\t{row.PlanId}\t{row.QueryHash}\t{row.QueryPlanHash}\t{row.ModuleName}\t{row.LastExecutedLocal}\t{row.ExecsDisplay}\t{row.TotalCpuDisplay}\t{row.AvgCpuDisplay}\t{row.TotalDurDisplay}\t{row.AvgDurDisplay}\t{row.TotalReadsDisplay}\t{row.AvgReadsDisplay}\t{row.TotalWritesDisplay}\t{row.AvgWritesDisplay}\t{row.TotalPhysReadsDisplay}\t{row.AvgPhysReadsDisplay}\t{row.TotalMemDisplay}\t{row.AvgMemDisplay}\t{row.FullQueryText}";
+
+    private System.Threading.Tasks.Task SetClipboardTextAsync(string text)
+        => ClipboardHelper.TrySetTextAsync(this, text);
 }

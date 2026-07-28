@@ -1,15 +1,17 @@
 using System;
+using System.Collections.Generic;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.VisualTree;
+using PlanViewer.App.Services;
 
 namespace PlanViewer.App.Helpers;
 
 /// <summary>
-/// Attaches middle-mouse-button pan behavior to a DataGrid.
+/// Attached input behaviors for DataGrids: middle-mouse pan and guarded clipboard copy.
 /// </summary>
 public static class DataGridBehaviors
 {
@@ -17,6 +19,52 @@ public static class DataGridBehaviors
     public static void Attach(DataGrid grid)
     {
         AttachMiddleClickPan(grid);
+    }
+
+    /// <summary>
+    /// Replaces the DataGrid's built-in Ctrl+C / Ctrl+Insert copy, which awaits the
+    /// clipboard unguarded inside Avalonia and can crash the app when the clipboard
+    /// is locked by another process (issue #415). The tunnel handler runs before the
+    /// grid's own key handling and routes the copy through ClipboardHelper instead.
+    /// <paramref name="formatRow"/> turns one selected row item into its clipboard
+    /// line; return null to skip the item.
+    /// </summary>
+    public static void AttachCopyGuard(DataGrid grid, Func<object, string?> formatRow)
+    {
+        grid.AddHandler(InputElement.KeyDownEvent, (_, e) =>
+        {
+            // Mirror the built-in copy's exact gate: platform command modifier
+            // (Ctrl; Cmd on macOS), no Shift, no Alt.
+            var commandModifiers = TopLevel.GetTopLevel(grid)?.PlatformSettings?.HotkeyConfiguration.CommandModifiers
+                ?? KeyModifiers.Control;
+            if (e.Key is not (Key.C or Key.Insert)
+                || !e.KeyModifiers.HasFlag(commandModifiers)
+                || e.KeyModifiers.HasFlag(KeyModifiers.Shift)
+                || e.KeyModifiers.HasFlag(KeyModifiers.Alt))
+                return;
+
+            // In-cell editors own their Ctrl+C (e.g. the settings grid's TextBoxes).
+            if (e.Source is Visual source && source.FindAncestorOfType<TextBox>(includeSelf: true) != null)
+                return;
+
+            var selected = grid.SelectedItems;
+            if (selected == null || selected.Count == 0)
+                return;
+
+            // Take over whenever rows are selected so the DataGrid's unguarded
+            // built-in copy never runs, even if no line ends up on the clipboard.
+            e.Handled = true;
+
+            var lines = new List<string>();
+            foreach (var item in selected)
+            {
+                if (item != null && formatRow(item) is { } line)
+                    lines.Add(line);
+            }
+
+            if (lines.Count > 0)
+                _ = ClipboardHelper.TrySetTextAsync(grid, string.Join(Environment.NewLine, lines));
+        }, RoutingStrategies.Tunnel);
     }
 
     // ─────────────────────────────────────────────────────────────────────────

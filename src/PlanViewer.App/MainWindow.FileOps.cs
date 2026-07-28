@@ -9,7 +9,6 @@ using System.Xml.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
-using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -229,13 +228,10 @@ public partial class MainWindow : Window
 
     private async Task PasteXmlAsync()
     {
-        var clipboard = this.Clipboard;
-        if (clipboard == null) return;
-
-        var xml = await clipboard.TryGetTextAsync();
+        var xml = await ClipboardHelper.TryGetTextAsync(this);
         if (string.IsNullOrWhiteSpace(xml))
         {
-            ShowError("The clipboard does not contain any text.");
+            ShowError("Could not read any text from the clipboard.");
             return;
         }
 
