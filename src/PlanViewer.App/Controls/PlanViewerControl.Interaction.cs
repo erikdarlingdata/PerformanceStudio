@@ -7,6 +7,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
+using PlanViewer.App.Services;
 using PlanViewer.Core.Models;
 
 namespace PlanViewer.App.Controls;
@@ -138,12 +139,8 @@ public partial class PlanViewerControl : UserControl
         return menu;
     }
 
-    private async System.Threading.Tasks.Task SetClipboardTextAsync(string text)
-    {
-        var topLevel = TopLevel.GetTopLevel(this);
-        if (topLevel?.Clipboard != null)
-            await topLevel.Clipboard.SetTextAsync(text);
-    }
+    private System.Threading.Tasks.Task SetClipboardTextAsync(string text)
+        => ClipboardHelper.TrySetTextAsync(this, text);
 
     private void ZoomIn_Click(object? sender, RoutedEventArgs e) => SetZoom(_zoomLevel + ZoomStep);
 

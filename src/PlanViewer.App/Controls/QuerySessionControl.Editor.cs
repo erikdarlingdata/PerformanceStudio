@@ -10,7 +10,6 @@ using System.Threading.Tasks;
 using System.Xml.Linq;
 using Avalonia.Controls;
 using Avalonia.Input;
-using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
@@ -42,31 +41,27 @@ public partial class QuerySessionControl : UserControl
         var cutItem = new MenuItem { Header = "Cut" };
         cutItem.Click += async (_, _) =>
         {
-            var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
-            if (clipboard == null) return;
             var selection = QueryEditor.TextArea.Selection;
             if (selection.IsEmpty) return;
             var text = selection.GetText();
-            await clipboard.SetTextAsync(text);
-            selection.ReplaceSelectionWithText("");
+            // Only remove the selection once the text has actually reached the
+            // clipboard; a failed copy must not destroy the user's text.
+            if (await ClipboardHelper.TrySetTextAsync(this, text))
+                selection.ReplaceSelectionWithText("");
         };
 
         var copyItem = new MenuItem { Header = "Copy" };
         copyItem.Click += async (_, _) =>
         {
-            var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
-            if (clipboard == null) return;
             var selection = QueryEditor.TextArea.Selection;
             if (selection.IsEmpty) return;
-            await clipboard.SetTextAsync(selection.GetText());
+            await ClipboardHelper.TrySetTextAsync(this, selection.GetText());
         };
 
         var pasteItem = new MenuItem { Header = "Paste" };
         pasteItem.Click += async (_, _) =>
         {
-            var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
-            if (clipboard == null) return;
-            var text = await clipboard.TryGetTextAsync();
+            var text = await ClipboardHelper.TryGetTextAsync(this);
             if (string.IsNullOrEmpty(text)) return;
             QueryEditor.TextArea.PerformTextInput(text);
         };

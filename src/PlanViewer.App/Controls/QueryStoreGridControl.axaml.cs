@@ -86,6 +86,8 @@ public partial class QueryStoreGridControl : UserControl
 
         ResultsGrid.ItemsSource = _filteredRows;
         Helpers.DataGridBehaviors.Attach(ResultsGrid);
+        Helpers.DataGridBehaviors.AttachCopyGuard(ResultsGrid,
+            item => item is QueryStoreRow row ? FormatRowForClipboard(row) : null);
         EnsureFilterPopup();
         SetupColumnHeaders();
         PopulateDatabaseBox(databases, initialDatabase);

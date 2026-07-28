@@ -8,6 +8,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
+using PlanViewer.App.Services;
 using PlanViewer.Core.Models;
 using PlanViewer.Core.Services;
 
@@ -168,9 +169,7 @@ public partial class PlanViewerControl : UserControl
         var text = row.Statement.StatementText;
         if (string.IsNullOrEmpty(text)) return;
 
-        var topLevel = TopLevel.GetTopLevel(this);
-        if (topLevel?.Clipboard != null)
-            await topLevel.Clipboard.SetTextAsync(text);
+        await ClipboardHelper.TrySetTextAsync(this, text);
     }
 
     private void OpenInEditor_Click(object? sender, RoutedEventArgs e)

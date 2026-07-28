@@ -111,14 +111,11 @@ internal static class AdviceWindowHelper
 
         copyBtn.Click += async (_, _) =>
         {
-            var clipboard = window.Clipboard;
-            if (clipboard != null)
-            {
-                await clipboard.SetTextAsync(content);
-                copyBtn.Content = "Copied!";
-                await Task.Delay(1500);
-                copyBtn.Content = "Copy to Clipboard";
-            }
+            copyBtn.Content = await ClipboardHelper.TrySetTextAsync(window, content)
+                ? "Copied!"
+                : "Clipboard busy - try again";
+            await Task.Delay(1500);
+            copyBtn.Content = "Copy to Clipboard";
         };
 
         closeBtn.Click += (_, _) => window.Close();
