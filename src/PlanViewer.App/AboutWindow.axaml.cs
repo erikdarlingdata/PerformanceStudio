@@ -10,7 +10,6 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using Avalonia.Controls;
 using Avalonia.Input;
-using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using PlanViewer.App.Mcp;
 using PlanViewer.App.Services;
@@ -111,12 +110,9 @@ public partial class AboutWindow : Window
     {
         var port = int.TryParse(McpPortInput.Text, out var p) && p >= 1024 && p <= 65535 ? p : 5152;
         var command = $"claude mcp add --transport streamable-http --scope user performance-studio http://localhost:{port}/";
-        var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
-        if (clipboard != null)
-        {
-            await clipboard.SetTextAsync(command);
-            McpCopyStatus.Text = "Copied to clipboard!";
-        }
+        McpCopyStatus.Text = await ClipboardHelper.TrySetTextAsync(this, command)
+            ? "Copied to clipboard!"
+            : "Clipboard busy - try again";
     }
 
     private string? _updateUrl;

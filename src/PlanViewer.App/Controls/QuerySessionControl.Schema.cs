@@ -104,19 +104,13 @@ public partial class QuerySessionControl : UserControl
         var schemaCopy = new MenuItem { Header = "Copy" };
         schemaCopy.Click += async (_, _) =>
         {
-            var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
-            if (clipboard == null) return;
             var sel = editor.TextArea.Selection;
             if (!sel.IsEmpty)
-                await clipboard.SetTextAsync(sel.GetText());
+                await ClipboardHelper.TrySetTextAsync(this, sel.GetText());
         };
         var schemaCopyAll = new MenuItem { Header = "Copy All" };
         schemaCopyAll.Click += async (_, _) =>
-        {
-            var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
-            if (clipboard == null) return;
-            await clipboard.SetTextAsync(editor.Text);
-        };
+            await ClipboardHelper.TrySetTextAsync(this, editor.Text);
         var schemaSelectAll = new MenuItem { Header = "Select All" };
         schemaSelectAll.Click += (_, _) => editor.SelectAll();
         editor.TextArea.ContextMenu = new ContextMenu

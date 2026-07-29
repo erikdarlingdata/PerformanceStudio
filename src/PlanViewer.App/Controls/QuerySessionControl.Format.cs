@@ -60,19 +60,10 @@ public partial class QuerySessionControl : UserControl
             source: "Performance Studio",
             isAzureSqlDb: IsAzureConnection);
 
-        try
-        {
-            var topLevel = TopLevel.GetTopLevel(this);
-            if (topLevel?.Clipboard != null)
-            {
-                await topLevel.Clipboard.SetTextAsync(reproScript);
-                SetStatus("Repro script copied to clipboard");
-            }
-        }
-        catch (Exception ex)
-        {
-            SetStatus($"Clipboard error: {ex.Message}");
-        }
+        if (await ClipboardHelper.TrySetTextAsync(this, reproScript))
+            SetStatus("Repro script copied to clipboard");
+        else
+            SetStatus("Clipboard busy - could not copy repro script");
     }
 
     private async void Format_Click(object? sender, RoutedEventArgs e)

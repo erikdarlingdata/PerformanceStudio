@@ -164,6 +164,8 @@ public partial class PlanViewerControl : UserControl
         _zoomTransform = (ScaleTransform)layoutTransform.LayoutTransform!;
 
         Helpers.DataGridBehaviors.Attach(StatementsGrid);
+        Helpers.DataGridBehaviors.AttachCopyGuard(StatementsGrid,
+            item => item is StatementRow row ? row.Statement.StatementText : null);
 
         // Wire minimap resize grip (defined in AXAML, not in canvas)
         MinimapResizeGrip.PointerPressed += MinimapResizeGrip_PointerPressed;

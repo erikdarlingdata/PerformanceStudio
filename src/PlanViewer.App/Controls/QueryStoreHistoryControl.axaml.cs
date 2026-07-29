@@ -9,6 +9,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.VisualTree;
+using PlanViewer.App.Services;
 using PlanViewer.Core.Models;
 using PlanViewer.Core.Services;
 using ScottPlot;
@@ -135,6 +136,8 @@ public partial class QueryStoreHistoryControl : UserControl
 		InitializeComponent();
 
 		Helpers.DataGridBehaviors.Attach(HistoryDataGrid);
+		Helpers.DataGridBehaviors.AttachCopyGuard(HistoryDataGrid,
+			item => item is QueryStoreHistoryRow row ? FormatRowForClipboard(row) : null);
 
 		QueryIdentifierText.Text = $"Query Store History: {queryHash} in [{database}]";
 		QueryTextBox.Text = queryText;
@@ -307,10 +310,32 @@ public partial class QueryStoreHistoryControl : UserControl
 	private async void CopyQuery_Click(object? sender, RoutedEventArgs e)
 	{
 		if (string.IsNullOrEmpty(_queryText)) return;
-		var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
-		if (clipboard != null)
-			await clipboard.SetTextAsync(_queryText);
+		await ClipboardHelper.TrySetTextAsync(this, _queryText);
 	}
+
+	/// <summary>One history row as a tab-separated line matching the grid's column order.</summary>
+	private static string FormatRowForClipboard(QueryStoreHistoryRow row) =>
+		string.Join("\t",
+			row.QueryPlanHash,
+			row.IntervalStartLocal,
+			row.CountExecutions,
+			row.AvgDurationMsDisplay,
+			row.AvgCpuMsDisplay,
+			row.AvgLogicalReadsDisplay,
+			row.AvgLogicalWritesDisplay,
+			row.AvgPhysicalReadsDisplay,
+			row.AvgMemoryMbDisplay,
+			row.AvgRowcountDisplay,
+			row.TotalDurationMsDisplay,
+			row.TotalCpuMsDisplay,
+			row.TotalLogicalReadsDisplay,
+			row.TotalLogicalWritesDisplay,
+			row.TotalPhysicalReadsDisplay,
+			row.TotalMemoryMbDisplay,
+			row.MinDop,
+			row.MaxDop,
+			row.LastExecutionLocal,
+			row.ExecutionTypeDesc);
 
 	private void Close_Click(object? sender, RoutedEventArgs e)
 	{

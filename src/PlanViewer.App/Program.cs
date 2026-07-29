@@ -2,6 +2,7 @@ using Avalonia;
 using System;
 using System.IO;
 using System.IO.Pipes;
+using System.Threading.Tasks;
 using PlanViewer.App.Services;
 using Velopack;
 
@@ -14,6 +15,17 @@ class Program
     [STAThread]
     public static void Main(string[] args)
     {
+        // Last-resort diagnostics: issue #415 was a crash-to-desktop that left
+        // nothing on disk. These can't stop a dispatcher-thread crash, but they
+        // leave a stack trace in the crash log.
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+            CrashLogger.Write("AppDomain.UnhandledException", e.ExceptionObject as Exception);
+        TaskScheduler.UnobservedTaskException += (_, e) =>
+        {
+            CrashLogger.Write("TaskScheduler.UnobservedTaskException", e.Exception);
+            e.SetObserved();
+        };
+
         var velopack = VelopackApp.Build();
         if (OperatingSystem.IsWindows())
         {

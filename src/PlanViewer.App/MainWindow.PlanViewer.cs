@@ -115,11 +115,11 @@ public partial class MainWindow : Window
                 queryText, database, planXml,
                 isolationLevel: null, source: "Performance Studio");
 
-            var clipboard = this.Clipboard;
-            if (clipboard != null)
-            {
-                await clipboard.SetTextAsync(reproScript);
-            }
+            copyReproBtn.Content = await ClipboardHelper.TrySetTextAsync(this, reproScript)
+                ? "\U0001f4cb Copied!"
+                : "\U0001f4cb Clipboard busy";
+            await Task.Delay(1500);
+            copyReproBtn.Content = "\U0001f4cb Copy Repro";
         };
 
         copyReproBtn.Click += async (_, _) => await copyRepro();

@@ -21,6 +21,10 @@ public partial class App : Application
 
     public override void OnFrameworkInitializationCompleted()
     {
+        // Before any window exists: route every TextBox clipboard operation through
+        // the guarded helper so a locked clipboard can't crash the app (issue #415).
+        TextBoxClipboardGuard.Register();
+
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             desktop.MainWindow = new MainWindow();

@@ -332,6 +332,9 @@ internal partial class SettingsWindow : Window
 			FontSize = 13,
 		};
 
+		Helpers.DataGridBehaviors.AttachCopyGuard(_formatGrid,
+			item => item is FormatOptionRow row ? $"{row.Name}\t{row.CurrentValue}" : null);
+
 		_formatGrid.Columns.Add(new DataGridTextColumn
 		{
 			Header = "Setting",
