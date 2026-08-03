@@ -37,9 +37,17 @@ jobs:
     # were each already reviewed on their own PR, so re-reviewing the whole
     # release adds nothing — and the diff is large enough that it reliably
     # exhausts the turn budget and fails, putting a red X on the release.
+    #
+    # Also skip Dependabot PRs. They fail twice over instead of getting a
+    # review: the action rejects non-human actors outright ("Workflow initiated
+    # by non-human actor: dependabot"), and a dependabot-triggered run draws
+    # from the DEPENDABOT secret store, not the Actions one, so the OAuth token
+    # is empty anyway. A version bump has nothing an AI review would catch that
+    # build-and-test doesn't; skipped is neutral, not a red X on every bump.
     if: |
       github.event.pull_request.draft == false &&
       github.event.pull_request.head.repo.full_name == github.repository &&
+      github.actor != 'dependabot[bot]' &&
       !(github.event.pull_request.head.ref == 'dev' && github.event.pull_request.base.ref == 'main')
     runs-on: ubuntu-latest
 
