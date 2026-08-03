@@ -24,7 +24,7 @@
     <PackageReference Include="ModelContextProtocol" Version="1.4.1" />
     <PackageReference Include="ModelContextProtocol.AspNetCore" Version="1.4.1" />
     <PackageReference Include="TextMateSharp.Grammars" Version="2.0.4" />
-    <PackageReference Include="Microsoft.SqlServer.TransactSql.ScriptDom" Version="180.59.2" />
+    <PackageReference Include="Microsoft.SqlServer.TransactSql.ScriptDom" Version="180.78.1" />
     <PackageReference Include="Velopack" Version="1.2.0" />
 
     <!-- Pin SkiaSharp native assets to match SkiaSharp 3.119.0.

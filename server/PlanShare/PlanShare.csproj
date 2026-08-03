@@ -14,7 +14,7 @@
          drop it only once that floor moves past 2.1.11 on its own. 3.0.4 bundles
          SQLite 3.53.3, and Microsoft.Data.Sqlite 10.0.10 works against the 3.x
          native layer (full CRUD verified). -->
-    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.4" />
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />
   </ItemGroup>
 
 </Project>
