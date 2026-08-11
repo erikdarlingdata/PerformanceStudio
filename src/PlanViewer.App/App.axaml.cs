@@ -9,6 +9,7 @@ using Avalonia.Platform.Storage;
 using System.Linq;
 using System.Threading.Tasks;
 using PlanViewer.App.Services;
+using PlanViewer.Core.Services;
 
 namespace PlanViewer.App;
 
@@ -30,6 +31,13 @@ public partial class App : Application
             desktop.MainWindow = new MainWindow();
         }
 
+        // Entra MFA needs a parent window handle for the WAM broker, or the prompt never
+        // appears and the connection fails with 0xwindow_handle_required (issue #425).
+        // Registered once here because SqlAuthenticationProvider is process-wide, so this
+        // covers every connection Studio opens without touching each call site. No-op off
+        // Windows, where interactive auth uses the browser and needs no handle.
+        EntraInteractiveAuth.Register(ActiveWindowHandle);
+
         if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
         {
             var iconPath = System.IO.Path.Combine(AppContext.BaseDirectory, "EDD.icns");
@@ -48,6 +56,29 @@ public partial class App : Application
         Task.Run(FileAssociationService.RegisterForCurrentExecutable);
 
         base.OnFrameworkInitializationCompleted();
+    }
+
+    /// <summary>
+    /// The window that should own an Entra MFA prompt, resolved at the moment MSAL asks (issue #425).
+    ///
+    /// <para>Prefers whichever window is currently active over the main window, because a connection is
+    /// usually triggered from the connection dialog — parenting the account picker to the main window behind
+    /// it would let the picker appear behind the dialog the user is looking at. Falls back to the main window,
+    /// then to <see cref="IntPtr.Zero"/>, which MSAL treats the same as no handle: the prompt fails rather
+    /// than the app crashing, which is the right way round for an auth path.</para>
+    ///
+    /// <para>Resolved per call rather than captured once: a window's platform handle is not valid until the
+    /// window has been sourced, so a handle read at startup can be zero even though a real window exists a
+    /// moment later.</para>
+    /// </summary>
+    private static IntPtr ActiveWindowHandle()
+    {
+        if (Current?.ApplicationLifetime is not IClassicDesktopStyleApplicationLifetime desktop)
+            return IntPtr.Zero;
+
+        var window = desktop.Windows.FirstOrDefault(w => w.IsActive) ?? desktop.MainWindow;
+
+        return window?.TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
     }
 
     /// <summary>
