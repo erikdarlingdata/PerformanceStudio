@@ -7,6 +7,13 @@
 
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+
+    <!-- Applies the hang watchdog to a bare `dotnet test` with no flags to remember. The CI
+         workflows additionally pass the blame-hang options for the sequence file; this property is
+         what covers LOCAL runs, which is where the macOS ARM64 GC-suspension livelock actually
+         burned cores twice. See hang-watchdog.runsettings for why nothing inside the test host can
+         ever self-terminate. -->
+    <RunSettingsFilePath>$(MSBuildProjectDirectory)/hang-watchdog.runsettings</RunSettingsFilePath>
   </PropertyGroup>
 
   <ItemGroup>
