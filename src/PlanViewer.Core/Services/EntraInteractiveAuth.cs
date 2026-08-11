@@ -1,4 +1,3 @@
-using System;
 using Microsoft.Data.SqlClient;
 
 namespace PlanViewer.Core.Services;
@@ -76,4 +75,17 @@ public static class EntraInteractiveAuth
     /// a clear message instead of letting MSAL produce that error.
     /// </summary>
     public static bool IsSupported => _registered || !OperatingSystem.IsWindows();
+
+    /* Test-only escape hatch for the one-way registration flag. Registration is deliberately irreversible
+       in production — SqlAuthenticationProvider offers no unregister — so a test that needs to observe the
+       never-registered state (the CLI refusal path) resets the flag rather than the provider. The provider
+       itself may stay registered with SqlClient; nothing in the test process opens interactive connections,
+       so that is inert. */
+    internal static void ResetRegistrationForTests()
+    {
+        lock (Gate)
+        {
+            _registered = false;
+        }
+    }
 }

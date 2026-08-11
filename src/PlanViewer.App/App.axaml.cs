@@ -6,6 +6,7 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Avalonia.Platform;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 using System.Linq;
 using System.Threading.Tasks;
 using PlanViewer.App.Services;
@@ -70,8 +71,29 @@ public partial class App : Application
     /// <para>Resolved per call rather than captured once: a window's platform handle is not valid until the
     /// window has been sourced, so a handle read at startup can be zero even though a real window exists a
     /// moment later.</para>
+    ///
+    /// <para>Marshaled to the UI thread: MSAL invokes this from whatever thread SqlClient's token acquisition
+    /// happens to run on, and <c>desktop.Windows</c> is a UI-thread-owned collection that the UI thread can
+    /// mutate (a dialog opening or closing) mid-enumeration. Blocking on <see cref="Dispatcher.UIThread"/> is
+    /// safe here because no connection path blocks the UI thread on auth — every open in the app is async. If
+    /// the dispatcher can't deliver anyway (shutdown timing), Zero degrades to MSAL's normal no-handle
+    /// failure instead of throwing from inside the auth callback.</para>
     /// </summary>
     private static IntPtr ActiveWindowHandle()
+    {
+        try
+        {
+            return Dispatcher.UIThread.CheckAccess()
+                ? ActiveWindowHandleOnUIThread()
+                : Dispatcher.UIThread.Invoke(ActiveWindowHandleOnUIThread);
+        }
+        catch
+        {
+            return IntPtr.Zero;
+        }
+    }
+
+    private static IntPtr ActiveWindowHandleOnUIThread()
     {
         if (Current?.ApplicationLifetime is not IClassicDesktopStyleApplicationLifetime desktop)
             return IntPtr.Zero;

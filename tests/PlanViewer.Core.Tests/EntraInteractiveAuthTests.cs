@@ -1,6 +1,4 @@
-using System;
 using PlanViewer.Core.Services;
-using Xunit;
 
 namespace PlanViewer.Core.Tests;
 
@@ -9,7 +7,11 @@ namespace PlanViewer.Core.Tests;
 /// through the WAM broker. These pin the parts that are verifiable without a tenant — the OS gating and the
 /// contract the windowless CLI depends on. Whether the picker actually authenticates can only be established
 /// against a real Entra tenant, which is what the reporter offered to do.
+///
+/// <para>Shares a collection with <see cref="CliConnectionResolverTests"/>: registration here flips the
+/// process-wide state that the CLI refusal test keys off, so the two classes must not run in parallel.</para>
 /// </summary>
+[Collection("EntraInteractiveAuth process-wide state")]
 public class EntraInteractiveAuthTests
 {
     [Fact]
