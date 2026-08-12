@@ -43,6 +43,26 @@ public static class CliConnectionResolver
             throw new InvalidOperationException("No credentials configured");
         }
 
+        /* Interactive Entra auth goes through the Windows WAM broker, which needs a parent window handle to
+           own its account picker (issue #425). A CLI has no window to give it, so the connection would fail
+           deep inside MSAL with "0xwindow_handle_required" — a message that tells the user nothing about
+           what to do. Say it here instead, up front, and name the modes that actually work headless.
+
+           Deliberately not silently substituting another auth mode: picking a different identity than the
+           one the operator asked for is worse than refusing. Whether the CLI should grow device-code flow is
+           the open question on #425, not something to guess at from here. */
+        if (authType == AuthenticationTypes.EntraMFA && !EntraInteractiveAuth.IsSupported)
+        {
+            Console.Error.WriteLine(
+                "Interactive Microsoft Entra MFA (--auth entra) needs a desktop window for the Windows " +
+                "account picker, so it cannot run from the CLI.");
+            Console.Error.WriteLine(
+                "Use the Studio app for interactive sign-in, or a non-interactive identity here: " +
+                "--auth sql with a stored credential, or a service principal / managed identity.");
+            Environment.ExitCode = 1;
+            throw new InvalidOperationException("Interactive Entra authentication is not available headless");
+        }
+
         return new ServerConnection
         {
             Id = server,
