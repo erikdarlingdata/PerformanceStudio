@@ -49,7 +49,21 @@ public partial class QuerySessionControl : UserControl
         var analysis = GetCurrentAnalysis();
         if (analysis == null) { SetStatus("No plan to analyze", autoClear: false); return; }
 
-        var json = JsonSerializer.Serialize(analysis, new JsonSerializerOptions { WriteIndented = true });
+        string json;
+        try
+        {
+            json = JsonSerializer.Serialize(analysis, AnalysisJson.Indented);
+        }
+        catch (Exception ex) when (ex is JsonException or NotSupportedException)
+        {
+            /* #430: Avalonia does not guard click handlers, so anything thrown on this path takes the
+               process down with no dialog and nothing logged. AnalysisJson's depth ceiling makes this
+               unreachable for any plan seen in the field — this catch is here so that "unreachable" is
+               not the only thing standing between a deep plan and a silent crash. */
+            SetStatus($"Could not build robot advice for this plan: {ex.Message}", autoClear: false);
+            return;
+        }
+
         ShowAdviceWindow("Advice for Robots", json);
     }
 
