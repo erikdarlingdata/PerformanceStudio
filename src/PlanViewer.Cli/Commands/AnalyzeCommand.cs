@@ -11,14 +11,19 @@ namespace PlanViewer.Cli.Commands;
 
 public static class AnalyzeCommand
 {
+    /* #430: MaxDepth on both, because the default ceiling of 64 is roughly 30 nested operators and
+       `analyze --json` on a large plan hit it. The CLI surfaces this as a non-zero exit rather than a
+       crash, but a plan too deep to print is the same defect wearing a different coat. */
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
+        MaxDepth = AnalysisJson.MaxDepth,
         DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
     };
 
     private static readonly JsonSerializerOptions CompactJsonOptions = new()
     {
+        MaxDepth = AnalysisJson.MaxDepth,
         DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
     };
 
