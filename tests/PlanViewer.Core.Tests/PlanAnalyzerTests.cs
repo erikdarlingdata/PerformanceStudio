@@ -265,6 +265,47 @@ public class PlanAnalyzerTests
     }
 
     // ---------------------------------------------------------------
+    // Rule 12: Non-SARGable Predicate — CONVERT_IMPLICIT on the parameter
+    // ---------------------------------------------------------------
+
+    /// <summary>
+    /// #436: a conversion is only non-SARGable when it converts the COLUMN. Data type precedence
+    /// decides which side SQL Server converts, and it converts the lower-precedence one — so a
+    /// numeric(18,0) column compared to an integer parameter converts the PARAMETER up, leaving the
+    /// column seekable. SQL Server agrees: it raises no PlanAffectingConvert warning on this plan,
+    /// which is why SSMS shows no warning icon on it either.
+    ///
+    /// The fixture is a real SQL Server 2025 actual plan of the reporter's repro, captured under
+    /// PARAMETERIZATION FORCED (hence [@0]) with no index on the search column. Rule 11 still
+    /// reports the scan and its residual predicate — that part is true, and it is the actionable
+    /// half. What must not appear is the claim that a conversion prevented a seek.
+    /// </summary>
+    [Fact]
+    public void Rule12c_NonSargable_ConvertImplicitOnParameter_NotFlagged()
+    {
+        var plan = PlanTestHelper.LoadAndAnalyze("convert_implicit_parameter_side_plan.sqlplan");
+
+        Assert.Empty(PlanTestHelper.WarningsOfType(plan, "Non-SARGable Predicate"));
+        Assert.NotEmpty(PlanTestHelper.WarningsOfType(plan, "Scan With Predicate"));
+    }
+
+    /// <summary>
+    /// #436: the parameter-side conversion above now falls through to the function-on-column check,
+    /// and it sorts before the function in the predicate text. Reading only the FIRST function match
+    /// would find CONVERT_IMPLICIT, skip it as benign, and never look at the datepart() sitting on
+    /// the column — turning a fixed false positive into a new false negative.
+    /// </summary>
+    [Fact]
+    public void Rule12d_NonSargable_BenignConvertDoesNotMaskFunctionOnColumn()
+    {
+        var plan = PlanTestHelper.LoadAndAnalyze("convert_implicit_masking_function_plan.sqlplan");
+        var warnings = PlanTestHelper.WarningsOfType(plan, "Non-SARGable Predicate");
+
+        Assert.NotEmpty(warnings);
+        Assert.Contains(warnings, w => w.Message.Contains("DATEPART"));
+    }
+
+    // ---------------------------------------------------------------
     // Rule 12: Non-SARGable Predicate — Function Call
     // ---------------------------------------------------------------
 
