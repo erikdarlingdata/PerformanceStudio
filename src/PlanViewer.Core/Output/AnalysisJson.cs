@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace PlanViewer.Core.Output;
 
@@ -43,5 +44,30 @@ public static class AnalysisJson
     {
         WriteIndented = true,
         MaxDepth = MaxDepth,
+    };
+
+    /// <summary>
+    /// What the CLI writes analysis files with — same as <see cref="Indented"/> plus dropping nulls,
+    /// which is what keeps `analyze --json` output readable.
+    ///
+    /// <para>These live here rather than on the commands because the commands each built their own
+    /// copy, and that is precisely how <c>querystore</c> was left behind when #430 was fixed: the
+    /// depth ceiling was made a shared constant, but the OPTIONS were still duplicated, so adding
+    /// <c>MaxDepth</c> to the two sets in AnalyzeCommand silently did nothing for the identical pair
+    /// in QueryStoreCommand. A shared constant only helps the call sites that remember to reference
+    /// it. Sharing the options instead is what makes the next command unable to get it wrong.</para>
+    /// </summary>
+    public static readonly JsonSerializerOptions IndentedWithoutNulls = new()
+    {
+        WriteIndented = true,
+        MaxDepth = MaxDepth,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+    };
+
+    /// <summary>The unindented counterpart to <see cref="IndentedWithoutNulls"/>, for --compact.</summary>
+    public static readonly JsonSerializerOptions CompactWithoutNulls = new()
+    {
+        MaxDepth = MaxDepth,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
 }
