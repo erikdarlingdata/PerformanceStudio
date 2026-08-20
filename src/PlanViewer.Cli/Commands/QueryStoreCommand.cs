@@ -10,16 +10,12 @@ namespace PlanViewer.Cli.Commands;
 
 public static class QueryStoreCommand
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        WriteIndented = true,
-        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
-    };
+    /* #430: these two were built inline and never got the depth ceiling, so `querystore` still
+       failed on a plan deeper than ~30 operators long after the crash was "fixed" — one ERROR row
+       in summary.txt per deep plan, which is quieter than the crash and no more correct. */
+    private static readonly JsonSerializerOptions JsonOptions = AnalysisJson.IndentedWithoutNulls;
 
-    private static readonly JsonSerializerOptions CompactJsonOptions = new()
-    {
-        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
-    };
+    private static readonly JsonSerializerOptions CompactJsonOptions = AnalysisJson.CompactWithoutNulls;
 
     public static Command Create(ICredentialService? credentialService = null)
     {

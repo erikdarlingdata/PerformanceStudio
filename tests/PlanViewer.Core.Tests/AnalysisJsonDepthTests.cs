@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Text.Json;
 using PlanViewer.Core.Output;
 
@@ -67,6 +68,39 @@ public class AnalysisJsonDepthTests
     {
         Assert.Throws<JsonException>(() =>
             JsonSerializer.Serialize(WithOperatorChain(AnalysisJson.MaxDepth + 10), AnalysisJson.Indented));
+    }
+
+    /// <summary>
+    /// The miss that #430's original fix left behind, and the reason the OPTIONS are shared and not
+    /// just the constant.
+    ///
+    /// <para>Every CLI command that writes an analysis built its own JsonSerializerOptions. Making
+    /// MaxDepth a shared constant only fixed the sets that were edited to reference it — AnalyzeCommand's
+    /// two — while the identical pair in QueryStoreCommand kept the default ceiling of 64 and kept
+    /// failing on any plan deeper than ~30 operators. It failed quietly there: the per-plan catch turns
+    /// it into one "ERROR" row in summary.txt instead of an analysis, which is exactly the kind of
+    /// wrong-but-not-loud result nobody files a bug about.</para>
+    ///
+    /// <para>So this walks the options rather than trusting the call sites, and a new command that
+    /// rolls its own will fail here rather than in someone's Query Store sweep.</para>
+    /// </summary>
+    [Fact]
+    public void EveryCliCommandWritesAnalysesWithTheCeiling()
+    {
+        var offenders =
+            (from type in typeof(PlanViewer.Cli.Commands.AnalyzeCommand).Assembly.GetTypes()
+             where type.Name.EndsWith("Command", System.StringComparison.Ordinal)
+             from field in type.GetFields(System.Reflection.BindingFlags.NonPublic
+                                        | System.Reflection.BindingFlags.Public
+                                        | System.Reflection.BindingFlags.Static)
+             where field.FieldType == typeof(JsonSerializerOptions)
+             let options = (JsonSerializerOptions?)field.GetValue(null)
+             where options is not null && options.MaxDepth != AnalysisJson.MaxDepth
+             select $"{type.Name}.{field.Name} (MaxDepth {options.MaxDepth})").ToList();
+
+        Assert.True(offenders.Count == 0,
+            "These write an analysis with the default depth ceiling and will fail on a deep plan: "
+            + string.Join(", ", offenders));
     }
 
     /// <summary>
