@@ -157,8 +157,9 @@ public static partial class PlanAnalyzer
         if (CaseInPredicateRegex.IsMatch(predicate))
             return "CASE expression in predicate";
 
-        // CONVERT_IMPLICIT — most common non-SARGable pattern
-        if (predicate.Contains("CONVERT_IMPLICIT", StringComparison.OrdinalIgnoreCase))
+        // CONVERT_IMPLICIT — most common non-SARGable pattern, but only when it converts the
+        // COLUMN. Converting the parameter up to the column's type costs nothing (#436).
+        if (ConvertImplicitWrapsColumn(predicate))
             return "Implicit conversion (CONVERT_IMPLICIT)";
 
         // ISNULL / COALESCE wrapping column
@@ -168,8 +169,10 @@ public static partial class PlanAnalyzer
         // Common function calls on columns — but only if the function wraps a column,
         // not a parameter/variable. Split on comparison operators to check which side
         // the function is on. Predicate format: [db].[schema].[table].[col]>func(...)
-        var funcMatch = FunctionInPredicateRegex.Match(predicate);
-        if (funcMatch.Success)
+        // Every match, not just the first: a parameter-side CONVERT_IMPLICIT now falls through to
+        // here, and it is skipped below. Taking only the first match would let a benign conversion
+        // sitting to the left of a real function-on-column hide it (#436).
+        foreach (Match funcMatch in FunctionInPredicateRegex.Matches(predicate))
         {
             var funcName = funcMatch.Groups[1].Value.ToUpperInvariant();
             if (funcName != "CONVERT_IMPLICIT" && IsFunctionOnColumnSide(predicate, funcMatch))
@@ -179,6 +182,65 @@ public static partial class PlanAnalyzer
         // Leading wildcard LIKE
         if (LeadingWildcardLikeRegex.IsMatch(predicate))
             return "Leading wildcard LIKE pattern";
+
+        return null;
+    }
+
+    /// <summary>
+    /// Checks whether any CONVERT_IMPLICIT in a predicate converts a COLUMN, which is the only
+    /// version of it that costs a seek.
+    ///
+    /// <para><b>Why this is not just "contains CONVERT_IMPLICIT" (#436).</b> Data type precedence
+    /// decides which side SQL Server converts, and it converts the LOWER-precedence side. Comparing a
+    /// numeric(18,0) column to an int parameter converts the parameter UP:
+    /// <c>[db].[dbo].[t].[col]=CONVERT_IMPLICIT(numeric(18,0),[@0],0)</c>. The column is untouched and
+    /// still seekable — SQL Server will seek straight through that predicate given an index, and it
+    /// raises no PlanAffectingConvert warning of its own. The damaging shape is the mirror image,
+    /// <c>CONVERT_IMPLICIT(nvarchar(40),[db].[dbo].[t].[col],0)=[@d]</c>, where the conversion wraps
+    /// the column and every row has to be converted before it can be compared.</para>
+    ///
+    /// <para>So the question is not whether a conversion is present but what is inside it, which is
+    /// why this reads the CONVERT_IMPLICIT argument list rather than splitting on the comparison
+    /// operator the way <see cref="IsFunctionOnColumnSide"/> does. The first argument is the target
+    /// type and carries no brackets; a column reference in the remainder is the conversion input.</para>
+    /// </summary>
+    private static bool ConvertImplicitWrapsColumn(string predicate)
+    {
+        foreach (Match match in ConvertImplicitRegex.Matches(predicate))
+        {
+            // The regex ends at the opening paren, so its last character is where the args start.
+            var arguments = ExtractBalancedArguments(predicate, match.Index + match.Length - 1);
+
+            // Unparseable means we cannot tell what is being converted. Assume the worst, matching
+            // IsFunctionOnColumnSide, rather than silently dropping a real conversion.
+            if (arguments == null || ColumnReferenceRegex.IsMatch(arguments))
+                return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Returns the text between the parenthesis at <paramref name="openParenIndex"/> and its match,
+    /// or null if the parentheses do not balance. Needed because the target type of a conversion can
+    /// carry its own parentheses — numeric(18,0), varchar(50) — so the first ')' is not the end.
+    /// </summary>
+    private static string? ExtractBalancedArguments(string text, int openParenIndex)
+    {
+        var depth = 0;
+        for (var i = openParenIndex; i < text.Length; i++)
+        {
+            if (text[i] == '(')
+            {
+                depth++;
+            }
+            else if (text[i] == ')')
+            {
+                depth--;
+                if (depth == 0)
+                    return text[(openParenIndex + 1)..i];
+            }
+        }
 
         return null;
     }
@@ -207,10 +269,9 @@ public static partial class PlanAnalyzer
             ? predicate[..compPos]
             : predicate[(compPos + compMatch.Length)..];
 
-        // Column references are multi-part bracket-qualified: [schema].[table].[column]
-        // Variables are [@var] or [@var] — single bracket pair with @ prefix.
-        // Match [identifier].[identifier] (at least two dotted parts) to distinguish columns.
-        return Regex.IsMatch(side, @"\[[^\]@]+\]\.\[");
+        // Same column-vs-variable distinction ConvertImplicitWrapsColumn needs, so it shares the
+        // one regex rather than keeping a second copy of the pattern in sync by hand.
+        return ColumnReferenceRegex.IsMatch(side);
     }
 
     /// <summary>
