@@ -818,9 +818,10 @@ public partial class PlanViewerControl : UserControl
                         : w.Severity == PlanWarningSeverity.Warning ? "#FFB347" : "#6BB5FF";
                     var warnPanel = new StackPanel { Margin = new Thickness(10, 2, 10, 2) };
                     var legacyTag = w.IsLegacy ? " [legacy]" : "";
+                    var sourceTag = WarningSourceTag(w);
                     var planWarnHeader = w.MaxBenefitPercent.HasValue
-                        ? $"\u26A0 {w.WarningType}{legacyTag} \u2014 up to {FormatBenefitPercent(w.MaxBenefitPercent.Value)}% benefit"
-                        : $"\u26A0 {w.WarningType}{legacyTag}";
+                        ? $"\u26A0 {w.WarningType}{sourceTag}{legacyTag} \u2014 up to {FormatBenefitPercent(w.MaxBenefitPercent.Value)}% benefit"
+                        : $"\u26A0 {w.WarningType}{sourceTag}{legacyTag}";
                     warnPanel.Children.Add(new TextBlock
                     {
                         Text = planWarnHeader,
@@ -901,9 +902,10 @@ public partial class PlanViewerControl : UserControl
                     : w.Severity == PlanWarningSeverity.Warning ? "#FFB347" : "#6BB5FF";
                 var warnPanel = new StackPanel { Margin = new Thickness(10, 2, 10, 2) };
                 var nodeLegacyTag = w.IsLegacy ? " [legacy]" : "";
+                var nodeSourceTag = WarningSourceTag(w);
                 var nodeWarnHeader = w.MaxBenefitPercent.HasValue
-                    ? $"\u26A0 {w.WarningType}{nodeLegacyTag} \u2014 up to {FormatBenefitPercent(w.MaxBenefitPercent.Value)}% benefit"
-                    : $"\u26A0 {w.WarningType}{nodeLegacyTag}";
+                    ? $"\u26A0 {w.WarningType}{nodeSourceTag}{nodeLegacyTag} \u2014 up to {FormatBenefitPercent(w.MaxBenefitPercent.Value)}% benefit"
+                    : $"\u26A0 {w.WarningType}{nodeSourceTag}{nodeLegacyTag}";
                 warnPanel.Children.Add(new TextBlock
                 {
                     Text = nodeWarnHeader,

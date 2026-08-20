@@ -247,6 +247,15 @@ public class WarningResult
     /// </summary>
     [JsonPropertyName("is_legacy")]
     public bool IsLegacy { get; set; }
+
+    /// <summary>
+    /// "SqlServer" when the engine wrote this into the plan's own &lt;Warnings&gt; element, or
+    /// "PerformanceStudio" when it is one of our rules inferring it from plan shape (#436). Values
+    /// match <see cref="PlanViewer.Core.Models.PlanWarningSource"/>, spelled the same way
+    /// <see cref="Severity"/> spells its enum.
+    /// </summary>
+    [JsonPropertyName("source")]
+    public string Source { get; set; } = "";
 }
 
 public class MissingIndexResult

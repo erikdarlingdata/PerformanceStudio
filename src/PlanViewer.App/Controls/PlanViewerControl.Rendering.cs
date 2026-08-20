@@ -516,6 +516,14 @@ public partial class PlanViewerControl : UserControl
     private static string FormatBenefitPercent(double pct) =>
         pct >= 100 ? $"{pct:N0}" : $"{pct:N1}";
 
+    /// <summary>
+    /// #436: marks the warnings SQL Server itself wrote into the plan, so they are not read as one of
+    /// our inferences. Only the engine's are tagged — they are the minority, and a badge on every
+    /// warning would carry no information.
+    /// </summary>
+    private static string WarningSourceTag(PlanWarning warning) =>
+        warning.Source == PlanWarningSource.SqlServer ? " [SQL Server]" : "";
+
     private static bool HasSpillInPlanTree(PlanNode node)
     {
         foreach (var w in node.Warnings)
