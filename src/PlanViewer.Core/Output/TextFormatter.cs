@@ -193,7 +193,7 @@ public static class TextFormatter
                         ? $" (up to {(w.MaxBenefitPercent.Value >= 100 ? w.MaxBenefitPercent.Value.ToString("N0") : w.MaxBenefitPercent.Value.ToString("N1"))}% benefit)"
                         : "";
                     var legacyTag = w.IsLegacy ? " [legacy]" : "";
-                    writer.WriteLine($"  [{w.Severity}] {w.Type}{legacyTag}{benefitTag}: {EscapeNewlines(w.Message)}");
+                    writer.WriteLine($"  [{w.Severity}] {w.Type}{SourceTag(w.Source)}{legacyTag}{benefitTag}: {EscapeNewlines(w.Message)}");
                     if (!string.IsNullOrEmpty(w.ActionableFix))
                         writer.WriteLine($"    Fix: {EscapeNewlines(w.ActionableFix)}");
                 }
@@ -339,7 +339,7 @@ public static class TextFormatter
 
         // Split each message into "data | explanation" at the last sentence boundary
         // that starts with "The " (the harm assessment). Group by shared explanation.
-        var entries = new List<(string Severity, string Operator, string Data, string? Explanation, double? Benefit, bool IsLegacy)>();
+        var entries = new List<(string Severity, string Operator, string Data, string? Explanation, double? Benefit, bool IsLegacy, string Source)>();
         foreach (var w in sorted)
         {
             var msg = w.Message;
@@ -358,7 +358,7 @@ public static class TextFormatter
                 data = msg;
             }
 
-            entries.Add((w.Severity, w.Operator ?? "?", data, explanation, w.MaxBenefitPercent, w.IsLegacy));
+            entries.Add((w.Severity, w.Operator ?? "?", data, explanation, w.MaxBenefitPercent, w.IsLegacy, w.Source));
         }
 
         // Group entries that share the same severity, type, and explanation
@@ -380,7 +380,7 @@ public static class TextFormatter
                     var benefitTag = item.Benefit.HasValue
                         ? $" (up to {(item.Benefit.Value >= 100 ? item.Benefit.Value.ToString("N0") : item.Benefit.Value.ToString("N1"))}% benefit)"
                         : "";
-                    writer.WriteLine($"  [{item.Severity}] {item.Operator}{legacyTag}{benefitTag}: {EscapeNewlines(item.Data)}");
+                    writer.WriteLine($"  [{item.Severity}] {item.Operator}{SourceTag(item.Source)}{legacyTag}{benefitTag}: {EscapeNewlines(item.Data)}");
                 }
                 writer.WriteLine($"  -> {group.Key.Item2}");
             }
@@ -394,7 +394,7 @@ public static class TextFormatter
                     var benefitTag = item.Benefit.HasValue
                         ? $" (up to {(item.Benefit.Value >= 100 ? item.Benefit.Value.ToString("N0") : item.Benefit.Value.ToString("N1"))}% benefit)"
                         : "";
-                    writer.WriteLine($"  [{item.Severity}] {item.Operator}{legacyTag}{benefitTag}: {EscapeNewlines(full)}");
+                    writer.WriteLine($"  [{item.Severity}] {item.Operator}{SourceTag(item.Source)}{legacyTag}{benefitTag}: {EscapeNewlines(full)}");
                 }
             }
         }
@@ -420,6 +420,14 @@ public static class TextFormatter
     /// survive the top-level line split in AdviceContentBuilder.Build().
     /// CreateWarningBlock splits on U+001F to restore the internal structure.
     /// </summary>
+    /// <summary>
+    /// #436: marks the warnings SQL Server itself put in the plan, so they read differently from our
+    /// inferences. Only the engine's are tagged — they are the minority and the ones carrying extra
+    /// authority, and tagging all of them would just be noise on every line.
+    /// </summary>
+    private static string SourceTag(string? source) =>
+        source == nameof(PlanViewer.Core.Models.PlanWarningSource.SqlServer) ? " [SQL Server]" : "";
+
     private static string EscapeNewlines(string text) => text.Replace('\n', '\x1F');
 
     private static void CollectNodeTimings(
