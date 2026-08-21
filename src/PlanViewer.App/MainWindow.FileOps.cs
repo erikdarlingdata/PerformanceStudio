@@ -26,7 +26,7 @@ namespace PlanViewer.App;
 
 public partial class MainWindow : Window
 {
-    private void NewQuery_Click(object? sender, RoutedEventArgs e)
+    internal void NewQuery_Click(object? sender, RoutedEventArgs e)
     {
         _queryCounter++;
         var label = $"Query {_queryCounter}";
@@ -188,7 +188,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private void LoadPlanFile(string filePath)
+    internal void LoadPlanFile(string filePath)
     {
         try
         {
