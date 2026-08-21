@@ -52,7 +52,7 @@ jobs:
         run: |
           dotnet restore
           dotnet build -c Release
-          dotnet test tests/PlanViewer.Core.Tests/PlanViewer.Core.Tests.csproj -c Release --no-build --verbosity normal --blame-hang --blame-hang-timeout 5m --blame-hang-dump-type none
+          dotnet test tests/PlanViewer.Core.Tests/PlanViewer.Core.Tests.csproj -c Release --no-build --verbosity normal -- --hangdump --hangdump-timeout 5m --hangdump-type none
 
       - name: Publish App (all platforms)
         run: |
