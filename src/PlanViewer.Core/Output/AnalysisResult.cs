@@ -256,6 +256,15 @@ public class WarningResult
     /// </summary>
     [JsonPropertyName("source")]
     public string Source { get; set; } = "";
+
+    /// <summary>
+    /// Node ids of the operators this finding came from, empty when it has no operator origin —
+    /// "High Compile CPU" happened before any operator ran (#440). Distinct from
+    /// <see cref="NodeId"/>, which says where the warning is ATTACHED in this output; these say
+    /// where it came FROM, and for a statement-level warning there is no NodeId at all.
+    /// </summary>
+    [JsonPropertyName("origin_node_ids")]
+    public List<int> OriginNodeIds { get; set; } = [];
 }
 
 public class MissingIndexResult

@@ -196,7 +196,8 @@ public static class ResultMapper
                 MaxBenefitPercent = w.MaxBenefitPercent,
                 ActionableFix = w.ActionableFix,
                 IsLegacy = w.IsLegacy,
-                Source = w.Source.ToString()
+                Source = w.Source.ToString(),
+                OriginNodeIds = w.OriginNodeIds
             });
         }
 
@@ -306,7 +307,8 @@ public static class ResultMapper
                 MaxBenefitPercent = w.MaxBenefitPercent,
                 ActionableFix = w.ActionableFix,
                 IsLegacy = w.IsLegacy,
-                Source = w.Source.ToString()
+                Source = w.Source.ToString(),
+                OriginNodeIds = w.OriginNodeIds
             });
         }
 

@@ -46,6 +46,49 @@ public partial class PlanViewerControl : UserControl
         UpdateMinimapSelection(node);
     }
 
+    /// <summary>
+    /// Selects the operator with <paramref name="nodeId"/> and scrolls it into view, so a warning
+    /// can take you to where it came from (#440). Returns false when the plan has no such operator,
+    /// which is what keeps a stale or wrong origin from silently scrolling somewhere arbitrary.
+    /// </summary>
+    private bool TryNavigateToNode(int nodeId)
+    {
+        foreach (var child in PlanCanvas.Children)
+        {
+            if (child is not Border border ||
+                !_nodeBorderMap.TryGetValue(border, out var node) ||
+                node.NodeId != nodeId)
+            {
+                continue;
+            }
+
+            SelectNode(border, node);
+            ScrollNodeIntoView(node);
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Centres the operator in the viewport. Node coordinates are unscaled layout positions, so they
+    /// are multiplied by the zoom level to get canvas pixels; the offset is then clamped, because
+    /// asking a ScrollViewer for a negative offset on a plan smaller than the viewport just leaves
+    /// it where it was and looks like the navigation did nothing.
+    /// </summary>
+    private void ScrollNodeIntoView(PlanNode node)
+    {
+        var targetX = node.X * _zoomLevel - (PlanScrollViewer.Bounds.Width / 2);
+        var targetY = node.Y * _zoomLevel - (PlanScrollViewer.Bounds.Height / 2);
+
+        var maxX = Math.Max(0, PlanScrollViewer.Extent.Width - PlanScrollViewer.Viewport.Width);
+        var maxY = Math.Max(0, PlanScrollViewer.Extent.Height - PlanScrollViewer.Viewport.Height);
+
+        PlanScrollViewer.Offset = new Vector(
+            Math.Clamp(targetX, 0, maxX),
+            Math.Clamp(targetY, 0, maxY));
+    }
+
     private ContextMenu BuildNodeContextMenu(PlanNode node)
     {
         var menu = new ContextMenu();
