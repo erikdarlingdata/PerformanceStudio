@@ -20,7 +20,7 @@
   <ItemGroup>
     <PackageReference Include="Repl" Version="0.11.0" />
     <PackageReference Include="Repl.Mcp" Version="0.11.0" />
-    <PackageReference Include="System.CommandLine" Version="2.0.10" />
+    <PackageReference Include="System.CommandLine" Version="2.0.11" />
   </ItemGroup>
 
 </Project>

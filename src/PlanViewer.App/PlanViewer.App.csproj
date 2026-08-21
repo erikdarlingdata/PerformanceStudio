@@ -9,20 +9,20 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Avalonia" Version="11.3.19" />
+    <PackageReference Include="Avalonia" Version="11.3.20" />
     <PackageReference Include="Avalonia.AvaloniaEdit" Version="11.4.1" />
     <PackageReference Include="Avalonia.Controls.DataGrid" Version="11.3.13" />
     <!-- 5.1.58 is the last Avalonia 11 build — 5.1.59+ requires Avalonia >= 12.0.0.
          Bump together with the Avalonia 12 migration (branch upgrade/avalonia-12). -->
     <PackageReference Include="ScottPlot.Avalonia" Version="5.1.58" />
-    <PackageReference Include="Avalonia.Desktop" Version="11.3.19" />
-    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.19" />
-    <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.19" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.3.20" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.20" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.20" />
     <PackageReference Include="AvaloniaEdit.TextMate" Version="11.4.1" />
     <PackageReference Include="AvaloniaEdit.TextMate.Grammars" Version="0.10.12.1" />
     <PackageReference Include="Meziantou.Framework.Win32.CredentialManager" Version="3.0.1" />
-    <PackageReference Include="ModelContextProtocol" Version="2.1.0" />
-    <PackageReference Include="ModelContextProtocol.AspNetCore" Version="2.1.0" />
+    <PackageReference Include="ModelContextProtocol" Version="2.2.0" />
+    <PackageReference Include="ModelContextProtocol.AspNetCore" Version="2.2.0" />
     <PackageReference Include="TextMateSharp.Grammars" Version="2.0.4" />
     <PackageReference Include="Microsoft.SqlServer.TransactSql.ScriptDom" Version="180.78.1" />
     <PackageReference Include="Velopack" Version="1.2.0" />
