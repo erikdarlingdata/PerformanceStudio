@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Specialized;
 using System.IO;
 using System.IO.Pipes;
 using System.Linq;
@@ -73,6 +74,14 @@ public partial class MainWindow : Window
 
         // Track tab changes to update empty overlay
         MainTabControl.SelectionChanged += (_, _) => UpdateEmptyOverlay();
+
+        /* #447: one subscription rather than a call at each of the sixteen places that add or
+           remove a tab. Compare Plans depends on how many plans exist across the WHOLE window, so
+           opening or closing any tab can change whether it is available in every OTHER tab, and a
+           refresh that has to be remembered at sixteen call sites is one that gets forgotten at the
+           seventeenth. */
+        if (MainTabControl.Items is INotifyCollectionChanged tabs)
+            tabs.CollectionChanged += (_, _) => RefreshComparePlanAvailability();
 
         // Global hotkeys via tunnel routing so they fire before AvaloniaEdit consumes them
         AddHandler(KeyDownEvent, (_, e) =>
@@ -277,7 +286,26 @@ public partial class MainWindow : Window
 #pragma warning restore CS0618
 
 
-    private List<(string label, PlanViewerControl viewer)> CollectAllPlanTabs()
+    /// <summary>
+    /// Re-decides whether Compare Plans is offered, for every query session in the window (#447).
+    ///
+    /// <para>The button used to be enabled from a session's OWN plan count, so two queries in two
+    /// separate sessions — one plan each — left it disabled in both, even though comparing them is
+    /// exactly what it is for. The plans were always reachable: <see cref="CollectAllPlanTabs"/>
+    /// spans sessions and is what the file-mode Compare button has always used, which is why saving
+    /// a plan and reopening it worked around this.</para>
+    /// </summary>
+    internal void RefreshComparePlanAvailability()
+    {
+        var comparable = CollectAllPlanTabs().Count >= 2;
+        foreach (var item in MainTabControl.Items)
+        {
+            if (item is TabItem { Content: QuerySessionControl session })
+                session.SetCompareAvailability(comparable);
+        }
+    }
+
+    internal List<(string label, PlanViewerControl viewer)> CollectAllPlanTabs()
     {
         var entries = new List<(string label, PlanViewerControl viewer)>();
 

@@ -61,7 +61,7 @@
                             Click="ComparePlans_Click"
                             Height="28" Padding="8,0" FontSize="12" IsEnabled="False"
                             Theme="{StaticResource AppButton}"
-                            ToolTip.Tip="Compare two plan tabs"/>
+                            ToolTip.Tip="Compare any two plans open in this window"/>
                     <TextBlock Text="|" VerticalAlignment="Center"
                                Foreground="{DynamicResource ForegroundBrush}" Margin="2,0"/>
                     <Button x:Name="QueryStoreButton" Content="&#x1F4CA; Query Store"

@@ -220,7 +220,7 @@ public partial class MainWindow : Window
         AdviceWindowHelper.Show(this, title, content, analysis, sourceViewer);
     }
 
-    private void ShowCompareDialog()
+    internal void ShowCompareDialog()
     {
         var planTabs = CollectAllPlanTabs();
         if (planTabs.Count < 2)
