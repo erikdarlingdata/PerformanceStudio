@@ -315,6 +315,11 @@ public partial class QuerySessionControl : UserControl
 
         StatusText.Text = text;
 
+        /* The bar is one line and trims with an ellipsis, so a long message - an error, usually -
+           is readable only on hover. Setting the tip to the same text costs nothing when it fits and
+           is the difference between a truncated error and a recoverable one when it does not. */
+        ToolTip.SetTip(StatusText, string.IsNullOrEmpty(text) ? null : text);
+
         if (autoClear && !string.IsNullOrEmpty(text))
         {
             var cts = new CancellationTokenSource();

@@ -216,7 +216,12 @@ public partial class QuerySessionControl : UserControl
         }
         catch (Exception ex)
         {
-            SetStatus(ex.Message.Length > 80 ? ex.Message[..80] + "..." : ex.Message, autoClear: false);
+            /* Was cut to 80 characters here before being handed to a status bar that already does
+               TextTrimming="CharacterEllipsis". The trimming is the bar's job and it does it against
+               the actual available width; doing it again in code just threw away text the control
+               would have kept, and with it the tooltip that now carries the full message. Same
+               family as #448. */
+            SetStatus(ex.Message, autoClear: false);
             return;
         }
 

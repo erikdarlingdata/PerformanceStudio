@@ -488,7 +488,10 @@ public static partial class PlanAnalyzer
             var hasTableVar = false;
             var isModification = stmt.StatementType is "INSERT" or "UPDATE" or "DELETE" or "MERGE";
             var modifiesTableVar = false;
-            CheckForTableVariables(stmt.RootNode, isModification, ref hasTableVar, ref modifiesTableVar);
+            var referencingNodeIds = new List<int>();
+            var modifyingNodeIds = new List<int>();
+            CheckForTableVariables(stmt.RootNode, isModification, ref hasTableVar, ref modifiesTableVar,
+                referencingNodeIds, modifyingNodeIds);
 
             if (hasTableVar && !modifiesTableVar)
             {
@@ -496,7 +499,8 @@ public static partial class PlanAnalyzer
                 {
                     WarningType = "Table Variable",
                     Message = "Table variable detected. Table variables lack column-level statistics, which causes bad row estimates, join choices, and memory grant decisions. Replace with a #temp table.",
-                    Severity = PlanWarningSeverity.Warning
+                    Severity = PlanWarningSeverity.Warning,
+                    OriginNodeIds = referencingNodeIds
                 });
             }
 
@@ -506,7 +510,8 @@ public static partial class PlanAnalyzer
                 {
                     WarningType = "Table Variable",
                     Message = "This query modifies a table variable, which forces the entire plan to run single-threaded. SQL Server cannot use parallelism for modifications to table variables. Replace with a #temp table to allow parallel execution.",
-                    Severity = PlanWarningSeverity.Critical
+                    Severity = PlanWarningSeverity.Critical,
+                    OriginNodeIds = modifyingNodeIds
                 });
             }
         }

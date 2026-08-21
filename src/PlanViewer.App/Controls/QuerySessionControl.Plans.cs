@@ -220,7 +220,30 @@ public partial class QuerySessionControl : UserControl
         }
     }
 
+    /// <summary>
+    /// #447: asks the window, not this session. Comparing the plan from one query against the plan
+    /// from another is the ordinary case, and counting only this session's own tabs left the button
+    /// disabled in both — the reporter had to save a plan and reopen it to get at a comparison the
+    /// app could already do.
+    /// </summary>
     private void UpdateCompareButtonState()
+    {
+        if (TopLevel.GetTopLevel(this) is MainWindow owner)
+        {
+            /* Refreshes every session, not just this one: a plan appearing here can be the second
+               plan that makes Compare available over THERE. */
+            owner.RefreshComparePlanAvailability();
+            return;
+        }
+
+        /* No owning window — the control is being hosted somewhere else or is not attached yet.
+           Fall back to what this session can see rather than leaving the button in a stale state. */
+        SetCompareAvailability(CountOwnPlans() >= 2);
+    }
+
+    internal void SetCompareAvailability(bool enabled) => ComparePlansButton.IsEnabled = enabled;
+
+    private int CountOwnPlans()
     {
         int planCount = 0;
         foreach (var item in SubTabControl.Items)
@@ -228,7 +251,7 @@ public partial class QuerySessionControl : UserControl
             if (item is TabItem t && t.Content is PlanViewerControl v && v.CurrentPlan != null)
                 planCount++;
         }
-        ComparePlansButton.IsEnabled = planCount >= 2;
+        return planCount;
     }
 
     private static string GetTabLabel(TabItem tab)
@@ -242,10 +265,19 @@ public partial class QuerySessionControl : UserControl
 
     private void ComparePlans_Click(object? sender, RoutedEventArgs e)
     {
+        /* #447: hand off to the window's picker, which lists plans from every session and labels
+           them "Query 1 > Plan". This session's own picker cannot see the other query's plan, which
+           is the whole complaint. */
+        if (TopLevel.GetTopLevel(this) is MainWindow owner)
+        {
+            owner.ShowCompareDialog();
+            return;
+        }
+
         var planTabs = GetPlanTabs().ToList();
         if (planTabs.Count < 2)
         {
-            SetStatus("Need at least 2 plan tabs to compare");
+            SetStatus("Need at least 2 plans open to compare");
             return;
         }
 

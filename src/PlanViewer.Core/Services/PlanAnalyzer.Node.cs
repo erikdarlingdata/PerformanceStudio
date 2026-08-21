@@ -48,6 +48,20 @@ public static partial class PlanAnalyzer
         Rule28_RowCountSpool(node, stmt, cfg);
         Rule29_ImplicitConversionSeek(node, stmt, cfg);
         Rule35_ExpensiveOperator(node, stmt, cfg);
+
+        /* #440: an operator warning's origin is the operator it is hanging off, so it is stamped
+           here rather than at each of the 26 places above that add one. Same reasoning as the
+           provenance stamp in ShowPlanParser: a rule you have to remember at every construction
+           site is a rule that eventually gets forgotten, and the one time it is forgotten the UI
+           quietly offers no link on a warning that has a perfectly good one.
+
+           Only fills what a rule left empty, so a rule that knows better - one pointing at the
+           operator that CAUSED the problem rather than the one reporting it - keeps its own answer. */
+        foreach (var warning in node.Warnings)
+        {
+            if (warning.OriginNodeIds.Count == 0)
+                warning.OriginNodeIds.Add(node.NodeId);
+        }
     }
 
     private static void Rule01_FilterOperator(PlanNode node, PlanStatement stmt, AnalyzerConfig cfg)

@@ -83,12 +83,17 @@ public partial class QuerySessionControl : UserControl
             Margin = new Avalonia.Thickness(0, 0, 0, 12)
         };
 
-        var statusLabel = new TextBlock
+        /* #448: SelectableTextBlock and wrapping, because this label doubles as the place a query
+           failure is reported. A SQL error is the one string in this app a user most needs to copy
+           somewhere else, and unwrapped it was being clipped by the panel. */
+        var statusLabel = new SelectableTextBlock
         {
             Text = $"Capturing {planType.ToLower()} plan...",
             FontSize = 14,
             Foreground = new SolidColorBrush(Color.Parse("#E4E6EB")),
-            HorizontalAlignment = HorizontalAlignment.Center
+            HorizontalAlignment = HorizontalAlignment.Center,
+            TextAlignment = Avalonia.Media.TextAlignment.Center,
+            TextWrapping = TextWrapping.Wrap
         };
 
         var cancelBtn = new Button
@@ -211,16 +216,42 @@ public partial class QuerySessionControl : UserControl
         }
         catch (SqlException ex)
         {
-            statusLabel.Text = ex.Message.Length > 100 ? ex.Message[..100] + "..." : ex.Message;
-            progressBar.IsVisible = false;
-            cancelBtn.IsVisible = false;
+            ShowExecutionFailure(loadingPanel, statusLabel, progressBar, cancelBtn, ex.Message);
         }
         catch (Exception ex)
         {
-            statusLabel.Text = ex.Message.Length > 100 ? ex.Message[..100] + "..." : ex.Message;
-            progressBar.IsVisible = false;
-            cancelBtn.IsVisible = false;
+            ShowExecutionFailure(loadingPanel, statusLabel, progressBar, cancelBtn, ex.Message);
         }
+    }
+
+    /// <summary>
+    /// Reports a query failure in the plan tab, in full (#448).
+    ///
+    /// <para>It used to be cut to 100 characters with an ellipsis, in a panel fixed at 300px wide
+    /// holding a non-wrapping label — three separate reasons the same message got clipped, and
+    /// between them a SQL error was routinely unreadable. 100 characters does not even reach the end
+    /// of "Msg 208, Level 16, State 1, Procedure X, Line N" before the sentence naming the actual
+    /// problem starts.</para>
+    ///
+    /// <para>The panel is sized for a spinner and a Cancel button, which is why it is narrow; on
+    /// failure it is re-sized for prose. MaxWidth rather than Width, so a short error stays compact
+    /// and a long one is bounded at a readable measure instead of running the width of the window.</para>
+    /// </summary>
+    internal static void ShowExecutionFailure(
+        StackPanel panel,
+        SelectableTextBlock statusLabel,
+        ProgressBar progressBar,
+        Button cancelBtn,
+        string message)
+    {
+        panel.Width = double.NaN;
+        panel.MaxWidth = 640;
+
+        statusLabel.Text = message;
+        statusLabel.Foreground = new SolidColorBrush(Color.Parse("#E57373"));
+
+        progressBar.IsVisible = false;
+        cancelBtn.IsVisible = false;
     }
 
     private async void GetActualPlan_Click(object? sender, RoutedEventArgs e)
@@ -274,12 +305,15 @@ public partial class QuerySessionControl : UserControl
             Margin = new Avalonia.Thickness(0, 0, 0, 12)
         };
 
-        var statusLabel = new TextBlock
+        /* #448: see the note on the estimated-plan path — this label reports failures too. */
+        var statusLabel = new SelectableTextBlock
         {
             Text = "Capturing actual plan...",
             FontSize = 14,
             Foreground = new SolidColorBrush(Color.Parse("#E4E6EB")),
-            HorizontalAlignment = HorizontalAlignment.Center
+            HorizontalAlignment = HorizontalAlignment.Center,
+            TextAlignment = Avalonia.Media.TextAlignment.Center,
+            TextWrapping = TextWrapping.Wrap
         };
 
         var cancelBtn = new Button
@@ -385,15 +419,11 @@ public partial class QuerySessionControl : UserControl
         }
         catch (SqlException ex)
         {
-            statusLabel.Text = ex.Message.Length > 100 ? ex.Message[..100] + "..." : ex.Message;
-            progressBar.IsVisible = false;
-            cancelBtn.IsVisible = false;
+            ShowExecutionFailure(loadingPanel, statusLabel, progressBar, cancelBtn, ex.Message);
         }
         catch (Exception ex)
         {
-            statusLabel.Text = ex.Message.Length > 100 ? ex.Message[..100] + "..." : ex.Message;
-            progressBar.IsVisible = false;
-            cancelBtn.IsVisible = false;
+            ShowExecutionFailure(loadingPanel, statusLabel, progressBar, cancelBtn, ex.Message);
         }
         finally
         {
