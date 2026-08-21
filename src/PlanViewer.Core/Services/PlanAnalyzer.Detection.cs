@@ -21,12 +21,18 @@ public static partial class PlanAnalyzer
         return false;
     }
 
+    /* #440: collects the operators it found, because this walk already knows exactly which ones
+       touched a table variable and used to throw that away. Two lists rather than one, since the
+       two warnings this feeds are about different operators: every operator referencing a table
+       variable, versus only the ones modifying it (which is what forces the plan serial). */
     private static void CheckForTableVariables(PlanNode node, bool isModification,
-        ref bool hasTableVar, ref bool modifiesTableVar)
+        ref bool hasTableVar, ref bool modifiesTableVar,
+        List<int>? referencingNodeIds = null, List<int>? modifyingNodeIds = null)
     {
         if (!string.IsNullOrEmpty(node.ObjectName) && node.ObjectName.StartsWith("@"))
         {
             hasTableVar = true;
+            referencingNodeIds?.Add(node.NodeId);
             // The modification target is typically an Insert/Update/Delete operator on a table variable
             if (isModification && (node.PhysicalOp.Contains("Insert", StringComparison.OrdinalIgnoreCase)
                 || node.PhysicalOp.Contains("Update", StringComparison.OrdinalIgnoreCase)
@@ -34,10 +40,12 @@ public static partial class PlanAnalyzer
                 || node.PhysicalOp.Contains("Merge", StringComparison.OrdinalIgnoreCase)))
             {
                 modifiesTableVar = true;
+                modifyingNodeIds?.Add(node.NodeId);
             }
         }
         foreach (var child in node.Children)
-            CheckForTableVariables(child, isModification, ref hasTableVar, ref modifiesTableVar);
+            CheckForTableVariables(child, isModification, ref hasTableVar, ref modifiesTableVar,
+                referencingNodeIds, modifyingNodeIds);
     }
 
     /// <summary>

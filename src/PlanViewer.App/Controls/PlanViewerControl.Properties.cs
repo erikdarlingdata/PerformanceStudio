@@ -822,13 +822,15 @@ public partial class PlanViewerControl : UserControl
                     var planWarnHeader = w.MaxBenefitPercent.HasValue
                         ? $"\u26A0 {w.WarningType}{sourceTag}{legacyTag} \u2014 up to {FormatBenefitPercent(w.MaxBenefitPercent.Value)}% benefit"
                         : $"\u26A0 {w.WarningType}{sourceTag}{legacyTag}";
-                    warnPanel.Children.Add(new TextBlock
+                    var planWarnHeaderBlock = new TextBlock
                     {
                         Text = planWarnHeader,
                         FontWeight = FontWeight.SemiBold,
                         FontSize = 11,
                         Foreground = new SolidColorBrush(Color.Parse(warnColor))
-                    });
+                    };
+                    AttachOriginNavigation(planWarnHeaderBlock, planWarnHeader, w.OriginNodeIds);
+                    warnPanel.Children.Add(planWarnHeaderBlock);
                     warnPanel.Children.Add(new TextBlock
                     {
                         Text = w.Message,
@@ -873,6 +875,78 @@ public partial class PlanViewerControl : UserControl
                     HorizontalContentAlignment = HorizontalAlignment.Stretch
                 };
                 PropertiesContent.Children.Add(planWarningsExpander);
+            }
+
+            /* === Operator Warnings (#440) ===
+               Every warning hanging off an operator anywhere in this statement, gathered in one
+               place and each one a link to its operator.
+
+               This section is the point of #440. The reporter's case was "the plan is huge and the
+               warning origin is murky", and the operator warnings are exactly the ones with a
+               murky origin - but until now the only way to see one was to already have clicked the
+               operator it was on, which is no help when you do not know which operator to click.
+               Nothing is removed from the per-operator panel; this is an index into it. */
+            var operatorWarnings = WarningIndex.CollectOperatorWarnings(s.RootNode);
+            if (operatorWarnings.Count > 0)
+            {
+                var operatorWarningsPanel = new StackPanel();
+                foreach (var (originNode, w) in operatorWarnings
+                             .OrderByDescending(x => x.Warning.MaxBenefitPercent ?? -1)
+                             .ThenByDescending(x => x.Warning.Severity)
+                             .ThenBy(x => x.Warning.WarningType))
+                {
+                    var opWarnColor = w.Severity == PlanWarningSeverity.Critical ? "#E57373"
+                        : w.Severity == PlanWarningSeverity.Warning ? "#FFB347" : "#6BB5FF";
+                    var opWarnPanel = new StackPanel { Margin = new Thickness(10, 2, 10, 2) };
+                    var opBenefit = w.MaxBenefitPercent.HasValue
+                        ? $" \u2014 up to {FormatBenefitPercent(w.MaxBenefitPercent.Value)}% benefit"
+                        : "";
+                    var opHeaderText =
+                        $"\u26A0 {w.WarningType}{WarningSourceTag(w)}{(w.IsLegacy ? " [legacy]" : "")}{opBenefit}";
+                    var opHeader = new TextBlock
+                    {
+                        Text = opHeaderText,
+                        FontWeight = FontWeight.SemiBold,
+                        FontSize = 11,
+                        Foreground = new SolidColorBrush(Color.Parse(opWarnColor))
+                    };
+                    AttachOriginNavigation(opHeader, opHeaderText, w.OriginNodeIds);
+                    opWarnPanel.Children.Add(opHeader);
+                    opWarnPanel.Children.Add(new TextBlock
+                    {
+                        Text = OperatorOriginLabel(originNode),
+                        FontSize = 11,
+                        Foreground = SectionHeaderBrush,
+                        Margin = new Thickness(16, 0, 0, 0)
+                    });
+                    operatorWarningsPanel.Children.Add(opWarnPanel);
+                }
+
+                var operatorWarningsExpander = new Expander
+                {
+                    /* Collapsed by default, unlike Plan Warnings. On a large plan this is the
+                       longest section in the panel, and expanding it by default would push the
+                       statement's own details off screen - the opposite of the problem #440 is
+                       about. */
+                    IsExpanded = false,
+                    Header = new TextBlock
+                    {
+                        Text = $"Operator Warnings ({operatorWarnings.Count})",
+                        FontWeight = FontWeight.SemiBold,
+                        FontSize = 11,
+                        Foreground = SectionHeaderBrush
+                    },
+                    Content = operatorWarningsPanel,
+                    Margin = new Thickness(0, 2, 0, 0),
+                    Padding = new Thickness(0),
+                    Foreground = SectionHeaderBrush,
+                    Background = new SolidColorBrush(Color.FromArgb(0x18, 0x4F, 0xA3, 0xFF)),
+                    BorderBrush = PropSeparatorBrush,
+                    BorderThickness = new Thickness(0, 0, 0, 1),
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
+                    HorizontalContentAlignment = HorizontalAlignment.Stretch
+                };
+                PropertiesContent.Children.Add(operatorWarningsExpander);
             }
 
             // === Missing Indexes ===

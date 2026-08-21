@@ -517,6 +517,46 @@ public partial class PlanViewerControl : UserControl
         pct >= 100 ? $"{pct:N0}" : $"{pct:N1}";
 
     /// <summary>
+    /// How an operator is named in the aggregated warning index (#440) — enough to recognise it
+    /// before clicking, matching what the operator's own panel puts in its header.
+    /// </summary>
+    private static string OperatorOriginLabel(PlanNode node) =>
+        string.IsNullOrEmpty(node.FullObjectName)
+            ? $"Node {node.NodeId} \u00B7 {node.PhysicalOp}"
+            : $"Node {node.NodeId} \u00B7 {node.PhysicalOp} on {node.FullObjectName}";
+
+    /// <summary>
+    /// Turns a warning header into a link to the operator it came from (#440).
+    ///
+    /// <para>Only when the warning actually knows. Findings with no operator origin — "High Compile
+    /// CPU" happened before a row was read — are left as plain text rather than given a link that
+    /// goes somewhere arbitrary, because a reader would believe it.</para>
+    ///
+    /// <para>Where a warning came from several operators, the first is the navigation target and the
+    /// rest are named in the tooltip, so the count is visible rather than silently dropped.</para>
+    /// </summary>
+    private void AttachOriginNavigation(TextBlock header, string headerText, List<int> originNodeIds)
+    {
+        if (originNodeIds.Count == 0)
+            return;
+
+        header.Text = headerText + "  \u2192";
+        header.Cursor = new Cursor(StandardCursorType.Hand);
+        ToolTip.SetTip(header, originNodeIds.Count == 1
+            ? $"Go to operator (Node {originNodeIds[0]})"
+            : $"Go to Node {originNodeIds[0]} — also from {string.Join(", ", originNodeIds.Skip(1).Select(id => "Node " + id))}");
+
+        header.PointerPressed += (_, e) =>
+        {
+            if (!e.GetCurrentPoint(header).Properties.IsLeftButtonPressed)
+                return;
+
+            if (TryNavigateToNode(originNodeIds[0]))
+                e.Handled = true;
+        };
+    }
+
+    /// <summary>
     /// #436: marks the warnings SQL Server itself wrote into the plan, so they are not read as one of
     /// our inferences. Only the engine's are tagged — they are the minority, and a badge on every
     /// warning would carry no information.
