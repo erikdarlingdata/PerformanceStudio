@@ -24,6 +24,17 @@ public static partial class PlanAnalyzer
         @"\bCASE\s+(WHEN\b|$)",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+    private static readonly Regex ConvertImplicitRegex = new(
+        @"\bCONVERT_IMPLICIT\s*\(",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    // A column reference in a ScalarString is multi-part bracket-qualified ([schema].[table]).
+    // A variable is a single bracket pair with an @ prefix ([@0]), so excluding @ from the first
+    // part is what separates the two.
+    private static readonly Regex ColumnReferenceRegex = new(
+        @"\[[^\]@]+\]\.\[",
+        RegexOptions.Compiled);
+
     public static void Analyze(ParsedPlan plan, AnalyzerConfig? config = null, ServerMetadata? serverMetadata = null) =>
         AnalyzeCancellable(plan, config, serverMetadata, CancellationToken.None);
 

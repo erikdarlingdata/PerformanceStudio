@@ -332,6 +332,12 @@ public static partial class ShowPlanParser
             });
         }
 
+        /* #436: stamped here rather than on each of the constructions above, so that everything read
+           out of the plan's own <Warnings> element is marked as the engine's, including whatever gets
+           added to this method next. This is the only place parser warnings are built. */
+        foreach (var warning in result)
+            warning.Source = PlanWarningSource.SqlServer;
+
         return result;
     }
 }

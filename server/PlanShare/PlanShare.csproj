@@ -7,14 +7,14 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.10" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.11" />
     <!-- Direct ref lifts the transitive SQLitePCLRaw above 2.1.11, which bundles a
          SQLite vulnerable to CVE-2025-6965 (GHSA-2m69-gcr7-jv3q). Microsoft.Data.Sqlite
          still floors at 2.1.11, so this ref is what keeps the native library patched;
          drop it only once that floor moves past 2.1.11 on its own. 3.0.4 bundles
          SQLite 3.53.3, and Microsoft.Data.Sqlite 10.0.10 works against the 3.x
          native layer (full CRUD verified). -->
-    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.4" />
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />
   </ItemGroup>
 
 </Project>

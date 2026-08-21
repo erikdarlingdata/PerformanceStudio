@@ -195,7 +195,8 @@ public static class ResultMapper
                 Message = w.Message,
                 MaxBenefitPercent = w.MaxBenefitPercent,
                 ActionableFix = w.ActionableFix,
-                IsLegacy = w.IsLegacy
+                IsLegacy = w.IsLegacy,
+                Source = w.Source.ToString()
             });
         }
 
@@ -304,7 +305,8 @@ public static class ResultMapper
                 NodeId = node.NodeId,
                 MaxBenefitPercent = w.MaxBenefitPercent,
                 ActionableFix = w.ActionableFix,
-                IsLegacy = w.IsLegacy
+                IsLegacy = w.IsLegacy,
+                Source = w.Source.ToString()
             });
         }
 

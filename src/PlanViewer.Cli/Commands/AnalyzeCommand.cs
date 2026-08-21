@@ -11,16 +11,12 @@ namespace PlanViewer.Cli.Commands;
 
 public static class AnalyzeCommand
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        WriteIndented = true,
-        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
-    };
+    /* #430: the depth ceiling and the null handling both live on AnalysisJson now. They used to be
+       built here, which is how the identical pair in QueryStoreCommand got missed when #430 was
+       fixed — see AnalysisJson.IndentedWithoutNulls. */
+    private static readonly JsonSerializerOptions JsonOptions = AnalysisJson.IndentedWithoutNulls;
 
-    private static readonly JsonSerializerOptions CompactJsonOptions = new()
-    {
-        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
-    };
+    private static readonly JsonSerializerOptions CompactJsonOptions = AnalysisJson.CompactWithoutNulls;
 
     public static Command Create(ICredentialService? credentialService = null)
     {

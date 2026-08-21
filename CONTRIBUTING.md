@@ -62,6 +62,26 @@ PerformanceStudio/
 - No unnecessary abstractions — keep it simple and direct
 - Tests use real `.sqlplan` XML fixtures, not mocks
 
+## Calling native code
+
+**Never call a variadic C function through a plain `DllImport`.** `fcntl`, `open`, `ioctl` and the
+`printf` family all take `...`, and on Apple arm64 variadic arguments are passed on the *stack* while
+a fixed-signature P/Invoke passes them in *registers*. The callee reads a stack slot you never wrote.
+
+This does not throw, and it does not return an error. In #441 `fcntl(F_GETPATH)` returned 0 for
+success and wrote up to 1KB through whatever pointer happened to be in that slot — an arbitrary write
+into the process on every call — while the buffer we passed came back empty. It made `dotnet test`
+unrunnable on macOS for months, sometimes as a GC livelock and sometimes as a deadlock, and CI never
+saw any of it because Linux and Windows take different branches.
+
+Use a non-variadic equivalent instead (`proc_pidfdinfo` in place of `fcntl(F_GETPATH)`, for example).
+`__arglist` is not an escape hatch — it throws `Vararg calling convention not supported` on this
+target.
+
+When you do P/Invoke a struct-returning native call, derive the offsets in a comment from the system
+header rather than leaving magic numbers, and check the returned size against what you expected. A
+layout change should fail loudly, not hand back plausible-looking wrong bytes.
+
 ## Adding Analysis Rules
 
 Rules live in `PlanAnalyzer.cs`. Each rule:

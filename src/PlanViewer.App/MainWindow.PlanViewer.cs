@@ -63,7 +63,20 @@ public partial class MainWindow : Window
         {
             if (viewer.CurrentPlan == null) return;
             var analysis = ResultMapper.Map(viewer.CurrentPlan, "file", viewer.Metadata);
-            var json = JsonSerializer.Serialize(analysis, new JsonSerializerOptions { WriteIndented = true });
+            string json;
+            try
+            {
+                json = JsonSerializer.Serialize(analysis, AnalysisJson.Indented);
+            }
+            catch (Exception ex) when (ex is JsonException or NotSupportedException)
+            {
+                /* #430: the same unguarded-click-handler crash as QuerySessionControl's Robot Advice
+                   button — this entry point builds the payload independently, so it needed the same
+                   depth ceiling and the same guard. */
+                ShowError($"Could not build robot advice for this plan: {ex.Message}");
+                return;
+            }
+
             ShowAdviceWindow("Advice for Robots", json);
         };
 

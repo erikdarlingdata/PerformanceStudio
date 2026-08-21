@@ -7,14 +7,36 @@
 
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
+
+    <!-- Replaces the RunSettingsFilePath watchdog, which was VSTest-only and died with the runner.
+         Same job, same 15 minutes: give a bare `dotnet test` a session timeout with no flag to
+         remember, because both times the macOS test-host wedge burned cores it was a plain local
+         run, and a backstop that only lives in the workflow files protects the machine that was
+         never at risk.
+
+         Verified the way the runsettings version was, since a silently ignored property looks
+         exactly like a working one: temporarily set to 1ms, a bare `dotnet test` cancelled the run
+         with 0 tests succeeded, then restored.
+
+         Read the scope honestly. This kills an ORDINARY hang, where the runtime is still
+         responsive. It does NOT stop the CoreCLR GC-suspension livelock described in 5f84116, and
+         that is measured rather than assumed: a wedged host ran 8 minutes against a 60s session
+         timeout, and 2m55s against a 90s hangdump timeout, ignoring both. The diagnostics the
+         platform needs are served by the very execution engine that is suspended. Nothing available
+         to a test runner fixes that one; only killing the process from outside does.
+
+         Note for whoever edits this: a pair of dashes cannot appear in an XML comment, which is why
+         the flags above are named without their leading dashes. -->
+    <TestingPlatformCommandLineArguments>--timeout 15m</TestingPlatformCommandLineArguments>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="coverlet.collector" Version="10.0.1" />
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.8.1" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.9.0" />
+    <PackageReference Include="Microsoft.Testing.Extensions.HangDump" Version="2.3.3" />
     <PackageReference Include="Repl.Testing" Version="0.11.0" />
-    <PackageReference Include="xunit.v3" Version="3.2.2" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
+    <PackageReference Include="xunit.v3" Version="4.0.0" />
   </ItemGroup>
 
   <ItemGroup>

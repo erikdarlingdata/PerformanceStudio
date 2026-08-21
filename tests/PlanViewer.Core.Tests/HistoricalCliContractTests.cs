@@ -6,8 +6,13 @@ namespace PlanViewer.Core.Tests;
 
 public sealed class HistoricalCliContractTests
 {
+    /* Rolled for #436, which adds "source" to every warning in the JSON output so a consumer can tell
+       SQL Server's own warnings from Performance Studio's inferences. The change is additive — nothing
+       was removed or renamed, so a consumer reading fields by name is unaffected — but anything
+       diffing or hashing whole output sees different bytes, which is exactly what this constant is
+       here to make somebody decide on rather than discover. */
     private const string ExpectedCompactOutputSha256 =
-        "0c609fed8e250d9366eb9a6cd5eaf40b661ee30d7ba2546bd7726960592e9d87";
+        "06975e4e513eef23669c86bc2cfeec916f442461d605060bbd996bd44df13405";
 
     [Fact]
     public async Task AnalyzeCompact_PreservesHistoricalOutputBytes()

@@ -65,7 +65,7 @@ jobs:
           dotnet restore tests/PlanViewer.Core.Tests/PlanViewer.Core.Tests.csproj
 
       - name: Run tests
-        run: dotnet test tests/PlanViewer.Core.Tests/PlanViewer.Core.Tests.csproj -c Release --verbosity normal
+        run: dotnet test tests/PlanViewer.Core.Tests/PlanViewer.Core.Tests.csproj -c Release --verbosity normal -- --hangdump --hangdump-timeout 5m --hangdump-type none
 
       - name: Publish App (all platforms)
         run: |

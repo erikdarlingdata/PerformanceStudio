@@ -376,6 +376,22 @@ public class PlanWarning
     public SpillDetail? SpillDetails { get; set; }
 
     /// <summary>
+    /// Who says so — SQL Server itself, or us (#436).
+    ///
+    /// <para>These two carry very different weight and a reader cannot tell them apart from the
+    /// message text. A warning SQL Server wrote into the plan's own &lt;Warnings&gt; element is a
+    /// statement of fact from the engine that executed the query: it spilled, it converted, it had no
+    /// statistics. One of our rules is an inference from plan shape, and inferences can be wrong about
+    /// a particular plan in a way the engine's own record cannot be.</para>
+    ///
+    /// <para>Defaults to <see cref="PlanWarningSource.PerformanceStudio"/> because the analyzer builds
+    /// the large majority of them. Everything the parser lifts out of the plan XML is stamped
+    /// <see cref="PlanWarningSource.SqlServer"/> in one place, at the single return of
+    /// ShowPlanParser.ParseWarningsFromElement, so a new engine warning cannot be added and forgotten.</para>
+    /// </summary>
+    public PlanWarningSource Source { get; set; } = PlanWarningSource.PerformanceStudio;
+
+    /// <summary>
     /// Maximum percentage of elapsed time that could be saved by addressing this finding.
     /// null = not quantifiable, 0 = calculated as negligible.
     /// </summary>
@@ -396,6 +412,16 @@ public class PlanWarning
 }
 
 public enum PlanWarningSeverity { Info, Warning, Critical }
+
+/// <summary>Where a <see cref="PlanWarning"/> came from. See <see cref="PlanWarning.Source"/>.</summary>
+public enum PlanWarningSource
+{
+    /// <summary>An inference of ours, from the shape of the plan.</summary>
+    PerformanceStudio,
+
+    /// <summary>Read out of the plan's own &lt;Warnings&gt; element — the engine's record, not ours.</summary>
+    SqlServer
+}
 
 public class MemoryGrantInfo
 {
