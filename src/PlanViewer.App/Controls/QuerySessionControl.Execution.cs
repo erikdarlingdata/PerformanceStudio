@@ -237,7 +237,7 @@ public partial class QuerySessionControl : UserControl
     /// failure it is re-sized for prose. MaxWidth rather than Width, so a short error stays compact
     /// and a long one is bounded at a readable measure instead of running the width of the window.</para>
     /// </summary>
-    private static void ShowExecutionFailure(
+    internal static void ShowExecutionFailure(
         StackPanel panel,
         SelectableTextBlock statusLabel,
         ProgressBar progressBar,
