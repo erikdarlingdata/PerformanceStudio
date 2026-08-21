@@ -9,8 +9,8 @@ authors:
     website: "https://erikdarling.com"
 repository-code: "https://github.com/erikdarlingdata/PerformanceStudio"
 license: MIT
-version: "1.19.1"
-date-released: "2026-07-29"
+version: "1.20.0"
+date-released: "2026-08-21"
 keywords:
   - sql-server
   - execution-plan
