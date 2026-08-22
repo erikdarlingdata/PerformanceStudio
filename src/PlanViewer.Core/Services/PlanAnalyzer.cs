@@ -45,10 +45,11 @@ public static partial class PlanAnalyzer
         CancellationToken cancellationToken)
     {
         var cfg = config ?? AnalyzerConfig.Default;
-        foreach (var batch in plan.Batches)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            foreach (var stmt in batch.Statements)
+            /* #455: every statement, including the ones inside a stored procedure or UDF body. This
+               used to walk batch.Statements alone, so an EXEC <procedure> plan analyzed as a single
+               statement with nothing to say about it. */
+            foreach (var stmt in PlanStatements.EnumerateAll(plan))
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 AnalyzeStatement(stmt, cfg, serverMetadata);

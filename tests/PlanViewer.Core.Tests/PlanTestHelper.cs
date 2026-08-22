@@ -44,15 +44,15 @@ public static class PlanTestHelper
     {
         var warnings = new List<PlanWarning>();
 
-        foreach (var batch in plan.Batches)
+        /* #455: every statement, including the ones inside a stored procedure or UDF body. This
+           walked batch.Statements alone, exactly like the analyzer did, so the golden master could
+           not have caught the analyzer skipping procedure bodies - the two shared a blind spot. */
+        foreach (var stmt in PlanViewer.Core.Services.PlanStatements.EnumerateAll(plan))
         {
-            foreach (var stmt in batch.Statements)
-            {
-                warnings.AddRange(stmt.PlanWarnings);
+            warnings.AddRange(stmt.PlanWarnings);
 
-                if (stmt.RootNode != null)
-                    CollectNodeWarnings(stmt.RootNode, warnings);
-            }
+            if (stmt.RootNode != null)
+                CollectNodeWarnings(stmt.RootNode, warnings);
         }
 
         return warnings;
