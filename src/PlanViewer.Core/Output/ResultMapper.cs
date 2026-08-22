@@ -24,14 +24,13 @@ public static class ResultMapper
             SqlServerBuild = plan.Build
         };
 
-        foreach (var batch in plan.Batches)
+        /* #455: includes statements nested inside a stored procedure or UDF body. Without this the
+           summary counted the EXEC and nothing else, so a procedure carrying dozens of statement
+           plans reported total_statements 1 and max_estimated_cost 0. */
+        foreach (var stmt in PlanStatements.EnumerateAll(plan))
         {
             cancellationToken.ThrowIfCancellationRequested();
-            foreach (var stmt in batch.Statements)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                result.Statements.Add(MapStatement(stmt, cancellationToken));
-            }
+            result.Statements.Add(MapStatement(stmt, cancellationToken));
         }
 
         result.Summary = BuildSummary(result, cancellationToken);
