@@ -98,6 +98,10 @@ public partial class MainWindow : Window
                         OpenFile_Click(this, new RoutedEventArgs());
                         e.Handled = true;
                         break;
+                    case Key.S:
+                        _ = SaveQueryAsync();
+                        e.Handled = true;
+                        break;
                     case Key.W:
                         if (MainTabControl.SelectedItem is TabItem selected)
                         {
@@ -123,6 +127,11 @@ public partial class MainWindow : Window
                         }
                         break;
                 }
+            }
+            else if (e.KeyModifiers == (KeyModifiers.Control | KeyModifiers.Shift) && e.Key == Key.O)
+            {
+                OpenQuery_Click(this, new RoutedEventArgs());
+                e.Handled = true;
             }
             else if (e.KeyModifiers == (KeyModifiers.Control | KeyModifiers.Shift) && e.Key == Key.Tab)
             {

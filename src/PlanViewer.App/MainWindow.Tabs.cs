@@ -177,6 +177,16 @@ public partial class MainWindow : Window
         }
     }
 
+    /// <summary>
+    /// Retitles a tab. The header is a StackPanel whose first child carries the text,
+    /// which is also what StartRename edits.
+    /// </summary>
+    private static void SetTabLabel(TabItem tab, string label)
+    {
+        if (tab.Header is StackPanel header && header.Children.Count > 0 && header.Children[0] is TextBlock text)
+            text.Text = label;
+    }
+
     private static string? GetTabFilePath(TabItem tab)
     {
         // Plans opened from file are wrapped in a DockPanel with the viewer as the last child
