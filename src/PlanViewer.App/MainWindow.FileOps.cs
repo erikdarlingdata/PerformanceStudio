@@ -72,6 +72,97 @@ public partial class MainWindow : Window
         }
     }
 
+    private async void OpenQuery_Click(object? sender, RoutedEventArgs e)
+    {
+        var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Open Query",
+            AllowMultiple = true,
+            FileTypeFilter = new[]
+            {
+                new FilePickerFileType("SQL Scripts")
+                {
+                    Patterns = new[] { "*.sql" }
+                },
+                FilePickerFileTypes.All
+            }
+        });
+
+        foreach (var file in files)
+        {
+            var path = file.TryGetLocalPath();
+            if (path != null)
+                LoadSqlFile(path);
+        }
+    }
+
+    private async void SaveQuery_Click(object? sender, RoutedEventArgs e)
+    {
+        await SaveQueryAsync();
+    }
+
+    /// <summary>
+    /// Writes the active query tab's text to disk. Always prompts, but defaults to the
+    /// file the query came from so saving back over it is the path of least resistance.
+    /// Silently does nothing when the active tab is a plan rather than a query - the menu
+    /// item is reachable from anywhere and there is nothing to save.
+    /// </summary>
+    private async Task SaveQueryAsync()
+    {
+        if (MainTabControl.SelectedItem is not TabItem { Content: QuerySessionControl session } tab)
+            return;
+
+        var existing = session.SourceFilePath;
+
+        var options = new FilePickerSaveOptions
+        {
+            Title = "Save Query",
+            SuggestedFileName = existing != null ? Path.GetFileName(existing) : "Query.sql",
+            DefaultExtension = "sql",
+            FileTypeChoices = new[]
+            {
+                new FilePickerFileType("SQL Scripts")
+                {
+                    Patterns = new[] { "*.sql" }
+                },
+                FilePickerFileTypes.All
+            }
+        };
+
+        if (existing != null)
+        {
+            var directory = Path.GetDirectoryName(existing);
+            if (!string.IsNullOrEmpty(directory))
+                options.SuggestedStartLocation = await StorageProvider.TryGetFolderFromPathAsync(directory);
+        }
+
+        var file = await StorageProvider.SaveFilePickerAsync(options);
+
+        var path = file?.TryGetLocalPath();
+        if (path != null)
+            SaveQueryToPath(tab, session, path);
+    }
+
+    /// <summary>
+    /// The half of saving that does not need a human: write the text, remember where it went,
+    /// and retitle the tab to match. Split out from the picker so it can be tested.
+    /// </summary>
+    internal bool SaveQueryToPath(TabItem tab, QuerySessionControl session, string path)
+    {
+        try
+        {
+            File.WriteAllText(path, session.QueryEditor.Text);
+            session.SourceFilePath = path;
+            SetTabLabel(tab, Path.GetFileName(path));
+            return true;
+        }
+        catch (Exception ex)
+        {
+            ShowFileError("Error Saving File", $"Failed to save: {Path.GetFileName(path)}", ex.Message);
+            return false;
+        }
+    }
+
     private async void PasteXml_Click(object? sender, RoutedEventArgs e)
     {
         await PasteXmlAsync();
@@ -141,7 +232,7 @@ public partial class MainWindow : Window
             LoadPlanFile(filePath);
     }
 
-    private void LoadSqlFile(string filePath)
+    internal void LoadSqlFile(string filePath)
     {
         try
         {
@@ -151,6 +242,7 @@ public partial class MainWindow : Window
             _queryCounter++;
             var session = new QuerySessionControl(_credentialService, _connectionStore);
             session.QueryEditor.Text = text;
+            session.SourceFilePath = filePath;
 
             var tab = CreateTab(fileName, session);
             MainTabControl.Items.Add(tab);
@@ -159,33 +251,52 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            var dialog = new Window
+            ShowFileError("Error Opening File", $"Failed to open: {Path.GetFileName(filePath)}", ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// One modal for every file operation that can fail, so opening and saving report
+    /// trouble the same way.
+    ///
+    /// <para>Shown ownerless until this window is visible. Both the command-line open and the
+    /// restore of the previous session's tabs run from the constructor, so a file that is
+    /// missing or unreadable at startup reaches here before there is anything to be modal
+    /// over, and ShowDialog against a window that has not been shown throws rather than
+    /// reporting the problem it was called about.</para>
+    /// </summary>
+    private void ShowFileError(string title, string headline, string detail)
+    {
+        var dialog = new Window
+        {
+            Title = title,
+            Width = 450,
+            Height = 200,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Content = new StackPanel
             {
-                Title = "Error Opening File",
-                Width = 450,
-                Height = 200,
-                WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                Content = new StackPanel
+                Margin = new Avalonia.Thickness(20),
+                Children =
                 {
-                    Margin = new Avalonia.Thickness(20),
-                    Children =
+                    new TextBlock
                     {
-                        new TextBlock
-                        {
-                            Text = $"Failed to open: {Path.GetFileName(filePath)}",
-                            FontWeight = FontWeight.Bold,
-                            Margin = new Avalonia.Thickness(0, 0, 0, 10)
-                        },
-                        new TextBlock
-                        {
-                            Text = ex.Message,
-                            TextWrapping = TextWrapping.Wrap
-                        }
+                        Text = headline,
+                        FontWeight = FontWeight.Bold,
+                        Margin = new Avalonia.Thickness(0, 0, 0, 10)
+                    },
+                    new TextBlock
+                    {
+                        Text = detail,
+                        TextWrapping = TextWrapping.Wrap
                     }
                 }
-            };
+            }
+        };
+
+        if (IsVisible)
             dialog.ShowDialog(this);
-        }
+        else
+            dialog.Show();
     }
 
     internal void LoadPlanFile(string filePath)

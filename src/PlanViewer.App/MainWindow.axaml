@@ -16,6 +16,11 @@
             <MenuItem Header="_File">
                 <MenuItem Header="New _Query" Click="NewQuery_Click"
                           InputGesture="Ctrl+N"/>
+                <MenuItem Header="Open Q_uery..." Click="OpenQuery_Click"
+                          InputGesture="Ctrl+Shift+O"/>
+                <MenuItem Header="_Save Query..." Click="SaveQuery_Click"
+                          InputGesture="Ctrl+S"/>
+                <Separator/>
                 <MenuItem Header="_Open .sqlplan..." Click="OpenFile_Click"
                           InputGesture="Ctrl+O"/>
                 <MenuItem Header="_Paste Plan XML" Click="PasteXml_Click"

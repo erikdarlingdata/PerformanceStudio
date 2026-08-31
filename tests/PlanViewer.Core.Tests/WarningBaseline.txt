@@ -75,6 +75,17 @@ Exchange Spill | Critical | Exchange spill — 5,000,000 writes to TempDB. The p
 Expensive Operator | Critical | Sort took 65,000ms (81.2% of statement elapsed) but no specific rule identified a fix. Worth investigating: is the row volume necessary? Are upstream estimates driving this operator harder than it should be?
 Bare Scan | Warning | Clustered index scan reads the full table with no predicate, outputting 1 column(s): Test.Col1. Consider a nonclustered index on the output columns (as key or INCLUDE) so SQL Server can read a narrower structure. For analytical workloads, a columnstore index may be a better fit.
 
+### exec_stored_procedure_plan.sqlplan
+Non-SARGable Predicate | Warning | Implicit conversion (CONVERT_IMPLICIT) prevents an index seek. Match the parameter or variable data type to the column data type.\nPredicate: CONVERT_IMPLICIT(nvarchar(20),[ps455].[dbo].[Orders].[Code],0)=[@code]
+Filter Operator | Warning | Filter operator discarding rows late in the plan.\nPredicate: [ps455].[dbo].[Orders].[Amount]>(0.5)
+Table Variable | Critical | This query modifies a table variable, which forces the entire plan to run single-threaded. SQL Server cannot use parallelism for modifications to table variables. Replace with a #temp table to allow parallel execution.
+Table Variable | Critical | Modifying a table variable forces the entire plan to run single-threaded. Replace with a #temp table to allow parallel execution.
+Top Above Scan | Warning | Top reads from Clustered Index Scan on ps455.dbo.Orders (Node 2). An index on the ORDER BY columns could eliminate the scan and sort entirely.
+Row Goal | Info | Row goal active: estimate reduced from 20,000 to 100 (200x reduction) due to TOP. The optimizer chose this plan shape expecting to stop reading early. If the query reads all rows anyway, the plan choice may be suboptimal.
+Table Variable | Warning | Table variable detected. Table variables lack column-level statistics, which causes bad row estimates, join choices, and memory grant decisions. Replace with a #temp table.
+Scan With Predicate | Warning | Scan with residual predicate — SQL Server is reading every row and filtering after the fact. Check that you have appropriate indexes.\nPredicate: @t.[Id] as [t].[Id] IS NOT NULL
+Table Variable | Warning | Table variable detected. Table variables lack column-level statistics, which causes bad row estimates, join choices, and memory grant decisions. Replace with a #temp table.
+
 ### implicit_convert_seek_plan.sqlplan
 Implicit Conversion | Critical | Implicit conversion prevented an index seek, forcing a scan instead. Fix the data type mismatch: ensure the parameter or variable type matches the column type exactly. Seek Plan: CONVERT_IMPLICIT(nvarchar(40),[TestDB].[dbo].[Users].[DisplayName],0)=[@d]
 Bare Scan | Warning | Clustered index scan reads the full table with no predicate, outputting 1 column(s): Users.Id. Consider a nonclustered index on the output columns (as key or INCLUDE) so SQL Server can read a narrower structure. For analytical workloads, a columnstore index may be a better fit.

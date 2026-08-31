@@ -23,6 +23,7 @@
     <Compile Include="..\PlanViewer.Core\Services\ShowPlanParser.Warnings.cs" Link="Core\Services\ShowPlanParser.Warnings.cs" />
     <Compile Include="..\PlanViewer.Core\Services\ShowPlanParser.Costs.cs" Link="Core\Services\ShowPlanParser.Costs.cs" />
     <Compile Include="..\PlanViewer.Core\Services\ShowPlanParser.Helpers.cs" Link="Core\Services\ShowPlanParser.Helpers.cs" />
+    <Compile Include="..\PlanViewer.Core\Services\PlanStatements.cs" Link="Core\Services\PlanStatements.cs" />
     <Compile Include="..\PlanViewer.Core\Services\PlanAnalyzer.cs" Link="Core\Services\PlanAnalyzer.cs" />
     <Compile Include="..\PlanViewer.Core\Services\PlanAnalyzer.Statement.cs" Link="Core\Services\PlanAnalyzer.Statement.cs" />
     <Compile Include="..\PlanViewer.Core\Services\PlanAnalyzer.Node.cs" Link="Core\Services\PlanAnalyzer.Node.cs" />

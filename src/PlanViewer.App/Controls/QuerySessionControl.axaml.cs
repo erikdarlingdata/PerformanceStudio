@@ -32,6 +32,11 @@ public partial class QuerySessionControl : UserControl
     private readonly ICredentialService _credentialService;
     private readonly ConnectionStore _connectionStore;
 
+    /// <summary>
+    /// Full path on disk when the query was loaded from, or last saved to, a file.
+    /// </summary>
+    public string? SourceFilePath { get; set; }
+
     private ServerConnection? _serverConnection;
     private string? _connectionString;
     private string? _selectedDatabase;

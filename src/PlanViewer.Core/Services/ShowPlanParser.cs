@@ -278,6 +278,52 @@ public static partial class ShowPlanParser
             }
         }
 
+        /* #455: sub-plans are read BEFORE the no-QueryPlan early return below, because an
+           EXEC <procedure> statement has no QueryPlan of its own - every plan lives in the body -
+           so it took that early return and never reached this code, seventy lines further down. The
+           parser looked like it descended into procedures and in the one case that matters never
+           did. The same was true of a UDF call whose statement carries no plan of its own. */
+        // XSD gap: UDF sub-plans
+        foreach (var udfEl in stmtEl.Elements(Ns + "UDF"))
+        {
+            var udfInfo = new FunctionPlanInfo
+            {
+                ProcName = udfEl.Attribute("ProcName")?.Value ?? "",
+                IsNativelyCompiled = udfEl.Attribute("IsNativelyCompiled")?.Value is "true" or "1"
+            };
+            var udfStmts = udfEl.Element(Ns + "Statements");
+            if (udfStmts != null)
+            {
+                foreach (var childStmt in udfStmts.Elements())
+                {
+                    var parsed = ParseStatementAndChildren(childStmt, cancellationToken: cancellationToken);
+                    udfInfo.Statements.AddRange(parsed);
+                }
+            }
+            stmt.UdfPlans.Add(udfInfo);
+        }
+
+        // XSD gap: StoredProc sub-plan
+        var storedProcEl = stmtEl.Element(Ns + "StoredProc");
+        if (storedProcEl != null)
+        {
+            var spInfo = new FunctionPlanInfo
+            {
+                ProcName = storedProcEl.Attribute("ProcName")?.Value ?? "",
+                IsNativelyCompiled = storedProcEl.Attribute("IsNativelyCompiled")?.Value is "true" or "1"
+            };
+            var spStmts = storedProcEl.Element(Ns + "Statements");
+            if (spStmts != null)
+            {
+                foreach (var childStmt in spStmts.Elements())
+                {
+                    var parsed = ParseStatementAndChildren(childStmt, cancellationToken: cancellationToken);
+                    spInfo.Statements.AddRange(parsed);
+                }
+            }
+            stmt.StoredProcPlan = spInfo;
+        }
+
         if (queryPlanEl == null)
         {
             // Statements with no QueryPlan (e.g., DECLARE/ASSIGN) still get a synthetic
@@ -333,46 +379,6 @@ public static partial class ShowPlanParser
             stmt.RootNode = stmtNode;
         }
 
-        // XSD gap: UDF sub-plans
-        foreach (var udfEl in stmtEl.Elements(Ns + "UDF"))
-        {
-            var udfInfo = new FunctionPlanInfo
-            {
-                ProcName = udfEl.Attribute("ProcName")?.Value ?? "",
-                IsNativelyCompiled = udfEl.Attribute("IsNativelyCompiled")?.Value is "true" or "1"
-            };
-            var udfStmts = udfEl.Element(Ns + "Statements");
-            if (udfStmts != null)
-            {
-                foreach (var childStmt in udfStmts.Elements())
-                {
-                    var parsed = ParseStatementAndChildren(childStmt, cancellationToken: cancellationToken);
-                    udfInfo.Statements.AddRange(parsed);
-                }
-            }
-            stmt.UdfPlans.Add(udfInfo);
-        }
-
-        // XSD gap: StoredProc sub-plan
-        var storedProcEl = stmtEl.Element(Ns + "StoredProc");
-        if (storedProcEl != null)
-        {
-            var spInfo = new FunctionPlanInfo
-            {
-                ProcName = storedProcEl.Attribute("ProcName")?.Value ?? "",
-                IsNativelyCompiled = storedProcEl.Attribute("IsNativelyCompiled")?.Value is "true" or "1"
-            };
-            var spStmts = storedProcEl.Element(Ns + "Statements");
-            if (spStmts != null)
-            {
-                foreach (var childStmt in spStmts.Elements())
-                {
-                    var parsed = ParseStatementAndChildren(childStmt, cancellationToken: cancellationToken);
-                    spInfo.Statements.AddRange(parsed);
-                }
-            }
-            stmt.StoredProcPlan = spInfo;
-        }
 
         return stmt;
     }
