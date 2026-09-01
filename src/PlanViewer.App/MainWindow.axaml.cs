@@ -105,8 +105,7 @@ public partial class MainWindow : Window
                     case Key.W:
                         if (MainTabControl.SelectedItem is TabItem selected)
                         {
-                            MainTabControl.Items.Remove(selected);
-                            UpdateEmptyOverlay();
+                            _ = TryCloseTabAsync(selected);
                             e.Handled = true;
                         }
                         break;
@@ -257,6 +256,168 @@ public partial class MainWindow : Window
     private void UpdateEmptyOverlay()
     {
         EmptyOverlay.IsVisible = MainTabControl.Items.Count == 0;
+    }
+
+
+    // ── Unsaved query changes (#462) ──────────────────────────────────────
+
+    /// <summary>
+    /// Set once every tab has been asked about, so the second pass through
+    /// <see cref="OnClosing"/> does not ask the whole window again.
+    /// </summary>
+    private bool _closeConfirmed;
+
+    private const string CloseGlyph = "\u2715";   // ✕
+    private const string ModifiedGlyph = "\u25CF"; // ●
+
+    /// <summary>
+    /// What a tab's close button shows. Dirty tabs get a filled dot, but it reverts to the
+    /// × while the pointer is over the button — a marker you cannot click through is a tab
+    /// you cannot close, which is the trade VS Code makes and the one Josh asked for.
+    /// </summary>
+    internal static string CloseButtonGlyph(bool isDirty, bool isPointerOver) =>
+        isDirty && !isPointerOver ? ModifiedGlyph : CloseGlyph;
+
+    /// <summary>
+    /// Whether closing this tab would throw work away. Plan tabs are read-only, so only a
+    /// query session can ever answer yes.
+    /// </summary>
+    internal static bool HasUnsavedChanges(TabItem tab) =>
+        tab.Content is QuerySessionControl { IsDirty: true };
+
+    /// <summary>
+    /// Every tab that would lose work if the window closed right now, in tab order.
+    ///
+    /// <para>Deliberately not "the selected tab": the edit at risk is usually in the tab the
+    /// user is not looking at, which is the whole reason a window-close prompt exists.</para>
+    /// </summary>
+    internal List<TabItem> TabsWithUnsavedChanges() =>
+        MainTabControl.Items.OfType<TabItem>().Where(HasUnsavedChanges).ToList();
+
+    /// <summary>
+    /// What the close path does with an answer to the prompt.
+    /// </summary>
+    internal enum CloseAction
+    {
+        /// <summary>Proceed with the close.</summary>
+        Close,
+
+        /// <summary>Leave the tab, and the window, alone.</summary>
+        Cancel,
+
+        /// <summary>Overwrite the file the session came from, then close.</summary>
+        SaveInPlace,
+
+        /// <summary>Ask where to put it first, then close if it was actually written.</summary>
+        SaveAs
+    }
+
+    /// <summary>
+    /// Turns an answer into an action, split out from the dialog so the decision can be
+    /// tested without a window to click. A never-saved scratch tab has nowhere to write, so
+    /// its Save has to become a Save As rather than silently doing nothing.
+    /// </summary>
+    internal static CloseAction DecideClose(UnsavedChangesChoice choice, bool hasFile) => choice switch
+    {
+        UnsavedChangesChoice.Cancel => CloseAction.Cancel,
+        UnsavedChangesChoice.DontSave => CloseAction.Close,
+        _ => hasFile ? CloseAction.SaveInPlace : CloseAction.SaveAs
+    };
+
+    /// <summary>
+    /// Asks about a tab if it needs asking about. Returns whether the close may proceed —
+    /// false means the user cancelled, or a save they asked for failed.
+    /// </summary>
+    private async Task<bool> ConfirmCloseAsync(TabItem tab)
+    {
+        if (!HasUnsavedChanges(tab))
+            return true;
+
+        var session = (QuerySessionControl)tab.Content!;
+
+        MainTabControl.SelectedItem = tab; // show what is being asked about
+        var choice = await UnsavedChangesDialog.ShowAsync(this, GetTabLabel(tab));
+
+        return DecideClose(choice, session.SourceFilePath != null) switch
+        {
+            CloseAction.Cancel => false,
+            CloseAction.Close => true,
+            CloseAction.SaveInPlace => SaveQueryToPath(tab, session, session.SourceFilePath!),
+            _ => await SaveQueryAsync(tab, session)
+        };
+    }
+
+    /// <summary>
+    /// Closes one tab, asking first. Returns false when the close was refused, so callers
+    /// closing several tabs can stop rather than plough on past a Cancel.
+    /// </summary>
+    private async Task<bool> TryCloseTabAsync(TabItem tab)
+    {
+        if (!await ConfirmCloseAsync(tab))
+            return false;
+
+        MainTabControl.Items.Remove(tab);
+        UpdateEmptyOverlay();
+        return true;
+    }
+
+    /// <summary>
+    /// Closes a run of tabs. Cancelling any one of them abandons the rest: "close all tabs"
+    /// answered with Cancel means the user changed their mind about all of them, not about
+    /// that one.
+    /// </summary>
+    private async Task CloseTabsAsync(IEnumerable<TabItem> tabs)
+    {
+        foreach (var tab in tabs.ToList())
+        {
+            if (!await TryCloseTabAsync(tab))
+                return;
+        }
+    }
+
+    /// <summary>
+    /// Closes everything but one tab, then puts the survivor back in front — it may not have
+    /// been the selected tab, and <see cref="ConfirmCloseAsync"/> moves the selection around
+    /// to show what it is asking about.
+    /// </summary>
+    private async Task CloseOtherTabsAsync(TabItem keepTab)
+    {
+        await CloseTabsAsync(MainTabControl.Items.OfType<TabItem>().Where(t => t != keepTab));
+
+        if (MainTabControl.Items.Contains(keepTab))
+            MainTabControl.SelectedItem = keepTab;
+    }
+
+    /// <summary>
+    /// Holds the window open long enough to ask about every modified tab.
+    ///
+    /// <para>The prompt is async and Closing is not, so the first pass cancels the close
+    /// outright and re-issues it from <see cref="ConfirmWindowCloseAsync"/> once every tab
+    /// has answered. Anything that is not a query tab, and any window with nothing modified,
+    /// closes on the first pass without a detour.</para>
+    /// </summary>
+    protected override void OnClosing(WindowClosingEventArgs e)
+    {
+        if (!_closeConfirmed && TabsWithUnsavedChanges().Count > 0)
+        {
+            e.Cancel = true;
+            _ = ConfirmWindowCloseAsync();
+            return;
+        }
+
+        base.OnClosing(e);
+    }
+
+    private async Task ConfirmWindowCloseAsync()
+    {
+        foreach (var tab in MainTabControl.Items.OfType<TabItem>().ToList())
+        {
+            if (!await ConfirmCloseAsync(tab))
+                return; // one Cancel cancels the shutdown
+        }
+
+        _closeConfirmed = true;
+        Close();
     }
 
 

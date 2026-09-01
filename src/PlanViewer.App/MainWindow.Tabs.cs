@@ -48,7 +48,7 @@ public partial class MainWindow : Window
 
         var closeBtn = new Button
         {
-            Content = "\u2715",
+            Content = CloseGlyph,
             MinWidth = 22,
             MinHeight = 22,
             Width = 22,
@@ -75,13 +75,29 @@ public partial class MainWindow : Window
         closeBtn.Tag = tab;
         closeBtn.Click += CloseTab_Click;
 
+        /* #462: the modified marker. Only query sessions have a dirty state, and the button
+           has to re-decide on pointer-over as well as on edits, because hovering is what turns
+           the dot back into a close button. */
+        if (content is QuerySessionControl querySession)
+        {
+            void RefreshCloseGlyph() =>
+                closeBtn.Content = CloseButtonGlyph(querySession.IsDirty, closeBtn.IsPointerOver);
+
+            querySession.DirtyStateChanged += (_, _) => RefreshCloseGlyph();
+            closeBtn.PointerEntered += (_, _) => RefreshCloseGlyph();
+            closeBtn.PointerExited += (_, _) => RefreshCloseGlyph();
+
+            // A session can arrive already modified — re-docking a detached window builds a
+            // fresh tab around a session that has been edited since it left.
+            RefreshCloseGlyph();
+        }
+
         // Middle-click to close
         header.PointerPressed += (_, e) =>
         {
             if (e.GetCurrentPoint(null).Properties.PointerUpdateKind == PointerUpdateKind.MiddleButtonPressed)
             {
-                MainTabControl.Items.Remove(tab);
-                UpdateEmptyOverlay();
+                _ = TryCloseTabAsync(tab);
                 e.Handled = true;
             }
         };
@@ -118,10 +134,7 @@ public partial class MainWindow : Window
     private void CloseTab_Click(object? sender, RoutedEventArgs e)
     {
         if (sender is Button btn && btn.Tag is TabItem tab)
-        {
-            MainTabControl.Items.Remove(tab);
-            UpdateEmptyOverlay();
-        }
+            _ = TryCloseTabAsync(tab);
     }
 
     private void TabContextMenu_Click(object? sender, RoutedEventArgs e)
@@ -148,26 +161,16 @@ public partial class MainWindow : Window
 
             case "Close":
                 if (item.Tag is TabItem tab)
-                {
-                    MainTabControl.Items.Remove(tab);
-                    UpdateEmptyOverlay();
-                }
+                    _ = TryCloseTabAsync(tab);
                 break;
 
             case "Close Other Tabs":
                 if (item.Tag is TabItem keepTab)
-                {
-                    var others = MainTabControl.Items.Cast<TabItem>().Where(t => t != keepTab).ToList();
-                    foreach (var t in others)
-                        MainTabControl.Items.Remove(t);
-                    MainTabControl.SelectedItem = keepTab;
-                    UpdateEmptyOverlay();
-                }
+                    _ = CloseOtherTabsAsync(keepTab);
                 break;
 
             case "Close All Tabs":
-                MainTabControl.Items.Clear();
-                UpdateEmptyOverlay();
+                _ = CloseTabsAsync(MainTabControl.Items.Cast<TabItem>().ToList());
                 break;
 
             case "Detach to Window":

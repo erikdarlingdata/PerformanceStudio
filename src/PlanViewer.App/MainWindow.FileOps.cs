@@ -112,6 +112,17 @@ public partial class MainWindow : Window
         if (MainTabControl.SelectedItem is not TabItem { Content: QuerySessionControl session } tab)
             return;
 
+        await SaveQueryAsync(tab, session);
+    }
+
+    /// <summary>
+    /// Saves a named tab rather than whichever one is selected. The unsaved-changes prompt
+    /// (#462) walks every tab, so it needs to save one that is not the active one, and a
+    /// scratch tab answering Save arrives here to get a path.
+    /// </summary>
+    /// <returns>Whether the query reached disk. False also covers the user closing the picker.</returns>
+    private async Task<bool> SaveQueryAsync(TabItem tab, QuerySessionControl session)
+    {
         var existing = session.SourceFilePath;
 
         var options = new FilePickerSaveOptions
@@ -139,8 +150,7 @@ public partial class MainWindow : Window
         var file = await StorageProvider.SaveFilePickerAsync(options);
 
         var path = file?.TryGetLocalPath();
-        if (path != null)
-            SaveQueryToPath(tab, session, path);
+        return path != null && SaveQueryToPath(tab, session, path);
     }
 
     /// <summary>
@@ -153,6 +163,9 @@ public partial class MainWindow : Window
         {
             File.WriteAllText(path, session.QueryEditor.Text);
             session.SourceFilePath = path;
+            // Only a write that actually happened settles the dirty state; the catch below
+            // deliberately leaves the session modified so the work is still guarded.
+            session.MarkClean();
             SetTabLabel(tab, Path.GetFileName(path));
             return true;
         }
@@ -243,6 +256,8 @@ public partial class MainWindow : Window
             var session = new QuerySessionControl(_credentialService, _connectionStore);
             session.QueryEditor.Text = text;
             session.SourceFilePath = filePath;
+            // What was just loaded is what is on disk — the baseline every later edit is measured against.
+            session.MarkClean();
 
             var tab = CreateTab(fileName, session);
             MainTabControl.Items.Add(tab);
