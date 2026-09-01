@@ -512,6 +512,16 @@ public partial class MainWindow : Window
     // ── Recent Plans & Session Restore ────────────────────────────────────
 
 
+    /// <summary>
+    /// One modal for everything that goes wrong outside a file operation — a plan that is not
+    /// a plan, a clipboard with nothing in it, advice that could not be built.
+    ///
+    /// <para>Shown ownerless until this window is visible, for the same reason ShowFileError is.
+    /// Both the command-line open and the restore of the previous session's tabs run from the
+    /// constructor, so a plan file that fails XML validation at startup reaches here before there
+    /// is anything to be modal over, and ShowDialog against a window that has not been shown
+    /// throws rather than reporting the problem it was called about.</para>
+    /// </summary>
     private void ShowError(string message)
     {
         var dialog = new Window
@@ -538,7 +548,11 @@ public partial class MainWindow : Window
                 }
             }
         };
-        dialog.ShowDialog(this);
+
+        if (IsVisible)
+            dialog.ShowDialog(this);
+        else
+            dialog.Show();
     }
 
     private async Task CheckForUpdatesOnStartupAsync()
