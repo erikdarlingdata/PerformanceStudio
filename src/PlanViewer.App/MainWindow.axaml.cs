@@ -294,6 +294,122 @@ public partial class MainWindow : Window
     internal List<TabItem> TabsWithUnsavedChanges() =>
         MainTabControl.Items.OfType<TabItem>().Where(HasUnsavedChanges).ToList();
 
+    // ── Unsaved changes in a detached window (#473) ───────────────────────
+
+    /// <summary>
+    /// The query sessions living in a detached window right now, and the window each is in.
+    ///
+    /// <para>A detached session is not in <see cref="MainTabControl"/>.Items, so
+    /// <see cref="TabsWithUnsavedChanges"/> cannot see it: without this register the shutdown
+    /// prompt honestly reports nothing to save while a dirty edit sits in another window.
+    /// Detaching adds to it; re-docking and closing both take back out, which is why the
+    /// register is keyed on the content control rather than on the tab it came from — by then
+    /// there is no tab.</para>
+    ///
+    /// <para>Only query sessions go on it. Plan and Query Store windows are read-only and have
+    /// nothing to lose, so there is nothing to remember about them.</para>
+    /// </summary>
+    private readonly List<(Window Window, QuerySessionControl Session)> _detachedQuerySessions = new();
+
+    /// <summary>Every query session currently detached, dirty or not.</summary>
+    internal IReadOnlyList<(Window Window, QuerySessionControl Session)> DetachedQuerySessions =>
+        _detachedQuerySessions;
+
+    internal void RememberDetachedQuerySession(Window window, Control content)
+    {
+        if (content is QuerySessionControl session)
+            _detachedQuerySessions.Add((window, session));
+    }
+
+    internal void ForgetDetachedQuerySession(Control content)
+    {
+        if (content is QuerySessionControl session)
+            _detachedQuerySessions.RemoveAll(d => d.Session == session);
+    }
+
+    /// <summary>
+    /// Whether closing a detached window has to stop and ask.
+    ///
+    /// <para>Static and pure so the decision is testable without a window to click, the same
+    /// trade <see cref="DecideClose"/> makes. Three ways to answer no, and each one matters:
+    /// read-only content (a plan, a Query Store window) has nothing to save, an unmodified
+    /// session has nothing to save, and once the app is shutting down the question has already
+    /// been asked — <see cref="ConfirmWindowCloseAsync"/> asks it while the main window is
+    /// still up, precisely so that <see cref="OnClosed"/> can force these windows shut without
+    /// raising a dialog over a window that no longer exists.</para>
+    /// </summary>
+    internal static bool DetachedContentNeedsSavePrompt(Control content, bool isShuttingDown) =>
+        !isShuttingDown && content is QuerySessionControl { IsDirty: true };
+
+    /// <summary>
+    /// The close guard handed to every detached window. Returning null is the whole read-only
+    /// path: no prompt, no cancelled close, no detour.
+    /// </summary>
+    internal Task<bool>? DetachedQueryCloseGuard(Control content, Window detachedWindow) =>
+        DetachedContentNeedsSavePrompt(content, IsShuttingDown)
+            ? ConfirmDetachedCloseAsync((QuerySessionControl)content, detachedWindow)
+            : null;
+
+    /// <summary>
+    /// Asks about a detached session, owned by the window that is being closed rather than by
+    /// the main one — the answer is about that window's content, and a prompt parented to a
+    /// window behind it is a prompt nobody can see. The file picker a Save As needs is taken
+    /// from the same window for the same reason.
+    /// </summary>
+    /// <returns>Whether the close may proceed.</returns>
+    private async Task<bool> ConfirmDetachedCloseAsync(QuerySessionControl session, Window owner)
+    {
+        // The shutdown walk works from a snapshot, and a save taken during it settles more than
+        // its own entry. Same early out ConfirmCloseAsync has, for the same reason.
+        if (!session.IsDirty)
+            return true;
+
+        owner.Activate(); // show what is being asked about, as the tab walk does with selection
+
+        var choice = await UnsavedChangesDialog.ShowAsync(owner, owner.Title ?? "this query");
+
+        return DecideClose(choice, session.SourceFilePath != null) switch
+        {
+            CloseAction.Cancel => false,
+            CloseAction.Close => true,
+            CloseAction.SaveInPlace => SaveQueryToPath(null, session, session.SourceFilePath!),
+            _ => await SaveQueryAsync(null, session, owner.StorageProvider)
+        };
+    }
+
+    /// <summary>
+    /// Every detached window that would lose work if the app closed right now.
+    /// </summary>
+    internal List<(Window Window, QuerySessionControl Session)> DetachedSessionsWithUnsavedChanges() =>
+        _detachedQuerySessions.Where(d => d.Session.IsDirty).ToList();
+
+    /// <summary>
+    /// Everything closing the app would throw away, in the order it will be asked about: the
+    /// tabs first in tab order, then the detached windows.
+    ///
+    /// <para>One list rather than two walks, because two walks is how the second one gets
+    /// forgotten — which is the whole of #473. <c>Tab</c> is null for a detached session; there
+    /// is no tab, and <c>Owner</c> is the window that has to own its prompt.</para>
+    /// </summary>
+    internal List<(TabItem? Tab, QuerySessionControl Session, Window Owner)> UnsavedWorkOnClose()
+    {
+        var work = new List<(TabItem? Tab, QuerySessionControl Session, Window Owner)>();
+
+        foreach (var tab in TabsWithUnsavedChanges())
+            work.Add((tab, (QuerySessionControl)tab.Content!, this));
+
+        foreach (var detached in DetachedSessionsWithUnsavedChanges())
+            work.Add((null, detached.Session, detached.Window));
+
+        return work;
+    }
+
+    /// <summary>
+    /// Whether closing the main window has anything to ask about at all. Tabs and detached
+    /// windows both count: "Detach to Window" is not a way to opt out of being asked.
+    /// </summary>
+    internal bool CloseNeedsConfirmation() => UnsavedWorkOnClose().Count > 0;
+
     /// <summary>
     /// What the close path does with an answer to the prompt.
     /// </summary>
@@ -395,10 +511,13 @@ public partial class MainWindow : Window
     /// outright and re-issues it from <see cref="ConfirmWindowCloseAsync"/> once every tab
     /// has answered. Anything that is not a query tab, and any window with nothing modified,
     /// closes on the first pass without a detour.</para>
+    ///
+    /// <para>#473: "every tab" is not everything. A detached session is off the tab strip and
+    /// still holds unsaved work, so <see cref="CloseNeedsConfirmation"/> counts those too.</para>
     /// </summary>
     protected override void OnClosing(WindowClosingEventArgs e)
     {
-        if (!_closeConfirmed && TabsWithUnsavedChanges().Count > 0)
+        if (!_closeConfirmed && CloseNeedsConfirmation())
         {
             e.Cancel = true;
             _ = ConfirmWindowCloseAsync();
@@ -410,9 +529,19 @@ public partial class MainWindow : Window
 
     private async Task ConfirmWindowCloseAsync()
     {
-        foreach (var tab in MainTabControl.Items.OfType<TabItem>().ToList())
+        /* #473: the sessions that are no longer tabs are asked about here, while every window
+           is still up, rather than from OnClosed where they are force-closed. By then the main
+           window is gone and the app is on its way out — a dialog raised there is at best a
+           window nobody expects and at worst a shutdown that never finishes. Asking here is
+           what earns DetachedContentNeedsSavePrompt the right to wave that force-close
+           through. */
+        foreach (var work in UnsavedWorkOnClose())
         {
-            if (!await ConfirmCloseAsync(tab))
+            var mayClose = work.Tab != null
+                ? await ConfirmCloseAsync(work.Tab)
+                : await ConfirmDetachedCloseAsync(work.Session, work.Owner);
+
+            if (!mayClose)
                 return; // one Cancel cancels the shutdown
         }
 
