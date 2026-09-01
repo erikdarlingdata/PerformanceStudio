@@ -105,8 +105,8 @@ public partial class MainWindow : Window
         // Right-click context menu
         var copyPathItem = new MenuItem { Header = "Copy Path", Tag = tab };
         // Only visible when tab content has a file path
-        var filePath = GetTabFilePath(tab);
-        copyPathItem.IsVisible = filePath != null;
+        void RefreshCopyPathVisibility() => copyPathItem.IsVisible = GetTabFilePath(tab) != null;
+        RefreshCopyPathVisibility();
 
         var contextMenu = new ContextMenu
         {
@@ -122,6 +122,12 @@ public partial class MainWindow : Window
                 new MenuItem { Header = "Close All Tabs" }
             }
         };
+
+        /* #472: whether there is a path to copy is not a fact about the tab's birth. A scratch
+           query gains one the moment it is saved, and a tab can lose one. The menu is only
+           consulted when it opens, so that is when the question gets asked — the call above is
+           just the answer for a menu nobody has opened yet. */
+        contextMenu.Opening += (_, _) => RefreshCopyPathVisibility();
 
         foreach (var item in contextMenu.Items.OfType<MenuItem>())
             item.Click += TabContextMenu_Click;
