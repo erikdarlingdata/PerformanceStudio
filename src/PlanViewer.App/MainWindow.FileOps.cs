@@ -119,10 +119,18 @@ public partial class MainWindow : Window
     /// Saves a named tab rather than whichever one is selected. The unsaved-changes prompt
     /// (#462) walks every tab, so it needs to save one that is not the active one, and a
     /// scratch tab answering Save arrives here to get a path.
+    ///
+    /// <para>#473 brings two wrinkles, both from sessions that are no longer tabs. A detached
+    /// session has no <paramref name="tab"/> to retitle, hence the null. And the picker has to
+    /// come off the window doing the asking: <see cref="Window.StorageProvider"/> here is the
+    /// main window's, so a detached window closing with unsaved work would put its Save As
+    /// dialog on a window behind the one the user is looking at — and, at shutdown, on one
+    /// that is closing. <paramref name="storage"/> is how the caller says which window.</para>
     /// </summary>
     /// <returns>Whether the query reached disk. False also covers the user closing the picker.</returns>
-    private async Task<bool> SaveQueryAsync(TabItem tab, QuerySessionControl session)
+    private async Task<bool> SaveQueryAsync(TabItem? tab, QuerySessionControl session, IStorageProvider? storage = null)
     {
+        var picker = storage ?? StorageProvider;
         var existing = session.SourceFilePath;
 
         var options = new FilePickerSaveOptions
@@ -144,10 +152,10 @@ public partial class MainWindow : Window
         {
             var directory = Path.GetDirectoryName(existing);
             if (!string.IsNullOrEmpty(directory))
-                options.SuggestedStartLocation = await StorageProvider.TryGetFolderFromPathAsync(directory);
+                options.SuggestedStartLocation = await picker.TryGetFolderFromPathAsync(directory);
         }
 
-        var file = await StorageProvider.SaveFilePickerAsync(options);
+        var file = await picker.SaveFilePickerAsync(options);
 
         var path = file?.TryGetLocalPath();
         return path != null && SaveQueryToPath(tab, session, path);
@@ -156,8 +164,12 @@ public partial class MainWindow : Window
     /// <summary>
     /// The half of saving that does not need a human: write the text, remember where it went,
     /// and retitle the tab to match. Split out from the picker so it can be tested.
+    ///
+    /// <para><paramref name="tab"/> is null for a session that has been detached into its own
+    /// window (#473). There is no tab to retitle; everything else about the save is the same,
+    /// including which side of the write settles the dirty state.</para>
     /// </summary>
-    internal bool SaveQueryToPath(TabItem tab, QuerySessionControl session, string path)
+    internal bool SaveQueryToPath(TabItem? tab, QuerySessionControl session, string path)
     {
         try
         {
@@ -166,7 +178,10 @@ public partial class MainWindow : Window
             // Only a write that actually happened settles the dirty state; the catch below
             // deliberately leaves the session modified so the work is still guarded.
             session.MarkClean();
-            SetTabLabel(tab, Path.GetFileName(path));
+
+            if (tab != null)
+                SetTabLabel(tab, Path.GetFileName(path));
+
             return true;
         }
         catch (Exception ex)

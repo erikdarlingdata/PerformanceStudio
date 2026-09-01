@@ -289,11 +289,17 @@ public partial class MainWindow : Window
     /// Detaches a tab's content into a standalone free-floating window.
     /// The window's Close button closes it permanently.
     /// A "Re-dock" button in the toolbar allows the user to explicitly return the content to a tab.
+    ///
+    /// <para>#473: permanently used to mean silently. A query session that leaves the tab strip
+    /// takes its unsaved edit with it, out of reach of both #462 prompts, so the window gets a
+    /// close guard and the session goes on the detached register until it comes back or the
+    /// window closes.</para>
     /// </summary>
-    private void DetachTabToWindow(TabItem tab)
+    /// <returns>The detached window, or null when the tab had no content to detach.</returns>
+    internal Window? DetachTabToWindow(TabItem tab)
     {
         var content = tab.Content as Control;
-        if (content == null) return;
+        if (content == null) return null;
 
         var label = GetTabLabel(tab);
 
@@ -305,13 +311,15 @@ public partial class MainWindow : Window
         if (content is QueryStoreHistoryControl historyControl)
             historyControl.ShowCloseButton(false);
 
-        DetachedWindowHelper.ShowDetached(
+        var detachedWindow = DetachedWindowHelper.ShowDetached(
             content,
             title: label,
             icon: this.Icon,
             backgroundBrush: (Avalonia.Media.IBrush?)this.FindResource("BackgroundBrush"),
             onRedock: c =>
             {
+                ForgetDetachedQuerySession(c);
+
                 if (!IsShuttingDown)
                 {
                     var newTab = CreateTab(label, c);
@@ -322,8 +330,14 @@ public partial class MainWindow : Window
             },
             onClosing: c =>
             {
+                ForgetDetachedQuerySession(c);
+
                 if (c is QueryStoreHistoryControl hc)
                     hc.CancelFetch();
-            });
+            },
+            closeGuard: DetachedQueryCloseGuard);
+
+        RememberDetachedQuerySession(detachedWindow, content);
+        return detachedWindow;
     }
 }
