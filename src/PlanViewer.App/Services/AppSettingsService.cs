@@ -69,6 +69,11 @@ internal sealed class AppSettingsService
                 settings = JsonSerializer.Deserialize<AppSettings>(json, JsonOptions) ?? new AppSettings();
             }
 
+            // Settings written before the open-tab list held queries use the old key.
+            // Ahead of MigrateFormatSettings, which can Save mid-load and would otherwise
+            // write the old key straight back out.
+            MigrateOpenTabs(settings);
+
             // Migrate legacy format settings file into unified settings
             MigrateFormatSettings(settings);
 
@@ -115,6 +120,23 @@ internal sealed class AppSettingsService
         {
             // Best-effort persistence — don't crash the app
         }
+    }
+
+    /// <summary>
+    /// Moves an "open_plans" list written by an older version onto <see cref="AppSettings.OpenTabs"/>,
+    /// so upgrading does not cost the user the tabs they had open. Only fills an empty OpenTabs:
+    /// if both keys are somehow present, the current one wins.
+    /// </summary>
+    /// <remarks>
+    /// Nothing is written here. The old key disappears from disk on the next ordinary save, which
+    /// happens on the first restore, so a downgrade before that point still finds its list.
+    /// </remarks>
+    internal static void MigrateOpenTabs(AppSettings settings)
+    {
+        if (settings.LegacyOpenPlans is { Count: > 0 } legacy && settings.OpenTabs.Count == 0)
+            settings.OpenTabs = legacy;
+
+        settings.LegacyOpenPlans = null;
     }
 
     /// <summary>
@@ -214,8 +236,20 @@ internal sealed class AppSettings
     [JsonPropertyName("recent_plans")]
     public List<string> RecentPlans { get; set; } = new();
 
+    /// <summary>
+    /// Paths of the tabs that were open when the app last closed, reopened on the next start.
+    /// Holds queries as well as plans, which is why it is no longer named for plans.
+    /// </summary>
+    [JsonPropertyName("open_tabs")]
+    public List<string> OpenTabs { get; set; } = new();
+
+    /// <summary>
+    /// What <see cref="OpenTabs"/> was called before it held queries too. Read on load so an
+    /// upgrade does not throw away the tabs the previous version wrote down, then nulled —
+    /// nulls are not serialized, so the old key drops out of the file on the next save.
+    /// </summary>
     [JsonPropertyName("open_plans")]
-    public List<string> OpenPlans { get; set; } = new();
+    public List<string>? LegacyOpenPlans { get; set; }
 
     /// <summary>
     /// Divergence limit for accuracy ratio coloring on plan links. Default 10.

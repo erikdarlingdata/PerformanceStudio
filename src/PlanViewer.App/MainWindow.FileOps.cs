@@ -384,11 +384,16 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Saves the file paths of all currently open file-based plan tabs.
+    /// The file behind every open tab that has one, in tab order. Plans and queries both,
+    /// since <see cref="GetTabFilePath"/> answers for either shape.
     /// </summary>
-    private void SaveOpenPlans()
+    /// <remarks>
+    /// Separate from <see cref="SaveOpenPlans"/> so a test can assert what would be persisted
+    /// without writing over the user's real settings file.
+    /// </remarks>
+    internal List<string> CollectOpenTabPaths()
     {
-        _appSettings.OpenPlans.Clear();
+        var paths = new List<string>();
 
         foreach (var item in MainTabControl.Items)
         {
@@ -396,31 +401,46 @@ public partial class MainWindow : Window
 
             var path = GetTabFilePath(tab);
             if (!string.IsNullOrEmpty(path))
-                _appSettings.OpenPlans.Add(path);
+                paths.Add(path);
         }
+
+        return paths;
+    }
+
+    /// <summary>
+    /// Saves the file paths of all currently open file-based tabs, plans and queries alike.
+    /// </summary>
+    private void SaveOpenPlans()
+    {
+        _appSettings.OpenTabs.Clear();
+        _appSettings.OpenTabs.AddRange(CollectOpenTabPaths());
 
         AppSettingsService.Save(_appSettings);
     }
 
     /// <summary>
-    /// Restores plan tabs from the previous session. Skips files that no longer exist.
+    /// Restores the tabs from the previous session. Skips files that no longer exist.
     /// Falls back to a new query tab if nothing was restored.
+    ///
+    /// <para>The saved list holds queries as well as plans, so it routes on extension the
+    /// same way an ordinary file open does. Sending a .sql file to LoadPlanFile would greet
+    /// the user with "the XML is not valid" where their query used to be.</para>
     /// </summary>
     private void RestoreOpenPlans()
     {
         var restored = false;
 
-        foreach (var path in _appSettings.OpenPlans)
+        foreach (var path in _appSettings.OpenTabs)
         {
             if (File.Exists(path))
             {
-                LoadPlanFile(path);
+                OpenFileByExtension(path);
                 restored = true;
             }
         }
 
-        // Clear the open plans list now that we've restored
-        _appSettings.OpenPlans.Clear();
+        // Clear the restored list now that its tabs are back on screen
+        _appSettings.OpenTabs.Clear();
         AppSettingsService.Save(_appSettings);
 
         if (!restored)

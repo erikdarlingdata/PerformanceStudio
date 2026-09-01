@@ -639,7 +639,7 @@ internal partial class SettingsWindow : Window
 		var fresh = new AppSettings
 		{
 			RecentPlans = _settings.RecentPlans,
-			OpenPlans = _settings.OpenPlans,
+			OpenTabs = _settings.OpenTabs,
 			AccuracyRatioDivergenceLimit = _settings.AccuracyRatioDivergenceLimit
 		};
 		_settings = fresh;
