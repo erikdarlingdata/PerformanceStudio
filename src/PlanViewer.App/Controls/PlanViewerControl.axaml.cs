@@ -164,8 +164,10 @@ public partial class PlanViewerControl : UserControl
         _zoomTransform = (ScaleTransform)layoutTransform.LayoutTransform!;
 
         Helpers.DataGridBehaviors.Attach(StatementsGrid);
+        // Same text the Copy Query Text menu entry produces (#467) — Ctrl+C is that entry's
+        // unlabelled twin, and handing the two of them different statements is its own bug report.
         Helpers.DataGridBehaviors.AttachCopyGuard(StatementsGrid,
-            item => item is StatementRow row ? row.Statement.StatementText : null);
+            item => item is StatementRow row ? RunnableStatementText(row.Statement) : null);
 
         // Wire minimap resize grip (defined in AXAML, not in canvas)
         MinimapResizeGrip.PointerPressed += MinimapResizeGrip_PointerPressed;

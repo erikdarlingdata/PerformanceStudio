@@ -86,6 +86,8 @@ Table Variable | Warning | Table variable detected. Table variables lack column-
 Scan With Predicate | Warning | Scan with residual predicate — SQL Server is reading every row and filtering after the fact. Check that you have appropriate indexes.\nPredicate: @t.[Id] as [t].[Id] IS NOT NULL
 Table Variable | Warning | Table variable detected. Table variables lack column-level statistics, which causes bad row estimates, join choices, and memory grant decisions. Replace with a #temp table.
 
+### forced_parameterization_plan.sqlplan
+
 ### implicit_convert_seek_plan.sqlplan
 Implicit Conversion | Critical | Implicit conversion prevented an index seek, forcing a scan instead. Fix the data type mismatch: ensure the parameter or variable type matches the column type exactly. Seek Plan: CONVERT_IMPLICIT(nvarchar(40),[TestDB].[dbo].[Users].[DisplayName],0)=[@d]
 Bare Scan | Warning | Clustered index scan reads the full table with no predicate, outputting 1 column(s): Users.Id. Consider a nonclustered index on the output columns (as key or INCLUDE) so SQL Server can read a narrower structure. For analytical workloads, a columnstore index may be a better fit.

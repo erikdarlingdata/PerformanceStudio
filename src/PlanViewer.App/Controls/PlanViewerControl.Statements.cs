@@ -163,7 +163,54 @@ public partial class PlanViewerControl : UserControl
             RenderStatement(row.Statement);
     }
 
+    private void StatementsContextMenu_Opening(object? sender, System.ComponentModel.CancelEventArgs e)
+    {
+        UpdateStatementMenuForSelection();
+    }
+
+    /// <summary>
+    /// Relabels the statement context menu for the selected statement, and shows the parameterized
+    /// variant only when there is a difference between the two forms to choose from (#467).
+    ///
+    /// <para>Runs when the menu opens rather than when selection changes, so it describes whatever
+    /// is selected at the moment it is shown — the same row the two click handlers act on.</para>
+    ///
+    /// <para>Internal rather than private only so the tests can reach it: a headless
+    /// <c>ContextMenu.Open</c> needs the control inside a window, and a
+    /// <see cref="PlanViewerControl"/> in a headless window takes the shared Avalonia session's font
+    /// manager down with it.</para>
+    /// </summary>
+    internal void UpdateStatementMenuForSelection()
+    {
+        var substitutable = StatementsGrid.SelectedItem is StatementRow row
+            && ParameterSubstitution.Apply(row.Statement.StatementText, row.Statement.Parameters)
+                .SubstitutionCount > 0;
+
+        // Say so on the label rather than substituting silently: the text the plan records and the
+        // text that will run are different things, and which one you just copied matters.
+        CopyStatementTextItem.Header = substitutable ? "Copy Query Text (with values)" : "Copy Query Text";
+        OpenStatementInEditorItem.Header = substitutable
+            ? "Open in Query Editor (with values)"
+            : "Open in Query Editor";
+
+        ParameterizedStatementSeparator.IsVisible = substitutable;
+        CopyParameterizedStatementTextItem.IsVisible = substitutable;
+    }
+
     private async void CopyStatementText_Click(object? sender, RoutedEventArgs e)
+    {
+        if (StatementsGrid.SelectedItem is not StatementRow row) return;
+        var text = RunnableStatementText(row.Statement);
+        if (string.IsNullOrEmpty(text)) return;
+
+        await ClipboardHelper.TrySetTextAsync(this, text);
+    }
+
+    /// <summary>
+    /// Copies the statement exactly as the plan records it, parameter names and all. Reachable only
+    /// when that differs from the substituted form.
+    /// </summary>
+    private async void CopyParameterizedStatementText_Click(object? sender, RoutedEventArgs e)
     {
         if (StatementsGrid.SelectedItem is not StatementRow row) return;
         var text = row.Statement.StatementText;
@@ -175,11 +222,22 @@ public partial class PlanViewerControl : UserControl
     private void OpenInEditor_Click(object? sender, RoutedEventArgs e)
     {
         if (StatementsGrid.SelectedItem is not StatementRow row) return;
-        var text = row.Statement.StatementText;
+        var text = RunnableStatementText(row.Statement);
         if (string.IsNullOrEmpty(text)) return;
 
         OpenInEditorRequested?.Invoke(this, text);
     }
+
+    /// <summary>
+    /// The statement text with the plan's parameter values put back, or the text as-is when the plan
+    /// carries no values to put back.
+    ///
+    /// <para>The plan is the only source used. The query editor's buffer holds the original text in
+    /// exactly one case — the user just executed it from that tab — and is wrong for a plan opened
+    /// from a file, from Query Store, or from another session.</para>
+    /// </summary>
+    private static string RunnableStatementText(PlanStatement statement) =>
+        ParameterSubstitution.Apply(statement.StatementText, statement.Parameters).Text;
 
     private static void CollectNodeWarnings(PlanNode node, List<PlanWarning> warnings)
     {
