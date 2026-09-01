@@ -187,6 +187,15 @@ public partial class MainWindow : Window
             text.Text = label;
     }
 
+    /// <summary>
+    /// The file a tab was opened from, or null when nothing on disk is behind it
+    /// (a pasted plan, a scratch query, a Query Store tab).
+    ///
+    /// <para>Every tab shape that can carry a path has to be recognised here, because this one
+    /// method answers two questions: what <see cref="SaveOpenPlans"/> writes down for the next
+    /// session, and whether <b>Copy Path</b> appears on the tab's context menu. A shape it does
+    /// not know about loses both without saying anything.</para>
+    /// </summary>
     private static string? GetTabFilePath(TabItem tab)
     {
         // Plans opened from file are wrapped in a DockPanel with the viewer as the last child
@@ -198,6 +207,11 @@ public partial class MainWindow : Window
                     return v.SourceFilePath;
             }
         }
+
+        // Queries are the session control itself, with no wrapper around it
+        if (tab.Content is QuerySessionControl session)
+            return session.SourceFilePath;
+
         return null;
     }
 
