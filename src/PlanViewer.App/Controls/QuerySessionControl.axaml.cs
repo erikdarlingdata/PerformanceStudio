@@ -37,6 +37,39 @@ public partial class QuerySessionControl : UserControl
     /// </summary>
     public string? SourceFilePath { get; set; }
 
+    /// <summary>
+    /// The editor text as of the last load or save. A new session starts empty, so a
+    /// never-saved scratch tab with anything typed into it is dirty too (#462).
+    /// </summary>
+    private string _savedText = "";
+
+    /// <summary>
+    /// Whether the editor holds work that is not on disk.
+    ///
+    /// <para>This compares text rather than latching a "was edited" bool on the first
+    /// keystroke, so typing something and typing it back out again leaves the session
+    /// clean — an undo to the original is not unsaved work, and prompting about it is
+    /// how a save prompt teaches people to dismiss save prompts.</para>
+    /// </summary>
+    public bool IsDirty => !string.Equals(QueryEditor.Text, _savedText, StringComparison.Ordinal);
+
+    /// <summary>
+    /// Raised whenever the editor text changes or the session is marked clean. The tab
+    /// header subscribes to this to keep its modified marker honest; the session cannot
+    /// reach its own tab, and polling <see cref="IsDirty"/> per render would be worse.
+    /// </summary>
+    public event EventHandler? DirtyStateChanged;
+
+    /// <summary>
+    /// Declares the current text to be what is on disk. Called after a load and after a
+    /// successful save — not after a failed one, which must leave the session dirty.
+    /// </summary>
+    public void MarkClean()
+    {
+        _savedText = QueryEditor.Text;
+        DirtyStateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
     private ServerConnection? _serverConnection;
     private string? _connectionString;
     private string? _selectedDatabase;
@@ -71,6 +104,10 @@ public partial class QuerySessionControl : UserControl
         // Code completion
         QueryEditor.TextArea.TextEntering += OnTextEntering;
         QueryEditor.TextArea.TextEntered += OnTextEntered;
+
+        // #462: every edit is a chance for the tab's modified marker to change, in both
+        // directions — an undo back to the saved text clears it again.
+        QueryEditor.TextChanged += (_, _) => DirtyStateChanged?.Invoke(this, EventArgs.Empty);
 
         // Focus the editor when the control is attached to the visual tree
         // Re-install TextMate if it was disposed on detach (tab switching disposes it)
