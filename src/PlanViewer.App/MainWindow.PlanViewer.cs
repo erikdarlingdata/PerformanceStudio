@@ -27,7 +27,13 @@ namespace PlanViewer.App;
 
 public partial class MainWindow : Window
 {
-    private DockPanel CreatePlanTabContent(PlanViewerControl viewer)
+    /// <summary>
+    /// Wraps a loaded plan in the toolbar a window-level plan tab shows above it.
+    ///
+    /// <para>Internal so a test can reproduce what Get Actual Plan does to a file tab — build this
+    /// and assign it over a tab that was holding a spinner — without executing anything (#447).</para>
+    /// </summary>
+    internal DockPanel CreatePlanTabContent(PlanViewerControl viewer)
     {
         var humanBtn = new Button
         {
