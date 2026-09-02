@@ -48,7 +48,7 @@ public partial class MainWindow : Window
 
         var closeBtn = new Button
         {
-            Content = "\u2715",
+            Content = CloseGlyph,
             MinWidth = 22,
             MinHeight = 22,
             Width = 22,
@@ -75,13 +75,29 @@ public partial class MainWindow : Window
         closeBtn.Tag = tab;
         closeBtn.Click += CloseTab_Click;
 
+        /* #462: the modified marker. Only query sessions have a dirty state, and the button
+           has to re-decide on pointer-over as well as on edits, because hovering is what turns
+           the dot back into a close button. */
+        if (content is QuerySessionControl querySession)
+        {
+            void RefreshCloseGlyph() =>
+                closeBtn.Content = CloseButtonGlyph(querySession.IsDirty, closeBtn.IsPointerOver);
+
+            querySession.DirtyStateChanged += (_, _) => RefreshCloseGlyph();
+            closeBtn.PointerEntered += (_, _) => RefreshCloseGlyph();
+            closeBtn.PointerExited += (_, _) => RefreshCloseGlyph();
+
+            // A session can arrive already modified — re-docking a detached window builds a
+            // fresh tab around a session that has been edited since it left.
+            RefreshCloseGlyph();
+        }
+
         // Middle-click to close
         header.PointerPressed += (_, e) =>
         {
             if (e.GetCurrentPoint(null).Properties.PointerUpdateKind == PointerUpdateKind.MiddleButtonPressed)
             {
-                MainTabControl.Items.Remove(tab);
-                UpdateEmptyOverlay();
+                _ = TryCloseTabAsync(tab);
                 e.Handled = true;
             }
         };
@@ -89,8 +105,8 @@ public partial class MainWindow : Window
         // Right-click context menu
         var copyPathItem = new MenuItem { Header = "Copy Path", Tag = tab };
         // Only visible when tab content has a file path
-        var filePath = GetTabFilePath(tab);
-        copyPathItem.IsVisible = filePath != null;
+        void RefreshCopyPathVisibility() => copyPathItem.IsVisible = GetTabFilePath(tab) != null;
+        RefreshCopyPathVisibility();
 
         var contextMenu = new ContextMenu
         {
@@ -107,6 +123,12 @@ public partial class MainWindow : Window
             }
         };
 
+        /* #472: whether there is a path to copy is not a fact about the tab's birth. A scratch
+           query gains one the moment it is saved, and a tab can lose one. The menu is only
+           consulted when it opens, so that is when the question gets asked — the call above is
+           just the answer for a menu nobody has opened yet. */
+        contextMenu.Opening += (_, _) => RefreshCopyPathVisibility();
+
         foreach (var item in contextMenu.Items.OfType<MenuItem>())
             item.Click += TabContextMenu_Click;
 
@@ -118,10 +140,7 @@ public partial class MainWindow : Window
     private void CloseTab_Click(object? sender, RoutedEventArgs e)
     {
         if (sender is Button btn && btn.Tag is TabItem tab)
-        {
-            MainTabControl.Items.Remove(tab);
-            UpdateEmptyOverlay();
-        }
+            _ = TryCloseTabAsync(tab);
     }
 
     private void TabContextMenu_Click(object? sender, RoutedEventArgs e)
@@ -148,26 +167,16 @@ public partial class MainWindow : Window
 
             case "Close":
                 if (item.Tag is TabItem tab)
-                {
-                    MainTabControl.Items.Remove(tab);
-                    UpdateEmptyOverlay();
-                }
+                    _ = TryCloseTabAsync(tab);
                 break;
 
             case "Close Other Tabs":
                 if (item.Tag is TabItem keepTab)
-                {
-                    var others = MainTabControl.Items.Cast<TabItem>().Where(t => t != keepTab).ToList();
-                    foreach (var t in others)
-                        MainTabControl.Items.Remove(t);
-                    MainTabControl.SelectedItem = keepTab;
-                    UpdateEmptyOverlay();
-                }
+                    _ = CloseOtherTabsAsync(keepTab);
                 break;
 
             case "Close All Tabs":
-                MainTabControl.Items.Clear();
-                UpdateEmptyOverlay();
+                _ = CloseTabsAsync(MainTabControl.Items.Cast<TabItem>().ToList());
                 break;
 
             case "Detach to Window":
@@ -187,6 +196,15 @@ public partial class MainWindow : Window
             text.Text = label;
     }
 
+    /// <summary>
+    /// The file a tab was opened from, or null when nothing on disk is behind it
+    /// (a pasted plan, a scratch query, a Query Store tab).
+    ///
+    /// <para>Every tab shape that can carry a path has to be recognised here, because this one
+    /// method answers two questions: what <see cref="SaveOpenPlans"/> writes down for the next
+    /// session, and whether <b>Copy Path</b> appears on the tab's context menu. A shape it does
+    /// not know about loses both without saying anything.</para>
+    /// </summary>
     private static string? GetTabFilePath(TabItem tab)
     {
         // Plans opened from file are wrapped in a DockPanel with the viewer as the last child
@@ -198,6 +216,11 @@ public partial class MainWindow : Window
                     return v.SourceFilePath;
             }
         }
+
+        // Queries are the session control itself, with no wrapper around it
+        if (tab.Content is QuerySessionControl session)
+            return session.SourceFilePath;
+
         return null;
     }
 
@@ -266,11 +289,17 @@ public partial class MainWindow : Window
     /// Detaches a tab's content into a standalone free-floating window.
     /// The window's Close button closes it permanently.
     /// A "Re-dock" button in the toolbar allows the user to explicitly return the content to a tab.
+    ///
+    /// <para>#473: permanently used to mean silently. A query session that leaves the tab strip
+    /// takes its unsaved edit with it, out of reach of both #462 prompts, so the window gets a
+    /// close guard and the session goes on the detached register until it comes back or the
+    /// window closes.</para>
     /// </summary>
-    private void DetachTabToWindow(TabItem tab)
+    /// <returns>The detached window, or null when the tab had no content to detach.</returns>
+    internal Window? DetachTabToWindow(TabItem tab)
     {
         var content = tab.Content as Control;
-        if (content == null) return;
+        if (content == null) return null;
 
         var label = GetTabLabel(tab);
 
@@ -282,13 +311,15 @@ public partial class MainWindow : Window
         if (content is QueryStoreHistoryControl historyControl)
             historyControl.ShowCloseButton(false);
 
-        DetachedWindowHelper.ShowDetached(
+        var detachedWindow = DetachedWindowHelper.ShowDetached(
             content,
             title: label,
             icon: this.Icon,
             backgroundBrush: (Avalonia.Media.IBrush?)this.FindResource("BackgroundBrush"),
             onRedock: c =>
             {
+                ForgetDetachedQuerySession(c);
+
                 if (!IsShuttingDown)
                 {
                     var newTab = CreateTab(label, c);
@@ -299,8 +330,14 @@ public partial class MainWindow : Window
             },
             onClosing: c =>
             {
+                ForgetDetachedQuerySession(c);
+
                 if (c is QueryStoreHistoryControl hc)
                     hc.CancelFetch();
-            });
+            },
+            closeGuard: DetachedQueryCloseGuard);
+
+        RememberDetachedQuerySession(detachedWindow, content);
+        return detachedWindow;
     }
 }

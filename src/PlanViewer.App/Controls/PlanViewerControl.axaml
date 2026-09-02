@@ -241,9 +241,16 @@
                               Background="{DynamicResource BackgroundDarkBrush}"
                               BorderThickness="0">
                         <DataGrid.ContextMenu>
-                            <ContextMenu>
-                                <MenuItem Header="Copy Query Text" Click="CopyStatementText_Click"/>
-                                <MenuItem Header="Open in Query Editor" Click="OpenInEditor_Click"/>
+                            <ContextMenu Opening="StatementsContextMenu_Opening">
+                                <MenuItem x:Name="CopyStatementTextItem"
+                                          Header="Copy Query Text" Click="CopyStatementText_Click"/>
+                                <MenuItem x:Name="OpenStatementInEditorItem"
+                                          Header="Open in Query Editor" Click="OpenInEditor_Click"/>
+                                <Separator x:Name="ParameterizedStatementSeparator" IsVisible="False"/>
+                                <MenuItem x:Name="CopyParameterizedStatementTextItem"
+                                          Header="Copy Query Text (as parameterized)"
+                                          Click="CopyParameterizedStatementText_Click"
+                                          IsVisible="False"/>
                             </ContextMenu>
                         </DataGrid.ContextMenu>
                     </DataGrid>

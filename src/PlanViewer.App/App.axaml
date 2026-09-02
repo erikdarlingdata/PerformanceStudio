@@ -14,6 +14,27 @@
         <FluentTheme />
         <StyleInclude Source="avares://Avalonia.Controls.DataGrid/Themes/Fluent.xaml"/>
         <StyleInclude Source="avares://AvaloniaEdit/Themes/Fluent/AvaloniaEdit.xaml"/>
+
+        <!-- Fluent defaults AllowAutoHide to true, which collapses a scrollbar to a
+             sliver until it is hovered. That is a bad trade on a horizontal bar under
+             a wide grid or a long query: the thing you need to grab is a couple of
+             pixels tall until after you have found it. Full size everywhere. -->
+        <Style Selector="ScrollViewer">
+            <Setter Property="AllowAutoHide" Value="False"/>
+        </Style>
+
+        <Style Selector="ScrollBar">
+            <Setter Property="AllowAutoHide" Value="False"/>
+        </Style>
+
+        <!-- DataGrid does not scroll through a ScrollViewer, and the ScrollBar rule above
+             cannot reach its bars either: it assigns AllowAutoHide to them in code, and a
+             local value outranks any style. There is no DataGrid.AllowAutoHide to set, but
+             the value it pushes down is the ATTACHED ScrollViewer property read off itself,
+             so setting that here is what reaches the grids. -->
+        <Style Selector="DataGrid">
+            <Setter Property="ScrollViewer.AllowAutoHide" Value="False"/>
+        </Style>
     </Application.Styles>
 
     <Application.Resources>

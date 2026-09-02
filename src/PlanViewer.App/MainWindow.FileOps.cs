@@ -112,6 +112,25 @@ public partial class MainWindow : Window
         if (MainTabControl.SelectedItem is not TabItem { Content: QuerySessionControl session } tab)
             return;
 
+        await SaveQueryAsync(tab, session);
+    }
+
+    /// <summary>
+    /// Saves a named tab rather than whichever one is selected. The unsaved-changes prompt
+    /// (#462) walks every tab, so it needs to save one that is not the active one, and a
+    /// scratch tab answering Save arrives here to get a path.
+    ///
+    /// <para>#473 brings two wrinkles, both from sessions that are no longer tabs. A detached
+    /// session has no <paramref name="tab"/> to retitle, hence the null. And the picker has to
+    /// come off the window doing the asking: <see cref="Window.StorageProvider"/> here is the
+    /// main window's, so a detached window closing with unsaved work would put its Save As
+    /// dialog on a window behind the one the user is looking at — and, at shutdown, on one
+    /// that is closing. <paramref name="storage"/> is how the caller says which window.</para>
+    /// </summary>
+    /// <returns>Whether the query reached disk. False also covers the user closing the picker.</returns>
+    private async Task<bool> SaveQueryAsync(TabItem? tab, QuerySessionControl session, IStorageProvider? storage = null)
+    {
+        var picker = storage ?? StorageProvider;
         var existing = session.SourceFilePath;
 
         var options = new FilePickerSaveOptions
@@ -133,27 +152,36 @@ public partial class MainWindow : Window
         {
             var directory = Path.GetDirectoryName(existing);
             if (!string.IsNullOrEmpty(directory))
-                options.SuggestedStartLocation = await StorageProvider.TryGetFolderFromPathAsync(directory);
+                options.SuggestedStartLocation = await picker.TryGetFolderFromPathAsync(directory);
         }
 
-        var file = await StorageProvider.SaveFilePickerAsync(options);
+        var file = await picker.SaveFilePickerAsync(options);
 
         var path = file?.TryGetLocalPath();
-        if (path != null)
-            SaveQueryToPath(tab, session, path);
+        return path != null && SaveQueryToPath(tab, session, path);
     }
 
     /// <summary>
     /// The half of saving that does not need a human: write the text, remember where it went,
     /// and retitle the tab to match. Split out from the picker so it can be tested.
+    ///
+    /// <para><paramref name="tab"/> is null for a session that has been detached into its own
+    /// window (#473). There is no tab to retitle; everything else about the save is the same,
+    /// including which side of the write settles the dirty state.</para>
     /// </summary>
-    internal bool SaveQueryToPath(TabItem tab, QuerySessionControl session, string path)
+    internal bool SaveQueryToPath(TabItem? tab, QuerySessionControl session, string path)
     {
         try
         {
             File.WriteAllText(path, session.QueryEditor.Text);
             session.SourceFilePath = path;
-            SetTabLabel(tab, Path.GetFileName(path));
+            // Only a write that actually happened settles the dirty state; the catch below
+            // deliberately leaves the session modified so the work is still guarded.
+            session.MarkClean();
+
+            if (tab != null)
+                SetTabLabel(tab, Path.GetFileName(path));
+
             return true;
         }
         catch (Exception ex)
@@ -243,6 +271,8 @@ public partial class MainWindow : Window
             var session = new QuerySessionControl(_credentialService, _connectionStore);
             session.QueryEditor.Text = text;
             session.SourceFilePath = filePath;
+            // What was just loaded is what is on disk — the baseline every later edit is measured against.
+            session.MarkClean();
 
             var tab = CreateTab(fileName, session);
             MainTabControl.Items.Add(tab);
@@ -384,11 +414,16 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Saves the file paths of all currently open file-based plan tabs.
+    /// The file behind every open tab that has one, in tab order. Plans and queries both,
+    /// since <see cref="GetTabFilePath"/> answers for either shape.
     /// </summary>
-    private void SaveOpenPlans()
+    /// <remarks>
+    /// Separate from <see cref="SaveOpenPlans"/> so a test can assert what would be persisted
+    /// without writing over the user's real settings file.
+    /// </remarks>
+    internal List<string> CollectOpenTabPaths()
     {
-        _appSettings.OpenPlans.Clear();
+        var paths = new List<string>();
 
         foreach (var item in MainTabControl.Items)
         {
@@ -396,31 +431,46 @@ public partial class MainWindow : Window
 
             var path = GetTabFilePath(tab);
             if (!string.IsNullOrEmpty(path))
-                _appSettings.OpenPlans.Add(path);
+                paths.Add(path);
         }
+
+        return paths;
+    }
+
+    /// <summary>
+    /// Saves the file paths of all currently open file-based tabs, plans and queries alike.
+    /// </summary>
+    private void SaveOpenPlans()
+    {
+        _appSettings.OpenTabs.Clear();
+        _appSettings.OpenTabs.AddRange(CollectOpenTabPaths());
 
         AppSettingsService.Save(_appSettings);
     }
 
     /// <summary>
-    /// Restores plan tabs from the previous session. Skips files that no longer exist.
+    /// Restores the tabs from the previous session. Skips files that no longer exist.
     /// Falls back to a new query tab if nothing was restored.
+    ///
+    /// <para>The saved list holds queries as well as plans, so it routes on extension the
+    /// same way an ordinary file open does. Sending a .sql file to LoadPlanFile would greet
+    /// the user with "the XML is not valid" where their query used to be.</para>
     /// </summary>
     private void RestoreOpenPlans()
     {
         var restored = false;
 
-        foreach (var path in _appSettings.OpenPlans)
+        foreach (var path in _appSettings.OpenTabs)
         {
             if (File.Exists(path))
             {
-                LoadPlanFile(path);
+                OpenFileByExtension(path);
                 restored = true;
             }
         }
 
-        // Clear the open plans list now that we've restored
-        _appSettings.OpenPlans.Clear();
+        // Clear the restored list now that its tabs are back on screen
+        _appSettings.OpenTabs.Clear();
         AppSettingsService.Save(_appSettings);
 
         if (!restored)
