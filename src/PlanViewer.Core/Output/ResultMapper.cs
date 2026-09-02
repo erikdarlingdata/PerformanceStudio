@@ -87,9 +87,26 @@ public static class ResultMapper
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+
+        /* #482: every consumer of the analysis — advice for humans, advice for robots, the HTML
+           export, the comparison report, the MCP tools — reads its statement text from here, so this
+           is where the parameter values go back in. #467 substituted at the two copy paths it was
+           looking at, which left the same @0 in every one of these.
+
+           The parser's PlanStatement is deliberately untouched: the analyzer's rules regex over that
+           text (OPTIMIZE FOR UNKNOWN, NOT IN, MAXDOP hints), the properties panel shows what the plan
+           records, and none of that should start reading manufactured literals. */
+        var runnable = ParameterSubstitution.Apply(stmt.StatementText, stmt.Parameters);
+
         var result = new StatementResult
         {
-            StatementText = stmt.StatementText,
+            StatementText = runnable.Text,
+
+            /* Carried, not discarded — this is the text that matches the plan cache and Query Store,
+               and get_repro_script has to pair a query body with a declared parameter list. Null when
+               nothing was substituted so it never appears on the overwhelming majority of statements
+               that have nothing to say here. */
+            ParameterizedStatementText = runnable.SubstitutionCount > 0 ? stmt.StatementText : null,
             StatementType = stmt.StatementType,
             EstimatedCost = stmt.StatementSubTreeCost,
             EstimatedRows = stmt.StatementEstRows,

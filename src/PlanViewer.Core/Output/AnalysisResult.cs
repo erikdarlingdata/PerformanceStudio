@@ -54,8 +54,30 @@ public class AnalysisSummary
 
 public class StatementResult
 {
+    /// <summary>
+    /// The statement, with the plan's captured parameter values put back where the engine left
+    /// <c>@0</c>, <c>@1</c> … (#482). Identical to what the plan records for any statement with
+    /// nothing to substitute, which is nearly all of them.
+    /// </summary>
     [JsonPropertyName("statement_text")]
     public string StatementText { get; set; } = "";
+
+    /// <summary>
+    /// The statement exactly as the plan records it, present only when
+    /// <see cref="StatementText"/> had values substituted into it and therefore says something
+    /// different.
+    ///
+    /// <para>This is the text that matches the plan cache and Query Store, and the text that has to
+    /// be paired with a declared parameter list — <c>get_repro_script</c> builds an
+    /// <c>sp_executesql</c> call around it, and a body with the literals already inlined would
+    /// declare parameters it never uses and stop reproducing the parameterized compile the script
+    /// exists to reproduce.</para>
+    ///
+    /// <para>Not to be confused with <c>PlanStatement.ParameterizedText</c>, which is showplan's own
+    /// <c>ParameterizedText</c> element and comes from the plan rather than from this mapping.</para>
+    /// </summary>
+    [JsonPropertyName("parameterized_statement_text")]
+    public string? ParameterizedStatementText { get; set; }
 
     [JsonPropertyName("statement_type")]
     public string StatementType { get; set; } = "";

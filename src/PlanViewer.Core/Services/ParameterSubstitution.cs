@@ -93,7 +93,8 @@ public static class ParameterSubstitution
                     end++;
 
                 var token = statementText[i..end];
-                if (values.TryGetValue(token, out var value))
+                if (values.TryGetValue(token, out var value)
+                    && !IsAssignmentTarget(statementText, i, end))
                 {
                     sb.Append(value);
                     substitutions++;
@@ -114,6 +115,55 @@ public static class ParameterSubstitution
         return substitutions == 0
             ? new ParameterSubstitutionResult(statementText, 0)
             : new ParameterSubstitutionResult(sb.ToString(), substitutions);
+    }
+
+    /// <summary>
+    /// True when the parameter token spanning <paramref name="start"/> to <paramref name="end"/> is
+    /// being assigned TO rather than read from, in which case its value must not be written over it.
+    ///
+    /// <para><b>Why (#482).</b> <c>SELECT @job_name = name, @owner_sid = owner_sid FROM …</c> is a
+    /// real committed plan, and its ParameterList records both of those variables with a compiled
+    /// value of <c>NULL</c>. Substituted blindly it reads <c>SELECT NULL = name, NULL = owner_sid</c>
+    /// — not merely unrunnable but quietly misleading, because it now looks like a comparison. That
+    /// mattered less while substitution was something you asked for on the clipboard; #482 makes it
+    /// what the advice, the exports and the MCP tools show by default.</para>
+    ///
+    /// <para>The three lead-ins below are the ones T-SQL assigns through — <c>SELECT @a = …</c>,
+    /// <c>SET @a = …</c>, and the second and later items of either list. A parameter on the right of
+    /// an <c>=</c> is a read and is left to be substituted, and so is one followed by <c>&gt;=</c>,
+    /// <c>&lt;=</c>, <c>&lt;&gt;</c> or <c>!=</c>, since the scan forward from the token meets that
+    /// operator's first character rather than the <c>=</c>.</para>
+    /// </summary>
+    private static bool IsAssignmentTarget(string text, int start, int end)
+    {
+        var forward = end;
+        while (forward < text.Length && char.IsWhiteSpace(text[forward]))
+            forward++;
+
+        if (forward >= text.Length || text[forward] != '=')
+            return false;
+
+        if (forward + 1 < text.Length && text[forward + 1] == '=')
+            return false;
+
+        var back = start - 1;
+        while (back >= 0 && char.IsWhiteSpace(text[back]))
+            back--;
+
+        if (back < 0)
+            return false;
+
+        /* "SELECT @a = x, @b = y" — everything after the first comma is still a select list. */
+        if (text[back] == ',')
+            return true;
+
+        var wordEnd = back + 1;
+        while (back >= 0 && IsIdentifierPart(text[back]))
+            back--;
+
+        var word = text[(back + 1)..wordEnd];
+        return word.Equals("SELECT", StringComparison.OrdinalIgnoreCase)
+            || word.Equals("SET", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
