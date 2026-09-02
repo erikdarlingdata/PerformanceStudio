@@ -63,6 +63,62 @@ public class ParameterSubstitutionTests
     }
 
     [Fact]
+    public void AssignedVariable_IsNotOverwrittenWithItsOwnValue()
+    {
+        /* #482: the shape that made this worth handling is a real committed plan —
+           "SELECT @job_name = name, @owner_sid = owner_sid" with both compiled values NULL. Writing
+           the value over the target gives "SELECT NULL = name", which is not merely unrunnable but
+           reads as a comparison. Both list positions, because the second one arrives after a comma
+           rather than after SELECT. */
+        var result = ParameterSubstitution.Apply(
+            "SELECT @a = name, @b = owner FROM t WHERE id = @c",
+            new List<PlanParameter> { Param("@a", "NULL"), Param("@b", "NULL"), Param("@c", "(9)") });
+
+        Assert.Equal("SELECT @a = name, @b = owner FROM t WHERE id = 9", result.Text);
+        Assert.Equal(1, result.SubstitutionCount);
+    }
+
+    [Fact]
+    public void SetAssignment_IsNotOverwrittenEither()
+    {
+        var result = ParameterSubstitution.Apply(
+            "SET @a = @b",
+            new List<PlanParameter> { Param("@a", "(1)"), Param("@b", "(2)") });
+
+        Assert.Equal("SET @a = 2", result.Text);
+        Assert.Equal(1, result.SubstitutionCount);
+    }
+
+    [Fact]
+    public void ComparisonOperatorsThatEndInEquals_AreStillSubstituted()
+    {
+        /* The parameter on the LEFT, which is the only side where the assignment check has anything
+           to decide. It looks forward for a lone "=", and ">=" / "<=" / "<>" / "!=" all put their own
+           character in front of it — so a comparison written with the parameter first must not be
+           mistaken for an assignment. The last one is a bare "=" that is still a comparison, because
+           what precedes it is AND rather than SELECT, SET or a list comma. */
+        var result = ParameterSubstitution.Apply(
+            "WHERE @0 >= a AND @0 <= b AND @0 <> c AND @0 != d AND @0 = e",
+            new List<PlanParameter> { Param("@0", "(3)") });
+
+        Assert.Equal("WHERE 3 >= a AND 3 <= b AND 3 <> c AND 3 != d AND 3 = e", result.Text);
+        Assert.Equal(5, result.SubstitutionCount);
+    }
+
+    [Fact]
+    public void SelectListAliasAssignment_IsStillSubstituted()
+    {
+        /* "VoteTypeId = @VoteTypeId" is an alias on the left and the parameter on the right — a read,
+           and the exact shape param-sniffing-posttypeid2 carries. */
+        var result = ParameterSubstitution.Apply(
+            "SELECT VoteTypeId = @p FROM v WHERE v.VoteTypeId = @p",
+            new List<PlanParameter> { Param("@p", "(2)") });
+
+        Assert.Equal("SELECT VoteTypeId = 2 FROM v WHERE v.VoteTypeId = 2", result.Text);
+        Assert.Equal(2, result.SubstitutionCount);
+    }
+
+    [Fact]
     public void NameInsideAStringLiteral_IsLeftAlone()
     {
         var result = ParameterSubstitution.Apply(

@@ -36,6 +36,7 @@
     <Compile Include="..\PlanViewer.Core\Services\PlanIconMapper.cs" Link="Core\Services\PlanIconMapper.cs" />
     <Compile Include="..\PlanViewer.Core\Services\PlanLayoutEngine.cs" Link="Core\Services\PlanLayoutEngine.cs" />
     <Compile Include="..\PlanViewer.Core\Services\TimeDisplayHelper.cs" Link="Core\Services\TimeDisplayHelper.cs" />
+    <Compile Include="..\PlanViewer.Core\Services\ParameterSubstitution.cs" Link="Core\Services\ParameterSubstitution.cs" />
     <Compile Include="..\PlanViewer.Core\Output\AnalysisResult.cs" Link="Core\Output\AnalysisResult.cs" />
     <Compile Include="..\PlanViewer.Core\Output\ResultMapper.cs" Link="Core\Output\ResultMapper.cs" />
     <Compile Include="..\PlanViewer.Core\Output\TextFormatter.cs" Link="Core\Output\TextFormatter.cs" />

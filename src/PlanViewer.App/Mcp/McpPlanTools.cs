@@ -308,7 +308,16 @@ public sealed class McpPlanTools
             if (statement is null)
                 return "No executable statement found in this plan.";
 
-            var queryText = session.QueryText ?? statement.StatementText ?? "";
+            /* #482: the parameterized form on purpose. ReproScriptBuilder wraps this body in
+               sp_executesql with a parameter list read out of the same plan, so a body that already
+               has the literals inlined would declare parameters that appear nowhere in it — and the
+               plan it produced would be the constant-folded one, not the parameterized compile the
+               repro script exists to reproduce. Falls through to StatementText, which is the same
+               string whenever nothing was substituted. */
+            var queryText = session.QueryText
+                ?? statement.ParameterizedStatementText
+                ?? statement.StatementText
+                ?? "";
             var databaseName = session.DatabaseName ?? statement.OperatorTree?.DatabaseName;
 
             return ReproScriptBuilder.BuildReproScript(
