@@ -174,13 +174,8 @@ public partial class PlanViewerControl : UserControl
     ///
     /// <para>Runs when the menu opens rather than when selection changes, so it describes whatever
     /// is selected at the moment it is shown — the same row the two click handlers act on.</para>
-    ///
-    /// <para>Internal rather than private only so the tests can reach it: a headless
-    /// <c>ContextMenu.Open</c> needs the control inside a window, and a
-    /// <see cref="PlanViewerControl"/> in a headless window takes the shared Avalonia session's font
-    /// manager down with it.</para>
     /// </summary>
-    internal void UpdateStatementMenuForSelection()
+    private void UpdateStatementMenuForSelection()
     {
         var substitutable = StatementsGrid.SelectedItem is StatementRow row
             && ParameterSubstitution.Apply(row.Statement.StatementText, row.Statement.Parameters)
