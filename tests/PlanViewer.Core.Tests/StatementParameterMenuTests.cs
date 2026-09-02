@@ -1,6 +1,7 @@
 using System.IO;
 using System.Linq;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.LogicalTree;
 using PlanViewer.App.Controls;
@@ -15,11 +16,11 @@ namespace PlanViewer.Core.Tests;
 /// #466 was not in producing text — it was in which text the two existing menu entries handed out.
 /// A pure test of the rewriter would have passed all along.</para>
 ///
-/// <para><b>No window, deliberately.</b> Putting a <see cref="PlanViewerControl"/> inside a
-/// <see cref="Window"/> headlessly leaves the shared Avalonia session unable to construct any later
-/// window — every UI test that runs afterwards dies in <c>FontManager.SystemFonts</c>. Without a
-/// window the control still loads a plan and fills its statements grid, but a ContextMenu cannot be
-/// opened, so the menu's Opening work is invoked directly.</para>
+/// <para>They also open the real menu on a real control in a real window. That used to be
+/// impossible — a <see cref="PlanViewerControl"/> in a headless <see cref="Window"/> took the
+/// shared Avalonia session's font manager down with it, so these tests called the menu's Opening
+/// work directly instead. #474 fixed the session, so the right-click the reporter performed is now
+/// the right-click the test performs.</para>
 /// </summary>
 public class StatementParameterMenuTests
 {
@@ -84,13 +85,24 @@ public class StatementParameterMenuTests
     }
 
     /// <summary>
-    /// Does what a right-click on the statements grid does: configures the menu for the selected
-    /// statement, then hands back the grid the menu hangs off.
+    /// Right-clicks the statements grid and hands back the grid the menu hangs off.
+    ///
+    /// <para>The window and the layout pass are what make the right-click possible: a ContextMenu
+    /// needs a TopLevel to open into, and the grid has no rows to select from until it has been
+    /// laid out. The request is raised rather than <c>ContextMenu.Open</c> being called, because
+    /// <c>Open</c> skips the Opening event and Opening is where the labels are decided — calling it
+    /// would test the menu with nothing having configured it.</para>
     /// </summary>
     private static DataGrid OpenStatementMenu(PlanViewerControl viewer)
     {
-        viewer.UpdateStatementMenuForSelection();
-        return viewer.GetLogicalDescendants().OfType<DataGrid>().First(g => g.Name == "StatementsGrid");
+        var window = new Window { Content = viewer, Width = 1400, Height = 900 };
+        window.Show();
+        window.UpdateLayout();
+
+        var grid = viewer.GetLogicalDescendants().OfType<DataGrid>().First(g => g.Name == "StatementsGrid");
+        grid.RaiseEvent(new ContextRequestedEventArgs());
+
+        return grid;
     }
 
     private static MenuItem MenuItemNamed(DataGrid grid, string name) =>
