@@ -261,7 +261,14 @@ public partial class QuerySessionControl : UserControl
         SubTabControl.SelectedItem = tab;
     }
 
-    private void OnQueryStorePlansSelected(object? sender, List<QueryStorePlan> plans)
+    /// <summary>
+    /// Opens a plan tab for each plan picked out of the Query Store grid.
+    ///
+    /// <para>Internal so a test can hand it plans it already has. The grid is what fetches them from
+    /// a server; nothing below this line needs one, which is what makes the Query Store side of
+    /// #447 testable without a live instance.</para>
+    /// </summary>
+    internal void OnQueryStorePlansSelected(object? sender, List<QueryStorePlan> plans)
     {
         int loaded = 0;
         foreach (var qsPlan in plans)

@@ -18,6 +18,7 @@ using AvaloniaEdit.CodeCompletion;
 using AvaloniaEdit.TextMate;
 using Microsoft.Data.SqlClient;
 using PlanViewer.App.Dialogs;
+using PlanViewer.App.Helpers;
 using PlanViewer.App.Services;
 using PlanViewer.Core.Interfaces;
 using PlanViewer.Core.Models;
@@ -130,6 +131,13 @@ public partial class QuerySessionControl : UserControl
             _statusClearCts?.Dispose();
             _statusClearCts = null;
         };
+
+        /* #447: a plan appearing in — or leaving — this session changes whether Compare Plans is
+           offered in every session in the window, not just this one. Watched here rather than
+           called at each site that produces a plan, because the sites that produce a plan are the
+           ones nobody remembers: executing a query fills in a tab that already exists, which is
+           neither an Add nor a Remove and is exactly the case the first fix missed. */
+        TabContentWatcher.Watch(SubTabControl, UpdateCompareButtonState);
 
         // Focus the editor when the Editor tab is selected; toggle plan-dependent buttons
         SubTabControl.SelectionChanged += (_, _) =>

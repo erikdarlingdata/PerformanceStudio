@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Collections.Specialized;
 using System.IO;
 using System.IO.Pipes;
 using System.Linq;
@@ -19,6 +18,7 @@ using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using PlanViewer.App.Controls;
 using PlanViewer.App.Dialogs;
+using PlanViewer.App.Helpers;
 using PlanViewer.App.Services;
 using PlanViewer.Core.Interfaces;
 using PlanViewer.Core.Models;
@@ -79,9 +79,12 @@ public partial class MainWindow : Window
            remove a tab. Compare Plans depends on how many plans exist across the WHOLE window, so
            opening or closing any tab can change whether it is available in every OTHER tab, and a
            refresh that has to be remembered at sixteen call sites is one that gets forgotten at the
-           seventeenth. */
-        if (MainTabControl.Items is INotifyCollectionChanged tabs)
-            tabs.CollectionChanged += (_, _) => RefreshComparePlanAvailability();
+           seventeenth.
+
+           Watching content replacement as well as the collection is the part the first attempt at
+           this got wrong: Get Actual Plan opens a tab holding a spinner and later swaps in the plan,
+           so the tab that gains a plan is one this window already had. */
+        TabContentWatcher.Watch(MainTabControl, RefreshComparePlanAvailability);
 
         // Global hotkeys via tunnel routing so they fire before AvaloniaEdit consumes them
         AddHandler(KeyDownEvent, (_, e) =>
