@@ -142,11 +142,24 @@ class Program
             mutex.Dispose();
             return false;
         }
-        catch
+        catch (Exception ex)
         {
             /* Mutex machinery unavailable — an ACL mismatch on the name, a restrictive
-               sandbox. Claiming ownership is the conservative answer: this instance runs
-               fully, which is exactly the pre-#489 behavior for every launch. */
+               sandbox, or a platform where the named-mutex shim misbehaves (on Unix these
+               are file-backed under /tmp; PlatformNotSupportedException would land here
+               too). Claiming ownership is the conservative answer: this instance runs
+               fully, which is exactly the pre-#489 behavior for every launch.
+
+               Said out loud rather than swallowed, because the degradation is otherwise
+               invisible: if this fires on every launch, single-instancing has quietly
+               no-oped and #489's settings clobber is back with no symptom pointing here.
+               stderr is the right channel — a Windows GUI launch has no console and loses
+               it harmlessly, while the Unix platforms this is most likely to fire on are
+               exactly where launching from a terminal is common. A unit test exercises
+               the named-mutex machinery per platform in CI so a shim that throws fails
+               loudly there first. */
+            Console.Error.WriteLine(
+                $"PerformanceStudio: single-instance detection unavailable ({ex.GetType().Name}); running as a full instance.");
             return true;
         }
     }

@@ -1,3 +1,4 @@
+using System.Threading;
 using System.IO;
 using System.Linq;
 using Avalonia.Controls;
@@ -219,6 +220,34 @@ public class SingleInstanceTests
                 File.Delete(path);
             }
         });
+    }
+
+    /// <summary>
+    /// The named-mutex machinery itself, exercised on whatever platform the suite runs on.
+    ///
+    /// <para>The gate review's point: Program.Main's catch-all degrades a throwing mutex to
+    /// "run fully" — the right call, but if named mutexes ever break wholesale on a platform
+    /// (the Unix shim backs them with files under /tmp, and PlatformNotSupportedException is
+    /// the classic wholesale failure), single-instancing would silently no-op there and the
+    /// #489 clobber would be back with no symptom. This runs on the ubuntu CI runner on every
+    /// push, so a platform where creating or re-opening a named mutex throws fails HERE,
+    /// loudly, instead of degrading invisibly in the field. In-process rather than
+    /// cross-process (the harness cannot spawn app instances), which still traverses the
+    /// named create and second-open paths the shim has to serve; macOS has no CI leg, so the
+    /// one-time bare-double-launch smoke there is a release-checklist item, not a test.</para>
+    /// </summary>
+    [Fact]
+    public void NamedMutexMachineryWorksOnThisPlatform()
+    {
+        // A unique name per run: colliding with a real Studio instance on a dev machine
+        // (or a parallel test run) would turn this into a flake about unrelated state.
+        var name = $"{SingleInstance.MutexName}_selftest_{Guid.NewGuid():N}";
+
+        using var first = new Mutex(initiallyOwned: true, name, out var createdFirst);
+        Assert.True(createdFirst, "a fresh name must be created, not found");
+
+        using var second = new Mutex(initiallyOwned: true, name, out var createdSecond);
+        Assert.False(createdSecond, "a second open of the same name must see the existing mutex");
     }
 
     private static string TempSql(string text)
