@@ -275,6 +275,14 @@ public static class ParameterSubstitution
     /// Whether the statement's leading keyword chain reaches EXEC or EXECUTE, in which case an
     /// <c>=</c> can only ever mean assignment — the return-status variable or a named argument.
     ///
+    /// <para>Why that holds statement-wide rather than per argument: T-SQL restricts an EXEC
+    /// argument's VALUE to a literal, a variable, NULL, or DEFAULT. An expression — a CASE, a
+    /// subquery, arithmetic — is a compile error there (<c>Incorrect syntax</c>), so no legal
+    /// compiled statement can put a read like <c>CASE WHEN @x = 1 …</c> to the right of a named
+    /// argument. The only <c>@name =</c> pairs that can exist in the region this flag governs are
+    /// assignments. A hand-crafted plan file can of course contain anything, but its author already
+    /// controls the whole statement text, so precision against it protects nothing.</para>
+    ///
     /// <para>The chain is EXEC itself, or the INSERT … EXEC prelude: INSERT, an optional INTO, the
     /// target's possibly bracketed and dotted name, an optional parenthesized column list. The walk
     /// is forward from the start and gives up at the first character that cannot belong to such a
