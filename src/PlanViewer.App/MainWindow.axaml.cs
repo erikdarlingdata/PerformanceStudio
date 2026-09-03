@@ -164,16 +164,7 @@ public partial class MainWindow : Window
         }, RoutingStrategies.Tunnel);
 
         // Accept command-line argument or restore previously open plans
-        var args = Environment.GetCommandLineArgs();
-        if (args.Length > 1 && File.Exists(args[1]))
-        {
-            LoadPlanFile(args[1]);
-        }
-        else
-        {
-            // Restore plans that were open in the previous session
-            RestoreOpenPlans();
-        }
+        OpenFromStartupArgs(Environment.GetCommandLineArgs());
 
         // Start MCP server if enabled in settings.
         // Not in the test host (#451): this reads the user's real ~/.planview settings and,
@@ -181,6 +172,32 @@ public partial class MainWindow : Window
         // item needs no fallback write — its XAML default is already "MCP Server: Off".
         if (!AppRuntimeMode.IsTestHost)
             StartMcpServer();
+    }
+
+    /// <summary>
+    /// Routes the file handed over on the command line — a double-clicked file association, or
+    /// "PerformanceStudio.exe path" from a shell. Split from the constructor so the routing can
+    /// be tested with an argv of the test's choosing.
+    ///
+    /// <para>Routed by extension, not straight to LoadPlanFile: every other way a path reaches
+    /// this window (the pipe from a second instance, drag-and-drop, session restore) already
+    /// goes through <see cref="OpenFileByExtension"/>, and RestoreOpenPlans' own doc comment
+    /// describes exactly what skipping it does — "Sending a .sql file to LoadPlanFile would
+    /// greet the user with 'the XML is not valid' where their query used to be." That greeting
+    /// is precisely what "PerformanceStudio.exe query.sql" produced. Cold start was the one
+    /// path left hard-wired to the plan loader.</para>
+    /// </summary>
+    internal void OpenFromStartupArgs(string[] args)
+    {
+        if (args.Length > 1 && File.Exists(args[1]))
+        {
+            OpenFileByExtension(args[1]);
+        }
+        else
+        {
+            // Restore plans that were open in the previous session
+            RestoreOpenPlans();
+        }
     }
 
     private void StartPipeServer()

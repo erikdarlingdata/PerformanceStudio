@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -37,6 +38,18 @@ public partial class QuerySessionControl : UserControl
     /// Full path on disk when the query was loaded from, or last saved to, a file.
     /// </summary>
     public string? SourceFilePath { get; set; }
+
+    /// <summary>
+    /// The encoding the file behind <see cref="SourceFilePath"/> declared with its byte order
+    /// mark, or null for a BOM-less file and for a scratch session — both of which save as
+    /// UTF-8 without a BOM, which is what every save wrote before this existed.
+    ///
+    /// <para>Captured at open so a save writes the bytes the file arrived with. SSMS writes
+    /// .sql files as UTF-16 with a BOM; opening one read fine (File.ReadAllText honors the
+    /// mark) and then the first Ctrl+S silently transcoded the whole file to UTF-8 — every
+    /// byte changed, the BOM gone, without the user asking for any of it.</para>
+    /// </summary>
+    public Encoding? SourceFileEncoding { get; set; }
 
     /// <summary>
     /// The editor text as of the last load or save. A new session starts empty, so a
