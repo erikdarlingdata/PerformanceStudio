@@ -173,7 +173,14 @@ public partial class MainWindow : Window
     {
         try
         {
-            File.WriteAllText(path, session.QueryEditor.Text);
+            /* Atomic on purpose: on the save-in-place path this file is the user's only copy
+               of their query, and a plain truncate-then-write destroys it when the write dies
+               halfway — disk full, crash, yanked share. AtomicFile stages a sibling .tmp and
+               renames it over the top, so a failed save leaves the original bytes on disk and
+               lands in the catch below with the session still dirty. The rename gives the file
+               the temp's attributes and inherited ACLs rather than preserving the original's —
+               the trade every editor that saves this way makes. */
+            AtomicFile.WriteAllText(path, session.QueryEditor.Text);
             session.SourceFilePath = path;
             // Only a write that actually happened settles the dirty state; the catch below
             // deliberately leaves the session modified so the work is still guarded.
@@ -447,6 +454,15 @@ public partial class MainWindow : Window
 
         AppSettingsService.Save(_appSettings);
     }
+
+    /// <summary>
+    /// Writes the open-tab list down for the session that comes back after a Velopack
+    /// restart. <see cref="OnClosed"/> does this on every ordinary shutdown, but
+    /// ApplyUpdatesAndRestart exits the process without closing the window — and
+    /// <see cref="RestoreOpenPlans"/> already cleared the saved list at startup, so without
+    /// this the updated app relaunched with nothing.
+    /// </summary>
+    internal void PersistSessionForRestart() => SaveOpenPlans();
 
     /// <summary>
     /// Restores the tabs from the previous session. Skips files that no longer exist.

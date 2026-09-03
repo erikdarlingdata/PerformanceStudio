@@ -155,8 +155,60 @@ public partial class QuerySessionControl : UserControl
         }
     }
 
-    private void OnOpenInEditorRequested(object? sender, string queryText)
+    /// <summary>
+    /// Whether "Open in Query Editor" has to stop and ask before pasting over the editor.
+    ///
+    /// <para>Only typed-but-unsaved work earns a prompt: a clean editor is already on disk
+    /// (or empty), and a dirty-but-empty one is a buffer the user deleted everything out of —
+    /// replacing nothing loses nothing, so both stay as frictionless as they always were.
+    /// Split out pure so the decision is testable without a dialog to click, the same trade
+    /// CollectOpenTabPaths made for the session-restore list.</para>
+    /// </summary>
+    internal static bool ReplaceNeedsConfirmation(bool isDirty, string? currentText) =>
+        isDirty && !string.IsNullOrEmpty(currentText);
+
+    /* The prompt below puts an await between the dirty check and the replacement, so without
+       a latch two back-to-back "Open in Query Editor" clicks would each read the same dirty
+       state and stack two Replace prompts — the same reentrancy class the About window's
+       update link had. Not data loss (the assignment stays gated on an explicit Replace
+       either way), just two dialogs racing; first click wins, the second is a no-op. */
+    private bool _replacePromptInFlight;
+
+    /// <summary>
+    /// Puts a statement from a plan into the query editor. Internal (like the MainWindow
+    /// Click handlers) so tests can drive it without a plan viewer to click through.
+    /// </summary>
+    internal async void OnOpenInEditorRequested(object? sender, string queryText)
     {
+        if (_replacePromptInFlight)
+            return;
+
+        /* This used to assign unconditionally — the one wholesale overwrite in the app that
+           skipped #462's dirty tracking, so a typed-but-unsaved query was replaced without a
+           question. ConfirmationDialog rather than the three-button UnsavedChangesDialog:
+           a Save answer here would need the save pipeline, which lives on MainWindow and
+           takes the tab — machinery this control has no business growing for one prompt.
+           Dismissing the dialog is a no, and a no leaves the editor and the sub-tab alone. */
+        if (ReplaceNeedsConfirmation(IsDirty, QueryEditor.Text))
+        {
+            _replacePromptInFlight = true;
+            bool replace;
+            try
+            {
+                replace = await ShowConfirmationDialog(
+                    "Unsaved Changes",
+                    "The query editor has unsaved changes.\n\nReplace them with this statement? Your current text will be lost.",
+                    confirmCaption: "Replace");
+            }
+            finally
+            {
+                _replacePromptInFlight = false;
+            }
+
+            if (!replace)
+                return;
+        }
+
         QueryEditor.Text = queryText;
         SubTabControl.SelectedIndex = 0; // Switch to the editor tab
         QueryEditor.Focus();

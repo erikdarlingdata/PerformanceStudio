@@ -107,6 +107,76 @@ public class OpenSaveQueryTests
     }
 
     [Fact]
+    public void SavingInPlaceRoundTripsAndLeavesNoStagingFileBehind()
+    {
+        HeadlessUi.Run(() =>
+        {
+            var opened = TempSql("SELECT 1;");
+            try
+            {
+                var window = new MainWindow();
+                window.LoadSqlFile(opened);
+
+                var tab = QueryTabs(window).Last();
+                var session = (QuerySessionControl)tab.Content!;
+                session.QueryEditor.Text = "SELECT 2 AS edited;";
+
+                /* Save-in-place — same path in, same path out — is the route the unsaved-
+                   changes prompt takes for a file-backed tab, and the one where a botched
+                   write costs the user their only copy. It now stages through a sibling
+                   .tmp (AtomicFile), which must be gone once the save has landed. */
+                Assert.True(window.SaveQueryToPath(tab, session, opened));
+
+                Assert.Equal("SELECT 2 AS edited;", File.ReadAllText(opened));
+                Assert.False(session.IsDirty);
+                Assert.Equal(opened, session.SourceFilePath);
+                Assert.False(File.Exists(opened + ".tmp"), "the staging file must not linger");
+            }
+            finally
+            {
+                File.Delete(opened);
+            }
+        });
+    }
+
+    [Fact]
+    public void ASaveThatCannotStageItsTempLeavesTheOriginalFileAlone()
+    {
+        HeadlessUi.Run(() =>
+        {
+            var opened = TempSql("SELECT 1;");
+            /* A directory squatting where AtomicFile stages its temp, so the staging write
+               throws while the target file itself is perfectly writable. */
+            var tmpBlocker = opened + ".tmp";
+            Directory.CreateDirectory(tmpBlocker);
+            try
+            {
+                var window = new MainWindow();
+                window.LoadSqlFile(opened);
+
+                var tab = QueryTabs(window).Last();
+                var session = (QuerySessionControl)tab.Content!;
+                session.QueryEditor.Text = "SELECT 2 AS edited;";
+
+                /* The point of routing SaveQueryToPath through AtomicFile: a save that dies
+                   before it finishes must not have truncated the user's file first. Under
+                   the old truncate-then-write this save would have gone straight to the
+                   target and "succeeded" — failing here, with the original bytes untouched
+                   and the session still dirty, is the new contract. */
+                Assert.False(window.SaveQueryToPath(tab, session, opened));
+
+                Assert.Equal("SELECT 1;", File.ReadAllText(opened));
+                Assert.True(session.IsDirty, "a save that threw has not saved anything");
+            }
+            finally
+            {
+                Directory.Delete(tmpBlocker);
+                File.Delete(opened);
+            }
+        });
+    }
+
+    [Fact]
     public void AFailedSaveLeavesTheSessionPointingAtItsOriginalFile()
     {
         HeadlessUi.Run(() =>

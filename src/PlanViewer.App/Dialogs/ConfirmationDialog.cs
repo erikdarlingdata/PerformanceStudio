@@ -13,7 +13,10 @@ namespace PlanViewer.App.Dialogs;
 /// </summary>
 public static class ConfirmationDialog
 {
-    public static async Task<bool> ShowAsync(Window owner, string title, string message)
+    /// <param name="confirmCaption">What the confirming button says. "OK" reads fine for
+    /// gating an execution; a destructive confirmation ("Replace") should name the act, so
+    /// the button says what clicking it costs.</param>
+    public static async Task<bool> ShowAsync(Window owner, string title, string message, string confirmCaption = "OK")
     {
         var result = false;
 
@@ -28,9 +31,10 @@ public static class ConfirmationDialog
 
         var okBtn = new Button
         {
-            Content = "OK",
+            Content = confirmCaption,
             Height = 32,
-            Width = 80,
+            // Min rather than fixed: "OK" renders the same, a longer caption ("Replace") isn't clipped.
+            MinWidth = 80,
             Padding = new Avalonia.Thickness(16, 0),
             FontSize = 12,
             HorizontalContentAlignment = HorizontalAlignment.Center,
@@ -42,7 +46,7 @@ public static class ConfirmationDialog
         {
             Content = "Cancel",
             Height = 32,
-            Width = 80,
+            MinWidth = 80,
             Padding = new Avalonia.Thickness(16, 0),
             FontSize = 12,
             Margin = new Avalonia.Thickness(8, 0, 0, 0),

@@ -6,6 +6,7 @@
 
 using System;
 using System.Diagnostics;
+using System.Threading.Tasks;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using Avalonia.Controls;
@@ -188,7 +189,28 @@ public partial class AboutWindow : Window
 
     private bool _updateDownloaded;
 
+    /* Every branch of UpdateLink_Click awaits — a dialog, the unsaved-work walk, a download —
+       and the link stays clickable the whole time, so a second click would start a second
+       concurrent copy of whichever step is in flight (two restart dialogs, two walks prompting
+       about the same tabs, two downloads). One latch at the top covers all of them. */
+    private bool _updateActionInFlight;
+
     private async void UpdateLink_Click(object? sender, PointerPressedEventArgs e)
+    {
+        if (_updateActionInFlight)
+            return;
+        _updateActionInFlight = true;
+        try
+        {
+            await HandleUpdateLinkClickAsync();
+        }
+        finally
+        {
+            _updateActionInFlight = false;
+        }
+    }
+
+    private async Task HandleUpdateLinkClickAsync()
     {
         // Step 3: User clicks "Restart now" after download — confirm first
         if (_updateDownloaded && _velopackMgr != null && _velopackUpdate != null)
@@ -231,6 +253,33 @@ public partial class AboutWindow : Window
 
             if (result)
             {
+                /* ApplyUpdatesAndRestart kills the process outright: MainWindow.OnClosing
+                   never fires, so the unsaved-changes walk (#462/#473) never ran on this
+                   route and dirty edits were discarded without a question — and OnClosed's
+                   session save never ran either, so the relaunched app restored nothing
+                   (RestoreOpenPlans had already cleared the saved list at startup). Ask the
+                   same questions the close path asks, and if anyone answers Cancel, abort
+                   the restart and leave this window usable — the update stays downloaded. */
+                /* Resolved through the application lifetime, not Owner: an Owner-typed check
+                   would fail OPEN — shown with any other owner, the walk silently vanishes and
+                   this route is right back to discarding dirty edits, the exact bug being
+                   fixed. The main window owns every session, so if none exists there is no
+                   unsaved work to lose and restarting without a walk is genuinely safe. */
+                var main = Owner as MainWindow
+                    ?? (Avalonia.Application.Current?.ApplicationLifetime
+                        as Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime)
+                        ?.MainWindow as MainWindow;
+
+                if (main != null)
+                {
+                    if (!await main.ConfirmAllUnsavedWorkAsync())
+                        return;
+
+                    /* After the walk, not before: a Save answer in the walk can give a
+                       scratch tab a file, which this then writes down for the restore. */
+                    main.PersistSessionForRestart();
+                }
+
                 _velopackMgr.ApplyUpdatesAndRestart(_velopackUpdate.TargetFullRelease);
             }
             return;

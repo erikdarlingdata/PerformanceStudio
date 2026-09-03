@@ -442,10 +442,10 @@ public partial class QuerySessionControl : UserControl
     }
 
     /// <summary>
-    /// Shows a modal confirmation dialog and returns true if the user clicked OK.
+    /// Shows a modal confirmation dialog and returns true if the user confirmed.
     /// </summary>
-    private Task<bool> ShowConfirmationDialog(string title, string message)
-        => Dialogs.ConfirmationDialog.ShowAsync(GetParentWindow(), title, message);
+    private Task<bool> ShowConfirmationDialog(string title, string message, string confirmCaption = "OK")
+        => Dialogs.ConfirmationDialog.ShowAsync(GetParentWindow(), title, message, confirmCaption);
 
     /// <summary>
     /// Extracts the database name from plan XML's StmtSimple DatabaseContext attribute.
