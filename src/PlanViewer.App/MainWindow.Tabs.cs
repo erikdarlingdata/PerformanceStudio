@@ -224,10 +224,17 @@ public partial class MainWindow : Window
     /// session, and whether <b>Copy Path</b> appears on the tab's context menu. A shape it does
     /// not know about loses both without saying anything.</para>
     /// </summary>
-    private static string? GetTabFilePath(TabItem tab)
+    private static string? GetTabFilePath(TabItem tab) => GetContentFilePath(tab.Content as Control);
+
+    /// <summary>
+    /// The same answer keyed on the content itself, because since #490 the question is also
+    /// asked about content with no tab behind it: a detached window holds the control that WAS
+    /// a tab's content, and what file backs it is a fact about the control, not the strip.
+    /// </summary>
+    private static string? GetContentFilePath(Control? content)
     {
         // Plans opened from file are wrapped in a DockPanel with the viewer as the last child
-        if (tab.Content is DockPanel dp)
+        if (content is DockPanel dp)
         {
             foreach (var child in dp.Children)
             {
@@ -237,7 +244,7 @@ public partial class MainWindow : Window
         }
 
         // Queries are the session control itself, with no wrapper around it
-        if (tab.Content is QuerySessionControl session)
+        if (content is QuerySessionControl session)
             return session.SourceFilePath;
 
         return null;
@@ -347,7 +354,7 @@ public partial class MainWindow : Window
             backgroundBrush: (Avalonia.Media.IBrush?)this.FindResource("BackgroundBrush"),
             onRedock: c =>
             {
-                ForgetDetachedQuerySession(c);
+                ForgetDetachedTabContent(c);
 
                 if (!IsShuttingDown)
                 {
@@ -359,14 +366,14 @@ public partial class MainWindow : Window
             },
             onClosing: c =>
             {
-                ForgetDetachedQuerySession(c);
+                ForgetDetachedTabContent(c);
 
                 if (c is QueryStoreHistoryControl hc)
                     hc.CancelFetch();
             },
             closeGuard: DetachedQueryCloseGuard);
 
-        RememberDetachedQuerySession(detachedWindow, content);
+        RememberDetachedTabContent(detachedWindow, content);
 
         /* #447 made Compare a window-wide count, and this session just left the window: the
            count it is showing is about tabs it can no longer reach. Nothing else recomputes it

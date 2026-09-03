@@ -100,8 +100,22 @@ public partial class MainWindow : Window
 
            Watching content replacement as well as the collection is the part the first attempt at
            this got wrong: Get Actual Plan opens a tab holding a spinner and later swaps in the plan,
-           so the tab that gains a plan is one this window already had. */
-        TabContentWatcher.Watch(MainTabControl, RefreshComparePlanAvailability);
+           so the tab that gains a plan is one this window already had.
+
+           #490 hangs session persistence on the same watcher, for exactly the reason above: the
+           open-tab list used to be written only at clean close (#468's original scope), so any
+           abnormal exit — crash, task kill, an OS "shut down anyway" past the dirty-tab prompt —
+           restored zero tabs. Requesting a persist at each place that opens or closes a tab is
+           the same sixteen-call-sites trap #447 named; the watcher is the one place that sees
+           them all. The two changes it cannot see get explicit calls instead: detached windows
+           (off the tab strip — see RememberDetachedTabContent / ForgetDetachedTabContent) and a
+           tab whose PATH changes while its membership does not (SaveQueryToPath, where a scratch
+           gains a file). */
+        TabContentWatcher.Watch(MainTabControl, () =>
+        {
+            RefreshComparePlanAvailability();
+            RequestSessionPersist();
+        });
 
         // Global hotkeys via tunnel routing so they fire before AvaloniaEdit consumes them
         AddHandler(KeyDownEvent, (_, e) =>
@@ -272,7 +286,16 @@ public partial class MainWindow : Window
         {
             IsShuttingDown = true;
 
-            // Save the list of currently open file-based plans for session restore
+            /* The debounced writer (#490) is finished: stop its timer so a pending tick cannot
+               fire into a window being torn down, and let the write below be the last word.
+               It stays the authoritative final write — mostly redundant now that membership
+               changes persist continuously, but it covers anything the debounce had not flushed
+               yet, and it runs while the detached windows below are still open and registered,
+               so their paths are in it. */
+            _sessionPersistTimer?.Stop();
+            _sessionPersistPending = false;
+
+            // Save the list of currently open file-based tabs for session restore
             SaveOpenPlans();
 
             _pipeCts.Cancel();
@@ -371,16 +394,56 @@ public partial class MainWindow : Window
     internal IReadOnlyList<(Window Window, QuerySessionControl Session)> DetachedQuerySessions =>
         _detachedQuerySessions;
 
-    internal void RememberDetachedQuerySession(Window window, Control content)
+    /// <summary>
+    /// EVERY top-level tab content currently detached, in detach order — plans and Query Store
+    /// windows included, not just the query sessions above.
+    ///
+    /// <para>#490's second register, kept next to #473's because they answer different
+    /// questions. The prompt register above only cares about content that can lose an edit;
+    /// session persistence cares about content that came from a FILE, and a detached plan is
+    /// exactly that — file-backed, read-only, and invisible to a save list built by walking
+    /// MainTabControl. Sub-tab detaches (a plan torn out of a query session's sub-tab strip)
+    /// stay off both registers on purpose: their session's own tab is still docked and already
+    /// carries the path.</para>
+    /// </summary>
+    private readonly List<Control> _detachedTabContents = new();
+
+    /// <summary>
+    /// Books a detached top-level tab's content into both registers. Named for the content
+    /// rather than the session since #490: persistence needs every detached tab remembered,
+    /// and only the #473 prompt half is query-session-only.
+    /// </summary>
+    internal void RememberDetachedTabContent(Window window, Control content)
     {
+        _detachedTabContents.Add(content);
+
         if (content is QuerySessionControl session)
             _detachedQuerySessions.Add((window, session));
+
+        /* This register is half of what CollectOpenTabPaths reads (the tab strip is the other
+           half), so a change to it is a membership change the tab watcher cannot see. Detach
+           itself also removed a tab — the watcher fired — but by the time the debounced write
+           flushes, this entry exists; the debounce is quietly doing ordering work here, since
+           a synchronous write at the watcher's moment would have landed in the gap between
+           Items.Remove and this call and dropped the detached file. */
+        RequestSessionPersist();
     }
 
-    internal void ForgetDetachedQuerySession(Control content)
+    /// <summary>
+    /// Takes a detached tab's content back off both registers — on redock, and on the detached
+    /// window actually closing.
+    /// </summary>
+    internal void ForgetDetachedTabContent(Control content)
     {
+        _detachedTabContents.Remove(content);
+
         if (content is QuerySessionControl session)
             _detachedQuerySessions.RemoveAll(d => d.Session == session);
+
+        /* Redock re-adds a tab and the watcher sees that; a detached window closed by its own
+           X changes no tab at all, and this is the only place that knows the file left the
+           app. One debounced write covers both. */
+        RequestSessionPersist();
     }
 
     /// <summary>
