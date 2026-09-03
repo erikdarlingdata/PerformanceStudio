@@ -306,6 +306,36 @@ public class PlanAnalyzerTests
     }
 
     // ---------------------------------------------------------------
+    // Rule 12: Non-SARGable Predicate — table-variable columns
+    // ---------------------------------------------------------------
+
+    /// <summary>
+    /// A table-variable COLUMN renders as [@tv].[col] in a ScalarString — the @ belongs to the
+    /// table's name, not to a scalar variable. The old column pattern excluded @ from the first
+    /// bracket part to keep [@p] out, which also kept [@tv].[col] out: a genuine column-side
+    /// CONVERT_IMPLICIT on one lost its Non-SARGable warning. The "].[" sequence is what a bare
+    /// variable can never have, so it alone draws the line.
+    /// </summary>
+    [Fact]
+    public void Rule12f_NonSargable_TableVariableColumnConversion_IsFlagged()
+    {
+        Assert.True(PlanAnalyzer.ConvertImplicitWrapsColumn(
+            "CONVERT_IMPLICIT(nvarchar(40),[@tv].[col],0)=[@p]"));
+    }
+
+    /// <summary>
+    /// The parameter-side mirror of the case above, and the #436 rule restated: converting the
+    /// parameter up to the column's type costs nothing, table variable or not, so widening the
+    /// column pattern must not start flagging it.
+    /// </summary>
+    [Fact]
+    public void Rule12f_NonSargable_TableVariableParameterSideConversion_IsNotFlagged()
+    {
+        Assert.False(PlanAnalyzer.ConvertImplicitWrapsColumn(
+            "[@tv].[col]=CONVERT_IMPLICIT(nvarchar(40),[@p],0)"));
+    }
+
+    // ---------------------------------------------------------------
     // Rule 12: Non-SARGable Predicate — Function Call
     // ---------------------------------------------------------------
 

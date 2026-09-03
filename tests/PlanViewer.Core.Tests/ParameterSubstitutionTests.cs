@@ -90,6 +90,101 @@ public class ParameterSubstitutionTests
     }
 
     [Fact]
+    public void TopClauseAssignment_IsNotOverwritten()
+    {
+        /* SELECT TOP (1) @a = col: the back-scan from @a used to meet TOP's ")" and extract an
+           empty word, so the #482 guard never engaged and the copied SQL read "TOP (1) NULL =
+           SomeCol". The guard now steps over exactly one balanced group; @n inside TOP's own
+           group is still a read and still gets its value, which is what makes the copy runnable. */
+        var result = ParameterSubstitution.Apply(
+            "SELECT TOP (1) @a = SomeCol FROM t ORDER BY SomeCol",
+            new List<PlanParameter> { Param("@a", "NULL") });
+
+        Assert.Equal("SELECT TOP (1) @a = SomeCol FROM t ORDER BY SomeCol", result.Text);
+        Assert.Equal(0, result.SubstitutionCount);
+    }
+
+    [Fact]
+    public void TopClauseParameter_IsStillSubstituted()
+    {
+        /* The mirror image: @n is TOP's row count, a read, and the assignment target next to it
+           must not drag it under the guard. */
+        var result = ParameterSubstitution.Apply(
+            "SELECT TOP (@n) @a = SomeCol FROM t",
+            new List<PlanParameter> { Param("@n", "(5)"), Param("@a", "NULL") });
+
+        Assert.Equal("SELECT TOP (5) @a = SomeCol FROM t", result.Text);
+        Assert.Equal(1, result.SubstitutionCount);
+    }
+
+    [Fact]
+    public void ExecReturnStatusAndFirstNamedArgument_AreNotOverwritten()
+    {
+        /* Two shapes the back-scan cannot see, because what precedes each is a procedure name
+           rather than SELECT or SET. Inside an EXEC statement "=" has no other meaning, so both
+           the return-status variable and the FIRST named argument are targets — the second and
+           later named arguments were already protected by the list-comma rule, and must stay so. */
+        var result = ParameterSubstitution.Apply(
+            "EXEC @rc = dbo.proc @debug = @debug, @limit = @limit",
+            new List<PlanParameter>
+            {
+                Param("@rc", "(0)"), Param("@debug", "(1)"), Param("@limit", "(50)")
+            });
+
+        /* The names survive on the left; the values land on the right, which is the whole point
+           of substituting an EXEC — a runnable call with this execution's arguments. */
+        Assert.Equal("EXEC @rc = dbo.proc @debug = 1, @limit = 50", result.Text);
+        Assert.Equal(2, result.SubstitutionCount);
+    }
+
+    [Fact]
+    public void FetchIntoTargets_AreNotOverwritten()
+    {
+        /* FETCH assigns with no "=" anywhere, so the forward scan finds nothing and the answer
+           has to come from the INTO leading the list — for every member of it, not just the
+           first. */
+        var result = ParameterSubstitution.Apply(
+            "FETCH NEXT FROM cur INTO @a, @b",
+            new List<PlanParameter> { Param("@a", "(1)"), Param("@b", "(2)") });
+
+        Assert.Equal("FETCH NEXT FROM cur INTO @a, @b", result.Text);
+        Assert.Equal(0, result.SubstitutionCount);
+    }
+
+    [Fact]
+    public void UpdateSetAgainstAColumn_IsStillSubstituted()
+    {
+        /* SET here is UPDATE's, assigning INTO the column FROM the parameter — a read of @p.
+           The keyword rule only guards a parameter directly in front of the "=", and @p is on
+           the other side of it. */
+        var result = ParameterSubstitution.Apply(
+            "UPDATE t SET col = @p WHERE id = @id",
+            new List<PlanParameter> { Param("@p", "(7)"), Param("@id", "(3)") });
+
+        Assert.Equal("UPDATE t SET col = 7 WHERE id = 3", result.Text);
+        Assert.Equal(2, result.SubstitutionCount);
+    }
+
+    [Fact]
+    public void PositionalExecArgumentsAndInLists_AreStillSubstituted()
+    {
+        /* Comma-separated reads, either side of the INTO hop's reasoning: positional EXEC
+           arguments have a procedure name at the head of their list, an IN list has "(" — and
+           neither is INTO, so both keep their values. */
+        var exec = ParameterSubstitution.Apply(
+            "EXEC dbo.p @a, @b",
+            new List<PlanParameter> { Param("@a", "(1)"), Param("@b", "(2)") });
+
+        Assert.Equal("EXEC dbo.p 1, 2", exec.Text);
+
+        var inList = ParameterSubstitution.Apply(
+            "WHERE x IN (@a, @b)",
+            new List<PlanParameter> { Param("@a", "(1)"), Param("@b", "(2)") });
+
+        Assert.Equal("WHERE x IN (1, 2)", inList.Text);
+    }
+
+    [Fact]
     public void ComparisonOperatorsThatEndInEquals_AreStillSubstituted()
     {
         /* The parameter on the LEFT, which is the only side where the assignment check has anything
