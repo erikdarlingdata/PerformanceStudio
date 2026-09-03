@@ -2,6 +2,7 @@ using Avalonia;
 using System;
 using System.IO;
 using System.IO.Pipes;
+using System.Threading;
 using System.Threading.Tasks;
 using PlanViewer.App.Services;
 using Velopack;
@@ -10,7 +11,14 @@ namespace PlanViewer.App;
 
 class Program
 {
-    private const string PipeName = "SQLPerformanceStudio_OpenFile";
+    /// <summary>
+    /// Held — never released — by the instance that owns the single-instance slot (#489).
+    /// The OS tears the mutex down when the process exits, crash included, so there is no
+    /// release path to get wrong; a static field keeps the handle rooted for the whole run
+    /// (the previous mutex attempt died precisely because its handle was disposed the
+    /// moment the acquiring method returned, so no instance ever actually held it).
+    /// </summary>
+    private static Mutex? _singleInstanceMutex;
 
     [STAThread]
     public static void Main(string[] args)
@@ -36,12 +44,62 @@ class Program
         }
         velopack.Run();
 
-        // If another instance is running, send the file path to it and exit
-        if (args.Length > 0 && TrySendToRunningInstance(args[0]))
-            return;
+        /* #489: every instance holds a whole-file AppSettings snapshot and Save writes the
+           whole file, so a second instance makes the settings file last-write-wins — the
+           instance that exits second silently clobbers the other's open_tabs and every
+           other setting (AtomicFile prevents torn writes, not lost updates). File-argument
+           launches already forwarded to the running instance over the pipe; a BARE second
+           launch ran a full instance and was exactly the clobber case. So unless the user
+           explicitly asks for a second instance, a launch that finds one running hands it
+           its work — a file path, or a bare "surface yourself" — and exits. */
+        var newInstanceRequested = SingleInstance.NewInstanceRequested(args);
+
+        // The flag is a launcher directive, not a file: strip it so nothing downstream can
+        // mistake it for a path ("PerformanceStudio.exe --new-instance file.sqlplan" must
+        // still open the file). MainWindow re-reads the raw argv and scrubs it again itself.
+        var effectiveArgs = SingleInstance.StripNewInstanceFlag(args);
+
+        if (!newInstanceRequested)
+        {
+            // The pre-#489 forwarding, kept first and unchanged: a with-file launch tries
+            // the pipe before anything else. Beyond being the common case, probing before
+            // the mutex is version-skew-proof — an already-running build that predates the
+            // mutex answers its pipe but holds no mutex, and a mutex-first flow would run a
+            // second full window beside it instead of handing the file over.
+            if (effectiveArgs.Length > 0 && TrySendToRunningInstance(effectiveArgs[0], maxAttempts: 1))
+                return;
+
+            if (!TryBecomeSingleInstanceOwner())
+            {
+                /* Another instance owns the slot but hasn't answered its pipe yet — bare
+                   launches never probed above, and a with-file probe may have raced the
+                   owner's boot (the pipe server starts in the MainWindow constructor,
+                   which on a cold start is seconds after its Main). Retry for ~2s before
+                   giving up on delivery. */
+                var message = effectiveArgs.Length > 0
+                    ? effectiveArgs[0]
+                    : SingleInstance.ActivateSentinel;
+                if (TrySendToRunningInstance(message, maxAttempts: 4))
+                    return;
+
+                /* Delivery failed after retries: the owner is wedged, exiting, or still
+                   booting slowly. Losing the user's action — their double-clicked file, or
+                   the app simply appearing at all — is worse than a rare second instance,
+                   so fall through and run fully. This is also the honest residue of the
+                   startup race: two simultaneous bare launches can BOTH end up proceeding
+                   when the loser's retries run out before the winner's pipe exists. The
+                   mutex closes most of that window; what remains falls back to the
+                   pre-#489 last-write-wins behavior, which is the accepted floor. */
+            }
+        }
 
         BuildAvaloniaApp()
-            .StartWithClassicDesktopLifetime(args);
+            .StartWithClassicDesktopLifetime(effectiveArgs);
+
+        // Reached only at app shutdown. Statics are GC roots, so the field alone keeps the
+        // owner's mutex handle alive; this read exists to say out loud that the handle's
+        // LIFETIME is the point (and to keep the field from reading as write-only).
+        GC.KeepAlive(_singleInstanceMutex);
     }
 
     // Avalonia configuration, don't remove; also used by visual designer.
@@ -52,32 +110,74 @@ class Program
             .LogToTrace();
 
     /// <summary>
-    /// Tries to hand the file path to an already-running instance over its named pipe.
-    /// A failed/timed-out connect means no instance is listening, so the caller should
-    /// launch normally. Returns true only if the path was actually delivered.
+    /// Tries to claim the single-instance slot (#489). True means this process is the
+    /// owner and should run; false means another instance holds the slot and this launch
+    /// should hand its work over instead.
     /// </summary>
-    /// <remarks>
-    /// Detection is via the pipe itself rather than a named mutex: the previous mutex
-    /// was disposed as soon as this method returned, so no instance ever held it and
-    /// the forwarding path was never taken.
-    /// </remarks>
-    private static bool TrySendToRunningInstance(string filePath)
+    private static bool TryBecomeSingleInstanceOwner()
     {
         try
         {
-            using var client = new NamedPipeClientStream(".", PipeName, PipeDirection.Out);
-            // Short timeout: a running instance's listener is idle and connects
-            // immediately; when none is running this is the only added launch delay.
-            client.Connect(500);
-            using var writer = new StreamWriter(client);
-            writer.WriteLine(filePath);
-            writer.Flush();
-            return true;
+            var mutex = new Mutex(initiallyOwned: true, SingleInstance.MutexName, out var createdNew);
+            if (createdNew)
+            {
+                _singleInstanceMutex = mutex;
+                return true;
+            }
+
+            /* Another process owns it. Close our handle right away: if this launch ends up
+               running anyway (the pipe fallback above), a lingering handle would keep the
+               kernel object alive after the real owner exits, and a THIRD launch would then
+               see the name taken with nobody serving the pipe behind it. */
+            mutex.Dispose();
+            return false;
         }
         catch
         {
-            // No instance listening (or pipe busy) — fall through to launch normally.
-            return false;
+            /* Mutex machinery unavailable — an ACL mismatch on the name, a restrictive
+               sandbox. Claiming ownership is the conservative answer: this instance runs
+               fully, which is exactly the pre-#489 behavior for every launch. */
+            return true;
         }
+    }
+
+    /// <summary>
+    /// Tries to hand one line — a file path, or the activation sentinel — to an
+    /// already-running instance over its named pipe. Returns true only if the line was
+    /// actually delivered; the caller decides what a failed delivery costs.
+    /// </summary>
+    private static bool TrySendToRunningInstance(string message, int maxAttempts)
+    {
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            if (attempt > 1)
+            {
+                // Between attempts only: the owner is presumably mid-boot, so give its
+                // pipe server a beat to come up rather than burning connects back-to-back.
+                Thread.Sleep(100);
+            }
+
+            try
+            {
+                using var client = new NamedPipeClientStream(".", SingleInstance.PipeName, PipeDirection.Out);
+                // 500ms per attempt: a running instance's listener is idle and connects
+                // immediately, while Connect burns the full timeout when nothing is
+                // listening — so the single-attempt probe on a with-file launch adds at
+                // most the same half second it always has, and the 4-attempt retry path
+                // totals roughly the ~2s boot grace it exists for.
+                client.Connect(500);
+                using var writer = new StreamWriter(client);
+                writer.WriteLine(message);
+                writer.Flush();
+                return true;
+            }
+            catch
+            {
+                // Not listening yet, or the single server slot was mid-conversation with
+                // another client — retry if the budget allows, otherwise report undelivered.
+            }
+        }
+
+        return false;
     }
 }

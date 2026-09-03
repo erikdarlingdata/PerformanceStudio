@@ -30,8 +30,6 @@ namespace PlanViewer.App;
 
 public partial class MainWindow : Window
 {
-    private const string PipeName = "SQLPerformanceStudio_OpenFile";
-
     private readonly ICredentialService _credentialService;
     private readonly ConnectionStore _connectionStore;
     private readonly CancellationTokenSource _pipeCts = new();
@@ -67,7 +65,9 @@ public partial class MainWindow : Window
         if (Enum.TryParse<TimeDisplayMode>(_appSettings.QueryStoreDefaultTimeDisplay, true, out var tdm))
             TimeDisplayHelper.Current = tdm;
 
-        // Listen for file paths from other instances (e.g. SSMS extension).
+        // Listen for file paths from other launches (SSMS extension, a second Studio
+        // launch handing over its file) and for the #489 surface-yourself sentinel a bare
+        // second launch sends instead of running a full instance.
         // Not in the test host (#451): every test window would grab the machine's single
         // SQLPerformanceStudio_OpenFile pipe slot and never release it — OnClosed never
         // runs there — racing any real Studio instance on the same box.
@@ -189,6 +189,15 @@ public partial class MainWindow : Window
     /// </summary>
     internal void OpenFromStartupArgs(string[] args)
     {
+        /* #489: --new-instance is a launcher directive, not a file, and it is scrubbed
+           HERE as well as in Program.Main because this method consumes the raw
+           Environment.GetCommandLineArgs() — Program's scrubbed copy never reaches it.
+           Without this, "PerformanceStudio.exe --new-instance file.sqlplan" would find the
+           flag at args[1]: it happens to fail the File.Exists guard below, but the user's
+           file behind it would still be skipped and the launch would silently
+           session-restore instead. */
+        args = SingleInstance.StripNewInstanceFlag(args);
+
         if (args.Length > 1 && File.Exists(args[1]))
         {
             OpenFileByExtension(args[1]);
@@ -212,21 +221,22 @@ public partial class MainWindow : Window
                 try
                 {
                     using var server = new NamedPipeServerStream(
-                        PipeName, PipeDirection.In, 1,
+                        SingleInstance.PipeName, PipeDirection.In, 1,
                         PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
 
                     await server.WaitForConnectionAsync(token);
 
                     using var reader = new StreamReader(server);
-                    var filePath = await reader.ReadLineAsync();
+                    var line = await reader.ReadLineAsync();
 
-                    if (!string.IsNullOrWhiteSpace(filePath) && File.Exists(filePath))
+                    /* Classified out here rather than inside the UI dispatch on purpose:
+                       Classify calls File.Exists, and a dead UNC path can block for
+                       seconds — that wait belongs on this pipe task, not the dispatcher. */
+                    var kind = SingleInstance.Classify(line);
+                    if (kind != SingleInstance.PipeMessage.Ignore)
                     {
                         await Dispatcher.UIThread.InvokeAsync(() =>
-                        {
-                            OpenFileByExtension(filePath);
-                            Activate();
-                        });
+                            DispatchPipeMessage(kind, line!));
                     }
                 }
                 catch (OperationCanceledException)
@@ -243,6 +253,49 @@ public partial class MainWindow : Window
                 }
             }
         }, token);
+    }
+
+    /// <summary>
+    /// Acts on one classified pipe line, on the UI thread. Split from the pipe loop so the
+    /// dispatch can be pinned by tests without a pipe (#489).
+    ///
+    /// <para>The classification is the compatibility contract with every sender version:
+    /// an existing file path opens — what the SSMS extension and any Studio build have
+    /// always sent, unchanged — the activation sentinel surfaces the window (what a bare
+    /// second launch sends since #489), and anything else, including a path that stopped
+    /// existing between send and receive, was already dropped silently before the
+    /// classifier existed and still is.</para>
+    /// </summary>
+    internal void DispatchPipeMessage(SingleInstance.PipeMessage kind, string line)
+    {
+        switch (kind)
+        {
+            case SingleInstance.PipeMessage.OpenFile:
+                OpenFileByExtension(line);
+                SurfaceWindow();
+                break;
+
+            case SingleInstance.PipeMessage.Activate:
+                SurfaceWindow();
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Brings the main window back to the user after a second launch handed its work to
+    /// this one (#489): restore from minimized, then activate. Deliberately minimal next
+    /// to Lite's surface path — Studio never hides to a tray, so there is nothing to
+    /// re-show.
+    ///
+    /// <para>The file-open message uses it too, where the old handler only called
+    /// Activate(): a plan sent from SSMS to a minimized window used to load into a window
+    /// that stayed in the taskbar.</para>
+    /// </summary>
+    internal void SurfaceWindow()
+    {
+        if (WindowState == WindowState.Minimized)
+            WindowState = WindowState.Normal;
+        Activate();
     }
 
     private void StartMcpServer()
