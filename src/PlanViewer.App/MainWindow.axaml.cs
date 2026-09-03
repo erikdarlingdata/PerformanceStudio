@@ -47,6 +47,16 @@ public partial class MainWindow : Window
     /// </summary>
     internal bool IsShuttingDown { get; private set; }
 
+    /// <summary>
+    /// Whether this window's process-external startup services actually launched. Set by the
+    /// launch methods themselves rather than by the <see cref="AppRuntimeMode"/> gate, so the
+    /// test pinning that they stay off under the harness (#451) still fails if a future change
+    /// starts one through a new path. Never read by the app.
+    /// </summary>
+    internal bool PipeServerStarted { get; private set; }
+    internal bool StartupUpdateCheckStarted { get; private set; }
+    internal bool McpServerStartAttempted { get; private set; }
+
     public MainWindow()
     {
         _credentialService = CredentialServiceFactory.Create();
@@ -57,13 +67,20 @@ public partial class MainWindow : Window
         if (Enum.TryParse<TimeDisplayMode>(_appSettings.QueryStoreDefaultTimeDisplay, true, out var tdm))
             TimeDisplayHelper.Current = tdm;
 
-        // Listen for file paths from other instances (e.g. SSMS extension)
-        StartPipeServer();
+        // Listen for file paths from other instances (e.g. SSMS extension).
+        // Not in the test host (#451): every test window would grab the machine's single
+        // SQLPerformanceStudio_OpenFile pipe slot and never release it — OnClosed never
+        // runs there — racing any real Studio instance on the same box.
+        if (!AppRuntimeMode.IsTestHost)
+            StartPipeServer();
 
         InitializeComponent();
 
-        // Check for updates on startup (non-blocking)
-        _ = CheckForUpdatesOnStartupAsync();
+        // Check for updates on startup (non-blocking).
+        // Not in the test host (#451): one GitHub hit per constructed window meant ~36
+        // update checks per local test run.
+        if (!AppRuntimeMode.IsTestHost)
+            _ = CheckForUpdatesOnStartupAsync();
 
         // Build the Recent Plans submenu from saved state
         RebuildRecentPlansMenu();
@@ -158,12 +175,18 @@ public partial class MainWindow : Window
             RestoreOpenPlans();
         }
 
-        // Start MCP server if enabled in settings
-        StartMcpServer();
+        // Start MCP server if enabled in settings.
+        // Not in the test host (#451): this reads the user's real ~/.planview settings and,
+        // when enabled there, binds a real TCP port from inside the test runner. The menu
+        // item needs no fallback write — its XAML default is already "MCP Server: Off".
+        if (!AppRuntimeMode.IsTestHost)
+            StartMcpServer();
     }
 
     private void StartPipeServer()
     {
+        PipeServerStarted = true;
+
         var token = _pipeCts.Token;
         Task.Run(async () =>
         {
@@ -207,6 +230,10 @@ public partial class MainWindow : Window
 
     private void StartMcpServer()
     {
+        // Set before the settings read: reading the user's real ~/.planview file is itself
+        // part of what the test host must not do, so "attempted" starts here.
+        McpServerStartAttempted = true;
+
         var settings = McpSettings.Load();
         if (!settings.Enabled)
         {
@@ -709,6 +736,9 @@ public partial class MainWindow : Window
 
     private async Task CheckForUpdatesOnStartupAsync()
     {
+        // Before the first await, so the flag is visible to a caller synchronously.
+        StartupUpdateCheckStarted = true;
+
         try
         {
             await Task.Delay(5000); // Don't slow down startup
