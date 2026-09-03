@@ -16,13 +16,16 @@ namespace PlanViewer.App.Controls;
 
 public partial class PlanViewerControl : UserControl
 {
-    private void PopulateStatementsGrid(List<PlanStatement> statements)
+    /* Takes the container-aware entries rather than bare statements (#456 follow-up): the grid
+       now lists stored procedure and UDF body statements alongside the outer batch, and a row
+       needs to say WHICH module its statement came from or five bare SELECTs are indistinguishable. */
+    private void PopulateStatementsGrid(List<StatementWithContainer> statements)
     {
         StatementsHeader.Text = $"Statements ({statements.Count})";
 
-        var hasActualTimes = statements.Any(s => s.QueryTimeStats != null &&
-            (s.QueryTimeStats.CpuTimeMs > 0 || s.QueryTimeStats.ElapsedTimeMs > 0));
-        var hasUdf = statements.Any(s => s.QueryUdfElapsedTimeMs > 0);
+        var hasActualTimes = statements.Any(e => e.Statement.QueryTimeStats != null &&
+            (e.Statement.QueryTimeStats.CpuTimeMs > 0 || e.Statement.QueryTimeStats.ElapsedTimeMs > 0));
+        var hasUdf = statements.Any(e => e.Statement.QueryUdfElapsedTimeMs > 0);
 
         // Build columns
         StatementsGrid.Columns.Clear();
@@ -129,7 +132,7 @@ public partial class PlanViewerControl : UserControl
         var rows = new List<StatementRow>();
         for (int i = 0; i < statements.Count; i++)
         {
-            var stmt = statements[i];
+            var stmt = statements[i].Statement;
             var allWarnings = stmt.PlanWarnings.ToList();
             if (stmt.RootNode != null)
                 CollectNodeWarnings(stmt.RootNode, allWarnings);
@@ -137,6 +140,14 @@ public partial class PlanViewerControl : UserControl
             var fullText = stmt.StatementText;
             if (string.IsNullOrWhiteSpace(fullText))
                 fullText = $"Statement {i + 1}";
+
+            /* A body statement gets its module name in front ("dbo.Proc > SELECT ...") in both
+               the cell and its tooltip — display only. Copy/open-in-editor read
+               row.Statement.StatementText and hand out the statement exactly as the plan
+               recorded it, prefix-free. */
+            if (!string.IsNullOrEmpty(statements[i].ContainerPath))
+                fullText = $"{statements[i].ContainerPath} > {fullText}";
+
             var displayText = fullText.Length > 120 ? fullText[..120] + "..." : fullText;
 
             rows.Add(new StatementRow

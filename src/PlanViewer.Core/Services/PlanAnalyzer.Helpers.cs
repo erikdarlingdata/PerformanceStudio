@@ -30,18 +30,21 @@ public static partial class PlanAnalyzer
             MarkLegacyWarningsOnTree(child);
     }
 
+    /* #456 follow-up: the analyzer walks every statement — stored procedure and UDF bodies
+       included — through PlanStatements.EnumerateAll, but this pass still walked batch.Statements,
+       so a user's severity override applied to a warning on the outer batch and silently did not
+       apply to the identical warning inside an EXEC <procedure> body. (MarkLegacyWarnings does not
+       have this problem: it is called per-statement from inside the analyzer's EnumerateAll loop,
+       so it was carried along when that loop learned to descend.) */
     private static void ApplySeverityOverrides(ParsedPlan plan, AnalyzerConfig cfg)
     {
-        foreach (var batch in plan.Batches)
+        foreach (var stmt in PlanStatements.EnumerateAll(plan))
         {
-            foreach (var stmt in batch.Statements)
-            {
-                foreach (var w in stmt.PlanWarnings)
-                    TryOverrideSeverity(w, cfg);
+            foreach (var w in stmt.PlanWarnings)
+                TryOverrideSeverity(w, cfg);
 
-                if (stmt.RootNode != null)
-                    ApplyOverridesToTree(stmt.RootNode, cfg);
-            }
+            if (stmt.RootNode != null)
+                ApplyOverridesToTree(stmt.RootNode, cfg);
         }
     }
 

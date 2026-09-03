@@ -30,23 +30,26 @@ public static class BenefitScorer
 
     internal static void ScoreCancellable(ParsedPlan plan, CancellationToken cancellationToken)
     {
-        foreach (var batch in plan.Batches)
+        /* #456 made the analyzer descend into stored procedure and UDF bodies via
+           PlanStatements.EnumerateAll, but this walk was left on batch.Statements. The analyzer
+           then CREATED warnings on the body statements and the scorer never visited them, so their
+           MaxBenefitPercent stayed null and their wait stats were never scored or surfaced — the
+           UI sorts unquantified warnings below quantified ones, which quietly buried every finding
+           inside an EXEC <procedure> plan. Same shared traversal as the analyzer so the two passes
+           cannot see different statements again. */
+        foreach (var stmt in PlanStatements.EnumerateAll(plan))
         {
             cancellationToken.ThrowIfCancellationRequested();
-            foreach (var stmt in batch.Statements)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                ScoreStatementWarnings(stmt);
+            ScoreStatementWarnings(stmt);
 
-                if (stmt.RootNode != null)
-                    ScoreNodeTree(stmt.RootNode, stmt, cancellationToken);
+            if (stmt.RootNode != null)
+                ScoreNodeTree(stmt.RootNode, stmt, cancellationToken);
 
-                if (stmt.WaitStats.Count > 0 && stmt.QueryTimeStats != null)
-                    ScoreWaitStats(stmt);
+            if (stmt.WaitStats.Count > 0 && stmt.QueryTimeStats != null)
+                ScoreWaitStats(stmt);
 
-                if (stmt.WaitStats.Count > 0)
-                    EmitWaitStatWarnings(stmt);
-            }
+            if (stmt.WaitStats.Count > 0)
+                EmitWaitStatWarnings(stmt);
         }
     }
 

@@ -345,9 +345,20 @@ public partial class PlanViewerControl : UserControl
 
         PlanAnalysisPipeline.AnalyzeParsed(_currentPlan, ConfigLoader.Load(), _serverMetadata);
 
-        var allStatements = _currentPlan.Batches
-            .SelectMany(b => b.Statements)
-            .Where(s => s.RootNode != null)
+        /* #456 gave the analysis pipeline and Human/Robot Advice (ResultMapper) the shared
+           PlanStatements.EnumerateAll traversal, which descends into stored procedure and UDF
+           bodies. The grid and the MCP registration below kept walking batch.Statements, so an
+           EXEC <procedure> plan showed one grid row — the EXEC itself — and registered near-zero
+           counts, while the advice discussed dozens of warnings the UI could neither display nor
+           navigate to. Same traversal here so what the grid shows, what the session reports, and
+           what the advice says are the same plan. */
+        var everyStatement = PlanStatements.EnumerateAllWithContainer(_currentPlan).ToList();
+
+        /* Only statements with a root node can render on the canvas. The same filter has always
+           applied to the outer batch (where the parser's synthetic statement roots mean it
+           rarely excludes anything); it now applies across the whole traversal. */
+        var allStatements = everyStatement
+            .Where(e => e.Statement.RootNode != null)
             .ToList();
 
         if (allStatements.Count == 0)
@@ -361,16 +372,20 @@ public partial class PlanViewerControl : UserControl
         PlanScrollViewer.IsVisible = true;
 
         // Always show statement grid — useful summary even for single-statement plans
-        _allStatements = allStatements;
+        _allStatements = allStatements.Select(e => e.Statement).ToList();
         PopulateStatementsGrid(allStatements);
         ShowStatementsPanel();
         StatementsGrid.SelectedIndex = 0;
 
-        // Register with MCP session manager for AI tool access
-        // Count warnings from both statement-level PlanWarnings and all node Warnings
+        /* Register with MCP session manager for AI tool access. Counts run over EVERY statement,
+           renderable or not, because that is what the advice an MCP client reads was built from:
+           statement-level PlanWarnings plus all node warnings, proc/UDF bodies included.
+           StatementCount likewise matches the analysis output's total_statements rather than the
+           grid's renderable subset. */
         int warningCount = 0, criticalCount = 0;
-        foreach (var s in allStatements)
+        foreach (var entry in everyStatement)
         {
+            var s = entry.Statement;
             warningCount += s.PlanWarnings.Count;
             criticalCount += s.PlanWarnings.Count(w => w.Severity == PlanWarningSeverity.Critical);
             if (s.RootNode != null)
@@ -385,8 +400,8 @@ public partial class PlanViewerControl : UserControl
             Source = sessionSource,
             Plan = _currentPlan,
             QueryText = queryText,
-            StatementCount = allStatements.Count,
-            HasActualStats = allStatements.Any(s => s.QueryTimeStats != null),
+            StatementCount = everyStatement.Count,
+            HasActualStats = everyStatement.Any(e => e.Statement.QueryTimeStats != null),
             WarningCount = warningCount,
             CriticalWarningCount = criticalCount,
             MissingIndexCount = _currentPlan.AllMissingIndexes.Count
