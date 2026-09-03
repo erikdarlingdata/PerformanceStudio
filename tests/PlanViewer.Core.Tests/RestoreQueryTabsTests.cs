@@ -85,6 +85,7 @@ public class RestoreQueryTabsTests
             }
             finally
             {
+                Unseed();
                 File.Delete(path);
             }
         });
@@ -100,12 +101,21 @@ public class RestoreQueryTabsTests
         HeadlessUi.Run(() =>
         {
             var path = Path.Combine(System.AppContext.BaseDirectory, "Plans", "row_goal_plan.sqlplan");
-            Seed(path);
+            try
+            {
+                Seed(path);
 
-            var window = new MainWindow();
+                var window = new MainWindow();
 
-            Assert.Contains(path, window.CollectOpenTabPaths());
-            Assert.Contains(Viewers(window), v => v.SourceFilePath == path);
+                Assert.Contains(path, window.CollectOpenTabPaths());
+                Assert.Contains(Viewers(window), v => v.SourceFilePath == path);
+            }
+            finally
+            {
+                /* This one seeds a fixture that is never deleted, so without the unseed every
+                   later MainWindow in the run would restore a phantom plan tab. */
+                Unseed();
+            }
         });
     }
 
@@ -192,14 +202,25 @@ public class RestoreQueryTabsTests
 
     /// <summary>
     /// Puts one path where the next MainWindow will look for the previous session's tabs.
-    /// Load returns the process-wide cached instance, which is the same object the window reads,
-    /// and restore clears it again on the way out — so this does not leak into other tests.
+    /// Load returns the process-wide cached instance, which is the same object the window reads.
+    /// Since #490, restore REWRITES the list with whatever it successfully opened — that is the
+    /// crash-safety — so a seeding test has to blank the list again on its way out
+    /// (<see cref="Unseed"/>) or the next MainWindow constructed anywhere in the run restores
+    /// this test's file.
     /// </summary>
     private static void Seed(string path)
     {
         var settings = AppSettingsService.Load();
         settings.OpenTabs.Clear();
         settings.OpenTabs.Add(path);
+    }
+
+    /// <summary>The other half of <see cref="Seed"/>, for a finally block.</summary>
+    private static void Unseed()
+    {
+        var settings = AppSettingsService.Load();
+        settings.OpenTabs.Clear();
+        AppSettingsService.Save(settings);
     }
 
     private static MenuItem ContextMenuItem(TabItem tab, string header) =>

@@ -188,6 +188,13 @@ public partial class MainWindow : Window
                UTF-8-without-BOM this always wrote. */
             AtomicFile.WriteAllText(path, session.QueryEditor.Text, session.SourceFileEncoding);
             session.SourceFilePath = path;
+            /* #490: the one way a tab's place in the session-restore list changes while tab
+               membership stays constant — a scratch gaining its first file, or Save As moving
+               an existing one. The tab watcher sees neither (no tab was added, removed, or
+               swapped), so the persist trigger lives at the assignment. Detached sessions save
+               through here too (tab == null); their register entry serves up the new path the
+               same way. */
+            RequestSessionPersist();
             // Only a write that actually happened settles the dirty state; the catch below
             // deliberately leaves the session modified so the work is still guarded.
             session.MarkClean();
@@ -461,12 +468,21 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// The file behind every open tab that has one, in tab order. Plans and queries both,
-    /// since <see cref="GetTabFilePath"/> answers for either shape.
+    /// The file behind every open tab that has one, in tab order, then the file behind every
+    /// detached window that has one, in detach order. Plans and queries both, since
+    /// <see cref="GetContentFilePath"/> answers for either shape.
     /// </summary>
     /// <remarks>
-    /// Separate from <see cref="SaveOpenPlans"/> so a test can assert what would be persisted
-    /// without writing over the user's real settings file.
+    /// <para>Separate from <see cref="SaveOpenPlans"/> so a test can assert what would be
+    /// persisted without writing over the user's real settings file.</para>
+    ///
+    /// <para>#490's detached half: this used to walk MainTabControl alone, so a file-backed
+    /// plan or query detached into its own window at exit was never written down and never
+    /// came back. Detached entries are appended AFTER the docked tabs — docked order is the
+    /// order the user arranged and keeps it; detach order is best-effort. On the next start
+    /// they all come back as ordinary docked tabs, not re-detached windows: remembering THAT
+    /// a file was open is the data-loss fix, remembering window geometry is a different
+    /// feature, deliberately not built here.</para>
     /// </remarks>
     internal List<string> CollectOpenTabPaths()
     {
@@ -481,11 +497,19 @@ public partial class MainWindow : Window
                 paths.Add(path);
         }
 
+        foreach (var content in _detachedTabContents)
+        {
+            var path = GetContentFilePath(content);
+            if (!string.IsNullOrEmpty(path))
+                paths.Add(path);
+        }
+
         return paths;
     }
 
     /// <summary>
-    /// Saves the file paths of all currently open file-based tabs, plans and queries alike.
+    /// Saves the file paths of all currently open file-based tabs, plans and queries alike,
+    /// docked and detached alike (#490).
     /// </summary>
     private void SaveOpenPlans()
     {
@@ -495,12 +519,95 @@ public partial class MainWindow : Window
         AppSettingsService.Save(_appSettings);
     }
 
+    // ── Continuous session persistence (#490) ─────────────────────────────
+
+    /* #468 wrote the list once, at clean close, and #490 is what that cost: any abnormal exit
+       — a crash, a task kill, an OS "shut down anyway" past the dirty-tab prompt — restored
+       zero tabs, because the only writer never ran. Membership changes now write the list as
+       they happen, debounced so a burst (session restore, Close All) lands as one write. The
+       triggers are wired centrally, not per call site — see the TabContentWatcher hookup in
+       the constructor for why. */
+
+    /// <summary>How long the writer waits for a burst of membership changes to settle.</summary>
+    private static readonly TimeSpan SessionPersistDebounce = TimeSpan.FromSeconds(1);
+
+    /// <summary>Trailing-edge debounce for <see cref="SaveOpenPlans"/>; every request restarts it.</summary>
+    private DispatcherTimer? _sessionPersistTimer;
+
+    /// <summary>
+    /// Whether a membership change is waiting to be written. Under the test host this flag is
+    /// the whole mechanism — see <see cref="RequestSessionPersist"/>.
+    /// </summary>
+    private bool _sessionPersistPending;
+
+    /// <summary>
+    /// Notes that tab membership changed — a tab opened, closed, detached, redocked, or gained
+    /// a file path — and schedules the debounced write. Called by the tab watcher for
+    /// everything visible on the strip, and explicitly by the detached register and
+    /// <see cref="SaveQueryToPath"/> for the two changes the strip cannot show.
+    /// </summary>
+    private void RequestSessionPersist()
+    {
+        /* OnClosed is already writing the final authoritative list (and force-closing the
+           detached windows, whose Forget calls land right back here). Nothing may re-arm the
+           timer against a window being torn down. */
+        if (IsShuttingDown)
+            return;
+
+        _sessionPersistPending = true;
+
+        /* No real timer under the test host, in #451's pattern: the suite shares one
+           dispatcher across every test, so a timer armed here would tick during some LATER
+           test's RunJobs and write THIS window's tab list over whatever that test had staged
+           in the redirected settings file — exactly the cross-test bleed the redirect exists
+           to stop. Tests drive the flush deterministically through
+           <see cref="FlushPendingSessionPersistForTests"/> instead. */
+        if (AppRuntimeMode.IsTestHost)
+            return;
+
+        if (_sessionPersistTimer == null)
+        {
+            _sessionPersistTimer = new DispatcherTimer { Interval = SessionPersistDebounce };
+            _sessionPersistTimer.Tick += (_, _) => FlushSessionPersist();
+        }
+
+        // Stop-then-start restarts the interval, which is what makes it a debounce.
+        _sessionPersistTimer.Stop();
+        _sessionPersistTimer.Start();
+    }
+
+    /// <summary>
+    /// Writes a pending membership change down now. The timer's tick, the end of
+    /// <see cref="RestoreOpenPlans"/>, and the test seam all land here; a flush with nothing
+    /// pending is free.
+    /// </summary>
+    private void FlushSessionPersist()
+    {
+        _sessionPersistTimer?.Stop();
+
+        if (!_sessionPersistPending || IsShuttingDown)
+            return;
+
+        _sessionPersistPending = false;
+        SaveOpenPlans();
+    }
+
+    /// <summary>
+    /// The deterministic stand-in for the debounce timer's tick — tests call this where the
+    /// real app waits out <see cref="SessionPersistDebounce"/>. A seam rather than a sleep
+    /// because the harness shares one dispatcher across the whole suite; see
+    /// <see cref="RequestSessionPersist"/> for what a real timer does to that arrangement.
+    /// </summary>
+    internal void FlushPendingSessionPersistForTests() => FlushSessionPersist();
+
     /// <summary>
     /// Writes the open-tab list down for the session that comes back after a Velopack
     /// restart. <see cref="OnClosed"/> does this on every ordinary shutdown, but
     /// ApplyUpdatesAndRestart exits the process without closing the window — and
     /// <see cref="RestoreOpenPlans"/> already cleared the saved list at startup, so without
-    /// this the updated app relaunched with nothing.
+    /// this the updated app relaunched with nothing. #490's continuous writer usually has the
+    /// list current by now anyway, but "usually" is a debounce interval wide; this write is
+    /// what makes the restart exact.
     /// </summary>
     internal void PersistSessionForRestart() => SaveOpenPlans();
 
@@ -511,12 +618,38 @@ public partial class MainWindow : Window
     /// <para>The saved list holds queries as well as plans, so it routes on extension the
     /// same way an ordinary file open does. Sending a .sql file to LoadPlanFile would greet
     /// the user with "the XML is not valid" where their query used to be.</para>
+    ///
+    /// <para><b>The crash-loop defense (#490).</b> The list is cleared and saved EMPTY before
+    /// the first file is opened, so a file that crashes the app during its own load is already
+    /// off the list when the next start reads it — a poisoned entry can never wedge the app
+    /// into crashing at every launch. (The clear used to run after the loop, which only
+    /// defended against crashes AFTER restore finished; a file that crashed DURING it left
+    /// the list intact and looped forever.) Every file that opens successfully re-enters the
+    /// list through the debounced writer, so the net behavior is strictly better than the old
+    /// all-or-nothing: the poison never persists, and everything that actually opened
+    /// does.</para>
+    ///
+    /// <para>Honestly, "everything that opened" holds for a crash after restore, not during
+    /// it. The re-adds are debounced and this loop runs synchronously on the UI thread, so a
+    /// crash while file B loads means file A's pending re-add never flushed and A is lost for
+    /// that start too. Accepted: the invariant being defended is that the poison never
+    /// persists, not that every good tab survives a mid-restore crash. The flush at the end
+    /// is the other half of the deal — once restore completes, the rebuilt list is on disk
+    /// immediately rather than a debounce-interval later, so the common case (restore fine,
+    /// crash any time afterwards) loses nothing.</para>
     /// </summary>
     private void RestoreOpenPlans()
     {
+        /* Snapshot first: SaveOpenPlans and this method share the live list, and the clear
+           below would otherwise empty the very thing being iterated. */
+        var savedTabs = _appSettings.OpenTabs.ToList();
+
+        _appSettings.OpenTabs.Clear();
+        AppSettingsService.Save(_appSettings);
+
         var restored = false;
 
-        foreach (var path in _appSettings.OpenTabs)
+        foreach (var path in savedTabs)
         {
             if (File.Exists(path))
             {
@@ -525,9 +658,9 @@ public partial class MainWindow : Window
             }
         }
 
-        // Clear the restored list now that its tabs are back on screen
-        _appSettings.OpenTabs.Clear();
-        AppSettingsService.Save(_appSettings);
+        /* Each successful open armed the debounced writer through the tab watcher; write it
+           down NOW so a crash a moment after startup still finds the session on disk. */
+        FlushSessionPersist();
 
         if (!restored)
         {
