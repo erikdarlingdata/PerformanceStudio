@@ -314,6 +314,15 @@ public partial class MainWindow : Window
     /// </summary>
     private bool _closeConfirmed;
 
+    /* _closeConfirmed only latches AFTER the walk answers yes, so it does nothing about a
+       second close request arriving WHILE the walk is still asking — a double-clicked X, or
+       another Close() between two of the walk's dialogs (each prompt is modal, but the window
+       is briefly its own again between them, and for the whole of a Save As picker). Each
+       such request used to start a second concurrent walk: duplicate prompts about the same
+       tabs, and a Cancel to one walk that the other never heard about. Same reentrancy class,
+       and same one-latch answer, as the About window's update link (#485 review). */
+    private bool _closeWalkInProgress;
+
     private const string CloseGlyph = "\u2715";   // ✕
     private const string ModifiedGlyph = "\u25CF"; // ●
 
@@ -566,8 +575,20 @@ public partial class MainWindow : Window
     {
         if (!_closeConfirmed && CloseNeedsConfirmation())
         {
+            /* The cancel is unconditional — a close arriving mid-walk must not fall through
+               to base and succeed while the walk is still asking — but only the FIRST one may
+               start a walk. The latch check lives inside this branch on purpose: the walk's
+               own Close() at the end re-enters here with _closeWalkInProgress still true, and
+               it has to sail through on _closeConfirmed above, not be swallowed as a
+               duplicate. */
             e.Cancel = true;
-            _ = ConfirmWindowCloseAsync();
+
+            if (!_closeWalkInProgress)
+            {
+                _closeWalkInProgress = true;
+                _ = ConfirmWindowCloseAsync();
+            }
+
             return;
         }
 
@@ -576,11 +597,20 @@ public partial class MainWindow : Window
 
     private async Task ConfirmWindowCloseAsync()
     {
-        if (!await ConfirmAllUnsavedWorkAsync())
-            return; // one Cancel cancels the shutdown
+        try
+        {
+            if (!await ConfirmAllUnsavedWorkAsync())
+                return; // one Cancel cancels the shutdown
 
-        _closeConfirmed = true;
-        Close();
+            _closeConfirmed = true;
+            Close();
+        }
+        finally
+        {
+            /* Cleared however the walk ends — confirmed, cancelled, or a prompt that threw —
+               so a cancelled shutdown leaves the X able to start a fresh walk. */
+            _closeWalkInProgress = false;
+        }
     }
 
     /// <summary>

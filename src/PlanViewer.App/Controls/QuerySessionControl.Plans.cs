@@ -224,11 +224,13 @@ public partial class QuerySessionControl : UserControl
     /// app could already do.
     ///
     /// <para>Called by the <see cref="TabContentWatcher"/> wired to this session's sub-tabs, and by
-    /// nothing else. It used to be called by hand at the five places that add or remove a plan tab,
-    /// which is why the paths that instead fill in an existing tab — every executed query — never
-    /// reached it.</para>
+    /// <see cref="MainWindow.DetachTabToWindow"/> when this session leaves the tab strip — the
+    /// watcher only fires on sub-tab changes, and detaching changes none, so without that call the
+    /// button froze at whatever the window-wide count last said until the next plan landed. It used
+    /// to be called by hand at the five places that add or remove a plan tab, which is why the
+    /// paths that instead fill in an existing tab — every executed query — never reached it.</para>
     /// </summary>
-    private void UpdateCompareButtonState()
+    internal void UpdateCompareButtonState()
     {
         /* Logical tree, not TopLevel.GetTopLevel. A TabControl realises the selected tab's content
            and nothing else, so a session sitting in a background tab has no visual root and cannot
