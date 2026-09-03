@@ -188,6 +188,15 @@ public partial class MainWindow : Window
                UTF-8-without-BOM this always wrote. */
             AtomicFile.WriteAllText(path, session.QueryEditor.Text, session.SourceFileEncoding);
             session.SourceFilePath = path;
+            /* #496: a successful save is the user CHOOSING where this content lives — the
+               real file just written — so the scratch buffer that was protecting it retires
+               here, at the moment the choice lands. After the SourceFilePath assignment
+               above on purpose: from this line on the session is file-backed, its edits are
+               the prompts' job (the scope fence), and the persist below writes the list
+               with the path where the scratch:<guid> entry used to be. A file-backed
+               session was never a scratch, has no buffer id, and passes through as a
+               no-op. */
+            DropScratchBuffer(session);
             /* #490: the one way a tab's place in the session-restore list changes while tab
                membership stays constant — a scratch gaining its first file, or Save As moving
                an existing one. The tab watcher sees neither (no tab was added, removed, or
@@ -468,9 +477,14 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// The file behind every open tab that has one, in tab order, then the file behind every
-    /// detached window that has one, in detach order. Plans and queries both, since
-    /// <see cref="GetContentFilePath"/> answers for either shape.
+    /// The session-restore entry for every open tab that has one, in tab order, then for
+    /// every detached window that has one, in detach order. Plans and queries both, since
+    /// <see cref="GetContentSessionEntry"/> answers for either shape — and since #496 the
+    /// entries are not all paths: a scratch tab with a persisted buffer rides along as
+    /// <c>scratch:&lt;guid&gt;</c>, IN PLACE, so the strip order the user arranged survives
+    /// a restart with scratch tabs interleaved among the files exactly where they were
+    /// (deliberately better than #495's append-after compromise, which was about detached
+    /// windows, not about tabs sitting between other tabs).
     /// </summary>
     /// <remarks>
     /// <para>Separate from <see cref="SaveOpenPlans"/> so a test can assert what would be
@@ -484,37 +498,37 @@ public partial class MainWindow : Window
     /// a file was open is the data-loss fix, remembering window geometry is a different
     /// feature, deliberately not built here.</para>
     /// </remarks>
-    internal List<string> CollectOpenTabPaths()
+    internal List<string> CollectOpenTabEntries()
     {
-        var paths = new List<string>();
+        var entries = new List<string>();
 
         foreach (var item in MainTabControl.Items)
         {
             if (item is not TabItem tab) continue;
 
-            var path = GetTabFilePath(tab);
-            if (!string.IsNullOrEmpty(path))
-                paths.Add(path);
+            var entry = GetContentSessionEntry(tab.Content as Control);
+            if (!string.IsNullOrEmpty(entry))
+                entries.Add(entry);
         }
 
         foreach (var content in _detachedTabContents)
         {
-            var path = GetContentFilePath(content);
-            if (!string.IsNullOrEmpty(path))
-                paths.Add(path);
+            var entry = GetContentSessionEntry(content);
+            if (!string.IsNullOrEmpty(entry))
+                entries.Add(entry);
         }
 
-        return paths;
+        return entries;
     }
 
     /// <summary>
-    /// Saves the file paths of all currently open file-based tabs, plans and queries alike,
-    /// docked and detached alike (#490).
+    /// Saves the restore entries of all currently open tabs — file paths, and since #496
+    /// scratch buffer entries — docked and detached alike (#490).
     /// </summary>
     private void SaveOpenPlans()
     {
         _appSettings.OpenTabs.Clear();
-        _appSettings.OpenTabs.AddRange(CollectOpenTabPaths());
+        _appSettings.OpenTabs.AddRange(CollectOpenTabEntries());
 
         AppSettingsService.Save(_appSettings);
     }
@@ -585,7 +599,21 @@ public partial class MainWindow : Window
     {
         _sessionPersistTimer?.Stop();
 
-        if (!_sessionPersistPending || IsShuttingDown)
+        if (IsShuttingDown)
+            return;
+
+        /* #496: the list and the buffers it references travel together — any moment the
+           membership list could be written is a moment the scratch content backing its
+           scratch:<guid> entries must already be on disk, or a crash right after the write
+           leaves entries pointing at stale buffers. Draining the content writer here also
+           means every #495 flush point (end of restore, the membership debounce, the test
+           seam) drains scratch for free. Note the ordering dependency: this can mint a
+           first buffer id and set _sessionPersistPending, which is exactly why it runs
+           before the pending check below — the entry the mint created gets written in the
+           same flush, not a debounce later. */
+        FlushScratchBuffers();
+
+        if (!_sessionPersistPending)
             return;
 
         _sessionPersistPending = false;
@@ -609,7 +637,15 @@ public partial class MainWindow : Window
     /// list current by now anyway, but "usually" is a debounce interval wide; this write is
     /// what makes the restart exact.
     /// </summary>
-    internal void PersistSessionForRestart() => SaveOpenPlans();
+    internal void PersistSessionForRestart()
+    {
+        /* #496: same reasoning as the write itself, one layer down — the restart skips
+           OnClosed, so this is the last chance for scratch content typed inside the content
+           debounce to reach disk, and the list written below must reference buffers that
+           exist. */
+        FlushScratchBuffers();
+        SaveOpenPlans();
+    }
 
     /// <summary>
     /// Restores the tabs from the previous session. Skips files that no longer exist.
@@ -637,8 +673,23 @@ public partial class MainWindow : Window
     /// is the other half of the deal — once restore completes, the rebuilt list is on disk
     /// immediately rather than a debounce-interval later, so the common case (restore fine,
     /// crash any time afterwards) loses nothing.</para>
+    ///
+    /// <para><b>Scratch entries (#496).</b> The list routes three ways now: a
+    /// <c>scratch:&lt;guid&gt;</c> entry recreates a dirty query tab from its persisted
+    /// buffer, a plain path opens by extension as always, and an old build reading a list
+    /// with scratch entries in it skips them on its File.Exists guard (see
+    /// <see cref="ScratchBufferStore"/> for why that is guaranteed). Scratch buffers share
+    /// the poison defense wholesale — the entry is already off the cleared list before its
+    /// buffer is read, and a buffer that fails to load is skipped, never re-added, and
+    /// deleted (<see cref="TryRestoreScratchTab"/>).</para>
     /// </summary>
-    private void RestoreOpenPlans()
+    /// <param name="createFallbackTab">
+    /// Whether an empty restore opens a fresh query tab. False when the caller is about to
+    /// open a file-argument on top (#496 review) — the fallback exists so a bare launch
+    /// never greets the user with an empty window, and a launch that carries a file is not
+    /// that.
+    /// </param>
+    private void RestoreOpenPlans(bool createFallbackTab = true)
     {
         /* Snapshot first: SaveOpenPlans and this method share the live list, and the clear
            below would otherwise empty the very thing being iterated. */
@@ -647,13 +698,36 @@ public partial class MainWindow : Window
         _appSettings.OpenTabs.Clear();
         AppSettingsService.Save(_appSettings);
 
-        var restored = false;
-
-        foreach (var path in savedTabs)
+        /* #496 orphan sweep, from the just-read snapshot and independent of the poison
+           clear above: buffers are deleted the moment the user chooses their fate, so a
+           file no entry references is debris by definition — a buffer stranded by a crash
+           in the write-buffer-then-write-list gap, an AtomicFile .tmp, a buffer whose entry
+           a previous poisoned restore dropped. Before the restore loop, so what the loop is
+           about to read (the referenced set) is exactly what the sweep keeps. */
+        var referencedScratch = new HashSet<Guid>();
+        foreach (var entry in savedTabs)
         {
-            if (File.Exists(path))
+            if (ScratchBufferStore.TryParseEntry(entry, out var referencedId))
+                referencedScratch.Add(referencedId);
+        }
+        ScratchBufferStore.SweepAllExcept(referencedScratch);
+
+        var restored = false;
+        var restoredScratch = new HashSet<Guid>();
+
+        foreach (var entry in savedTabs)
+        {
+            if (ScratchBufferStore.TryParseEntry(entry, out var scratchId))
             {
-                OpenFileByExtension(path);
+                /* Add() doubling as the seen-check: a list corrupted into naming the same
+                   buffer twice must not open two tabs continuing one file — their flushes
+                   would silently overwrite each other forever after. */
+                if (restoredScratch.Add(scratchId) && TryRestoreScratchTab(scratchId))
+                    restored = true;
+            }
+            else if (File.Exists(entry))
+            {
+                OpenFileByExtension(entry);
                 restored = true;
             }
         }
@@ -662,7 +736,7 @@ public partial class MainWindow : Window
            down NOW so a crash a moment after startup still finds the session on disk. */
         FlushSessionPersist();
 
-        if (!restored)
+        if (!restored && createFallbackTab)
         {
             // Nothing to restore — open a fresh query editor like before
             NewQuery_Click(this, new RoutedEventArgs());

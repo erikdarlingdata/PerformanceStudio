@@ -15,7 +15,7 @@ namespace PlanViewer.Core.Tests;
 ///
 /// <para>Same testing shape as UnsavedQueryChangesTests: whether to ask is a pure value
 /// (<see cref="QuerySessionControl.ReplaceNeedsConfirmation"/>, split out to be testable the
-/// way CollectOpenTabPaths was), and the handler is driven directly with the prompt answered
+/// way CollectOpenTabEntries was), and the handler is driven directly with the prompt answered
 /// by closing it — which is Cancel — or by raising a click on its Replace button.</para>
 /// </summary>
 public class OpenInEditorOverwriteTests
