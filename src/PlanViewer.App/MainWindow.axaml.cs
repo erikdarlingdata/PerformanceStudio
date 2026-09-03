@@ -532,12 +532,33 @@ public partial class MainWindow : Window
 
     private async Task ConfirmWindowCloseAsync()
     {
-        /* #473: the sessions that are no longer tabs are asked about here, while every window
-           is still up, rather than from OnClosed where they are force-closed. By then the main
-           window is gone and the app is on its way out — a dialog raised there is at best a
-           window nobody expects and at worst a shutdown that never finishes. Asking here is
-           what earns DetachedContentNeedsSavePrompt the right to wave that force-close
-           through. */
+        if (!await ConfirmAllUnsavedWorkAsync())
+            return; // one Cancel cancels the shutdown
+
+        _closeConfirmed = true;
+        Close();
+    }
+
+    /// <summary>
+    /// Asks about every piece of unsaved work in the app, and answers whether whatever is
+    /// about to destroy that work may proceed.
+    ///
+    /// <para>Split out of <see cref="ConfirmWindowCloseAsync"/> because the window close is
+    /// not the only way the process ends: the About window's Velopack "Restart Now" calls
+    /// ApplyUpdatesAndRestart, which exits without ever raising Closing — so #462's and
+    /// #473's walk never ran on that route and dirty edits were discarded without a word.
+    /// This is only the walk: it does not latch <see cref="_closeConfirmed"/> and does not
+    /// Close, so the restart path can take the answer without the close's bookkeeping.</para>
+    ///
+    /// <para>#473: the sessions that are no longer tabs are asked about here, while every
+    /// window is still up, rather than from OnClosed where they are force-closed. By then the
+    /// main window is gone and the app is on its way out — a dialog raised there is at best a
+    /// window nobody expects and at worst a shutdown that never finishes. Asking here is what
+    /// earns DetachedContentNeedsSavePrompt the right to wave that force-close through.</para>
+    /// </summary>
+    /// <returns>False the moment anyone answers Cancel, or a save they asked for fails.</returns>
+    internal async Task<bool> ConfirmAllUnsavedWorkAsync()
+    {
         foreach (var work in UnsavedWorkOnClose())
         {
             var mayClose = work.Tab != null
@@ -545,11 +566,10 @@ public partial class MainWindow : Window
                 : await ConfirmDetachedCloseAsync(work.Session, work.Owner);
 
             if (!mayClose)
-                return; // one Cancel cancels the shutdown
+                return false;
         }
 
-        _closeConfirmed = true;
-        Close();
+        return true;
     }
 
 

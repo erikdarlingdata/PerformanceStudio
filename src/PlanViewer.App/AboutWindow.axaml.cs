@@ -231,6 +231,23 @@ public partial class AboutWindow : Window
 
             if (result)
             {
+                /* ApplyUpdatesAndRestart kills the process outright: MainWindow.OnClosing
+                   never fires, so the unsaved-changes walk (#462/#473) never ran on this
+                   route and dirty edits were discarded without a question — and OnClosed's
+                   session save never ran either, so the relaunched app restored nothing
+                   (RestoreOpenPlans had already cleared the saved list at startup). Ask the
+                   same questions the close path asks, and if anyone answers Cancel, abort
+                   the restart and leave this window usable — the update stays downloaded. */
+                if (Owner is MainWindow main)
+                {
+                    if (!await main.ConfirmAllUnsavedWorkAsync())
+                        return;
+
+                    /* After the walk, not before: a Save answer in the walk can give a
+                       scratch tab a file, which this then writes down for the restore. */
+                    main.PersistSessionForRestart();
+                }
+
                 _velopackMgr.ApplyUpdatesAndRestart(_velopackUpdate.TargetFullRelease);
             }
             return;
