@@ -211,8 +211,12 @@ public static partial class PlanAnalyzer
     /// why this reads the CONVERT_IMPLICIT argument list rather than splitting on the comparison
     /// operator the way <see cref="IsFunctionOnColumnSide"/> does. The first argument is the target
     /// type and carries no brackets; a column reference in the remainder is the conversion input.</para>
+    ///
+    /// <para>Internal so the column-vs-variable line can be tested against raw predicate strings in
+    /// showplan shape — the table-variable case ([@tv].[col] IS a column) has no committed plan
+    /// fixture, and the distinction lives entirely in this method and the regex it shares.</para>
     /// </summary>
-    private static bool ConvertImplicitWrapsColumn(string predicate)
+    internal static bool ConvertImplicitWrapsColumn(string predicate)
     {
         foreach (Match match in ConvertImplicitRegex.Matches(predicate))
         {

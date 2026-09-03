@@ -80,6 +80,59 @@ public class WarningSourceTests
         Assert.DoesNotContain("Non-SARGable Predicate [SQL Server]", text);
     }
 
+    /// <summary>
+    /// The [legacy] badge exists to mark OUR rules that predate the benefit-scoring framework
+    /// (#215) — a migration status for inferences of ours. "Implicit Conversion" is rule 29's
+    /// entry on that list AND the type the parser stamps on the engine's own PlanAffectingConvert
+    /// record, and the legacy pass matched by type name alone — so the engine's statement of fact
+    /// rendered "[SQL Server] [legacy]", as if the engine's record were an un-migrated rule
+    /// awaiting rework. Legacy status is a fact about our rules; nothing the engine said can
+    /// have it.
+    /// </summary>
+    [Fact]
+    public void TheEnginesWarningsAreNeverMarkedLegacy()
+    {
+        var plan = PlanTestHelper.LoadAndAnalyze("convert_implicit_plan.sqlplan");
+
+        var engineWarnings = PlanTestHelper.AllWarnings(plan)
+            .Where(w => w.Source == PlanWarningSource.SqlServer)
+            .ToList();
+
+        Assert.NotEmpty(engineWarnings);
+        Assert.All(engineWarnings, w => Assert.False(w.IsLegacy,
+            $"\"{w.WarningType}\" is the engine's record, not an un-migrated rule of ours"));
+    }
+
+    /// <summary>
+    /// The same name collision, other pass: TryOverrideSeverity finds rule numbers by type-name
+    /// matching, so a user's rule 29 override re-badged the ENGINE's conversion record — and the
+    /// Contains matching spread it further (every engine Spill variant matched rule 7, "Memory
+    /// Grant" rule 9). A rule severity override is an opinion about our inference; what the engine
+    /// recorded keeps the severity the parser gave it.
+    /// </summary>
+    [Fact]
+    public void ASeverityOverrideForRule29DoesNotRebadgeTheEnginesWarnings()
+    {
+        var untouched = PlanTestHelper.LoadAndAnalyze("convert_implicit_plan.sqlplan");
+        var overridden = PlanTestHelper.LoadAndAnalyzeWithConfig(
+            "convert_implicit_plan.sqlplan",
+            new AnalyzerConfig
+            {
+                /* Info: the parser only ever gives these Warning or Critical, so a pre-fix
+                   misroute is a visible severity change whichever kind the fixture carries. */
+                Rules = new RulesConfig { SeverityOverrides = { [29] = "Info" } }
+            });
+
+        var engineBefore = PlanTestHelper.WarningsOfType(untouched, "Implicit Conversion");
+        var engineAfter = PlanTestHelper.WarningsOfType(overridden, "Implicit Conversion");
+
+        Assert.NotEmpty(engineAfter);
+        Assert.All(engineAfter, w => Assert.Equal(PlanWarningSource.SqlServer, w.Source));
+        Assert.Equal(
+            engineBefore.Select(w => w.Severity),
+            engineAfter.Select(w => w.Severity));
+    }
+
     /// <summary>The JSON and MCP consumers get it as a field rather than having to parse the tag out.</summary>
     [Fact]
     public void TheJsonOutputCarriesTheSource()

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -36,6 +37,17 @@ public partial class MainWindow : Window
             return s;
         return "Tab";
     }
+
+    /* The glyph refresher CreateTab subscribes onto a query session, keyed by the tab it was
+       built for, so DetachTabToWindow can take exactly its own subscription off again. The
+       session OUTLIVES its tab on the detach path — the tab is discarded, the session moves
+       into the detached window still holding a handler that closes over the dead tab's close
+       button — and redock re-subscribes through CreateTab, so every detach/redock cycle used
+       to pin one more dead TabItem (visual tree and all) to the session for the session's
+       lifetime. A ConditionalWeakTable rather than a Dictionary so the bookkeeping cannot
+       become its own leak: a tab closed normally dies together with its session, and its
+       entry evaporates with the key. */
+    private readonly ConditionalWeakTable<TabItem, Action> _tabDirtyGlyphUnhooks = new();
 
     private TabItem CreateTab(string label, Control content)
     {
@@ -83,13 +95,26 @@ public partial class MainWindow : Window
             void RefreshCloseGlyph() =>
                 closeBtn.Content = CloseButtonGlyph(querySession.IsDirty, closeBtn.IsPointerOver);
 
-            querySession.DirtyStateChanged += (_, _) => RefreshCloseGlyph();
+            /* Named and written down rather than subscribed inline: of everything wired up
+               here, this is the one subscription that lands on an object that can outlive the
+               tab, so it is the one detach has to be able to undo — see _tabDirtyGlyphUnhooks.
+               The pointer handlers below live and die with the button itself. */
+            EventHandler refreshOnDirtyChange = (_, _) => RefreshCloseGlyph();
+            querySession.DirtyStateChanged += refreshOnDirtyChange;
+            _tabDirtyGlyphUnhooks.Add(tab, () => querySession.DirtyStateChanged -= refreshOnDirtyChange);
+
             closeBtn.PointerEntered += (_, _) => RefreshCloseGlyph();
             closeBtn.PointerExited += (_, _) => RefreshCloseGlyph();
 
             // A session can arrive already modified — re-docking a detached window builds a
             // fresh tab around a session that has been edited since it left.
             RefreshCloseGlyph();
+
+            /* #496: every top-level query session passes through here exactly when it gets
+               its first tab, which makes this the one wiring point for scratch content
+               persistence — same single-subscription argument as the #495 tab watcher.
+               Idempotent, because redock passes the same living session through again. */
+            HookScratchPersistence(querySession);
         }
 
         // Middle-click to close
@@ -205,10 +230,17 @@ public partial class MainWindow : Window
     /// session, and whether <b>Copy Path</b> appears on the tab's context menu. A shape it does
     /// not know about loses both without saying anything.</para>
     /// </summary>
-    private static string? GetTabFilePath(TabItem tab)
+    private static string? GetTabFilePath(TabItem tab) => GetContentFilePath(tab.Content as Control);
+
+    /// <summary>
+    /// The same answer keyed on the content itself, because since #490 the question is also
+    /// asked about content with no tab behind it: a detached window holds the control that WAS
+    /// a tab's content, and what file backs it is a fact about the control, not the strip.
+    /// </summary>
+    private static string? GetContentFilePath(Control? content)
     {
         // Plans opened from file are wrapped in a DockPanel with the viewer as the last child
-        if (tab.Content is DockPanel dp)
+        if (content is DockPanel dp)
         {
             foreach (var child in dp.Children)
             {
@@ -218,8 +250,33 @@ public partial class MainWindow : Window
         }
 
         // Queries are the session control itself, with no wrapper around it
-        if (tab.Content is QuerySessionControl session)
+        if (content is QuerySessionControl session)
             return session.SourceFilePath;
+
+        return null;
+    }
+
+    /// <summary>
+    /// What the session-restore list records for a tab's content: the file path when there
+    /// is one, else the <c>scratch:&lt;guid&gt;</c> entry for a scratch session whose
+    /// content has actually been persisted (#496), else nothing. Layered ON TOP of
+    /// <see cref="GetContentFilePath"/> rather than folded into it, because that method
+    /// also answers Copy Path — and a scratch buffer id is precisely not a path anyone
+    /// should be handed to paste somewhere.
+    ///
+    /// <para>The no-id case is deliberate, not a gap: an empty scratch tab has no buffer
+    /// (ids are minted at first persist), and restoring a parade of blank "Query N" tabs
+    /// would make persistence feel like clutter. A scratch tab earns its entry by having
+    /// content on disk worth coming back for.</para>
+    /// </summary>
+    private static string? GetContentSessionEntry(Control? content)
+    {
+        var path = GetContentFilePath(content);
+        if (path != null)
+            return path;
+
+        if (content is QuerySessionControl { SourceFilePath: null, ScratchBufferId: { } id })
+            return ScratchBufferStore.EntryFor(id);
 
         return null;
     }
@@ -303,6 +360,16 @@ public partial class MainWindow : Window
 
         var label = GetTabLabel(tab);
 
+        /* The session is about to leave this tab behind. Take the glyph subscription off it
+           first: the handler is the one reference that would keep the discarded TabItem alive
+           from the still-living session (see _tabDirtyGlyphUnhooks), and redock subscribes
+           afresh through CreateTab. */
+        if (_tabDirtyGlyphUnhooks.TryGetValue(tab, out var unhookDirtyGlyph))
+        {
+            unhookDirtyGlyph();
+            _tabDirtyGlyphUnhooks.Remove(tab);
+        }
+
         // Remove the tab
         MainTabControl.Items.Remove(tab);
         tab.Content = null;
@@ -318,7 +385,7 @@ public partial class MainWindow : Window
             backgroundBrush: (Avalonia.Media.IBrush?)this.FindResource("BackgroundBrush"),
             onRedock: c =>
             {
-                ForgetDetachedQuerySession(c);
+                ForgetDetachedTabContent(c);
 
                 if (!IsShuttingDown)
                 {
@@ -330,14 +397,42 @@ public partial class MainWindow : Window
             },
             onClosing: c =>
             {
-                ForgetDetachedQuerySession(c);
+                ForgetDetachedTabContent(c);
+
+                /* #496: a detached scratch window ACTUALLY closing is the session leaving
+                   the app by the user's hand — the detached twin of TryCloseTabAsync's
+                   drop. This callback never runs on redock (the helper's redocked latch
+                   returns first), so a redocked scratch keeps its buffer.
+
+                   Gated off during shutdown's force-close (#496 review, third finding):
+                   the walk's prompts are modal only to their own window, so the user can
+                   type into a DIFFERENT detached scratch while a prompt is up — dirty,
+                   never asked. OnClosed's final flush writes that buffer and lists its
+                   entry; letting this drop run in the force-close storm afterwards would
+                   delete the just-written buffer and leave the entry dangling. By then the
+                   final write has already made every keep-or-drop decision, and skipping
+                   here loses nothing: OnClosed's flush sheds clean sessions' stale buffers
+                   itself. */
+                if (!IsShuttingDown && c is QuerySessionControl { SourceFilePath: null } scratchSession)
+                    DropScratchBuffer(scratchSession);
 
                 if (c is QueryStoreHistoryControl hc)
                     hc.CancelFetch();
             },
             closeGuard: DetachedQueryCloseGuard);
 
-        RememberDetachedQuerySession(detachedWindow, content);
+        RememberDetachedTabContent(detachedWindow, content);
+
+        /* #447 made Compare a window-wide count, and this session just left the window: the
+           count it is showing is about tabs it can no longer reach. Nothing else recomputes it
+           here — the session's sub-tab watcher fires on sub-tab changes only, and detaching
+           changes none — so the pre-detach state stuck until the next plan landed. Recompute
+           now; with no MainWindow above it any more, the method's own fallback counts the
+           session's plans, which inside a detached window is the only honest answer. Redock
+           needs no twin call: adding the tab back fires MainWindow's collection watcher. */
+        if (content is QuerySessionControl detachedSession)
+            detachedSession.UpdateCompareButtonState();
+
         return detachedWindow;
     }
 }

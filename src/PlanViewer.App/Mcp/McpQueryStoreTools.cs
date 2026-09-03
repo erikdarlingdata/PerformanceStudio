@@ -311,8 +311,16 @@ public sealed class McpQueryStoreTools
         string connectionInfo)
     {
         var analysis = ResultMapper.Map(parsed, "query-store");
-        var allStatements = parsed.Batches.SelectMany(batch => batch.Statements).ToList();
-        var executableStatement = allStatements.FirstOrDefault(statement => statement.RootNode is not null);
+
+        /* #456 follow-up: the counts used to come from a second walk over batch.Statements while
+           the Analysis stored on this very session is mapped from PlanStatements.EnumerateAll —
+           stored procedure and UDF bodies included, node-level warnings counted — so a Query
+           Store EXEC plan registered statement_count 1 and warning_count 0 alongside an analysis
+           full of findings. The counts now come from that analysis's own summary: one source, and
+           nothing left to disagree with what an MCP client reads. */
+        var executableStatement = Core.Services.PlanStatements.EnumerateAll(parsed)
+            .FirstOrDefault(statement => statement.RootNode is not null);
+
         var session = new PlanSession
         {
             SessionId = sessionId,
@@ -324,12 +332,11 @@ public sealed class McpQueryStoreTools
             DatabaseName = executableStatement?.RootNode?.DatabaseName,
             QueryText = queryText,
             ConnectionInfo = connectionInfo,
-            StatementCount = allStatements.Count,
-            HasActualStats = false,
-            WarningCount = allStatements.Sum(statement => statement.PlanWarnings.Count),
-            CriticalWarningCount = allStatements.Sum(statement =>
-                statement.PlanWarnings.Count(warning => warning.Severity == Core.Models.PlanWarningSeverity.Critical)),
-            MissingIndexCount = parsed.AllMissingIndexes.Count
+            StatementCount = analysis.Summary.TotalStatements,
+            HasActualStats = analysis.Summary.HasActualStats,
+            WarningCount = analysis.Summary.TotalWarnings,
+            CriticalWarningCount = analysis.Summary.CriticalWarnings,
+            MissingIndexCount = analysis.Summary.MissingIndexes
         };
 
         parsed.RawXml = string.Empty;

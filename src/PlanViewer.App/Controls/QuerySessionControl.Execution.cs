@@ -197,15 +197,7 @@ public partial class QuerySessionControl : UserControl
 
             // Replace loading content with the plan viewer
             SetStatus($"{planType} plan captured ({sw.Elapsed.TotalSeconds:F1}s)");
-            var viewer = new PlanViewerControl();
-            viewer.Metadata = _serverMetadata;
-            viewer.ConnectionString = _connectionString;
-            viewer.SetConnectionServices(_credentialService, _connectionStore);
-            if (_serverConnection != null)
-                viewer.SetConnectionStatus(_serverConnection.ServerName, _selectedDatabase);
-            viewer.OpenInEditorRequested += OnOpenInEditorRequested;
-            viewer.LoadPlan(planXml, tabLabel, queryText);
-            loadingTab.Content = viewer;
+            ShowCapturedPlan(loadingTab, planXml, tabLabel, queryText);
             HumanAdviceButton.IsEnabled = true;
             RobotAdviceButton.IsEnabled = true;
         }
@@ -222,6 +214,32 @@ public partial class QuerySessionControl : UserControl
         {
             ShowExecutionFailure(loadingPanel, statusLabel, progressBar, cancelBtn, ex.Message);
         }
+    }
+
+    /// <summary>
+    /// Puts a captured plan into the tab that has been showing the progress spinner for it.
+    ///
+    /// <para>Both execution paths end here — the estimated/actual capture and Get Actual Plan — and
+    /// this is the moment a plan appears in a session, so it is the moment Compare Plans has to be
+    /// re-decided. That happens through the sub-tab
+    /// <see cref="Helpers.TabContentWatcher"/> rather than a call added below, because the assignment
+    /// on the last line is what it is watching for (#447).</para>
+    ///
+    /// <para>Internal so a test can drive the plan landing with XML it already has, rather than
+    /// needing a SQL Server to produce some. The half of these paths that reaches out to a server
+    /// is above this; everything that decides what the user ends up looking at is here.</para>
+    /// </summary>
+    internal void ShowCapturedPlan(TabItem planTab, string planXml, string tabLabel, string queryText)
+    {
+        var viewer = new PlanViewerControl();
+        viewer.Metadata = _serverMetadata;
+        viewer.ConnectionString = _connectionString;
+        viewer.SetConnectionServices(_credentialService, _connectionStore);
+        if (_serverConnection != null)
+            viewer.SetConnectionStatus(_serverConnection.ServerName, _selectedDatabase);
+        viewer.OpenInEditorRequested += OnOpenInEditorRequested;
+        viewer.LoadPlan(planXml, tabLabel, queryText);
+        planTab.Content = viewer;
     }
 
     /// <summary>
@@ -402,15 +420,7 @@ public partial class QuerySessionControl : UserControl
             }
 
             SetStatus($"Actual plan captured ({sw.Elapsed.TotalSeconds:F1}s)");
-            var actualViewer = new PlanViewerControl();
-            actualViewer.Metadata = _serverMetadata;
-            actualViewer.ConnectionString = _connectionString;
-            actualViewer.SetConnectionServices(_credentialService, _connectionStore);
-            if (_serverConnection != null)
-                actualViewer.SetConnectionStatus(_serverConnection.ServerName, _selectedDatabase);
-            actualViewer.OpenInEditorRequested += OnOpenInEditorRequested;
-            actualViewer.LoadPlan(actualPlanXml, tabLabel, queryText);
-            loadingTab.Content = actualViewer;
+            ShowCapturedPlan(loadingTab, actualPlanXml, tabLabel, queryText);
         }
         catch (OperationCanceledException)
         {
@@ -432,10 +442,10 @@ public partial class QuerySessionControl : UserControl
     }
 
     /// <summary>
-    /// Shows a modal confirmation dialog and returns true if the user clicked OK.
+    /// Shows a modal confirmation dialog and returns true if the user confirmed.
     /// </summary>
-    private Task<bool> ShowConfirmationDialog(string title, string message)
-        => Dialogs.ConfirmationDialog.ShowAsync(GetParentWindow(), title, message);
+    private Task<bool> ShowConfirmationDialog(string title, string message, string confirmCaption = "OK")
+        => Dialogs.ConfirmationDialog.ShowAsync(GetParentWindow(), title, message, confirmCaption);
 
     /// <summary>
     /// Extracts the database name from plan XML's StmtSimple DatabaseContext attribute.

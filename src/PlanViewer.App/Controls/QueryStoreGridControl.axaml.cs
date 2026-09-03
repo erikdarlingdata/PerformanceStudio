@@ -84,6 +84,19 @@ public partial class QueryStoreGridControl : UserControl
         ServerFilterExpander.Expanded += ServerFilterExpander_StateChanged;
         ServerFilterExpander.Collapsed += ServerFilterExpander_StateChanged;
 
+        /* #452's pattern, carried to this surface: the status strip is one line, so a long
+           message — an error, usually — is readable on hover or not at all. QuerySessionControl
+           funnels every status through SetStatus, which mirrors the text into the tooltip; this
+           control writes StatusText.Text from a dozen sites across five partials, so the mirror
+           is one subscription rather than a funnel every future site would have to remember —
+           and a tooltip set at just the error sites would go stale the moment "Fetching plans..."
+           was written over the text but not the tip. */
+        StatusText.PropertyChanged += (_, e) =>
+        {
+            if (e.Property == TextBlock.TextProperty)
+                ToolTip.SetTip(StatusText, string.IsNullOrEmpty(StatusText.Text) ? null : StatusText.Text);
+        };
+
         ResultsGrid.ItemsSource = _filteredRows;
         Helpers.DataGridBehaviors.Attach(ResultsGrid);
         Helpers.DataGridBehaviors.AttachCopyGuard(ResultsGrid,
@@ -159,7 +172,11 @@ public partial class QueryStoreGridControl : UserControl
         }
         catch (Exception ex)
         {
-            StatusText.Text = ex.Message.Length > 60 ? ex.Message[..60] + "..." : ex.Message;
+            /* Was cut to 60 characters + "..." before display. Trimming to the space available
+               is the display layer's job — the strip clips at its own edge — and pre-cutting
+               here also destroyed the only recovery path: the tooltip the constructor mirrors
+               onto StatusText now carries the full message on hover. Same family as #452. */
+            StatusText.Text = ex.Message;
             QsDatabaseBox.SelectedItem = _database; // revert
             return;
         }

@@ -8,11 +8,20 @@ namespace PlanViewer.Core.Services;
 
 public static partial class PlanAnalyzer
 {
+    /* Both passes below match on WarningType alone, and a type name is not unique to us:
+       "Implicit Conversion" is rule 29's legacy-listed type AND what the parser stamps on the
+       engine's own PlanAffectingConvert element (Source = SqlServer). Matching by name only
+       therefore branded the ENGINE's record "[SQL Server] [legacy]" — a badge that exists to
+       flag our un-migrated rules on a warning that is not ours at all — and TryOverrideSeverity
+       routed a user's rule-number override onto engine warnings the rule never produced (the
+       Contains matching makes it worse: every engine Spill variant lands on rule 7, "Memory
+       Grant" on rule 9). Legacy status and rule severity are facts about OUR rules, so anything
+       the engine said is skipped by both. */
     private static void MarkLegacyWarnings(PlanStatement stmt)
     {
         foreach (var w in stmt.PlanWarnings)
         {
-            if (LegacyWarningTypes.Contains(w.WarningType))
+            if (w.Source != PlanWarningSource.SqlServer && LegacyWarningTypes.Contains(w.WarningType))
                 w.IsLegacy = true;
         }
         if (stmt.RootNode != null)
@@ -23,25 +32,28 @@ public static partial class PlanAnalyzer
     {
         foreach (var w in node.Warnings)
         {
-            if (LegacyWarningTypes.Contains(w.WarningType))
+            if (w.Source != PlanWarningSource.SqlServer && LegacyWarningTypes.Contains(w.WarningType))
                 w.IsLegacy = true;
         }
         foreach (var child in node.Children)
             MarkLegacyWarningsOnTree(child);
     }
 
+    /* #456 follow-up: the analyzer walks every statement — stored procedure and UDF bodies
+       included — through PlanStatements.EnumerateAll, but this pass still walked batch.Statements,
+       so a user's severity override applied to a warning on the outer batch and silently did not
+       apply to the identical warning inside an EXEC <procedure> body. (MarkLegacyWarnings does not
+       have this problem: it is called per-statement from inside the analyzer's EnumerateAll loop,
+       so it was carried along when that loop learned to descend.) */
     private static void ApplySeverityOverrides(ParsedPlan plan, AnalyzerConfig cfg)
     {
-        foreach (var batch in plan.Batches)
+        foreach (var stmt in PlanStatements.EnumerateAll(plan))
         {
-            foreach (var stmt in batch.Statements)
-            {
-                foreach (var w in stmt.PlanWarnings)
-                    TryOverrideSeverity(w, cfg);
+            foreach (var w in stmt.PlanWarnings)
+                TryOverrideSeverity(w, cfg);
 
-                if (stmt.RootNode != null)
-                    ApplyOverridesToTree(stmt.RootNode, cfg);
-            }
+            if (stmt.RootNode != null)
+                ApplyOverridesToTree(stmt.RootNode, cfg);
         }
     }
 
@@ -55,6 +67,11 @@ public static partial class PlanAnalyzer
 
     private static void TryOverrideSeverity(PlanWarning warning, AnalyzerConfig cfg)
     {
+        /* The engine's warnings carry no rule number because no rule of ours produced them; see
+           the comment on MarkLegacyWarnings for what the name-only matching did to them here. */
+        if (warning.Source == PlanWarningSource.SqlServer)
+            return;
+
         // Find the rule number for this warning type (partial match for flexibility)
         int? ruleNumber = null;
         foreach (var (rule, type) in RuleWarningTypes)

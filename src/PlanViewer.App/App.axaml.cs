@@ -54,7 +54,11 @@ public partial class App : Application
         // Register the .sqlplan association (Windows/Linux) off the UI thread so it
         // never delays first paint. Best-effort; the OS then routes double-clicks to
         // the existing argv/pipe open path. No-op on macOS (handled by Info.plist).
-        Task.Run(FileAssociationService.RegisterForCurrentExecutable);
+        // Never in the test host: this writes HKCU\Software\Classes, and the harness
+        // booting the real App (#451) rewrote the machine's .sqlplan association and
+        // DefaultIcon to point at the test runner executable — confirmed live.
+        if (!AppRuntimeMode.IsTestHost)
+            Task.Run(FileAssociationService.RegisterForCurrentExecutable);
 
         base.OnFrameworkInitializationCompleted();
     }

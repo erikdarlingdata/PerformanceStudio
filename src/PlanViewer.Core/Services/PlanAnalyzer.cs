@@ -28,11 +28,15 @@ public static partial class PlanAnalyzer
         @"\bCONVERT_IMPLICIT\s*\(",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-    // A column reference in a ScalarString is multi-part bracket-qualified ([schema].[table]).
-    // A variable is a single bracket pair with an @ prefix ([@0]), so excluding @ from the first
-    // part is what separates the two.
+    /* A column reference in a ScalarString is multi-part bracket-qualified ([schema].[table]).
+       A variable is a single bracket pair with an @ prefix ([@0]) and no dotted part after it —
+       the "].[" sequence is what separates the two, NOT the @. The first cut of this pattern also
+       excluded @ from the first part, which read as belt-and-braces but was actually a hole: a
+       TABLE-variable column renders as [@tv].[col], so a genuine column-side CONVERT_IMPLICIT on
+       one failed the match and the Non-SARGable warning silently vanished. A bare [@p] still
+       cannot match, because nothing dotted follows it. */
     private static readonly Regex ColumnReferenceRegex = new(
-        @"\[[^\]@]+\]\.\[",
+        @"\[[^\]]+\]\.\[",
         RegexOptions.Compiled);
 
     public static void Analyze(ParsedPlan plan, AnalyzerConfig? config = null, ServerMetadata? serverMetadata = null) =>

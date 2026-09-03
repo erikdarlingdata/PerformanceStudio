@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -18,6 +19,7 @@ using AvaloniaEdit.CodeCompletion;
 using AvaloniaEdit.TextMate;
 using Microsoft.Data.SqlClient;
 using PlanViewer.App.Dialogs;
+using PlanViewer.App.Helpers;
 using PlanViewer.App.Services;
 using PlanViewer.Core.Interfaces;
 using PlanViewer.Core.Models;
@@ -36,6 +38,34 @@ public partial class QuerySessionControl : UserControl
     /// Full path on disk when the query was loaded from, or last saved to, a file.
     /// </summary>
     public string? SourceFilePath { get; set; }
+
+    /// <summary>
+    /// Identity of this session's persisted scratch buffer (#496), or null while it has
+    /// none. Assigned by MainWindow the first time a never-saved session's content is
+    /// actually written to the scratch store — not at construction, so an empty tab never
+    /// mints a buffer — and carried back onto the restored session at the next start, which
+    /// is what makes a restored scratch CONTINUE its buffer instead of forking a new one.
+    /// Cleared when the buffer is deleted: the user chose its fate at a prompt (Don't Save,
+    /// or a save that moved the content into a real file), or there is nothing unsaved left
+    /// to protect.
+    ///
+    /// <para>On the session rather than the tab for the same reason <see cref="SourceFilePath"/>
+    /// is: detach discards the TabItem and the session lives on in its own window (#473),
+    /// and its buffer identity has to travel with it.</para>
+    /// </summary>
+    internal Guid? ScratchBufferId { get; set; }
+
+    /// <summary>
+    /// The encoding the file behind <see cref="SourceFilePath"/> declared with its byte order
+    /// mark, or null for a BOM-less file and for a scratch session — both of which save as
+    /// UTF-8 without a BOM, which is what every save wrote before this existed.
+    ///
+    /// <para>Captured at open so a save writes the bytes the file arrived with. SSMS writes
+    /// .sql files as UTF-16 with a BOM; opening one read fine (File.ReadAllText honors the
+    /// mark) and then the first Ctrl+S silently transcoded the whole file to UTF-8 — every
+    /// byte changed, the BOM gone, without the user asking for any of it.</para>
+    /// </summary>
+    public Encoding? SourceFileEncoding { get; set; }
 
     /// <summary>
     /// The editor text as of the last load or save. A new session starts empty, so a
@@ -130,6 +160,13 @@ public partial class QuerySessionControl : UserControl
             _statusClearCts?.Dispose();
             _statusClearCts = null;
         };
+
+        /* #447: a plan appearing in — or leaving — this session changes whether Compare Plans is
+           offered in every session in the window, not just this one. Watched here rather than
+           called at each site that produces a plan, because the sites that produce a plan are the
+           ones nobody remembers: executing a query fills in a tab that already exists, which is
+           neither an Add nor a Remove and is exactly the case the first fix missed. */
+        TabContentWatcher.Watch(SubTabControl, UpdateCompareButtonState);
 
         // Focus the editor when the Editor tab is selected; toggle plan-dependent buttons
         SubTabControl.SelectionChanged += (_, _) =>

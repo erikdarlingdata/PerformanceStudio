@@ -39,7 +39,7 @@ public class RestoreQueryTabsTests
                 var window = new MainWindow();
                 window.LoadSqlFile(path);
 
-                Assert.Contains(path, window.CollectOpenTabPaths());
+                Assert.Contains(path, window.CollectOpenTabEntries());
             }
             finally
             {
@@ -49,9 +49,11 @@ public class RestoreQueryTabsTests
     }
 
     /// <summary>
-    /// The deliberate edge of the fix. A never-saved scratch buffer has no path, so there is
-    /// nothing to write down and it does not come back — persisting unsaved text is #462's job,
-    /// not this one's.
+    /// The edge #463 drew, redrawn by #496: a scratch tab enters the list only once its
+    /// CONTENT has actually persisted (as a scratch:&lt;guid&gt; entry —
+    /// ScratchBufferPersistenceTests owns that half). A fresh, empty scratch has no buffer,
+    /// no id, and therefore still no entry — which is what keeps a restart from restoring a
+    /// parade of blank "Query N" tabs.
     /// </summary>
     [Fact]
     public void AScratchQueryHasNoFileAndIsNotWrittenDown()
@@ -63,7 +65,7 @@ public class RestoreQueryTabsTests
 
             var session = Sessions(window).Last();
             Assert.Null(session.SourceFilePath);
-            Assert.Empty(window.CollectOpenTabPaths());
+            Assert.Empty(window.CollectOpenTabEntries());
         });
     }
 
@@ -85,6 +87,7 @@ public class RestoreQueryTabsTests
             }
             finally
             {
+                Unseed();
                 File.Delete(path);
             }
         });
@@ -100,12 +103,21 @@ public class RestoreQueryTabsTests
         HeadlessUi.Run(() =>
         {
             var path = Path.Combine(System.AppContext.BaseDirectory, "Plans", "row_goal_plan.sqlplan");
-            Seed(path);
+            try
+            {
+                Seed(path);
 
-            var window = new MainWindow();
+                var window = new MainWindow();
 
-            Assert.Contains(path, window.CollectOpenTabPaths());
-            Assert.Contains(Viewers(window), v => v.SourceFilePath == path);
+                Assert.Contains(path, window.CollectOpenTabEntries());
+                Assert.Contains(Viewers(window), v => v.SourceFilePath == path);
+            }
+            finally
+            {
+                /* This one seeds a fixture that is never deleted, so without the unseed every
+                   later MainWindow in the run would restore a phantom plan tab. */
+                Unseed();
+            }
         });
     }
 
@@ -192,14 +204,25 @@ public class RestoreQueryTabsTests
 
     /// <summary>
     /// Puts one path where the next MainWindow will look for the previous session's tabs.
-    /// Load returns the process-wide cached instance, which is the same object the window reads,
-    /// and restore clears it again on the way out — so this does not leak into other tests.
+    /// Load returns the process-wide cached instance, which is the same object the window reads.
+    /// Since #490, restore REWRITES the list with whatever it successfully opened — that is the
+    /// crash-safety — so a seeding test has to blank the list again on its way out
+    /// (<see cref="Unseed"/>) or the next MainWindow constructed anywhere in the run restores
+    /// this test's file.
     /// </summary>
     private static void Seed(string path)
     {
         var settings = AppSettingsService.Load();
         settings.OpenTabs.Clear();
         settings.OpenTabs.Add(path);
+    }
+
+    /// <summary>The other half of <see cref="Seed"/>, for a finally block.</summary>
+    private static void Unseed()
+    {
+        var settings = AppSettingsService.Load();
+        settings.OpenTabs.Clear();
+        AppSettingsService.Save(settings);
     }
 
     private static MenuItem ContextMenuItem(TabItem tab, string header) =>

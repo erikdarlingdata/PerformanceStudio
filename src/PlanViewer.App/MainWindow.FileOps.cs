@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -173,8 +174,36 @@ public partial class MainWindow : Window
     {
         try
         {
-            File.WriteAllText(path, session.QueryEditor.Text);
+            /* Atomic on purpose: on the save-in-place path this file is the user's only copy
+               of their query, and a plain truncate-then-write destroys it when the write dies
+               halfway — disk full, crash, yanked share. AtomicFile stages a sibling .tmp and
+               renames it over the top, so a failed save leaves the original bytes on disk and
+               lands in the catch below with the session still dirty. The rename gives the file
+               the temp's attributes and inherited ACLs rather than preserving the original's —
+               the trade every editor that saves this way makes. */
+            /* In the encoding the file was opened with, when it declared one: a .sql from SSMS
+               is UTF-16 with a BOM, and writing it back as the default UTF-8 was a silent
+               transcode of the user's only copy — reading honored the BOM, saving discarded
+               it. A scratch session (and a BOM-less file) has null here and keeps the default
+               UTF-8-without-BOM this always wrote. */
+            AtomicFile.WriteAllText(path, session.QueryEditor.Text, session.SourceFileEncoding);
             session.SourceFilePath = path;
+            /* #496: a successful save is the user CHOOSING where this content lives — the
+               real file just written — so the scratch buffer that was protecting it retires
+               here, at the moment the choice lands. After the SourceFilePath assignment
+               above on purpose: from this line on the session is file-backed, its edits are
+               the prompts' job (the scope fence), and the persist below writes the list
+               with the path where the scratch:<guid> entry used to be. A file-backed
+               session was never a scratch, has no buffer id, and passes through as a
+               no-op. */
+            DropScratchBuffer(session);
+            /* #490: the one way a tab's place in the session-restore list changes while tab
+               membership stays constant — a scratch gaining its first file, or Save As moving
+               an existing one. The tab watcher sees neither (no tab was added, removed, or
+               swapped), so the persist trigger lives at the assignment. Detached sessions save
+               through here too (tab == null); their register entry serves up the new path the
+               same way. */
+            RequestSessionPersist();
             // Only a write that actually happened settles the dirty state; the catch below
             // deliberately leaves the session modified so the work is still guarded.
             session.MarkClean();
@@ -271,6 +300,8 @@ public partial class MainWindow : Window
             var session = new QuerySessionControl(_credentialService, _connectionStore);
             session.QueryEditor.Text = text;
             session.SourceFilePath = filePath;
+            // What the file declared is what a save must write back — see SourceFileEncoding.
+            session.SourceFileEncoding = DetectBomEncoding(filePath);
             // What was just loaded is what is on disk — the baseline every later edit is measured against.
             session.MarkClean();
 
@@ -283,6 +314,38 @@ public partial class MainWindow : Window
         {
             ShowFileError("Error Opening File", $"Failed to open: {Path.GetFileName(filePath)}", ex.Message);
         }
+    }
+
+    /// <summary>
+    /// The encoding a file's byte order mark declares, or null when it has none.
+    ///
+    /// <para>Deliberately a sniff of the mark rather than StreamReader.CurrentEncoding after a
+    /// read: CurrentEncoding only moves off its default for UTF-16/32 marks, so it cannot tell
+    /// a UTF-8-with-BOM file from a plain one — and the default instance it reports EMITS a
+    /// mark on write, so handing it to the save would stamp BOMs onto files that never had
+    /// one, a silent change in the opposite direction from the one being fixed. The mark is
+    /// the fact being preserved, so the mark is what gets read.</para>
+    /// </summary>
+    private static Encoding? DetectBomEncoding(string filePath)
+    {
+        Span<byte> mark = stackalloc byte[4];
+        int read;
+        using (var stream = File.OpenRead(filePath))
+            read = stream.Read(mark);
+
+        // UTF-32 LE opens with UTF-16 LE's mark plus two zero bytes, so it is checked first.
+        if (read >= 4 && mark[0] == 0xFF && mark[1] == 0xFE && mark[2] == 0x00 && mark[3] == 0x00)
+            return new UTF32Encoding(bigEndian: false, byteOrderMark: true);
+        if (read >= 4 && mark[0] == 0x00 && mark[1] == 0x00 && mark[2] == 0xFE && mark[3] == 0xFF)
+            return new UTF32Encoding(bigEndian: true, byteOrderMark: true);
+        if (read >= 3 && mark[0] == 0xEF && mark[1] == 0xBB && mark[2] == 0xBF)
+            return new UTF8Encoding(encoderShouldEmitUTF8Identifier: true);
+        if (read >= 2 && mark[0] == 0xFF && mark[1] == 0xFE)
+            return Encoding.Unicode;
+        if (read >= 2 && mark[0] == 0xFE && mark[1] == 0xFF)
+            return Encoding.BigEndianUnicode;
+
+        return null;
     }
 
     /// <summary>
@@ -414,38 +477,174 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// The file behind every open tab that has one, in tab order. Plans and queries both,
-    /// since <see cref="GetTabFilePath"/> answers for either shape.
+    /// The session-restore entry for every open tab that has one, in tab order, then for
+    /// every detached window that has one, in detach order. Plans and queries both, since
+    /// <see cref="GetContentSessionEntry"/> answers for either shape — and since #496 the
+    /// entries are not all paths: a scratch tab with a persisted buffer rides along as
+    /// <c>scratch:&lt;guid&gt;</c>, IN PLACE, so the strip order the user arranged survives
+    /// a restart with scratch tabs interleaved among the files exactly where they were
+    /// (deliberately better than #495's append-after compromise, which was about detached
+    /// windows, not about tabs sitting between other tabs).
     /// </summary>
     /// <remarks>
-    /// Separate from <see cref="SaveOpenPlans"/> so a test can assert what would be persisted
-    /// without writing over the user's real settings file.
+    /// <para>Separate from <see cref="SaveOpenPlans"/> so a test can assert what would be
+    /// persisted without writing over the user's real settings file.</para>
+    ///
+    /// <para>#490's detached half: this used to walk MainTabControl alone, so a file-backed
+    /// plan or query detached into its own window at exit was never written down and never
+    /// came back. Detached entries are appended AFTER the docked tabs — docked order is the
+    /// order the user arranged and keeps it; detach order is best-effort. On the next start
+    /// they all come back as ordinary docked tabs, not re-detached windows: remembering THAT
+    /// a file was open is the data-loss fix, remembering window geometry is a different
+    /// feature, deliberately not built here.</para>
     /// </remarks>
-    internal List<string> CollectOpenTabPaths()
+    internal List<string> CollectOpenTabEntries()
     {
-        var paths = new List<string>();
+        var entries = new List<string>();
 
         foreach (var item in MainTabControl.Items)
         {
             if (item is not TabItem tab) continue;
 
-            var path = GetTabFilePath(tab);
-            if (!string.IsNullOrEmpty(path))
-                paths.Add(path);
+            var entry = GetContentSessionEntry(tab.Content as Control);
+            if (!string.IsNullOrEmpty(entry))
+                entries.Add(entry);
         }
 
-        return paths;
+        foreach (var content in _detachedTabContents)
+        {
+            var entry = GetContentSessionEntry(content);
+            if (!string.IsNullOrEmpty(entry))
+                entries.Add(entry);
+        }
+
+        return entries;
     }
 
     /// <summary>
-    /// Saves the file paths of all currently open file-based tabs, plans and queries alike.
+    /// Saves the restore entries of all currently open tabs — file paths, and since #496
+    /// scratch buffer entries — docked and detached alike (#490).
     /// </summary>
     private void SaveOpenPlans()
     {
         _appSettings.OpenTabs.Clear();
-        _appSettings.OpenTabs.AddRange(CollectOpenTabPaths());
+        _appSettings.OpenTabs.AddRange(CollectOpenTabEntries());
 
         AppSettingsService.Save(_appSettings);
+    }
+
+    // ── Continuous session persistence (#490) ─────────────────────────────
+
+    /* #468 wrote the list once, at clean close, and #490 is what that cost: any abnormal exit
+       — a crash, a task kill, an OS "shut down anyway" past the dirty-tab prompt — restored
+       zero tabs, because the only writer never ran. Membership changes now write the list as
+       they happen, debounced so a burst (session restore, Close All) lands as one write. The
+       triggers are wired centrally, not per call site — see the TabContentWatcher hookup in
+       the constructor for why. */
+
+    /// <summary>How long the writer waits for a burst of membership changes to settle.</summary>
+    private static readonly TimeSpan SessionPersistDebounce = TimeSpan.FromSeconds(1);
+
+    /// <summary>Trailing-edge debounce for <see cref="SaveOpenPlans"/>; every request restarts it.</summary>
+    private DispatcherTimer? _sessionPersistTimer;
+
+    /// <summary>
+    /// Whether a membership change is waiting to be written. Under the test host this flag is
+    /// the whole mechanism — see <see cref="RequestSessionPersist"/>.
+    /// </summary>
+    private bool _sessionPersistPending;
+
+    /// <summary>
+    /// Notes that tab membership changed — a tab opened, closed, detached, redocked, or gained
+    /// a file path — and schedules the debounced write. Called by the tab watcher for
+    /// everything visible on the strip, and explicitly by the detached register and
+    /// <see cref="SaveQueryToPath"/> for the two changes the strip cannot show.
+    /// </summary>
+    private void RequestSessionPersist()
+    {
+        /* OnClosed is already writing the final authoritative list (and force-closing the
+           detached windows, whose Forget calls land right back here). Nothing may re-arm the
+           timer against a window being torn down. */
+        if (IsShuttingDown)
+            return;
+
+        _sessionPersistPending = true;
+
+        /* No real timer under the test host, in #451's pattern: the suite shares one
+           dispatcher across every test, so a timer armed here would tick during some LATER
+           test's RunJobs and write THIS window's tab list over whatever that test had staged
+           in the redirected settings file — exactly the cross-test bleed the redirect exists
+           to stop. Tests drive the flush deterministically through
+           <see cref="FlushPendingSessionPersistForTests"/> instead. */
+        if (AppRuntimeMode.IsTestHost)
+            return;
+
+        if (_sessionPersistTimer == null)
+        {
+            _sessionPersistTimer = new DispatcherTimer { Interval = SessionPersistDebounce };
+            _sessionPersistTimer.Tick += (_, _) => FlushSessionPersist();
+        }
+
+        // Stop-then-start restarts the interval, which is what makes it a debounce.
+        _sessionPersistTimer.Stop();
+        _sessionPersistTimer.Start();
+    }
+
+    /// <summary>
+    /// Writes a pending membership change down now. The timer's tick, the end of
+    /// <see cref="RestoreOpenPlans"/>, and the test seam all land here; a flush with nothing
+    /// pending is free.
+    /// </summary>
+    private void FlushSessionPersist()
+    {
+        _sessionPersistTimer?.Stop();
+
+        if (IsShuttingDown)
+            return;
+
+        /* #496: the list and the buffers it references travel together — any moment the
+           membership list could be written is a moment the scratch content backing its
+           scratch:<guid> entries must already be on disk, or a crash right after the write
+           leaves entries pointing at stale buffers. Draining the content writer here also
+           means every #495 flush point (end of restore, the membership debounce, the test
+           seam) drains scratch for free. Note the ordering dependency: this can mint a
+           first buffer id and set _sessionPersistPending, which is exactly why it runs
+           before the pending check below — the entry the mint created gets written in the
+           same flush, not a debounce later. */
+        FlushScratchBuffers();
+
+        if (!_sessionPersistPending)
+            return;
+
+        _sessionPersistPending = false;
+        SaveOpenPlans();
+    }
+
+    /// <summary>
+    /// The deterministic stand-in for the debounce timer's tick — tests call this where the
+    /// real app waits out <see cref="SessionPersistDebounce"/>. A seam rather than a sleep
+    /// because the harness shares one dispatcher across the whole suite; see
+    /// <see cref="RequestSessionPersist"/> for what a real timer does to that arrangement.
+    /// </summary>
+    internal void FlushPendingSessionPersistForTests() => FlushSessionPersist();
+
+    /// <summary>
+    /// Writes the open-tab list down for the session that comes back after a Velopack
+    /// restart. <see cref="OnClosed"/> does this on every ordinary shutdown, but
+    /// ApplyUpdatesAndRestart exits the process without closing the window — and
+    /// <see cref="RestoreOpenPlans"/> already cleared the saved list at startup, so without
+    /// this the updated app relaunched with nothing. #490's continuous writer usually has the
+    /// list current by now anyway, but "usually" is a debounce interval wide; this write is
+    /// what makes the restart exact.
+    /// </summary>
+    internal void PersistSessionForRestart()
+    {
+        /* #496: same reasoning as the write itself, one layer down — the restart skips
+           OnClosed, so this is the last chance for scratch content typed inside the content
+           debounce to reach disk, and the list written below must reference buffers that
+           exist. */
+        FlushScratchBuffers();
+        SaveOpenPlans();
     }
 
     /// <summary>
@@ -455,25 +654,89 @@ public partial class MainWindow : Window
     /// <para>The saved list holds queries as well as plans, so it routes on extension the
     /// same way an ordinary file open does. Sending a .sql file to LoadPlanFile would greet
     /// the user with "the XML is not valid" where their query used to be.</para>
+    ///
+    /// <para><b>The crash-loop defense (#490).</b> The list is cleared and saved EMPTY before
+    /// the first file is opened, so a file that crashes the app during its own load is already
+    /// off the list when the next start reads it — a poisoned entry can never wedge the app
+    /// into crashing at every launch. (The clear used to run after the loop, which only
+    /// defended against crashes AFTER restore finished; a file that crashed DURING it left
+    /// the list intact and looped forever.) Every file that opens successfully re-enters the
+    /// list through the debounced writer, so the net behavior is strictly better than the old
+    /// all-or-nothing: the poison never persists, and everything that actually opened
+    /// does.</para>
+    ///
+    /// <para>Honestly, "everything that opened" holds for a crash after restore, not during
+    /// it. The re-adds are debounced and this loop runs synchronously on the UI thread, so a
+    /// crash while file B loads means file A's pending re-add never flushed and A is lost for
+    /// that start too. Accepted: the invariant being defended is that the poison never
+    /// persists, not that every good tab survives a mid-restore crash. The flush at the end
+    /// is the other half of the deal — once restore completes, the rebuilt list is on disk
+    /// immediately rather than a debounce-interval later, so the common case (restore fine,
+    /// crash any time afterwards) loses nothing.</para>
+    ///
+    /// <para><b>Scratch entries (#496).</b> The list routes three ways now: a
+    /// <c>scratch:&lt;guid&gt;</c> entry recreates a dirty query tab from its persisted
+    /// buffer, a plain path opens by extension as always, and an old build reading a list
+    /// with scratch entries in it skips them on its File.Exists guard (see
+    /// <see cref="ScratchBufferStore"/> for why that is guaranteed). Scratch buffers share
+    /// the poison defense wholesale — the entry is already off the cleared list before its
+    /// buffer is read, and a buffer that fails to load is skipped, never re-added, and
+    /// deleted (<see cref="TryRestoreScratchTab"/>).</para>
     /// </summary>
-    private void RestoreOpenPlans()
+    /// <param name="createFallbackTab">
+    /// Whether an empty restore opens a fresh query tab. False when the caller is about to
+    /// open a file-argument on top (#496 review) — the fallback exists so a bare launch
+    /// never greets the user with an empty window, and a launch that carries a file is not
+    /// that.
+    /// </param>
+    private void RestoreOpenPlans(bool createFallbackTab = true)
     {
-        var restored = false;
+        /* Snapshot first: SaveOpenPlans and this method share the live list, and the clear
+           below would otherwise empty the very thing being iterated. */
+        var savedTabs = _appSettings.OpenTabs.ToList();
 
-        foreach (var path in _appSettings.OpenTabs)
+        _appSettings.OpenTabs.Clear();
+        AppSettingsService.Save(_appSettings);
+
+        /* #496 orphan sweep, from the just-read snapshot and independent of the poison
+           clear above: buffers are deleted the moment the user chooses their fate, so a
+           file no entry references is debris by definition — a buffer stranded by a crash
+           in the write-buffer-then-write-list gap, an AtomicFile .tmp, a buffer whose entry
+           a previous poisoned restore dropped. Before the restore loop, so what the loop is
+           about to read (the referenced set) is exactly what the sweep keeps. */
+        var referencedScratch = new HashSet<Guid>();
+        foreach (var entry in savedTabs)
         {
-            if (File.Exists(path))
+            if (ScratchBufferStore.TryParseEntry(entry, out var referencedId))
+                referencedScratch.Add(referencedId);
+        }
+        ScratchBufferStore.SweepAllExcept(referencedScratch);
+
+        var restored = false;
+        var restoredScratch = new HashSet<Guid>();
+
+        foreach (var entry in savedTabs)
+        {
+            if (ScratchBufferStore.TryParseEntry(entry, out var scratchId))
             {
-                OpenFileByExtension(path);
+                /* Add() doubling as the seen-check: a list corrupted into naming the same
+                   buffer twice must not open two tabs continuing one file — their flushes
+                   would silently overwrite each other forever after. */
+                if (restoredScratch.Add(scratchId) && TryRestoreScratchTab(scratchId))
+                    restored = true;
+            }
+            else if (File.Exists(entry))
+            {
+                OpenFileByExtension(entry);
                 restored = true;
             }
         }
 
-        // Clear the restored list now that its tabs are back on screen
-        _appSettings.OpenTabs.Clear();
-        AppSettingsService.Save(_appSettings);
+        /* Each successful open armed the debounced writer through the tab watcher; write it
+           down NOW so a crash a moment after startup still finds the session on disk. */
+        FlushSessionPersist();
 
-        if (!restored)
+        if (!restored && createFallbackTab)
         {
             // Nothing to restore — open a fresh query editor like before
             NewQuery_Click(this, new RoutedEventArgs());

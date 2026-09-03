@@ -68,7 +68,8 @@ public partial class QueryStoreGridControl : UserControl
         catch (OperationCanceledException) { }
         catch (Exception ex)
         {
-            StatusText.Text = ex.Message.Length > 80 ? ex.Message[..80] + "..." : ex.Message;
+            // #452's mirror: full message out, the status tooltip carries what the strip clips.
+            StatusText.Text = ex.Message;
         }
         finally
         {

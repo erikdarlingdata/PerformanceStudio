@@ -107,6 +107,11 @@ public class AnalysisJsonDepthTests
     /// Pins the headroom itself. 1024 is about 500 nested operators against the ~30 that used to fail;
     /// a future edit dropping it back toward the default would re-open #430 for large plans only, which
     /// is the shape of bug that reaches users rather than tests.
+    ///
+    /// <para>The Wire and Document pins matter beyond this assembly: server/PlanShare cannot
+    /// reference PlanViewer.Core and mirrors this number as a literal (a shared constant only
+    /// helps call sites that reference it), so this test is the tripwire that a change here means
+    /// changing the server too.</para>
     /// </summary>
     [Fact]
     public void TheCeilingIsFarAboveAnyRealPlan()
@@ -114,5 +119,50 @@ public class AnalysisJsonDepthTests
         Assert.Equal(1024, AnalysisJson.MaxDepth);
         Assert.Equal(AnalysisJson.MaxDepth, AnalysisJson.Indented.MaxDepth);
         Assert.True(AnalysisJson.Indented.WriteIndented, "advice output is read by people as well as models");
+        Assert.Equal(AnalysisJson.MaxDepth, AnalysisJson.Wire.MaxDepth);
+        Assert.Equal(AnalysisJson.MaxDepth, AnalysisJson.Document.MaxDepth);
+        Assert.False(AnalysisJson.Wire.WriteIndented,
+            "the share wire format has always been default-formatted JSON; only the ceiling changed");
+    }
+
+    /// <summary>
+    /// The three writers #431 missed, found in review: the web Share upload serialized the
+    /// analysis with inline default options, and loading a share back parsed AND deserialized it
+    /// at the default 64 again — so a deep plan analyzed fine on screen and then failed to Share,
+    /// or shared and failed to open. This walks the exact envelope shape the share path uses
+    /// ({result, text, ttl_days} → JsonDocument → GetRawText → Deserialize) through the shared
+    /// options, at 100 operators — past the old ceiling, far under the new one.
+    ///
+    /// <para>Scope, stated honestly: the actual call sites live in PlanViewer.Web (a Blazor WASM
+    /// project this suite does not reference) and server/PlanShare (which references nothing), so
+    /// they are verified by inspection to use these options / mirror this constant. What this test
+    /// pins is the contract those sites rely on — that the shared options round-trip the envelope
+    /// both directions.</para>
+    /// </summary>
+    [Fact]
+    public void TheShareEnvelopeRoundTripsADeepPlan()
+    {
+        var payload = JsonSerializer.Serialize(new
+        {
+            result = WithOperatorChain(100),
+            text = "=== Summary ===",
+            ttl_days = 7
+        }, AnalysisJson.Wire);
+
+        /* Both proofs that the options are load-bearing: the default reader rejects what the
+           shared writer produced (ThrowsAny because document parsing surfaces the depth failure
+           as JsonReaderException, a JsonException subclass)... */
+        Assert.ThrowsAny<JsonException>(() => JsonDocument.Parse(payload));
+
+        /* ...and the shared reader carries it, all the way back to a typed result. */
+        using var doc = JsonDocument.Parse(payload, AnalysisJson.Document);
+        var result = JsonSerializer.Deserialize<AnalysisResult>(
+            doc.RootElement.GetProperty("result").GetRawText(), AnalysisJson.Wire);
+
+        Assert.NotNull(result);
+        var depth = 0;
+        for (var op = result!.Statements.Single().OperatorTree; op is not null; op = op.Children.FirstOrDefault())
+            depth++;
+        Assert.Equal(100, depth);
     }
 }

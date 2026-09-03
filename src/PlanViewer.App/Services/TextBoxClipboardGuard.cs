@@ -14,8 +14,19 @@ namespace PlanViewer.App.Services;
 /// </summary>
 internal static class TextBoxClipboardGuard
 {
+    private static bool _registered;
+
     public static void Register()
     {
+        // Once per process. The real app calls this once at startup anyway, but the test
+        // harness (#451) boots a fresh App per test dispatch, and class handlers live on the
+        // static routed events — not the Application — so each boot was stacking another set
+        // of handlers onto every TextBox in the test host. The guard stays registered for
+        // any test that exercises clipboard behavior; it just stops accumulating.
+        if (_registered)
+            return;
+        _registered = true;
+
         TextBox.CopyingToClipboardEvent.AddClassHandler<TextBox>(OnCopying);
         TextBox.CuttingToClipboardEvent.AddClassHandler<TextBox>(OnCutting);
         TextBox.PastingFromClipboardEvent.AddClassHandler<TextBox>(OnPasting);

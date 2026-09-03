@@ -57,7 +57,10 @@ public partial class QueryStoreGridControl : UserControl
         }
         catch (Exception ex)
         {
-            StatusText.Text = ex.Message.Length > 80 ? ex.Message[..80] + "..." : ex.Message;
+            /* #452's mirror: pre-cutting to 80 characters threw away text the strip would have
+               shown and the tooltip (wired in the constructor) would have recovered. The full
+               message goes out; where it gets clipped is the display's business. */
+            StatusText.Text = ex.Message;
         }
         finally
         {
@@ -107,7 +110,8 @@ public partial class QueryStoreGridControl : UserControl
         }
         catch (Exception ex)
         {
-            StatusText.Text = ex.Message.Length > 80 ? ex.Message[..80] + "..." : ex.Message;
+            // Same #452 mirror as Fetch_Click above: full message out, tooltip carries the rest.
+            StatusText.Text = ex.Message;
         }
         finally
         {

@@ -13,12 +13,14 @@ using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
+using Avalonia.LogicalTree;
 using Avalonia.Media;
 using AvaloniaEdit;
 using AvaloniaEdit.CodeCompletion;
 using AvaloniaEdit.TextMate;
 using Microsoft.Data.SqlClient;
 using PlanViewer.App.Dialogs;
+using PlanViewer.App.Helpers;
 using PlanViewer.App.Services;
 using PlanViewer.Core.Interfaces;
 using PlanViewer.Core.Models;
@@ -108,7 +110,6 @@ public partial class QuerySessionControl : UserControl
 
         SubTabControl.Items.Add(tab);
         SubTabControl.SelectedItem = tab;
-        UpdateCompareButtonState();
         return true;
     }
 
@@ -159,7 +160,6 @@ public partial class QuerySessionControl : UserControl
             if (tab.Content is PlanViewerControl viewer)
                 viewer.Clear();
             SubTabControl.Items.Remove(tab);
-            UpdateCompareButtonState();
         }
     }
 
@@ -180,7 +180,6 @@ public partial class QuerySessionControl : UserControl
                     if (tab.Content is PlanViewerControl closeViewer)
                         closeViewer.Clear();
                     SubTabControl.Items.Remove(tab);
-                    UpdateCompareButtonState();
                 }
                 break;
 
@@ -199,7 +198,6 @@ public partial class QuerySessionControl : UserControl
                         SubTabControl.Items.Remove(t);
                     }
                     SubTabControl.SelectedItem = keepTab;
-                    UpdateCompareButtonState();
                 }
                 break;
 
@@ -215,7 +213,6 @@ public partial class QuerySessionControl : UserControl
                     SubTabControl.Items.Remove(t);
                 }
                 SubTabControl.SelectedIndex = 0; // back to Editor
-                UpdateCompareButtonState();
                 break;
         }
     }
@@ -225,10 +222,23 @@ public partial class QuerySessionControl : UserControl
     /// from another is the ordinary case, and counting only this session's own tabs left the button
     /// disabled in both — the reporter had to save a plan and reopen it to get at a comparison the
     /// app could already do.
+    ///
+    /// <para>Called by the <see cref="TabContentWatcher"/> wired to this session's sub-tabs, and by
+    /// <see cref="MainWindow.DetachTabToWindow"/> when this session leaves the tab strip — the
+    /// watcher only fires on sub-tab changes, and detaching changes none, so without that call the
+    /// button froze at whatever the window-wide count last said until the next plan landed. It used
+    /// to be called by hand at the five places that add or remove a plan tab, which is why the
+    /// paths that instead fill in an existing tab — every executed query — never reached it.</para>
     /// </summary>
-    private void UpdateCompareButtonState()
+    internal void UpdateCompareButtonState()
     {
-        if (TopLevel.GetTopLevel(this) is MainWindow owner)
+        /* Logical tree, not TopLevel.GetTopLevel. A TabControl realises the selected tab's content
+           and nothing else, so a session sitting in a background tab has no visual root and cannot
+           see its own window — and a query started in one tab and left to run while the user works
+           in another lands its plan in exactly that state. GetTopLevel returned null there and the
+           fallback below silently reinstated the bug this method exists to fix. The logical parent
+           chain holds whether the tab is on screen or not. */
+        if (this.FindLogicalAncestorOfType<MainWindow>() is { } owner)
         {
             /* Refreshes every session, not just this one: a plan appearing here can be the second
                plan that makes Compare available over THERE. */

@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Collections.Specialized;
 using System.IO;
 using System.IO.Pipes;
 using System.Linq;
@@ -19,6 +18,7 @@ using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using PlanViewer.App.Controls;
 using PlanViewer.App.Dialogs;
+using PlanViewer.App.Helpers;
 using PlanViewer.App.Services;
 using PlanViewer.Core.Interfaces;
 using PlanViewer.Core.Models;
@@ -30,8 +30,6 @@ namespace PlanViewer.App;
 
 public partial class MainWindow : Window
 {
-    private const string PipeName = "SQLPerformanceStudio_OpenFile";
-
     private readonly ICredentialService _credentialService;
     private readonly ConnectionStore _connectionStore;
     private readonly CancellationTokenSource _pipeCts = new();
@@ -47,6 +45,16 @@ public partial class MainWindow : Window
     /// </summary>
     internal bool IsShuttingDown { get; private set; }
 
+    /// <summary>
+    /// Whether this window's process-external startup services actually launched. Set by the
+    /// launch methods themselves rather than by the <see cref="AppRuntimeMode"/> gate, so the
+    /// test pinning that they stay off under the harness (#451) still fails if a future change
+    /// starts one through a new path. Never read by the app.
+    /// </summary>
+    internal bool PipeServerStarted { get; private set; }
+    internal bool StartupUpdateCheckStarted { get; private set; }
+    internal bool McpServerStartAttempted { get; private set; }
+
     public MainWindow()
     {
         _credentialService = CredentialServiceFactory.Create();
@@ -57,13 +65,22 @@ public partial class MainWindow : Window
         if (Enum.TryParse<TimeDisplayMode>(_appSettings.QueryStoreDefaultTimeDisplay, true, out var tdm))
             TimeDisplayHelper.Current = tdm;
 
-        // Listen for file paths from other instances (e.g. SSMS extension)
-        StartPipeServer();
+        // Listen for file paths from other launches (SSMS extension, a second Studio
+        // launch handing over its file) and for the #489 surface-yourself sentinel a bare
+        // second launch sends instead of running a full instance.
+        // Not in the test host (#451): every test window would grab the machine's single
+        // SQLPerformanceStudio_OpenFile pipe slot and never release it — OnClosed never
+        // runs there — racing any real Studio instance on the same box.
+        if (!AppRuntimeMode.IsTestHost)
+            StartPipeServer();
 
         InitializeComponent();
 
-        // Check for updates on startup (non-blocking)
-        _ = CheckForUpdatesOnStartupAsync();
+        // Check for updates on startup (non-blocking).
+        // Not in the test host (#451): one GitHub hit per constructed window meant ~36
+        // update checks per local test run.
+        if (!AppRuntimeMode.IsTestHost)
+            _ = CheckForUpdatesOnStartupAsync();
 
         // Build the Recent Plans submenu from saved state
         RebuildRecentPlansMenu();
@@ -79,9 +96,26 @@ public partial class MainWindow : Window
            remove a tab. Compare Plans depends on how many plans exist across the WHOLE window, so
            opening or closing any tab can change whether it is available in every OTHER tab, and a
            refresh that has to be remembered at sixteen call sites is one that gets forgotten at the
-           seventeenth. */
-        if (MainTabControl.Items is INotifyCollectionChanged tabs)
-            tabs.CollectionChanged += (_, _) => RefreshComparePlanAvailability();
+           seventeenth.
+
+           Watching content replacement as well as the collection is the part the first attempt at
+           this got wrong: Get Actual Plan opens a tab holding a spinner and later swaps in the plan,
+           so the tab that gains a plan is one this window already had.
+
+           #490 hangs session persistence on the same watcher, for exactly the reason above: the
+           open-tab list used to be written only at clean close (#468's original scope), so any
+           abnormal exit — crash, task kill, an OS "shut down anyway" past the dirty-tab prompt —
+           restored zero tabs. Requesting a persist at each place that opens or closes a tab is
+           the same sixteen-call-sites trap #447 named; the watcher is the one place that sees
+           them all. The two changes it cannot see get explicit calls instead: detached windows
+           (off the tab strip — see RememberDetachedTabContent / ForgetDetachedTabContent) and a
+           tab whose PATH changes while its membership does not (SaveQueryToPath, where a scratch
+           gains a file). */
+        TabContentWatcher.Watch(MainTabControl, () =>
+        {
+            RefreshComparePlanAvailability();
+            RequestSessionPersist();
+        });
 
         // Global hotkeys via tunnel routing so they fire before AvaloniaEdit consumes them
         AddHandler(KeyDownEvent, (_, e) =>
@@ -144,23 +178,63 @@ public partial class MainWindow : Window
         }, RoutingStrategies.Tunnel);
 
         // Accept command-line argument or restore previously open plans
-        var args = Environment.GetCommandLineArgs();
-        if (args.Length > 1 && File.Exists(args[1]))
-        {
-            LoadPlanFile(args[1]);
-        }
-        else
-        {
-            // Restore plans that were open in the previous session
-            RestoreOpenPlans();
-        }
+        OpenFromStartupArgs(Environment.GetCommandLineArgs());
 
-        // Start MCP server if enabled in settings
-        StartMcpServer();
+        // Start MCP server if enabled in settings.
+        // Not in the test host (#451): this reads the user's real ~/.planview settings and,
+        // when enabled there, binds a real TCP port from inside the test runner. The menu
+        // item needs no fallback write — its XAML default is already "MCP Server: Off".
+        if (!AppRuntimeMode.IsTestHost)
+            StartMcpServer();
+    }
+
+    /// <summary>
+    /// Routes the file handed over on the command line — a double-clicked file association, or
+    /// "PerformanceStudio.exe path" from a shell. Split from the constructor so the routing can
+    /// be tested with an argv of the test's choosing.
+    ///
+    /// <para>Routed by extension, not straight to LoadPlanFile: every other way a path reaches
+    /// this window (the pipe from a second instance, drag-and-drop, session restore) already
+    /// goes through <see cref="OpenFileByExtension"/>, and RestoreOpenPlans' own doc comment
+    /// describes exactly what skipping it does — "Sending a .sql file to LoadPlanFile would
+    /// greet the user with 'the XML is not valid' where their query used to be." That greeting
+    /// is precisely what "PerformanceStudio.exe query.sql" produced. Cold start was the one
+    /// path left hard-wired to the plan loader.</para>
+    /// </summary>
+    internal void OpenFromStartupArgs(string[] args)
+    {
+        /* #489: --new-instance is a launcher directive, not a file, and it is scrubbed
+           HERE as well as in Program.Main because this method consumes the raw
+           Environment.GetCommandLineArgs() — Program's scrubbed copy never reaches it.
+           Without this, "PerformanceStudio.exe --new-instance file.sqlplan" would find the
+           flag at args[1]: it happens to fail the File.Exists guard below, but the user's
+           file behind it would still be skipped and the launch would silently
+           session-restore instead. */
+        args = SingleInstance.StripNewInstanceFlag(args);
+
+        /* Restore FIRST, on every cold start — then open the requested file on top, where
+           it lands focused. The old either/or (file-arg launches skipped restore entirely)
+           turned destructive once #495/#496 made the saved list continuously rewritten from
+           live membership: a double-clicked file overwrote the list within a debounce,
+           dropping scratch entries, and the NEXT launch's orphan sweep deleted the buffers
+           behind them — never-chosen content destroyed by an everyday flow (#496 review,
+           blocking finding). Restoring unconditionally closes that chain, and it is also
+           what editors do with a double-clicked file; under #489's single instance a
+           running Studio receives the file over the pipe and never re-enters this path, so
+           this only changes the cold start. The restore's new-tab fallback stays out of the
+           way when a file is about to open — a stray empty scratch tab beside the file the
+           user asked for is nobody's intent. */
+        var hasFileArg = args.Length > 1 && File.Exists(args[1]);
+        RestoreOpenPlans(createFallbackTab: !hasFileArg);
+
+        if (hasFileArg)
+            OpenFileByExtension(args[1]);
     }
 
     private void StartPipeServer()
     {
+        PipeServerStarted = true;
+
         var token = _pipeCts.Token;
         Task.Run(async () =>
         {
@@ -169,21 +243,22 @@ public partial class MainWindow : Window
                 try
                 {
                     using var server = new NamedPipeServerStream(
-                        PipeName, PipeDirection.In, 1,
+                        SingleInstance.PipeName, PipeDirection.In, 1,
                         PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
 
                     await server.WaitForConnectionAsync(token);
 
                     using var reader = new StreamReader(server);
-                    var filePath = await reader.ReadLineAsync();
+                    var line = await reader.ReadLineAsync();
 
-                    if (!string.IsNullOrWhiteSpace(filePath) && File.Exists(filePath))
+                    /* Classified out here rather than inside the UI dispatch on purpose:
+                       Classify calls File.Exists, and a dead UNC path can block for
+                       seconds — that wait belongs on this pipe task, not the dispatcher. */
+                    var kind = SingleInstance.Classify(line);
+                    if (kind != SingleInstance.PipeMessage.Ignore)
                     {
                         await Dispatcher.UIThread.InvokeAsync(() =>
-                        {
-                            OpenFileByExtension(filePath);
-                            Activate();
-                        });
+                            DispatchPipeMessage(kind, line!));
                     }
                 }
                 catch (OperationCanceledException)
@@ -202,8 +277,55 @@ public partial class MainWindow : Window
         }, token);
     }
 
+    /// <summary>
+    /// Acts on one classified pipe line, on the UI thread. Split from the pipe loop so the
+    /// dispatch can be pinned by tests without a pipe (#489).
+    ///
+    /// <para>The classification is the compatibility contract with every sender version:
+    /// an existing file path opens — what the SSMS extension and any Studio build have
+    /// always sent, unchanged — the activation sentinel surfaces the window (what a bare
+    /// second launch sends since #489), and anything else, including a path that stopped
+    /// existing between send and receive, was already dropped silently before the
+    /// classifier existed and still is.</para>
+    /// </summary>
+    internal void DispatchPipeMessage(SingleInstance.PipeMessage kind, string line)
+    {
+        switch (kind)
+        {
+            case SingleInstance.PipeMessage.OpenFile:
+                OpenFileByExtension(line);
+                SurfaceWindow();
+                break;
+
+            case SingleInstance.PipeMessage.Activate:
+                SurfaceWindow();
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Brings the main window back to the user after a second launch handed its work to
+    /// this one (#489): restore from minimized, then activate. Deliberately minimal next
+    /// to Lite's surface path — Studio never hides to a tray, so there is nothing to
+    /// re-show.
+    ///
+    /// <para>The file-open message uses it too, where the old handler only called
+    /// Activate(): a plan sent from SSMS to a minimized window used to load into a window
+    /// that stayed in the taskbar.</para>
+    /// </summary>
+    internal void SurfaceWindow()
+    {
+        if (WindowState == WindowState.Minimized)
+            WindowState = WindowState.Normal;
+        Activate();
+    }
+
     private void StartMcpServer()
     {
+        // Set before the settings read: reading the user's real ~/.planview file is itself
+        // part of what the test host must not do, so "attempted" starts here.
+        McpServerStartAttempted = true;
+
         var settings = McpSettings.Load();
         if (!settings.Enabled)
         {
@@ -225,7 +347,27 @@ public partial class MainWindow : Window
         {
             IsShuttingDown = true;
 
-            // Save the list of currently open file-based plans for session restore
+            /* The debounced writer (#490) is finished: stop its timer so a pending tick cannot
+               fire into a window being torn down, and let the write below be the last word.
+               It stays the authoritative final write — mostly redundant now that membership
+               changes persist continuously, but it covers anything the debounce had not flushed
+               yet, and it runs while the detached windows below are still open and registered,
+               so their paths are in it. */
+            _sessionPersistTimer?.Stop();
+            _sessionPersistPending = false;
+
+            /* #496, and the order matters: the scratch content writer drains BEFORE the final
+               list write, so the list below references exactly the buffers that exist. On a
+               clean close this drain only ever DELETES — every scratch tab with content was
+               resolved at the #462/#469/#477 prompts by now (saved ones stopped being
+               scratch, Don't-Saved ones already dropped their buffers), so what is left
+               pending is at most a clean scratch shedding a stale buffer. Which is the
+               invariant #496 promises: after a clean close, zero scratch buffers remain,
+               because every one of them was chosen about. */
+            _scratchPersistTimer?.Stop();
+            FlushScratchBuffers();
+
+            // Save the list of currently open tabs (paths and scratch entries) for session restore
             SaveOpenPlans();
 
             _pipeCts.Cancel();
@@ -266,6 +408,15 @@ public partial class MainWindow : Window
     /// <see cref="OnClosing"/> does not ask the whole window again.
     /// </summary>
     private bool _closeConfirmed;
+
+    /* _closeConfirmed only latches AFTER the walk answers yes, so it does nothing about a
+       second close request arriving WHILE the walk is still asking — a double-clicked X, or
+       another Close() between two of the walk's dialogs (each prompt is modal, but the window
+       is briefly its own again between them, and for the whole of a Save As picker). Each
+       such request used to start a second concurrent walk: duplicate prompts about the same
+       tabs, and a Cancel to one walk that the other never heard about. Same reentrancy class,
+       and same one-latch answer, as the About window's update link (#485 review). */
+    private bool _closeWalkInProgress;
 
     private const string CloseGlyph = "\u2715";   // ✕
     private const string ModifiedGlyph = "\u25CF"; // ●
@@ -315,16 +466,56 @@ public partial class MainWindow : Window
     internal IReadOnlyList<(Window Window, QuerySessionControl Session)> DetachedQuerySessions =>
         _detachedQuerySessions;
 
-    internal void RememberDetachedQuerySession(Window window, Control content)
+    /// <summary>
+    /// EVERY top-level tab content currently detached, in detach order — plans and Query Store
+    /// windows included, not just the query sessions above.
+    ///
+    /// <para>#490's second register, kept next to #473's because they answer different
+    /// questions. The prompt register above only cares about content that can lose an edit;
+    /// session persistence cares about content that came from a FILE, and a detached plan is
+    /// exactly that — file-backed, read-only, and invisible to a save list built by walking
+    /// MainTabControl. Sub-tab detaches (a plan torn out of a query session's sub-tab strip)
+    /// stay off both registers on purpose: their session's own tab is still docked and already
+    /// carries the path.</para>
+    /// </summary>
+    private readonly List<Control> _detachedTabContents = new();
+
+    /// <summary>
+    /// Books a detached top-level tab's content into both registers. Named for the content
+    /// rather than the session since #490: persistence needs every detached tab remembered,
+    /// and only the #473 prompt half is query-session-only.
+    /// </summary>
+    internal void RememberDetachedTabContent(Window window, Control content)
     {
+        _detachedTabContents.Add(content);
+
         if (content is QuerySessionControl session)
             _detachedQuerySessions.Add((window, session));
+
+        /* This register is half of what CollectOpenTabEntries reads (the tab strip is the other
+           half), so a change to it is a membership change the tab watcher cannot see. Detach
+           itself also removed a tab — the watcher fired — but by the time the debounced write
+           flushes, this entry exists; the debounce is quietly doing ordering work here, since
+           a synchronous write at the watcher's moment would have landed in the gap between
+           Items.Remove and this call and dropped the detached file. */
+        RequestSessionPersist();
     }
 
-    internal void ForgetDetachedQuerySession(Control content)
+    /// <summary>
+    /// Takes a detached tab's content back off both registers — on redock, and on the detached
+    /// window actually closing.
+    /// </summary>
+    internal void ForgetDetachedTabContent(Control content)
     {
+        _detachedTabContents.Remove(content);
+
         if (content is QuerySessionControl session)
             _detachedQuerySessions.RemoveAll(d => d.Session == session);
+
+        /* Redock re-adds a tab and the watcher sees that; a detached window closed by its own
+           X changes no tab at all, and this is the only place that knows the file left the
+           app. One debounced write covers both. */
+        RequestSessionPersist();
     }
 
     /// <summary>
@@ -368,13 +559,7 @@ public partial class MainWindow : Window
 
         var choice = await UnsavedChangesDialog.ShowAsync(owner, owner.Title ?? "this query");
 
-        return DecideClose(choice, session.SourceFilePath != null) switch
-        {
-            CloseAction.Cancel => false,
-            CloseAction.Close => true,
-            CloseAction.SaveInPlace => SaveQueryToPath(null, session, session.SourceFilePath!),
-            _ => await SaveQueryAsync(null, session, owner.StorageProvider)
-        };
+        return await ResolveCloseChoiceAsync(choice, tab: null, session, owner.StorageProvider);
     }
 
     /// <summary>
@@ -454,13 +639,49 @@ public partial class MainWindow : Window
         MainTabControl.SelectedItem = tab; // show what is being asked about
         var choice = await UnsavedChangesDialog.ShowAsync(this, GetTabLabel(tab));
 
-        return DecideClose(choice, session.SourceFilePath != null) switch
+        return await ResolveCloseChoiceAsync(choice, tab, session, storage: null);
+    }
+
+    /// <summary>
+    /// Acts on the answer to an unsaved-changes prompt, docked and detached alike — the two
+    /// switches this replaces had drifted into near-twins, and #496 needed a THIRD copy or
+    /// one shared resolution point. The point matters beyond deduplication: #496's
+    /// delete-on-choice hooks the RESOLUTION of an answer, not the dialog that collected
+    /// it, so every prompt — tab close, detached close, the shutdown and restart walks —
+    /// honors Don't Save identically by construction. Internal so a test can also drive an
+    /// answer in directly, without a dialog to raise clicks on.
+    /// </summary>
+    /// <param name="tab">Null for a detached session, which has no tab to retitle (#473).</param>
+    /// <param name="storage">
+    /// The picker a Save As should come off of — the detached window's own, so the dialog
+    /// lands where the user is looking (#473). Null means this window's.
+    /// </param>
+    /// <returns>Whether the close may proceed.</returns>
+    internal async Task<bool> ResolveCloseChoiceAsync(
+        UnsavedChangesChoice choice, TabItem? tab, QuerySessionControl session, IStorageProvider? storage)
+    {
+        switch (DecideClose(choice, session.SourceFilePath != null))
         {
-            CloseAction.Cancel => false,
-            CloseAction.Close => true,
-            CloseAction.SaveInPlace => SaveQueryToPath(tab, session, session.SourceFilePath!),
-            _ => await SaveQueryAsync(tab, session)
-        };
+            case CloseAction.Cancel:
+                return false;
+
+            case CloseAction.Close:
+                /* #496, the chose half of chose-vs-never-got-to-choose: Don't Save is the
+                   user explicitly answering "this content may die" — the one signal the
+                   crash-protection buffer must obey, or a discarded query would resurrect
+                   at the next start and the prompt's answer would mean nothing. File-backed
+                   sessions pass through untouched (no buffer to drop); their discarded
+                   edits were never persisted anywhere — the scope fence. */
+                DropScratchBuffer(session);
+                return true;
+
+            case CloseAction.SaveInPlace:
+                // SaveQueryToPath retires any scratch buffer itself — content saved is content chosen.
+                return SaveQueryToPath(tab, session, session.SourceFilePath!);
+
+            default: // SaveAs — DecideClose sends a scratch session's Save here, since it has no path yet.
+                return await SaveQueryAsync(tab, session, storage);
+        }
     }
 
     /// <summary>
@@ -473,6 +694,16 @@ public partial class MainWindow : Window
             return false;
 
         MainTabControl.Items.Remove(tab);
+
+        /* #496: a scratch tab that actually left the strip has had its fate decided —
+           answered at the prompt above (where Don't Save already dropped and a save made it
+           file-backed, so this is a no-op), or clean and therefore never asked. The clean
+           case is the one this line exists for: clean-for-scratch means empty, and an empty
+           tab closed inside the content debounce can still have a stale buffer on disk that
+           would otherwise sit there until the next startup sweep. */
+        if (tab.Content is QuerySessionControl { SourceFilePath: null } closedScratch)
+            DropScratchBuffer(closedScratch);
+
         UpdateEmptyOverlay();
         return true;
     }
@@ -519,8 +750,20 @@ public partial class MainWindow : Window
     {
         if (!_closeConfirmed && CloseNeedsConfirmation())
         {
+            /* The cancel is unconditional — a close arriving mid-walk must not fall through
+               to base and succeed while the walk is still asking — but only the FIRST one may
+               start a walk. The latch check lives inside this branch on purpose: the walk's
+               own Close() at the end re-enters here with _closeWalkInProgress still true, and
+               it has to sail through on _closeConfirmed above, not be swallowed as a
+               duplicate. */
             e.Cancel = true;
-            _ = ConfirmWindowCloseAsync();
+
+            if (!_closeWalkInProgress)
+            {
+                _closeWalkInProgress = true;
+                _ = ConfirmWindowCloseAsync();
+            }
+
             return;
         }
 
@@ -529,12 +772,42 @@ public partial class MainWindow : Window
 
     private async Task ConfirmWindowCloseAsync()
     {
-        /* #473: the sessions that are no longer tabs are asked about here, while every window
-           is still up, rather than from OnClosed where they are force-closed. By then the main
-           window is gone and the app is on its way out — a dialog raised there is at best a
-           window nobody expects and at worst a shutdown that never finishes. Asking here is
-           what earns DetachedContentNeedsSavePrompt the right to wave that force-close
-           through. */
+        try
+        {
+            if (!await ConfirmAllUnsavedWorkAsync())
+                return; // one Cancel cancels the shutdown
+
+            _closeConfirmed = true;
+            Close();
+        }
+        finally
+        {
+            /* Cleared however the walk ends — confirmed, cancelled, or a prompt that threw —
+               so a cancelled shutdown leaves the X able to start a fresh walk. */
+            _closeWalkInProgress = false;
+        }
+    }
+
+    /// <summary>
+    /// Asks about every piece of unsaved work in the app, and answers whether whatever is
+    /// about to destroy that work may proceed.
+    ///
+    /// <para>Split out of <see cref="ConfirmWindowCloseAsync"/> because the window close is
+    /// not the only way the process ends: the About window's Velopack "Restart Now" calls
+    /// ApplyUpdatesAndRestart, which exits without ever raising Closing — so #462's and
+    /// #473's walk never ran on that route and dirty edits were discarded without a word.
+    /// This is only the walk: it does not latch <see cref="_closeConfirmed"/> and does not
+    /// Close, so the restart path can take the answer without the close's bookkeeping.</para>
+    ///
+    /// <para>#473: the sessions that are no longer tabs are asked about here, while every
+    /// window is still up, rather than from OnClosed where they are force-closed. By then the
+    /// main window is gone and the app is on its way out — a dialog raised there is at best a
+    /// window nobody expects and at worst a shutdown that never finishes. Asking here is what
+    /// earns DetachedContentNeedsSavePrompt the right to wave that force-close through.</para>
+    /// </summary>
+    /// <returns>False the moment anyone answers Cancel, or a save they asked for fails.</returns>
+    internal async Task<bool> ConfirmAllUnsavedWorkAsync()
+    {
         foreach (var work in UnsavedWorkOnClose())
         {
             var mayClose = work.Tab != null
@@ -542,11 +815,10 @@ public partial class MainWindow : Window
                 : await ConfirmDetachedCloseAsync(work.Session, work.Owner);
 
             if (!mayClose)
-                return; // one Cancel cancels the shutdown
+                return false;
         }
 
-        _closeConfirmed = true;
-        Close();
+        return true;
     }
 
 
@@ -686,6 +958,9 @@ public partial class MainWindow : Window
 
     private async Task CheckForUpdatesOnStartupAsync()
     {
+        // Before the first await, so the flag is visible to a caller synchronously.
+        StartupUpdateCheckStarted = true;
+
         try
         {
             await Task.Delay(5000); // Don't slow down startup

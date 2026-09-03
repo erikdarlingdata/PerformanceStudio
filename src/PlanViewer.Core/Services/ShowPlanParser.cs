@@ -15,14 +15,23 @@ public static partial class ShowPlanParser
     // Plan XML is untrusted input (opened/pasted/downloaded). Cap recursion depth so a
     // maliciously deep tree throws a catchable exception instead of an uncatchable
     // StackOverflowException that takes the whole process down.
-    private const int MaxParseDepth = 1000;
-    private const int MaxParseCharacters = 16 * 1024 * 1024;
+    // Internal so tests can pin behavior just past each limit without hardcoding the values.
+    internal const int MaxParseDepth = 1000;
+    internal const int MaxParseCharacters = 16 * 1024 * 1024;
 
     public static ParsedPlan Parse(string xml)
     {
         var plan = new ParsedPlan { RawXml = xml };
         try
         {
+            /* Same ceiling ParseAsync enforces through XmlReaderSettings.MaxCharactersInDocument,
+               which this synchronous path (PlanViewerControl, the web viewer, the analysis
+               pipeline) never had - it went straight to XDocument.Parse with no limit at all.
+               The input is already an in-memory string here, so a length check is the equivalent
+               guard; like the reader setting, the limit is in characters, not bytes. */
+            if (xml.Length > MaxParseCharacters)
+                throw new InvalidOperationException(
+                    $"Plan XML exceeds the supported size limit of {MaxParseCharacters.ToString("N0", CultureInfo.InvariantCulture)} characters.");
             return ParseDocument(XDocument.Parse(xml), plan, CancellationToken.None);
         }
         catch (Exception exception)
@@ -109,7 +118,7 @@ public static partial class ShowPlanParser
                 foreach (var statementElement in root.Descendants(Ns + "StmtSimple"))
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    var statement = ParseStatement(statementElement, cancellationToken);
+                    var statement = ParseStatement(statementElement, depth: 0, cancellationToken);
                     if (statement is not null)
                         batch.Statements.Add(statement);
                 }
@@ -205,6 +214,20 @@ public static partial class ShowPlanParser
                         stmt.CursorRequestedType = cursorRequestedType;
                         stmt.CursorConcurrency = cursorConcurrency;
                         stmt.CursorForwardOnly = cursorForwardOnly;
+
+                        /* #491: the same StoredProc/UDF descent every other statement shape gets.
+                           #456 taught ParseStatement to read sub-plan bodies, but a cursor's
+                           operation statements are built HERE, through ParseQueryPlanAsStatement,
+                           and never pass through ParseStatement - so a function called by the
+                           cursor's query carried its whole body in the XML (the Operation element
+                           holds the UDF sub-plan right next to this QueryPlan) and the parser
+                           dropped every statement of it. Attaching the bodies to the operation's
+                           statement is all it takes: PlanStatements.EnumerateAll already walks
+                           UdfPlans/StoredProcPlan on every statement it yields, and since #486
+                           every consumer reads that traversal. Depth passes through unchanged
+                           (#484) - resetting it at this boundary would reopen the MaxParseDepth
+                           bypass across cursor/procedure nesting. */
+                        ParseSubPlans(stmt, opEl, depth, cancellationToken);
                         results.Add(stmt);
                     }
                 }
@@ -213,7 +236,7 @@ public static partial class ShowPlanParser
         else
         {
             // StmtSimple or any other statement type
-            var stmt = ParseStatement(stmtEl, cancellationToken);
+            var stmt = ParseStatement(stmtEl, depth, cancellationToken);
             if (stmt != null)
                 results.Add(stmt);
         }
@@ -221,8 +244,16 @@ public static partial class ShowPlanParser
         return results;
     }
 
+    /* The depth parameter exists for the StoredProc/UDF descents below. #456 added those
+       descents calling ParseStatementAndChildren without a depth argument, so the recursion
+       depth silently reset to zero at every procedure boundary and the MaxParseDepth guard in
+       ParseStatementAndChildren could never fire across StoredProc/UDF nesting - a crafted plan
+       alternating StmtSimple > StoredProc > Statements a few thousand levels deep (about sixty
+       bytes each) still reached the uncatchable StackOverflowException the guard exists to
+       prevent. Carrying the caller's depth through this method closes that reset. */
     private static PlanStatement? ParseStatement(
         XElement stmtEl,
+        int depth = 0,
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -283,46 +314,7 @@ public static partial class ShowPlanParser
            so it took that early return and never reached this code, seventy lines further down. The
            parser looked like it descended into procedures and in the one case that matters never
            did. The same was true of a UDF call whose statement carries no plan of its own. */
-        // XSD gap: UDF sub-plans
-        foreach (var udfEl in stmtEl.Elements(Ns + "UDF"))
-        {
-            var udfInfo = new FunctionPlanInfo
-            {
-                ProcName = udfEl.Attribute("ProcName")?.Value ?? "",
-                IsNativelyCompiled = udfEl.Attribute("IsNativelyCompiled")?.Value is "true" or "1"
-            };
-            var udfStmts = udfEl.Element(Ns + "Statements");
-            if (udfStmts != null)
-            {
-                foreach (var childStmt in udfStmts.Elements())
-                {
-                    var parsed = ParseStatementAndChildren(childStmt, cancellationToken: cancellationToken);
-                    udfInfo.Statements.AddRange(parsed);
-                }
-            }
-            stmt.UdfPlans.Add(udfInfo);
-        }
-
-        // XSD gap: StoredProc sub-plan
-        var storedProcEl = stmtEl.Element(Ns + "StoredProc");
-        if (storedProcEl != null)
-        {
-            var spInfo = new FunctionPlanInfo
-            {
-                ProcName = storedProcEl.Attribute("ProcName")?.Value ?? "",
-                IsNativelyCompiled = storedProcEl.Attribute("IsNativelyCompiled")?.Value is "true" or "1"
-            };
-            var spStmts = storedProcEl.Element(Ns + "Statements");
-            if (spStmts != null)
-            {
-                foreach (var childStmt in spStmts.Elements())
-                {
-                    var parsed = ParseStatementAndChildren(childStmt, cancellationToken: cancellationToken);
-                    spInfo.Statements.AddRange(parsed);
-                }
-            }
-            stmt.StoredProcPlan = spInfo;
-        }
+        ParseSubPlans(stmt, stmtEl, depth, cancellationToken);
 
         if (queryPlanEl == null)
         {
@@ -381,6 +373,64 @@ public static partial class ShowPlanParser
 
 
         return stmt;
+    }
+
+    /// <summary>
+    /// Reads the StoredProc/UDF sub-plan bodies hanging off <paramref name="containerEl"/> onto
+    /// <paramref name="stmt"/>. One reader shared by ParseStatement — where StmtSimple carries the
+    /// UDF/StoredProc elements directly — and the StmtCursor branch (#491), where the same UDF
+    /// element sits beside the QueryPlan under CursorPlan &gt; Operation instead, so the two shapes
+    /// cannot drift apart the way the analyzer and the mapper once did (#455).
+    /// The caller's depth carries into the body statements (#484): this descent is what makes
+    /// module nesting recursive, and resetting depth at a sub-plan boundary is exactly the
+    /// MaxParseDepth bypass #484 closed.
+    /// </summary>
+    private static void ParseSubPlans(
+        PlanStatement stmt,
+        XElement containerEl,
+        int depth,
+        CancellationToken cancellationToken)
+    {
+        // XSD gap: UDF sub-plans
+        foreach (var udfEl in containerEl.Elements(Ns + "UDF"))
+        {
+            var udfInfo = new FunctionPlanInfo
+            {
+                ProcName = udfEl.Attribute("ProcName")?.Value ?? "",
+                IsNativelyCompiled = udfEl.Attribute("IsNativelyCompiled")?.Value is "true" or "1"
+            };
+            var udfStmts = udfEl.Element(Ns + "Statements");
+            if (udfStmts != null)
+            {
+                foreach (var childStmt in udfStmts.Elements())
+                {
+                    var parsed = ParseStatementAndChildren(childStmt, depth + 1, cancellationToken);
+                    udfInfo.Statements.AddRange(parsed);
+                }
+            }
+            stmt.UdfPlans.Add(udfInfo);
+        }
+
+        // XSD gap: StoredProc sub-plan
+        var storedProcEl = containerEl.Element(Ns + "StoredProc");
+        if (storedProcEl != null)
+        {
+            var spInfo = new FunctionPlanInfo
+            {
+                ProcName = storedProcEl.Attribute("ProcName")?.Value ?? "",
+                IsNativelyCompiled = storedProcEl.Attribute("IsNativelyCompiled")?.Value is "true" or "1"
+            };
+            var spStmts = storedProcEl.Element(Ns + "Statements");
+            if (spStmts != null)
+            {
+                foreach (var childStmt in spStmts.Elements())
+                {
+                    var parsed = ParseStatementAndChildren(childStmt, depth + 1, cancellationToken);
+                    spInfo.Statements.AddRange(parsed);
+                }
+            }
+            stmt.StoredProcPlan = spInfo;
+        }
     }
 
     /// <summary>
