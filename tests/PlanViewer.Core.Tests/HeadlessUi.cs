@@ -1,10 +1,14 @@
 using System;
+using System.IO;
+using System.Runtime.CompilerServices;
 using System.Runtime.ExceptionServices;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
 using Avalonia.Threading;
+using PlanViewer.App;
+using PlanViewer.App.Services;
 
 namespace PlanViewer.Core.Tests;
 
@@ -38,6 +42,44 @@ internal static class HeadlessUi
     private static readonly Lazy<HeadlessUnitTestSession> Session =
         new(() => HeadlessUnitTestSession.StartNew(typeof(PlanViewer.App.App)),
             System.Threading.LazyThreadSafetyMode.ExecutionAndPublication);
+
+    /// <summary>
+    /// Where this run's redirected settings live, for the tests that pin the redirection.
+    /// </summary>
+    internal static string SettingsRedirectRoot { get; private set; } = string.Empty;
+
+    /// <summary>
+    /// Flips the process into test-host mode before anything else in this assembly runs.
+    ///
+    /// <para><b>Why booting the real App needs this at all (#451).</b> The session above
+    /// constructs the actual <see cref="PlanViewer.App.App"/>, so its real startup side
+    /// effects ran inside the test host on every local <c>dotnet test</c>: the .sqlplan
+    /// registry association was rewritten to point at the test runner, tests restored and
+    /// then destroyed the developer's saved open-tab list, and fixture paths evicted real
+    /// Recent Plans entries — all confirmed live. <see cref="AppRuntimeMode.IsTestHost"/>
+    /// is the one seam the app consults to keep the process-external effects (file
+    /// association, pipe server, update check, MCP server) from launching here.</para>
+    ///
+    /// <para><b>Why a module initializer rather than harness setup.</b> It has to run
+    /// before the first App boot AND before any test touches
+    /// <see cref="AppSettingsService"/>, including ones that never go through this class.
+    /// A module initializer is the only spot guaranteed to precede both.</para>
+    ///
+    /// <para><b>Why the settings directory is per RUN, not per test.</b> Tests like
+    /// RestoreQueryTabsTests deliberately exercise save/load continuity across windows
+    /// within a run; tests that need clean state already reset it themselves. A second
+    /// <c>dotnet test</c> gets a fresh directory, which is what keeps runs from leaking
+    /// into each other. The abandoned directories are a few hundred bytes each and left
+    /// to OS temp cleanup — sweeping siblings here could race a concurrent run.</para>
+    /// </summary>
+    [ModuleInitializer]
+    internal static void EnterTestHostMode()
+    {
+        AppRuntimeMode.IsTestHost = true;
+
+        SettingsRedirectRoot = Directory.CreateTempSubdirectory("PlanViewer.Core.Tests-").FullName;
+        AppSettingsService.RedirectStorageForTestHost(SettingsRedirectRoot);
+    }
 
     /// <summary>
     /// Runs <paramref name="body"/> on the Avalonia UI thread and rethrows anything it threw, so an

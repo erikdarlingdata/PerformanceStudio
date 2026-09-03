@@ -14,9 +14,12 @@ namespace PlanViewer.App.Services;
 internal sealed class AppSettingsService
 {
     private const int MaxRecentPlans = 10;
-    private static readonly string SettingsDir;
-    private static readonly string SettingsPath;
-    private static readonly string OldFormatSettingsPath;
+
+    // Not readonly only because RedirectStorageForTestHost exists; nothing in the
+    // product assigns these outside the static constructor.
+    private static string SettingsDir;
+    private static string SettingsPath;
+    private static string OldFormatSettingsPath;
 
     private static AppSettings? _cached;
 
@@ -27,6 +30,34 @@ internal sealed class AppSettingsService
             "PerformanceStudio");
         SettingsPath = Path.Combine(SettingsDir, "appsettings.json");
         OldFormatSettingsPath = Path.Combine(SettingsDir, "perfstudio_format_settings.json");
+    }
+
+    /// <summary>
+    /// The file settings are read from and written to right now — the real per-user path
+    /// unless <see cref="RedirectStorageForTestHost"/> moved it. Exposed so the test suite
+    /// can pin that the redirection actually happened (#451) instead of trusting it.
+    /// </summary>
+    internal static string SettingsFilePath => SettingsPath;
+
+    /// <summary>
+    /// Points every settings read and write at <paramref name="directory"/> instead of the
+    /// real per-user profile. Exists for exactly one caller: the test harness (#451). Its
+    /// MainWindow-driving tests run the real settings code — RestoreOpenPlans clears and
+    /// saves the open-tab list, LoadPlanFile saves Recent Plans — and were doing all of it
+    /// against the developer's actual appsettings.json: fixture paths evicted real recent
+    /// entries and the saved session-restore list was destroyed, confirmed live. When this
+    /// is never called, the paths keep their static-constructor defaults byte for byte, so
+    /// the real app is untouched.
+    /// </summary>
+    internal static void RedirectStorageForTestHost(string directory)
+    {
+        SettingsDir = directory;
+        SettingsPath = Path.Combine(directory, "appsettings.json");
+        OldFormatSettingsPath = Path.Combine(directory, "perfstudio_format_settings.json");
+
+        // Anything cached was loaded from the old location; drop it so the first Load
+        // after the redirect reads the new one.
+        _cached = null;
     }
 
     private static readonly JsonSerializerOptions JsonOptions = new()
