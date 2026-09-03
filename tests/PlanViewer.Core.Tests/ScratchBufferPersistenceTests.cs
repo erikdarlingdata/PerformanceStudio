@@ -144,12 +144,13 @@ public class ScratchBufferPersistenceTests
         HeadlessUi.Run(() =>
         {
             MainWindow? window = null;
+            QuerySessionControl? session = null;
             try
             {
                 window = new MainWindow();
                 window.Show(); // the prompt's ShowDialog needs a visible owner, headless or not
 
-                var session = NewScratchTab(window, "SELECT 1 AS discarded_on_purpose;");
+                session = NewScratchTab(window, "SELECT 1 AS discarded_on_purpose;");
                 window.FlushPendingScratchPersistForTests();
 
                 var id = session.ScratchBufferId!.Value;
