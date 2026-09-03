@@ -173,7 +173,12 @@ public class ScratchBufferPersistenceTests
             }
             finally
             {
-                PutAwayMainWindow(window);
+                /* The session too, like this test's siblings: if an assertion above fails
+                   before the Don't Save click lands, the scratch tab is still dirty, and a
+                   PutAway that skips MarkClean would raise the #462 walk's modal during
+                   teardown — the leaked-window poisoning #474's helper exists to prevent,
+                   biting exactly while masking the real failure. */
+                PutAwayMainWindow(window, session);
                 ResetScratchState();
             }
         });
