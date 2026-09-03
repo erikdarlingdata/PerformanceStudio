@@ -46,12 +46,16 @@ public sealed class PlanShareService : IPlanShareService
 
     public async Task<PlanShareResult> ShareAsync(AnalysisResult result, string text, int ttlDays)
     {
+        /* AnalysisJson.Wire, not default options: this serializes an AnalysisResult, and #431's
+           depth ceiling exists for "every writer of this object". Default MaxDepth is 64, an
+           operator costs two JSON levels, so sharing a plan ~30 operators deep threw an "object
+           cycle" JsonException here while the same analysis rendered fine everywhere else. */
         var payload = JsonSerializer.Serialize(new
         {
             result = result,
             text = text,
             ttl_days = ttlDays
-        });
+        }, AnalysisJson.Wire);
         var content = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _http.PostAsync($"{ApiBase}/api/share", content);
 
@@ -83,9 +87,13 @@ public sealed class PlanShareService : IPlanShareService
         }
 
         var json = await response.Content.ReadAsStringAsync();
-        using var doc = JsonDocument.Parse(json);
+        /* Reading a share hits the default 64 ceiling twice — JsonDocumentOptions and
+           JsonSerializerOptions each carry their own MaxDepth — so a deep plan that ShareAsync
+           could now write would still fail to load without both raised. A share must never be
+           writable but not readable. */
+        using var doc = JsonDocument.Parse(json, AnalysisJson.Document);
         var root = doc.RootElement;
-        var result = JsonSerializer.Deserialize<AnalysisResult>(root.GetProperty("result").GetRawText());
+        var result = JsonSerializer.Deserialize<AnalysisResult>(root.GetProperty("result").GetRawText(), AnalysisJson.Wire);
         var text = root.GetProperty("text").GetString();
         return new SharedPlan(result, text);
     }

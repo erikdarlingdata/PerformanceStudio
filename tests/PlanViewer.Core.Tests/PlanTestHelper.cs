@@ -38,6 +38,24 @@ public static class PlanTestHelper
     }
 
     /// <summary>
+    /// Same load + analyze + score, with an analyzer config (for rules-config behavior like
+    /// severity overrides). Named rather than overloaded so an existing
+    /// <c>LoadAndAnalyze(name, null)</c> call can never silently pick a different overload.
+    /// </summary>
+    public static ParsedPlan LoadAndAnalyzeWithConfig(string planFileName, AnalyzerConfig config)
+    {
+        var path = Path.Combine("Plans", planFileName);
+        Assert.True(File.Exists(path), $"Test plan not found: {path}");
+
+        var xml = File.ReadAllText(path);
+        xml = xml.Replace("encoding=\"utf-16\"", "encoding=\"utf-8\"");
+        var plan = ShowPlanParser.Parse(xml);
+        PlanAnalyzer.Analyze(plan, config);
+        BenefitScorer.Score(plan);
+        return plan;
+    }
+
+    /// <summary>
     /// Gets all warnings across all statements and all nodes in the plan.
     /// </summary>
     public static List<PlanWarning> AllWarnings(ParsedPlan plan)

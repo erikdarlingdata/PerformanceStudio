@@ -214,7 +214,14 @@ else
     private PlanNode? selectedNode;
 
     private StatementResult? ActiveStmt => result?.Statements.ElementAtOrDefault(activeStatement);
-    private PlanStatement? ActiveStmtPlan => parsedPlan?.Batches.SelectMany(b => b.Statements).ElementAtOrDefault(activeStatement);
+    /* activeStatement indexes result.Statements, which ResultMapper builds from
+       PlanStatements.EnumerateAll — since #456 that includes statements inside stored procedure
+       and UDF bodies. Mapping the same index into the outer-only batch list returned null for
+       every body statement, so clicking a body statement's tab showed its analysis with no
+       operator tree. The two lists must be walked by the same traversal to line up. */
+    private PlanStatement? ActiveStmtPlan => parsedPlan == null
+        ? null
+        : PlanStatements.EnumerateAll(parsedPlan).ElementAtOrDefault(activeStatement);
 
     private async Task AnalyzePasted()
     {

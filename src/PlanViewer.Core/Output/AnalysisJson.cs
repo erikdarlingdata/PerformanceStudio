@@ -70,4 +70,34 @@ public static class AnalysisJson
         MaxDepth = MaxDepth,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
+
+    /// <summary>
+    /// The share wire format: default JSON in every respect except the depth ceiling.
+    ///
+    /// <para>#431 raised the ceiling for "every writer of this object", and the web share
+    /// endpoints turned out to be three more writers nobody listed: the upload serialized the
+    /// analysis with inline default options, and loading a share back parsed and deserialized it
+    /// at the default 64 again — so a deep-but-real plan (~30 nested operators) analyzed fine on
+    /// screen and then failed to Share, or shared and failed to open, with an "object cycle"
+    /// message pointing at the wrong cause. This is deliberately NOT one of the WithoutNulls
+    /// variants: shares already in the database were written with default formatting, and the fix
+    /// is the ceiling, not a wire-format change riding along with it. Used for both directions —
+    /// deserializers enforce MaxDepth too, and a share that was legal to write must be legal to
+    /// read back.</para>
+    /// </summary>
+    public static readonly JsonSerializerOptions Wire = new()
+    {
+        MaxDepth = MaxDepth,
+    };
+
+    /// <summary>
+    /// The same ceiling for <see cref="System.Text.Json.JsonDocument.Parse(string, JsonDocumentOptions)"/>
+    /// call sites: JsonDocumentOptions is a separate type with its own default MaxDepth of 64, so a
+    /// reader that picks a share apart with JsonDocument before deserializing — which is exactly
+    /// what loading a share does — hits the same wall the serializer options alone cannot fix.
+    /// </summary>
+    public static readonly JsonDocumentOptions Document = new()
+    {
+        MaxDepth = MaxDepth,
+    };
 }

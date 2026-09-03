@@ -12,8 +12,14 @@ public class ParsedPlan
     public bool ClusteredMode { get; set; }
     public List<PlanBatch> Batches { get; set; } = new();
 
-    public List<MissingIndex> AllMissingIndexes => Batches
-        .SelectMany(b => b.Statements)
+    /* #456 follow-up: analysis output lists a missing index per statement, procedure and UDF
+       bodies included, so this rollup must descend the same way — it feeds the MissingIndexCount
+       the MCP session registrations report, and an EXEC <procedure> plan whose only missing-index
+       suggestions live in the body used to register as having none while the advice discussed
+       them. Uses the shared traversal rather than its own descent so it cannot drift from what
+       the analysis actually saw. */
+    public List<MissingIndex> AllMissingIndexes =>
+        Services.PlanStatements.EnumerateAll(this)
         .SelectMany(s => s.MissingIndexes)
         .ToList();
 }
