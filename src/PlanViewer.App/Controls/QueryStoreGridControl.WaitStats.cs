@@ -41,7 +41,8 @@ public partial class QueryStoreGridControl : UserControl
         catch (OperationCanceledException) { throw; }
         catch (Exception ex)
         {
-            StatusText.Text = $"Slicer: {(ex.Message.Length > 60 ? ex.Message[..60] + "..." : ex.Message)}";
+            // #452's mirror: full message out, the status tooltip carries what the strip clips.
+            StatusText.Text = $"Slicer: {ex.Message}";
         }
     }
 
