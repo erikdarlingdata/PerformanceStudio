@@ -74,6 +74,68 @@ public sealed class ShowPlanParserLimitsTests
         Assert.Equal(depth, levels);
     }
 
+    /// <summary>
+    /// #491 gave the cursor branch the same StoredProc/UDF descent as every other statement
+    /// shape, which is a NEW descent path — and #484 is the proof that a new descent path is
+    /// where the depth reset comes back. A plan alternating cursor and procedure shapes
+    /// (StmtCursor &gt; CursorPlan &gt; Operation &gt; UDF wrapping StmtSimple &gt; StoredProc,
+    /// repeated) must hit the same catchable depth error as pure procedure nesting; if the
+    /// cursor-side descent ever forgets to pass depth, the guard can never fire across a cursor
+    /// boundary and this parse runs to completion instead — failing on the assert, safely, per
+    /// the big-stack reasoning on <see cref="BombDepth"/>.
+    /// </summary>
+    [Fact]
+    public void CursorProcedureNestingPastTheDepthLimitFailsWithACatchableError()
+    {
+        var xml = NestedCursorProcedurePlan(BombDepth);
+
+        ParsedPlan? plan = null;
+        var thread = new Thread(() => plan = ShowPlanParser.Parse(xml), 8 * 1024 * 1024);
+        thread.Start();
+        thread.Join();
+
+        Assert.NotNull(plan);
+        Assert.NotNull(plan!.ParseError);
+        Assert.Contains("depth limit", plan.ParseError);
+    }
+
+    /// <summary>
+    /// And the same in reverse for the cursor shape: carrying depth through cursor operation
+    /// bodies must not overcount and reject legitimate nesting. Every alternating level below
+    /// the limit still parses, attached to the right container, all the way down.
+    /// </summary>
+    [Fact]
+    public void CursorProcedureNestingBelowTheDepthLimitStillParsesEveryLevel()
+    {
+        const int depth = 50;
+
+        var plan = ShowPlanParser.Parse(NestedCursorProcedurePlan(depth));
+
+        Assert.Null(plan.ParseError);
+        var stmt = Assert.Single(Assert.Single(plan.Batches).Statements);
+        var cursorLevels = 0;
+        var procLevels = 0;
+        while (true)
+        {
+            if (stmt.UdfPlans.Count == 1)
+            {
+                cursorLevels++;
+                stmt = Assert.Single(stmt.UdfPlans[0].Statements);
+            }
+            else if (stmt.StoredProcPlan is not null)
+            {
+                procLevels++;
+                stmt = Assert.Single(stmt.StoredProcPlan.Statements);
+            }
+            else
+            {
+                break;
+            }
+        }
+        Assert.Equal(depth / 2, cursorLevels);
+        Assert.Equal(depth / 2, procLevels);
+    }
+
     [Fact]
     public void SynchronousParseRejectsOversizedInput()
     {
@@ -105,6 +167,37 @@ public sealed class ShowPlanParserLimitsTests
         xml.Append("<StmtSimple StatementText=\"SELECT 1\" />");
         for (var level = 0; level < levels; level++)
             xml.Append("</Statements></StoredProc></StmtSimple>");
+        xml.Append("</Statements></Batch></BatchSequence></ShowPlanXML>");
+        return xml.ToString();
+    }
+
+    /// <summary>
+    /// Alternating levels of StmtCursor &gt; CursorPlan &gt; Operation &gt; UDF &gt; Statements
+    /// and StmtSimple &gt; StoredProc &gt; Statements around one innermost bare statement, so the
+    /// depth counter has to survive a hand-off between the cursor branch's descent (#491) and
+    /// ParseStatement's (#456/#484) at every second boundary. Each cursor Operation carries the
+    /// QueryPlan the schema requires — the branch only builds a statement (the sub-plan's attach
+    /// point) for an operation that has one.
+    /// </summary>
+    private static string NestedCursorProcedurePlan(int levels)
+    {
+        var xml = new StringBuilder(
+            "<ShowPlanXML xmlns=\"http://schemas.microsoft.com/sqlserver/2004/07/showplan\"><BatchSequence><Batch><Statements>");
+        for (var level = 0; level < levels; level++)
+        {
+            if (level % 2 == 0)
+                xml.Append("<StmtCursor StatementText=\"DECLARE c CURSOR\"><CursorPlan CursorName=\"c\"><Operation OperationType=\"FetchQuery\"><QueryPlan><RelOp NodeId=\"0\" /></QueryPlan><UDF ProcName=\"f\"><Statements>");
+            else
+                xml.Append("<StmtSimple StatementText=\"EXEC p\"><StoredProc ProcName=\"p\"><Statements>");
+        }
+        xml.Append("<StmtSimple StatementText=\"SELECT 1\" />");
+        for (var level = levels - 1; level >= 0; level--)
+        {
+            if (level % 2 == 0)
+                xml.Append("</Statements></UDF></Operation></CursorPlan></StmtCursor>");
+            else
+                xml.Append("</Statements></StoredProc></StmtSimple>");
+        }
         xml.Append("</Statements></Batch></BatchSequence></ShowPlanXML>");
         return xml.ToString();
     }
