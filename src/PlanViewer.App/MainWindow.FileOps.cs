@@ -683,7 +683,13 @@ public partial class MainWindow : Window
     /// buffer is read, and a buffer that fails to load is skipped, never re-added, and
     /// deleted (<see cref="TryRestoreScratchTab"/>).</para>
     /// </summary>
-    private void RestoreOpenPlans()
+    /// <param name="createFallbackTab">
+    /// Whether an empty restore opens a fresh query tab. False when the caller is about to
+    /// open a file-argument on top (#496 review) — the fallback exists so a bare launch
+    /// never greets the user with an empty window, and a launch that carries a file is not
+    /// that.
+    /// </param>
+    private void RestoreOpenPlans(bool createFallbackTab = true)
     {
         /* Snapshot first: SaveOpenPlans and this method share the live list, and the clear
            below would otherwise empty the very thing being iterated. */
@@ -730,7 +736,7 @@ public partial class MainWindow : Window
            down NOW so a crash a moment after startup still finds the session on disk. */
         FlushSessionPersist();
 
-        if (!restored)
+        if (!restored && createFallbackTab)
         {
             // Nothing to restore — open a fresh query editor like before
             NewQuery_Click(this, new RoutedEventArgs());

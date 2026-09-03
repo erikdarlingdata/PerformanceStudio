@@ -212,15 +212,23 @@ public partial class MainWindow : Window
            session-restore instead. */
         args = SingleInstance.StripNewInstanceFlag(args);
 
-        if (args.Length > 1 && File.Exists(args[1]))
-        {
+        /* Restore FIRST, on every cold start — then open the requested file on top, where
+           it lands focused. The old either/or (file-arg launches skipped restore entirely)
+           turned destructive once #495/#496 made the saved list continuously rewritten from
+           live membership: a double-clicked file overwrote the list within a debounce,
+           dropping scratch entries, and the NEXT launch's orphan sweep deleted the buffers
+           behind them — never-chosen content destroyed by an everyday flow (#496 review,
+           blocking finding). Restoring unconditionally closes that chain, and it is also
+           what editors do with a double-clicked file; under #489's single instance a
+           running Studio receives the file over the pipe and never re-enters this path, so
+           this only changes the cold start. The restore's new-tab fallback stays out of the
+           way when a file is about to open — a stray empty scratch tab beside the file the
+           user asked for is nobody's intent. */
+        var hasFileArg = args.Length > 1 && File.Exists(args[1]);
+        RestoreOpenPlans(createFallbackTab: !hasFileArg);
+
+        if (hasFileArg)
             OpenFileByExtension(args[1]);
-        }
-        else
-        {
-            // Restore plans that were open in the previous session
-            RestoreOpenPlans();
-        }
     }
 
     private void StartPipeServer()

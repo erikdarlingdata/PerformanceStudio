@@ -402,13 +402,18 @@ public partial class MainWindow : Window
                 /* #496: a detached scratch window ACTUALLY closing is the session leaving
                    the app by the user's hand — the detached twin of TryCloseTabAsync's
                    drop. This callback never runs on redock (the helper's redocked latch
-                   returns first), so a redocked scratch keeps its buffer. Safe at shutdown's
-                   force-close too: by then every DIRTY scratch was resolved at the
-                   #462/#469/#477 walk (saved sessions are no longer scratch, Don't-Saved
-                   ones already dropped), so the only session this can still touch is a
-                   clean one — empty, by scratch's definition of clean — whose buffer is at
-                   most a stale leftover the flush rules would delete anyway. */
-                if (c is QuerySessionControl { SourceFilePath: null } scratchSession)
+                   returns first), so a redocked scratch keeps its buffer.
+
+                   Gated off during shutdown's force-close (#496 review, third finding):
+                   the walk's prompts are modal only to their own window, so the user can
+                   type into a DIFFERENT detached scratch while a prompt is up — dirty,
+                   never asked. OnClosed's final flush writes that buffer and lists its
+                   entry; letting this drop run in the force-close storm afterwards would
+                   delete the just-written buffer and leave the entry dangling. By then the
+                   final write has already made every keep-or-drop decision, and skipping
+                   here loses nothing: OnClosed's flush sheds clean sessions' stale buffers
+                   itself. */
+                if (!IsShuttingDown && c is QuerySessionControl { SourceFilePath: null } scratchSession)
                     DropScratchBuffer(scratchSession);
 
                 if (c is QueryStoreHistoryControl hc)

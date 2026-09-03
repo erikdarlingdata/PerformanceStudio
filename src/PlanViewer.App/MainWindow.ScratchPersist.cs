@@ -48,6 +48,15 @@ public partial class MainWindow : Window
     private static readonly TimeSpan ScratchPersistDebounce = TimeSpan.FromSeconds(2);
 
     /// <summary>
+    /// The longest an unflushed content change may wait while the debounce keeps being
+    /// restarted by further typing — see the cap in <see cref="RequestScratchPersist"/>.
+    /// </summary>
+    private static readonly TimeSpan ScratchPersistMaxLatency = TimeSpan.FromSeconds(10);
+
+    /// <summary>When the oldest currently-unflushed content change arrived; null when drained.</summary>
+    private DateTime? _scratchPersistOldestPending;
+
+    /// <summary>
     /// A scratch buffer larger than this is not persisted. A pathological paste must not
     /// grind the idle writer — rewriting megabytes to disk two seconds after every
     /// keystroke — so past the cap that one tab simply behaves as it did before #496:
@@ -137,6 +146,20 @@ public partial class MainWindow : Window
             return;
 
         _scratchPersistPending.Add(session);
+        _scratchPersistOldestPending ??= DateTime.UtcNow;
+
+        /* Max-latency cap (#496 review): a trailing-edge debounce restarts on every
+           keystroke, so continuous typing would defer the write indefinitely — the
+           protection at its weakest exactly while the user is producing the most content.
+           Once the oldest unflushed change has waited this long, write now instead of
+           re-arming; the flush clears the timestamp, so a pause afterwards returns to
+           ordinary debouncing. */
+        if (DateTime.UtcNow - _scratchPersistOldestPending >= ScratchPersistMaxLatency)
+        {
+            FlushScratchBuffers();
+            FlushSessionPersist();
+            return;
+        }
 
         /* No real timer under the test host — read RequestSessionPersist's comment for the
            full #451/#495 story: the suite shares one dispatcher, so a timer armed here would
@@ -179,6 +202,7 @@ public partial class MainWindow : Window
     private void FlushScratchBuffers()
     {
         _scratchPersistTimer?.Stop();
+        _scratchPersistOldestPending = null;
 
         if (_scratchPersistPending.Count == 0)
             return;

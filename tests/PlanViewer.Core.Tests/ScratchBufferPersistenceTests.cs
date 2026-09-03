@@ -305,23 +305,37 @@ public class ScratchBufferPersistenceTests
     }
 
     /// <summary>
-    /// Startup collects what nothing references: buffers stranded by crash-window skew and
-    /// AtomicFile .tmp siblings alike — deletion normally happens at the moment of choice,
-    /// so unreferenced means debris. The referenced buffer rides through untouched.
+    /// Startup collects what nothing references — but only past the grace period (#496
+    /// review): a FRESH unreferenced buffer can be an innocent bystander (written moments
+    /// before a crash in the buffer-then-list gap, or stranded when a mid-restore crash
+    /// left the poison-cleared list empty), so it survives as a recoverable .sql until the
+    /// grace runs out. Aged debris — stale buffers and AtomicFile .tmp siblings — still
+    /// dies, and the referenced buffer rides through untouched at any age.
     /// </summary>
     [Fact]
-    public void OrphanedBufferFilesAreSweptAtStartupAndReferencedOnesAreKept()
+    public void TheSweepSparesFreshOrphansAndCollectsAgedOnes()
     {
         HeadlessUi.Run(() =>
         {
             var kept = Guid.NewGuid();
-            var orphan = Guid.NewGuid();
-            var strayTmp = ScratchBufferStore.BufferPathFor(orphan) + ".tmp";
+            var agedOrphan = Guid.NewGuid();
+            var freshOrphan = Guid.NewGuid();
+            var strayTmp = ScratchBufferStore.BufferPathFor(agedOrphan) + ".tmp";
             try
             {
                 ScratchBufferStore.Write(kept, "SELECT 1 AS referenced;");
-                ScratchBufferStore.Write(orphan, "SELECT 2 AS stranded;");
+                ScratchBufferStore.Write(agedOrphan, "SELECT 2 AS stranded_long_ago;");
+                ScratchBufferStore.Write(freshOrphan, "SELECT 3 AS innocent_bystander;");
                 File.WriteAllText(strayTmp, "half a write");
+
+                /* Backdate past the grace period, derived from the store's own constant so
+                   the two can't drift apart. The kept buffer is aged too, proving reference
+                   beats age. */
+                var stale = DateTime.UtcNow - ScratchBufferStore.OrphanGracePeriod - TimeSpan.FromMinutes(1);
+                File.SetLastWriteTimeUtc(ScratchBufferStore.BufferPathFor(kept), stale);
+                File.SetLastWriteTimeUtc(ScratchBufferStore.BufferPathFor(agedOrphan), stale);
+                File.SetLastWriteTimeUtc(strayTmp, stale);
+
                 Seed(ScratchBufferStore.EntryFor(kept));
 
                 var window = new MainWindow();
@@ -329,12 +343,67 @@ public class ScratchBufferPersistenceTests
                 Assert.True(File.Exists(ScratchBufferStore.BufferPathFor(kept)));
                 Assert.NotNull(Sessions(window).SingleOrDefault(s => s.ScratchBufferId == kept));
 
-                Assert.False(File.Exists(ScratchBufferStore.BufferPathFor(orphan)));
+                Assert.False(File.Exists(ScratchBufferStore.BufferPathFor(agedOrphan)));
                 Assert.False(File.Exists(strayTmp));
+
+                Assert.True(
+                    File.Exists(ScratchBufferStore.BufferPathFor(freshOrphan)),
+                    "a fresh orphan may be a crash bystander and must outlive the sweep until the grace period ends");
             }
             finally
             {
+                File.Delete(ScratchBufferStore.BufferPathFor(freshOrphan));
                 ResetScratchState();
+            }
+        });
+    }
+
+    /// <summary>
+    /// The #496 review's blocking finding, closed: a cold start that carries a file
+    /// argument used to SKIP restore, so the continuous writer rewrote the list without
+    /// the previous session's scratch entries and the next start's sweep destroyed their
+    /// buffers — never-chosen content lost to an everyday double-click. A file-arg start
+    /// now restores first and opens the file on top, and the fallback scratch tab stays
+    /// out of the way.
+    /// </summary>
+    [Fact]
+    public void AFileArgColdStartRestoresTheScratchSessionAndOpensTheFile()
+    {
+        HeadlessUi.Run(() =>
+        {
+            var opened = TempSql("SELECT 1 AS from_argv;");
+            var id = Guid.NewGuid();
+            MainWindow? window = null;
+            try
+            {
+                /* The pre-relaunch on-disk state, laid down directly rather than through a
+                   first window: a scratch buffer and its list entry, exactly what an
+                   abnormal exit leaves behind. Seeding after construction is the #489 tests'
+                   pattern — a window's own constructor already runs OpenFromStartupArgs once
+                   (with the test runner's file-less argv), so driving the seam a second time
+                   here is the single cold-start-with-a-file call under test, not a double
+                   restore. */
+                window = new MainWindow();
+                ScratchBufferStore.Write(id, "SELECT 2 AS must_survive_the_double_click;");
+                Seed(ScratchBufferStore.EntryFor(id));
+
+                window.OpenFromStartupArgs(new[] { "PerformanceStudio.exe", opened });
+                window.FlushPendingSessionPersistForTests();
+
+                // The scratch survived the file-arg launch instead of being overwritten...
+                Assert.NotNull(Sessions(window).SingleOrDefault(s => s.ScratchBufferId == id));
+                Assert.True(File.Exists(ScratchBufferStore.BufferPathFor(id)));
+
+                // ...and the requested file opened on top, both on the persisted list.
+                var persisted = PersistedOpenTabs();
+                Assert.Contains(ScratchBufferStore.EntryFor(id), persisted);
+                Assert.Contains(opened, persisted);
+            }
+            finally
+            {
+                PutAwayMainWindow(window);
+                ResetScratchState();
+                File.Delete(opened);
             }
         });
     }

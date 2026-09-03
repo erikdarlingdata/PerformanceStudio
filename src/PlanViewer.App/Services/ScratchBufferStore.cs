@@ -44,6 +44,14 @@ internal static class ScratchBufferStore
     /// </summary>
     private const string BufferExtension = ".sql";
 
+    /// <summary>
+    /// How long an unreferenced buffer survives the startup sweep. Three days spans a long
+    /// weekend of not reopening Studio after a crash — see the age-gate comment in
+    /// <see cref="SweepAllExcept"/>. Internal so the sweep tests can backdate past it
+    /// instead of hardcoding a sibling value that drifts.
+    /// </summary>
+    internal static readonly TimeSpan OrphanGracePeriod = TimeSpan.FromDays(3);
+
     /// <summary>The <c>open_tabs</c> entry for a scratch buffer.</summary>
     internal static string EntryFor(Guid id) => EntryPrefix + id.ToString("N");
 
@@ -120,6 +128,17 @@ internal static class ScratchBufferStore
             .Select(id => id.ToString("N") + BufferExtension)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
+        /* Age gate (#496 review): an unreferenced buffer is USUALLY debris, but two crash
+           shapes make a fresh one innocent — a buffer written moments before a crash in
+           the buffer-then-list gap, and every bystander stranded when a mid-restore crash
+           left the poison-cleared list empty. Only files past the grace period die, which
+           turns "the sweep destroyed never-chosen content" into "an orphan lingered a few
+           days as a recognizable .sql a person can still recover by hand" — the reason
+           buffers carry that extension. The gate costs nothing on the paths that matter:
+           chosen deletions (Don't Save, Save) delete directly and never come through here,
+           and referenced buffers are never candidates at all. */
+        var cutoff = DateTime.UtcNow - OrphanGracePeriod;
+
         foreach (var file in files)
         {
             if (keep.Contains(Path.GetFileName(file)))
@@ -127,6 +146,9 @@ internal static class ScratchBufferStore
 
             try
             {
+                if (File.GetLastWriteTimeUtc(file) >= cutoff)
+                    continue;
+
                 File.Delete(file);
             }
             catch
