@@ -15,14 +15,23 @@ public static partial class ShowPlanParser
     // Plan XML is untrusted input (opened/pasted/downloaded). Cap recursion depth so a
     // maliciously deep tree throws a catchable exception instead of an uncatchable
     // StackOverflowException that takes the whole process down.
-    private const int MaxParseDepth = 1000;
-    private const int MaxParseCharacters = 16 * 1024 * 1024;
+    // Internal so tests can pin behavior just past each limit without hardcoding the values.
+    internal const int MaxParseDepth = 1000;
+    internal const int MaxParseCharacters = 16 * 1024 * 1024;
 
     public static ParsedPlan Parse(string xml)
     {
         var plan = new ParsedPlan { RawXml = xml };
         try
         {
+            /* Same ceiling ParseAsync enforces through XmlReaderSettings.MaxCharactersInDocument,
+               which this synchronous path (PlanViewerControl, the web viewer, the analysis
+               pipeline) never had - it went straight to XDocument.Parse with no limit at all.
+               The input is already an in-memory string here, so a length check is the equivalent
+               guard; like the reader setting, the limit is in characters, not bytes. */
+            if (xml.Length > MaxParseCharacters)
+                throw new InvalidOperationException(
+                    $"Plan XML exceeds the supported size limit of {MaxParseCharacters.ToString("N0", CultureInfo.InvariantCulture)} characters.");
             return ParseDocument(XDocument.Parse(xml), plan, CancellationToken.None);
         }
         catch (Exception exception)
@@ -109,7 +118,7 @@ public static partial class ShowPlanParser
                 foreach (var statementElement in root.Descendants(Ns + "StmtSimple"))
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    var statement = ParseStatement(statementElement, cancellationToken);
+                    var statement = ParseStatement(statementElement, depth: 0, cancellationToken);
                     if (statement is not null)
                         batch.Statements.Add(statement);
                 }
@@ -213,7 +222,7 @@ public static partial class ShowPlanParser
         else
         {
             // StmtSimple or any other statement type
-            var stmt = ParseStatement(stmtEl, cancellationToken);
+            var stmt = ParseStatement(stmtEl, depth, cancellationToken);
             if (stmt != null)
                 results.Add(stmt);
         }
@@ -221,8 +230,16 @@ public static partial class ShowPlanParser
         return results;
     }
 
+    /* The depth parameter exists for the StoredProc/UDF descents below. #456 added those
+       descents calling ParseStatementAndChildren without a depth argument, so the recursion
+       depth silently reset to zero at every procedure boundary and the MaxParseDepth guard in
+       ParseStatementAndChildren could never fire across StoredProc/UDF nesting - a crafted plan
+       alternating StmtSimple > StoredProc > Statements a few thousand levels deep (about sixty
+       bytes each) still reached the uncatchable StackOverflowException the guard exists to
+       prevent. Carrying the caller's depth through this method closes that reset. */
     private static PlanStatement? ParseStatement(
         XElement stmtEl,
+        int depth = 0,
         CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -296,7 +313,7 @@ public static partial class ShowPlanParser
             {
                 foreach (var childStmt in udfStmts.Elements())
                 {
-                    var parsed = ParseStatementAndChildren(childStmt, cancellationToken: cancellationToken);
+                    var parsed = ParseStatementAndChildren(childStmt, depth + 1, cancellationToken);
                     udfInfo.Statements.AddRange(parsed);
                 }
             }
@@ -317,7 +334,7 @@ public static partial class ShowPlanParser
             {
                 foreach (var childStmt in spStmts.Elements())
                 {
-                    var parsed = ParseStatementAndChildren(childStmt, cancellationToken: cancellationToken);
+                    var parsed = ParseStatementAndChildren(childStmt, depth + 1, cancellationToken);
                     spInfo.Statements.AddRange(parsed);
                 }
             }
