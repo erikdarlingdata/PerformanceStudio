@@ -14,6 +14,12 @@ namespace PlanViewer.Core.Tests;
 /// used to start a second concurrent walk: duplicate prompts about the same tab, and a Cancel
 /// answered to one walk that the other never heard. Same reentrancy class as the About
 /// window's update link (#485 review), and the same walk-in-progress latch closes it.
+///
+/// <para><b>Both guards, not one.</b> <c>DetachedWindowHelper</c> carries its own copy of the
+/// latch for its own copy of the gap, and the two are separate code with separate state. Only
+/// the MainWindow half was pinned when the latch landed: deleting the detached
+/// <c>closeGuardPending</c> check outright left this class green, which is how a latch gets
+/// tidied away by someone who reasonably believes the tests are watching it.</para>
 /// </summary>
 public class WindowCloseReentryTests
 {
@@ -72,6 +78,80 @@ public class WindowCloseReentryTests
                     session?.MarkClean();
                     Dispatcher.UIThread.RunJobs();
                     window.Close(); // nothing dirty now, so this one goes through
+                    Dispatcher.UIThread.RunJobs();
+                }
+
+                File.Delete(path);
+            }
+        });
+    }
+
+    [Fact]
+    public void ASecondCloseOfADetachedWindowDoesNotStackASecondPrompt()
+    {
+        HeadlessUi.Run(() =>
+        {
+            var path = TempSql("SELECT 1;");
+            MainWindow? window = null;
+            Window? detached = null;
+            QuerySessionControl? session = null;
+            try
+            {
+                window = new MainWindow();
+                window.Show();
+                window.LoadSqlFile(path);
+
+                var tab = window.MainTabControl.Items.OfType<TabItem>()
+                    .Last(t => t.Content is QuerySessionControl);
+                session = (QuerySessionControl)tab.Content!;
+                session.QueryEditor.Text = "SELECT 2; -- unsaved work";
+
+                detached = window.DetachTabToWindow(tab)!;
+                Dispatcher.UIThread.RunJobs();
+
+                detached.Close();
+                Dispatcher.UIThread.RunJobs();
+
+                Assert.True(detached.IsVisible, "the close is held while the question is up");
+                Assert.Single(detached.OwnedWindows);
+
+                /* The second X. The guard's prompt is modal to the detached window, but a Save As
+                   raised from that prompt is not, so this is reachable in the real app. */
+                detached.Close();
+                Dispatcher.UIThread.RunJobs();
+
+                Assert.Single(detached.OwnedWindows);
+                Assert.True(detached.IsVisible);
+
+                /* Dismissing is Cancel: the window stays, and the latch has to clear with it or
+                   the X is dead for the rest of that window's life. */
+                detached.OwnedWindows.Single().Close();
+                Dispatcher.UIThread.RunJobs();
+
+                Assert.True(detached.IsVisible);
+                Assert.Empty(detached.OwnedWindows);
+
+                detached.Close();
+                Dispatcher.UIThread.RunJobs();
+
+                Assert.Single(detached.OwnedWindows); // a fresh close starts a fresh question
+            }
+            finally
+            {
+                if (detached != null)
+                {
+                    foreach (var prompt in detached.OwnedWindows.ToList())
+                        prompt.Close();
+                    session?.MarkClean();
+                    Dispatcher.UIThread.RunJobs();
+                    detached.Close();
+                    Dispatcher.UIThread.RunJobs();
+                }
+
+                if (window != null)
+                {
+                    session?.MarkClean();
+                    window.Close();
                     Dispatcher.UIThread.RunJobs();
                 }
 
