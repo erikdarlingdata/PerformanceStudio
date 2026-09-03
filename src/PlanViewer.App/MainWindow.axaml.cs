@@ -348,7 +348,18 @@ public partial class MainWindow : Window
             _sessionPersistTimer?.Stop();
             _sessionPersistPending = false;
 
-            // Save the list of currently open file-based tabs for session restore
+            /* #496, and the order matters: the scratch content writer drains BEFORE the final
+               list write, so the list below references exactly the buffers that exist. On a
+               clean close this drain only ever DELETES — every scratch tab with content was
+               resolved at the #462/#469/#477 prompts by now (saved ones stopped being
+               scratch, Don't-Saved ones already dropped their buffers), so what is left
+               pending is at most a clean scratch shedding a stale buffer. Which is the
+               invariant #496 promises: after a clean close, zero scratch buffers remain,
+               because every one of them was chosen about. */
+            _scratchPersistTimer?.Stop();
+            FlushScratchBuffers();
+
+            // Save the list of currently open tabs (paths and scratch entries) for session restore
             SaveOpenPlans();
 
             _pipeCts.Cancel();
@@ -473,7 +484,7 @@ public partial class MainWindow : Window
         if (content is QuerySessionControl session)
             _detachedQuerySessions.Add((window, session));
 
-        /* This register is half of what CollectOpenTabPaths reads (the tab strip is the other
+        /* This register is half of what CollectOpenTabEntries reads (the tab strip is the other
            half), so a change to it is a membership change the tab watcher cannot see. Detach
            itself also removed a tab — the watcher fired — but by the time the debounced write
            flushes, this entry exists; the debounce is quietly doing ordering work here, since
@@ -540,13 +551,7 @@ public partial class MainWindow : Window
 
         var choice = await UnsavedChangesDialog.ShowAsync(owner, owner.Title ?? "this query");
 
-        return DecideClose(choice, session.SourceFilePath != null) switch
-        {
-            CloseAction.Cancel => false,
-            CloseAction.Close => true,
-            CloseAction.SaveInPlace => SaveQueryToPath(null, session, session.SourceFilePath!),
-            _ => await SaveQueryAsync(null, session, owner.StorageProvider)
-        };
+        return await ResolveCloseChoiceAsync(choice, tab: null, session, owner.StorageProvider);
     }
 
     /// <summary>
@@ -626,13 +631,49 @@ public partial class MainWindow : Window
         MainTabControl.SelectedItem = tab; // show what is being asked about
         var choice = await UnsavedChangesDialog.ShowAsync(this, GetTabLabel(tab));
 
-        return DecideClose(choice, session.SourceFilePath != null) switch
+        return await ResolveCloseChoiceAsync(choice, tab, session, storage: null);
+    }
+
+    /// <summary>
+    /// Acts on the answer to an unsaved-changes prompt, docked and detached alike — the two
+    /// switches this replaces had drifted into near-twins, and #496 needed a THIRD copy or
+    /// one shared resolution point. The point matters beyond deduplication: #496's
+    /// delete-on-choice hooks the RESOLUTION of an answer, not the dialog that collected
+    /// it, so every prompt — tab close, detached close, the shutdown and restart walks —
+    /// honors Don't Save identically by construction. Internal so a test can also drive an
+    /// answer in directly, without a dialog to raise clicks on.
+    /// </summary>
+    /// <param name="tab">Null for a detached session, which has no tab to retitle (#473).</param>
+    /// <param name="storage">
+    /// The picker a Save As should come off of — the detached window's own, so the dialog
+    /// lands where the user is looking (#473). Null means this window's.
+    /// </param>
+    /// <returns>Whether the close may proceed.</returns>
+    internal async Task<bool> ResolveCloseChoiceAsync(
+        UnsavedChangesChoice choice, TabItem? tab, QuerySessionControl session, IStorageProvider? storage)
+    {
+        switch (DecideClose(choice, session.SourceFilePath != null))
         {
-            CloseAction.Cancel => false,
-            CloseAction.Close => true,
-            CloseAction.SaveInPlace => SaveQueryToPath(tab, session, session.SourceFilePath!),
-            _ => await SaveQueryAsync(tab, session)
-        };
+            case CloseAction.Cancel:
+                return false;
+
+            case CloseAction.Close:
+                /* #496, the chose half of chose-vs-never-got-to-choose: Don't Save is the
+                   user explicitly answering "this content may die" — the one signal the
+                   crash-protection buffer must obey, or a discarded query would resurrect
+                   at the next start and the prompt's answer would mean nothing. File-backed
+                   sessions pass through untouched (no buffer to drop); their discarded
+                   edits were never persisted anywhere — the scope fence. */
+                DropScratchBuffer(session);
+                return true;
+
+            case CloseAction.SaveInPlace:
+                // SaveQueryToPath retires any scratch buffer itself — content saved is content chosen.
+                return SaveQueryToPath(tab, session, session.SourceFilePath!);
+
+            default: // SaveAs — DecideClose sends a scratch session's Save here, since it has no path yet.
+                return await SaveQueryAsync(tab, session, storage);
+        }
     }
 
     /// <summary>
@@ -645,6 +686,16 @@ public partial class MainWindow : Window
             return false;
 
         MainTabControl.Items.Remove(tab);
+
+        /* #496: a scratch tab that actually left the strip has had its fate decided —
+           answered at the prompt above (where Don't Save already dropped and a save made it
+           file-backed, so this is a no-op), or clean and therefore never asked. The clean
+           case is the one this line exists for: clean-for-scratch means empty, and an empty
+           tab closed inside the content debounce can still have a stale buffer on disk that
+           would otherwise sit there until the next startup sweep. */
+        if (tab.Content is QuerySessionControl { SourceFilePath: null } closedScratch)
+            DropScratchBuffer(closedScratch);
+
         UpdateEmptyOverlay();
         return true;
     }

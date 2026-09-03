@@ -20,6 +20,7 @@ internal sealed class AppSettingsService
     private static string SettingsDir;
     private static string SettingsPath;
     private static string OldFormatSettingsPath;
+    private static string ScratchDir;
 
     private static AppSettings? _cached;
 
@@ -30,6 +31,7 @@ internal sealed class AppSettingsService
             "PerformanceStudio");
         SettingsPath = Path.Combine(SettingsDir, "appsettings.json");
         OldFormatSettingsPath = Path.Combine(SettingsDir, "perfstudio_format_settings.json");
+        ScratchDir = Path.Combine(SettingsDir, "scratch");
     }
 
     /// <summary>
@@ -38,6 +40,16 @@ internal sealed class AppSettingsService
     /// can pin that the redirection actually happened (#451) instead of trusting it.
     /// </summary>
     internal static string SettingsFilePath => SettingsPath;
+
+    /// <summary>
+    /// Where scratch query buffers live (#496): one file per never-saved query tab, so an
+    /// abnormal exit does not take typed-but-unsaved work with it. Beside the settings file
+    /// rather than anywhere fancier because it is the same class of state — and, exactly like
+    /// <see cref="SettingsFilePath"/>, it rides <see cref="RedirectStorageForTestHost"/>, so
+    /// tests that exercise the real buffer writes land them in the run-scoped temp root
+    /// instead of the developer's profile (#487's pattern, same reasoning as #451).
+    /// </summary>
+    internal static string ScratchDirectory => ScratchDir;
 
     /// <summary>
     /// Points every settings read and write at <paramref name="directory"/> instead of the
@@ -54,6 +66,7 @@ internal sealed class AppSettingsService
         SettingsDir = directory;
         SettingsPath = Path.Combine(directory, "appsettings.json");
         OldFormatSettingsPath = Path.Combine(directory, "perfstudio_format_settings.json");
+        ScratchDir = Path.Combine(directory, "scratch");
 
         // Anything cached was loaded from the old location; drop it so the first Load
         // after the redirect reads the new one.

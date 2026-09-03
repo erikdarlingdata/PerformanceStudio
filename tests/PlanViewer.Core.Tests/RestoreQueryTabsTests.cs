@@ -39,7 +39,7 @@ public class RestoreQueryTabsTests
                 var window = new MainWindow();
                 window.LoadSqlFile(path);
 
-                Assert.Contains(path, window.CollectOpenTabPaths());
+                Assert.Contains(path, window.CollectOpenTabEntries());
             }
             finally
             {
@@ -49,9 +49,11 @@ public class RestoreQueryTabsTests
     }
 
     /// <summary>
-    /// The deliberate edge of the fix. A never-saved scratch buffer has no path, so there is
-    /// nothing to write down and it does not come back — persisting unsaved text is #462's job,
-    /// not this one's.
+    /// The edge #463 drew, redrawn by #496: a scratch tab enters the list only once its
+    /// CONTENT has actually persisted (as a scratch:&lt;guid&gt; entry —
+    /// ScratchBufferPersistenceTests owns that half). A fresh, empty scratch has no buffer,
+    /// no id, and therefore still no entry — which is what keeps a restart from restoring a
+    /// parade of blank "Query N" tabs.
     /// </summary>
     [Fact]
     public void AScratchQueryHasNoFileAndIsNotWrittenDown()
@@ -63,7 +65,7 @@ public class RestoreQueryTabsTests
 
             var session = Sessions(window).Last();
             Assert.Null(session.SourceFilePath);
-            Assert.Empty(window.CollectOpenTabPaths());
+            Assert.Empty(window.CollectOpenTabEntries());
         });
     }
 
@@ -107,7 +109,7 @@ public class RestoreQueryTabsTests
 
                 var window = new MainWindow();
 
-                Assert.Contains(path, window.CollectOpenTabPaths());
+                Assert.Contains(path, window.CollectOpenTabEntries());
                 Assert.Contains(Viewers(window), v => v.SourceFilePath == path);
             }
             finally

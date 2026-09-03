@@ -44,6 +44,19 @@ public class TestHostIsolationTests
                 AppSettingsService.SettingsFilePath.StartsWith(realProfileDir, StringComparison.OrdinalIgnoreCase),
                 "the test host must never read or write the real appsettings.json");
 
+            /* #496: the scratch buffer directory rides the same redirection, and the stakes
+               are higher than the settings file's — the persistence tests write real buffer
+               FILES and the startup sweep DELETES unreferenced ones, so a scratch directory
+               that escaped the redirect would have every MainWindow test collecting the
+               developer's real crash-protected queries as orphans. */
+            Assert.StartsWith(
+                HeadlessUi.SettingsRedirectRoot,
+                AppSettingsService.ScratchDirectory,
+                StringComparison.OrdinalIgnoreCase);
+            Assert.False(
+                AppSettingsService.ScratchDirectory.StartsWith(realProfileDir, StringComparison.OrdinalIgnoreCase),
+                "the test host must never touch the real scratch buffers — the orphan sweep deletes files there");
+
             /* Save(Load()) rather than Save(new AppSettings()): Save caches the instance it
                is given, and swapping in a fresh one would yank state out from under a test
                that had just seeded the shared cached instance. This is the write that used

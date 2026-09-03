@@ -162,7 +162,7 @@ public partial class QuerySessionControl : UserControl
     /// (or empty), and a dirty-but-empty one is a buffer the user deleted everything out of —
     /// replacing nothing loses nothing, so both stay as frictionless as they always were.
     /// Split out pure so the decision is testable without a dialog to click, the same trade
-    /// CollectOpenTabPaths made for the session-restore list.</para>
+    /// CollectOpenTabEntries made for the session-restore list.</para>
     /// </summary>
     internal static bool ReplaceNeedsConfirmation(bool isDirty, string? currentText) =>
         isDirty && !string.IsNullOrEmpty(currentText);

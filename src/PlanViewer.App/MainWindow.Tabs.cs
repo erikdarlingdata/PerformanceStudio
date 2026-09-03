@@ -109,6 +109,12 @@ public partial class MainWindow : Window
             // A session can arrive already modified — re-docking a detached window builds a
             // fresh tab around a session that has been edited since it left.
             RefreshCloseGlyph();
+
+            /* #496: every top-level query session passes through here exactly when it gets
+               its first tab, which makes this the one wiring point for scratch content
+               persistence — same single-subscription argument as the #495 tab watcher.
+               Idempotent, because redock passes the same living session through again. */
+            HookScratchPersistence(querySession);
         }
 
         // Middle-click to close
@@ -250,6 +256,31 @@ public partial class MainWindow : Window
         return null;
     }
 
+    /// <summary>
+    /// What the session-restore list records for a tab's content: the file path when there
+    /// is one, else the <c>scratch:&lt;guid&gt;</c> entry for a scratch session whose
+    /// content has actually been persisted (#496), else nothing. Layered ON TOP of
+    /// <see cref="GetContentFilePath"/> rather than folded into it, because that method
+    /// also answers Copy Path — and a scratch buffer id is precisely not a path anyone
+    /// should be handed to paste somewhere.
+    ///
+    /// <para>The no-id case is deliberate, not a gap: an empty scratch tab has no buffer
+    /// (ids are minted at first persist), and restoring a parade of blank "Query N" tabs
+    /// would make persistence feel like clutter. A scratch tab earns its entry by having
+    /// content on disk worth coming back for.</para>
+    /// </summary>
+    private static string? GetContentSessionEntry(Control? content)
+    {
+        var path = GetContentFilePath(content);
+        if (path != null)
+            return path;
+
+        if (content is QuerySessionControl { SourceFilePath: null, ScratchBufferId: { } id })
+            return ScratchBufferStore.EntryFor(id);
+
+        return null;
+    }
+
     private void StartRename(StackPanel header, TextBlock headerText)
     {
         var textBox = new TextBox
@@ -367,6 +398,18 @@ public partial class MainWindow : Window
             onClosing: c =>
             {
                 ForgetDetachedTabContent(c);
+
+                /* #496: a detached scratch window ACTUALLY closing is the session leaving
+                   the app by the user's hand — the detached twin of TryCloseTabAsync's
+                   drop. This callback never runs on redock (the helper's redocked latch
+                   returns first), so a redocked scratch keeps its buffer. Safe at shutdown's
+                   force-close too: by then every DIRTY scratch was resolved at the
+                   #462/#469/#477 walk (saved sessions are no longer scratch, Don't-Saved
+                   ones already dropped), so the only session this can still touch is a
+                   clean one — empty, by scratch's definition of clean — whose buffer is at
+                   most a stale leftover the flush rules would delete anyway. */
+                if (c is QuerySessionControl { SourceFilePath: null } scratchSession)
+                    DropScratchBuffer(scratchSession);
 
                 if (c is QueryStoreHistoryControl hc)
                     hc.CancelFetch();

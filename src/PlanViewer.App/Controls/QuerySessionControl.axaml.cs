@@ -40,6 +40,22 @@ public partial class QuerySessionControl : UserControl
     public string? SourceFilePath { get; set; }
 
     /// <summary>
+    /// Identity of this session's persisted scratch buffer (#496), or null while it has
+    /// none. Assigned by MainWindow the first time a never-saved session's content is
+    /// actually written to the scratch store — not at construction, so an empty tab never
+    /// mints a buffer — and carried back onto the restored session at the next start, which
+    /// is what makes a restored scratch CONTINUE its buffer instead of forking a new one.
+    /// Cleared when the buffer is deleted: the user chose its fate at a prompt (Don't Save,
+    /// or a save that moved the content into a real file), or there is nothing unsaved left
+    /// to protect.
+    ///
+    /// <para>On the session rather than the tab for the same reason <see cref="SourceFilePath"/>
+    /// is: detach discards the TabItem and the session lives on in its own window (#473),
+    /// and its buffer identity has to travel with it.</para>
+    /// </summary>
+    internal Guid? ScratchBufferId { get; set; }
+
+    /// <summary>
     /// The encoding the file behind <see cref="SourceFilePath"/> declared with its byte order
     /// mark, or null for a BOM-less file and for a scratch session — both of which save as
     /// UTF-8 without a BOM, which is what every save wrote before this existed.
