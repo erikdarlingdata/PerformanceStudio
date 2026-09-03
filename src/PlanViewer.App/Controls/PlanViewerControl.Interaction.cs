@@ -360,7 +360,11 @@ public partial class PlanViewerControl : UserControl
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"SavePlan failed: {ex.Message}");
-                CostText.Text = $"Save failed: {(ex.Message.Length > 60 ? ex.Message[..60] + "..." : ex.Message)}";
+                /* #452's mirror, the sixth site (spotted during the review sweep): pre-cutting to
+                   60 characters threw away exactly the part of an I/O error that says what to fix.
+                   Full message out; the tooltip carries whatever the label clips. */
+                CostText.Text = $"Save failed: {ex.Message}";
+                ToolTip.SetTip(CostText, ex.Message);
             }
         }
     }

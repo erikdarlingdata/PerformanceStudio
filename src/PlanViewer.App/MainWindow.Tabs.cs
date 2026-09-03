@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -36,6 +37,17 @@ public partial class MainWindow : Window
             return s;
         return "Tab";
     }
+
+    /* The glyph refresher CreateTab subscribes onto a query session, keyed by the tab it was
+       built for, so DetachTabToWindow can take exactly its own subscription off again. The
+       session OUTLIVES its tab on the detach path — the tab is discarded, the session moves
+       into the detached window still holding a handler that closes over the dead tab's close
+       button — and redock re-subscribes through CreateTab, so every detach/redock cycle used
+       to pin one more dead TabItem (visual tree and all) to the session for the session's
+       lifetime. A ConditionalWeakTable rather than a Dictionary so the bookkeeping cannot
+       become its own leak: a tab closed normally dies together with its session, and its
+       entry evaporates with the key. */
+    private readonly ConditionalWeakTable<TabItem, Action> _tabDirtyGlyphUnhooks = new();
 
     private TabItem CreateTab(string label, Control content)
     {
@@ -83,7 +95,14 @@ public partial class MainWindow : Window
             void RefreshCloseGlyph() =>
                 closeBtn.Content = CloseButtonGlyph(querySession.IsDirty, closeBtn.IsPointerOver);
 
-            querySession.DirtyStateChanged += (_, _) => RefreshCloseGlyph();
+            /* Named and written down rather than subscribed inline: of everything wired up
+               here, this is the one subscription that lands on an object that can outlive the
+               tab, so it is the one detach has to be able to undo — see _tabDirtyGlyphUnhooks.
+               The pointer handlers below live and die with the button itself. */
+            EventHandler refreshOnDirtyChange = (_, _) => RefreshCloseGlyph();
+            querySession.DirtyStateChanged += refreshOnDirtyChange;
+            _tabDirtyGlyphUnhooks.Add(tab, () => querySession.DirtyStateChanged -= refreshOnDirtyChange);
+
             closeBtn.PointerEntered += (_, _) => RefreshCloseGlyph();
             closeBtn.PointerExited += (_, _) => RefreshCloseGlyph();
 
@@ -303,6 +322,16 @@ public partial class MainWindow : Window
 
         var label = GetTabLabel(tab);
 
+        /* The session is about to leave this tab behind. Take the glyph subscription off it
+           first: the handler is the one reference that would keep the discarded TabItem alive
+           from the still-living session (see _tabDirtyGlyphUnhooks), and redock subscribes
+           afresh through CreateTab. */
+        if (_tabDirtyGlyphUnhooks.TryGetValue(tab, out var unhookDirtyGlyph))
+        {
+            unhookDirtyGlyph();
+            _tabDirtyGlyphUnhooks.Remove(tab);
+        }
+
         // Remove the tab
         MainTabControl.Items.Remove(tab);
         tab.Content = null;
@@ -338,6 +367,17 @@ public partial class MainWindow : Window
             closeGuard: DetachedQueryCloseGuard);
 
         RememberDetachedQuerySession(detachedWindow, content);
+
+        /* #447 made Compare a window-wide count, and this session just left the window: the
+           count it is showing is about tabs it can no longer reach. Nothing else recomputes it
+           here — the session's sub-tab watcher fires on sub-tab changes only, and detaching
+           changes none — so the pre-detach state stuck until the next plan landed. Recompute
+           now; with no MainWindow above it any more, the method's own fallback counts the
+           session's plans, which inside a detached window is the only honest answer. Redock
+           needs no twin call: adding the tab back fires MainWindow's collection watcher. */
+        if (content is QuerySessionControl detachedSession)
+            detachedSession.UpdateCompareButtonState();
+
         return detachedWindow;
     }
 }

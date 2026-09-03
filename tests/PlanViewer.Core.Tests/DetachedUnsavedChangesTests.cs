@@ -1,5 +1,7 @@
+using System;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
@@ -216,6 +218,78 @@ public class DetachedUnsavedChangesTests
                 File.Delete(path);
             }
         });
+    }
+
+    /// <summary>
+    /// CreateTab subscribes a glyph refresher onto the session, and the session outlives its
+    /// tab on the detach path — so the subscription used to outlive it too, a closure over the
+    /// dead tab's close button that pinned the whole discarded TabItem to the session, once
+    /// per detach/redock cycle. The counts below read the event's invocation list because the
+    /// leak IS the subscription: nothing observable on screen changes until the memory is
+    /// gone.
+    /// </summary>
+    [Fact]
+    public void DetachTakesTheGlyphSubscriptionOffAndRedockRewiresIt()
+    {
+        HeadlessUi.Run(() =>
+        {
+            var path = TempSql("SELECT 1;");
+            Window? detached = null;
+            QuerySessionControl? session = null;
+            try
+            {
+                var window = new MainWindow();
+                window.LoadSqlFile(path);
+
+                var tab = LastQueryTab(window);
+                session = (QuerySessionControl)tab.Content!;
+
+                Assert.Equal(1, DirtyStateSubscriberCount(session));
+
+                detached = window.DetachTabToWindow(tab)!;
+
+                Assert.Equal(0, DirtyStateSubscriberCount(session));
+
+                RedockButton(detached).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                Dispatcher.UIThread.RunJobs();
+                detached = null; // re-dock closed it
+
+                /* One again — not two, which is what the cycle used to leave behind. */
+                Assert.Equal(1, DirtyStateSubscriberCount(session));
+
+                /* And the fresh subscription works: the redocked tab's close button still
+                   turns into the modified dot when the session goes dirty, and back. */
+                var redockedTab = LastQueryTab(window);
+                var closeBtn = ((StackPanel)redockedTab.Header!).Children.OfType<Button>().Last();
+
+                session.QueryEditor.Text = "SELECT 2; -- edited";
+                Dispatcher.UIThread.RunJobs();
+                Assert.Equal("●", (string?)closeBtn.Content); // the modified dot
+
+                session.MarkClean();
+                Dispatcher.UIThread.RunJobs();
+                Assert.Equal("✕", (string?)closeBtn.Content); // back to the close cross
+            }
+            finally
+            {
+                PutAway(detached, session);
+                File.Delete(path);
+            }
+        });
+    }
+
+    /// <summary>
+    /// The one subscription CreateTab makes on the session itself, counted off the compiler's
+    /// backing delegate. Reflection is the honest tool here: the event is the leak's surface,
+    /// and exposing a count on the product type just to avoid it would be API for a test.
+    /// </summary>
+    private static int DirtyStateSubscriberCount(QuerySessionControl session)
+    {
+        var backingField = typeof(QuerySessionControl).GetField(
+            nameof(QuerySessionControl.DirtyStateChanged),
+            BindingFlags.Instance | BindingFlags.NonPublic)!;
+
+        return ((Delegate?)backingField.GetValue(session))?.GetInvocationList().Length ?? 0;
     }
 
     [Fact]

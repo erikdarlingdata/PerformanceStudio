@@ -1,5 +1,6 @@
 using System.IO;
 using System.Linq;
+using System.Text;
 using Avalonia.Controls;
 using PlanViewer.App;
 using PlanViewer.App.Controls;
@@ -204,12 +205,143 @@ public class OpenSaveQueryTests
         });
     }
 
+    /// <summary>
+    /// The cold-start argv route, exactly as the constructor takes it. This was the one path
+    /// still hard-wired to LoadPlanFile — the pipe from a second instance, drag-and-drop, and
+    /// session restore all routed by extension — so "PerformanceStudio.exe query.sql" (a shell
+    /// open, a double-clicked association) greeted the user with "The XML is not valid" where
+    /// their query should have been.
+    /// </summary>
+    [Fact]
+    public void ACommandLineSqlFileLandsInAQuerySessionNotThePlanLoader()
+    {
+        HeadlessUi.Run(() =>
+        {
+            var path = TempSql("SELECT 1 AS from_argv;");
+            try
+            {
+                var window = new MainWindow();
+                var queryTabsBefore = QueryTabs(window).Count();
+
+                window.OpenFromStartupArgs(new[] { "PerformanceStudio.exe", path });
+
+                Assert.Equal(queryTabsBefore + 1, QueryTabs(window).Count());
+
+                var session = (QuerySessionControl)QueryTabs(window).Last().Content!;
+                Assert.Equal("SELECT 1 AS from_argv;", session.QueryEditor.Text);
+                Assert.Equal(path, session.SourceFilePath);
+            }
+            finally
+            {
+                File.Delete(path);
+            }
+        });
+    }
+
+    /// <summary>
+    /// The route the constructor was hard-wired for still works through the extension router:
+    /// a plan on the command line is still a plan tab.
+    /// </summary>
+    [Fact]
+    public void ACommandLinePlanFileStillOpensAsAPlan()
+    {
+        HeadlessUi.Run(() =>
+        {
+            var planPath = Path.Combine(System.AppContext.BaseDirectory, "Plans", "row_goal_plan.sqlplan");
+
+            var window = new MainWindow();
+            var planTabsBefore = PlanTabs(window).Count();
+
+            window.OpenFromStartupArgs(new[] { "PerformanceStudio.exe", planPath });
+
+            Assert.Equal(planTabsBefore + 1, PlanTabs(window).Count());
+        });
+    }
+
+    /// <summary>
+    /// SSMS writes .sql files as UTF-16 LE with a BOM. Opening one always read correctly —
+    /// File.ReadAllText honors the mark — but SaveQueryToPath wrote UTF-8 without one, so the
+    /// first save-in-place silently transcoded the user's file: every byte changed, the mark
+    /// gone, nothing asked. The encoding captured at open now rides the session to the save.
+    /// </summary>
+    [Fact]
+    public void AUtf16FileIsStillUtf16AfterASaveInPlace()
+    {
+        HeadlessUi.Run(() =>
+        {
+            var path = Path.Combine(Path.GetTempPath(), $"{Path.GetRandomFileName()}.sql");
+            File.WriteAllText(path, "SELECT 1;", Encoding.Unicode);
+            try
+            {
+                var window = new MainWindow();
+                window.LoadSqlFile(path);
+
+                var tab = QueryTabs(window).Last();
+                var session = (QuerySessionControl)tab.Content!;
+                session.QueryEditor.Text = "SELECT 2 AS edited;";
+
+                Assert.True(window.SaveQueryToPath(tab, session, path));
+
+                var bytes = File.ReadAllBytes(path);
+                Assert.Equal(new byte[] { 0xFF, 0xFE }, bytes.Take(2).ToArray());
+                Assert.Equal("SELECT 2 AS edited;", File.ReadAllText(path));
+            }
+            finally
+            {
+                File.Delete(path);
+            }
+        });
+    }
+
+    /// <summary>
+    /// The preservation must not cut the other way: a BOM-less file stays BOM-less, and a
+    /// scratch query saves as the UTF-8-without-BOM every save always wrote. Stamping marks
+    /// onto files that never had one would be the same silent-alteration bug in reverse.
+    /// </summary>
+    [Fact]
+    public void BomlessFilesAndScratchQueriesStillSaveWithoutABom()
+    {
+        HeadlessUi.Run(() =>
+        {
+            var bomless = Path.Combine(Path.GetTempPath(), $"{Path.GetRandomFileName()}.sql");
+            File.WriteAllText(bomless, "SELECT 1;", new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+            var scratch = Path.Combine(Path.GetTempPath(), $"{Path.GetRandomFileName()}.sql");
+            try
+            {
+                var window = new MainWindow();
+
+                window.LoadSqlFile(bomless);
+                var tab = QueryTabs(window).Last();
+                var session = (QuerySessionControl)tab.Content!;
+                session.QueryEditor.Text = "SELECT 2 AS edited;";
+                Assert.True(window.SaveQueryToPath(tab, session, bomless));
+                Assert.NotEqual(0xEF, File.ReadAllBytes(bomless)[0]);
+
+                window.NewQuery_Click(window, new Avalonia.Interactivity.RoutedEventArgs());
+                var scratchTab = QueryTabs(window).Last();
+                var scratchSession = (QuerySessionControl)scratchTab.Content!;
+                scratchSession.QueryEditor.Text = "SELECT 3;";
+                Assert.True(window.SaveQueryToPath(scratchTab, scratchSession, scratch));
+                Assert.NotEqual(0xEF, File.ReadAllBytes(scratch)[0]);
+            }
+            finally
+            {
+                File.Delete(bomless);
+                if (File.Exists(scratch))
+                    File.Delete(scratch);
+            }
+        });
+    }
+
     private static string TempSql(string text)
     {
         var path = Path.Combine(Path.GetTempPath(), $"{Path.GetRandomFileName()}.sql");
         File.WriteAllText(path, text);
         return path;
     }
+
+    private static System.Collections.Generic.IEnumerable<TabItem> PlanTabs(MainWindow window) =>
+        window.MainTabControl.Items.OfType<TabItem>().Where(t => t.Content is DockPanel);
 
     private static System.Collections.Generic.IEnumerable<TabItem> QueryTabs(MainWindow window) =>
         window.MainTabControl.Items.OfType<TabItem>().Where(t => t.Content is QuerySessionControl);

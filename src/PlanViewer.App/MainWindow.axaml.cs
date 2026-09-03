@@ -164,16 +164,7 @@ public partial class MainWindow : Window
         }, RoutingStrategies.Tunnel);
 
         // Accept command-line argument or restore previously open plans
-        var args = Environment.GetCommandLineArgs();
-        if (args.Length > 1 && File.Exists(args[1]))
-        {
-            LoadPlanFile(args[1]);
-        }
-        else
-        {
-            // Restore plans that were open in the previous session
-            RestoreOpenPlans();
-        }
+        OpenFromStartupArgs(Environment.GetCommandLineArgs());
 
         // Start MCP server if enabled in settings.
         // Not in the test host (#451): this reads the user's real ~/.planview settings and,
@@ -181,6 +172,32 @@ public partial class MainWindow : Window
         // item needs no fallback write — its XAML default is already "MCP Server: Off".
         if (!AppRuntimeMode.IsTestHost)
             StartMcpServer();
+    }
+
+    /// <summary>
+    /// Routes the file handed over on the command line — a double-clicked file association, or
+    /// "PerformanceStudio.exe path" from a shell. Split from the constructor so the routing can
+    /// be tested with an argv of the test's choosing.
+    ///
+    /// <para>Routed by extension, not straight to LoadPlanFile: every other way a path reaches
+    /// this window (the pipe from a second instance, drag-and-drop, session restore) already
+    /// goes through <see cref="OpenFileByExtension"/>, and RestoreOpenPlans' own doc comment
+    /// describes exactly what skipping it does — "Sending a .sql file to LoadPlanFile would
+    /// greet the user with 'the XML is not valid' where their query used to be." That greeting
+    /// is precisely what "PerformanceStudio.exe query.sql" produced. Cold start was the one
+    /// path left hard-wired to the plan loader.</para>
+    /// </summary>
+    internal void OpenFromStartupArgs(string[] args)
+    {
+        if (args.Length > 1 && File.Exists(args[1]))
+        {
+            OpenFileByExtension(args[1]);
+        }
+        else
+        {
+            // Restore plans that were open in the previous session
+            RestoreOpenPlans();
+        }
     }
 
     private void StartPipeServer()
@@ -296,6 +313,15 @@ public partial class MainWindow : Window
     /// <see cref="OnClosing"/> does not ask the whole window again.
     /// </summary>
     private bool _closeConfirmed;
+
+    /* _closeConfirmed only latches AFTER the walk answers yes, so it does nothing about a
+       second close request arriving WHILE the walk is still asking — a double-clicked X, or
+       another Close() between two of the walk's dialogs (each prompt is modal, but the window
+       is briefly its own again between them, and for the whole of a Save As picker). Each
+       such request used to start a second concurrent walk: duplicate prompts about the same
+       tabs, and a Cancel to one walk that the other never heard about. Same reentrancy class,
+       and same one-latch answer, as the About window's update link (#485 review). */
+    private bool _closeWalkInProgress;
 
     private const string CloseGlyph = "\u2715";   // ✕
     private const string ModifiedGlyph = "\u25CF"; // ●
@@ -549,8 +575,20 @@ public partial class MainWindow : Window
     {
         if (!_closeConfirmed && CloseNeedsConfirmation())
         {
+            /* The cancel is unconditional — a close arriving mid-walk must not fall through
+               to base and succeed while the walk is still asking — but only the FIRST one may
+               start a walk. The latch check lives inside this branch on purpose: the walk's
+               own Close() at the end re-enters here with _closeWalkInProgress still true, and
+               it has to sail through on _closeConfirmed above, not be swallowed as a
+               duplicate. */
             e.Cancel = true;
-            _ = ConfirmWindowCloseAsync();
+
+            if (!_closeWalkInProgress)
+            {
+                _closeWalkInProgress = true;
+                _ = ConfirmWindowCloseAsync();
+            }
+
             return;
         }
 
@@ -559,11 +597,20 @@ public partial class MainWindow : Window
 
     private async Task ConfirmWindowCloseAsync()
     {
-        if (!await ConfirmAllUnsavedWorkAsync())
-            return; // one Cancel cancels the shutdown
+        try
+        {
+            if (!await ConfirmAllUnsavedWorkAsync())
+                return; // one Cancel cancels the shutdown
 
-        _closeConfirmed = true;
-        Close();
+            _closeConfirmed = true;
+            Close();
+        }
+        finally
+        {
+            /* Cleared however the walk ends — confirmed, cancelled, or a prompt that threw —
+               so a cancelled shutdown leaves the X able to start a fresh walk. */
+            _closeWalkInProgress = false;
+        }
     }
 
     /// <summary>

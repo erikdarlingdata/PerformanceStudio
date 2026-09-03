@@ -47,6 +47,14 @@ public static class ParameterSubstitution
         if (values.Count == 0)
             return new ParameterSubstitutionResult(statementText, 0);
 
+        /* One fact about the whole statement, settled up front: inside an EXEC statement, every
+           token sitting to the left of an "=" is an assignment target — the return-status variable
+           or a named argument's name — because EXEC grammar has no other use for "=" at all. A
+           per-token back-scan cannot see this for the FIRST named argument (what precedes it is
+           the procedure name, not a keyword), which is how "EXEC dbo.p @debug = @debug" got its
+           left-hand side substituted into "EXEC dbo.p 1 = @debug". */
+        var assignsThroughEquals = StatementLeadsWithExec(statementText);
+
         var sb = new StringBuilder(statementText.Length);
         var substitutions = 0;
         var i = 0;
@@ -94,7 +102,7 @@ public static class ParameterSubstitution
 
                 var token = statementText[i..end];
                 if (values.TryGetValue(token, out var value)
-                    && !IsAssignmentTarget(statementText, i, end))
+                    && !IsAssignmentTarget(statementText, i, end, assignsThroughEquals))
                 {
                     sb.Append(value);
                     substitutions++;
@@ -128,23 +136,41 @@ public static class ParameterSubstitution
     /// mattered less while substitution was something you asked for on the clipboard; #482 makes it
     /// what the advice, the exports and the MCP tools show by default.</para>
     ///
-    /// <para>The three lead-ins below are the ones T-SQL assigns through — <c>SELECT @a = …</c>,
-    /// <c>SET @a = …</c>, and the second and later items of either list. A parameter on the right of
-    /// an <c>=</c> is a read and is left to be substituted, and so is one followed by <c>&gt;=</c>,
+    /// <para>The lead-ins recognised: <c>SELECT @a = …</c> and <c>SET @a = …</c>, with one balanced
+    /// parenthesized group tolerated between the keyword and the target so <c>SELECT TOP (1) @a =
+    /// …</c> is the assignment it is; the second and later items of either list, via the comma; any
+    /// token in front of an <c>=</c> when the statement is an EXEC
+    /// (<paramref name="assignsThroughEquals"/> — see <see cref="StatementLeadsWithExec"/>); and
+    /// <c>FETCH … INTO @a, @b</c>, which assigns with no <c>=</c> anywhere. A parameter on the right
+    /// of an <c>=</c> is a read and is left to be substituted, and so is one followed by <c>&gt;=</c>,
     /// <c>&lt;=</c>, <c>&lt;&gt;</c> or <c>!=</c>, since the scan forward from the token meets that
     /// operator's first character rather than the <c>=</c>.</para>
     /// </summary>
-    private static bool IsAssignmentTarget(string text, int start, int end)
+    private static bool IsAssignmentTarget(string text, int start, int end, bool assignsThroughEquals)
     {
         var forward = end;
         while (forward < text.Length && char.IsWhiteSpace(text[forward]))
             forward++;
 
-        if (forward >= text.Length || text[forward] != '=')
-            return false;
+        var followedByLoneEquals =
+            forward < text.Length
+            && text[forward] == '='
+            && !(forward + 1 < text.Length && text[forward + 1] == '=');
 
-        if (forward + 1 < text.Length && text[forward + 1] == '=')
-            return false;
+        /* FETCH ... INTO @a, @b assigns without any "=": what follows the token is a comma or the
+           end of the statement, so the forward scan has nothing to find and the question is
+           answered entirely by what leads the list. Checked only on the no-equals path — "INTO
+           @a =" is not a shape T-SQL has — which keeps every "=" case on the scans below. */
+        if (!followedByLoneEquals)
+            return IsFetchIntoTarget(text, start);
+
+        /* EXEC @rc = dbo.proc, and the FIRST named argument of EXEC dbo.p @debug = @debug. The
+           back-scan below cannot see either (what precedes them is a procedure name, not SELECT
+           or SET), but EXEC grammar has no reads-then-"=" shape at all, so inside one the "="
+           alone settles it. Later named arguments were already caught by the comma rule; this
+           makes the first one match its siblings. */
+        if (assignsThroughEquals)
+            return true;
 
         var back = start - 1;
         while (back >= 0 && char.IsWhiteSpace(text[back]))
@@ -157,13 +183,201 @@ public static class ParameterSubstitution
         if (text[back] == ',')
             return true;
 
+        /* SELECT TOP (1) @a = col: the token before the target is TOP's balanced group, which the
+           old scan met as ")" and gave up on — it extracted an empty word and substituted @a into
+           "NULL = col". Skip exactly ONE balanced group backwards and judge what precedes it;
+           nothing but TOP puts a group in an assignment lead-in, so anything else still answers
+           no. TOP (@n) rides along for free — the group's content is opaque to this walk, and @n
+           itself is a read whose own forward scan meets ")" rather than "=". */
+        if (text[back] == ')')
+        {
+            var depth = 0;
+            while (back >= 0)
+            {
+                if (text[back] == ')')
+                {
+                    depth++;
+                }
+                else if (text[back] == '(' && --depth == 0)
+                {
+                    back--;
+                    break;
+                }
+
+                back--;
+            }
+
+            /* Unbalanced means truncated statement text. With no way to tell what leads in, stay
+               on the substitute side, which is where the empty-word scan always landed. */
+            if (depth != 0)
+                return false;
+
+            while (back >= 0 && char.IsWhiteSpace(text[back]))
+                back--;
+        }
+
+        var word = ReadWordEndingAt(text, ref back);
+
+        /* TOP sits between SELECT and its group, so the decider is the word before it. */
+        if (word.Equals("TOP", StringComparison.OrdinalIgnoreCase))
+        {
+            while (back >= 0 && char.IsWhiteSpace(text[back]))
+                back--;
+            word = ReadWordEndingAt(text, ref back);
+        }
+
+        return word.Equals("SELECT", StringComparison.OrdinalIgnoreCase)
+            || word.Equals("SET", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// True when the token at <paramref name="start"/> sits in an INTO list — <c>FETCH … INTO @a,
+    /// @b</c> — which assigns into its variables with no <c>=</c> in sight.
+    ///
+    /// <para>The walk hops backwards over "<c>, @name</c>" pairs so every member of the list is
+    /// protected, not just the first. The hop insists each prior list item is itself an @token,
+    /// which is how the commas of an IN list, a VALUES row, or a positional EXEC argument list —
+    /// all places a parameter is read — fall out: at the first non-variable item, or at the "("
+    /// that opens them. <c>INSERT INTO @tv</c> lands here too, and "assignment target" is the
+    /// right answer there as well — a table variable's NAME is never a value to write over.</para>
+    /// </summary>
+    private static bool IsFetchIntoTarget(string text, int start)
+    {
+        var back = start - 1;
+
+        while (true)
+        {
+            while (back >= 0 && char.IsWhiteSpace(text[back]))
+                back--;
+
+            if (back < 0)
+                return false;
+
+            if (text[back] == ',')
+            {
+                back--;
+                while (back >= 0 && char.IsWhiteSpace(text[back]))
+                    back--;
+
+                var previousItem = ReadWordEndingAt(text, ref back);
+                if (previousItem.Length == 0 || previousItem[0] != '@')
+                    return false;
+
+                continue;
+            }
+
+            return ReadWordEndingAt(text, ref back)
+                .Equals("INTO", StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    /// <summary>
+    /// Whether the statement's leading keyword chain reaches EXEC or EXECUTE, in which case an
+    /// <c>=</c> can only ever mean assignment — the return-status variable or a named argument.
+    ///
+    /// <para>Why that holds statement-wide rather than per argument: T-SQL restricts an EXEC
+    /// argument's VALUE to a literal, a variable, NULL, or DEFAULT. An expression — a CASE, a
+    /// subquery, arithmetic — is a compile error there (<c>Incorrect syntax</c>), so no legal
+    /// compiled statement can put a read like <c>CASE WHEN @x = 1 …</c> to the right of a named
+    /// argument. The only <c>@name =</c> pairs that can exist in the region this flag governs are
+    /// assignments. A hand-crafted plan file can of course contain anything, but its author already
+    /// controls the whole statement text, so precision against it protects nothing.</para>
+    ///
+    /// <para>The chain is EXEC itself, or the INSERT … EXEC prelude: INSERT, an optional INTO, the
+    /// target's possibly bracketed and dotted name, an optional parenthesized column list. The walk
+    /// is forward from the start and gives up at the first character that cannot belong to such a
+    /// prelude — an operator, a quote, a semicolon — so a SELECT or UPDATE never gets anywhere near
+    /// a false positive: it hits its own <c>=</c> or <c>*</c> within a few tokens. Bracketed name
+    /// parts are skipped opaquely so a procedure named [exec] cannot read as the keyword, and
+    /// EXEC('…') is no counterexample — the string stays opaque to Apply's main loop, so nothing
+    /// inside it is substituted regardless of what this answers. Leading comments are not chased;
+    /// a statement that opens with one keeps the old per-token behavior.</para>
+    /// </summary>
+    private static bool StatementLeadsWithExec(string text)
+    {
+        var i = 0;
+
+        /* A handful of tokens is all the INSERT ... EXEC prelude can hold. The bound is a fuse
+           against pathological text, not part of the grammar. */
+        for (var tokens = 0; tokens < 8; tokens++)
+        {
+            while (i < text.Length && char.IsWhiteSpace(text[i]))
+                i++;
+
+            if (i >= text.Length)
+                return false;
+
+            var c = text[i];
+
+            // The INSERT target's column list, skipped as one balanced unit.
+            if (c == '(')
+            {
+                var depth = 0;
+                while (i < text.Length)
+                {
+                    if (text[i] == '(')
+                    {
+                        depth++;
+                    }
+                    else if (text[i] == ')' && --depth == 0)
+                    {
+                        i++;
+                        break;
+                    }
+
+                    i++;
+                }
+
+                if (depth != 0)
+                    return false;
+
+                continue;
+            }
+
+            // A delimited name part, skipped opaquely; dots just join parts.
+            if (c == '[' || c == '"')
+            {
+                var close = text.IndexOf(c == '[' ? ']' : '"', i + 1);
+                if (close < 0)
+                    return false;
+
+                i = close + 1;
+                continue;
+            }
+
+            if (c == '.')
+            {
+                i++;
+                continue;
+            }
+
+            if (!IsIdentifierPart(c))
+                return false;
+
+            var wordStart = i;
+            while (i < text.Length && IsIdentifierPart(text[i]))
+                i++;
+
+            var word = text[wordStart..i];
+            if (word.Equals("EXEC", StringComparison.OrdinalIgnoreCase)
+                || word.Equals("EXECUTE", StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// The identifier run ending at <paramref name="back"/>, or the empty string when the character
+    /// there is not part of one. Leaves <paramref name="back"/> on the character before the run.
+    /// </summary>
+    private static string ReadWordEndingAt(string text, ref int back)
+    {
         var wordEnd = back + 1;
         while (back >= 0 && IsIdentifierPart(text[back]))
             back--;
 
-        var word = text[(back + 1)..wordEnd];
-        return word.Equals("SELECT", StringComparison.OrdinalIgnoreCase)
-            || word.Equals("SET", StringComparison.OrdinalIgnoreCase);
+        return text[(back + 1)..wordEnd];
     }
 
     /// <summary>

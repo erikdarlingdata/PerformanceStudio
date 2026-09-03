@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -180,7 +181,12 @@ public partial class MainWindow : Window
                lands in the catch below with the session still dirty. The rename gives the file
                the temp's attributes and inherited ACLs rather than preserving the original's —
                the trade every editor that saves this way makes. */
-            AtomicFile.WriteAllText(path, session.QueryEditor.Text);
+            /* In the encoding the file was opened with, when it declared one: a .sql from SSMS
+               is UTF-16 with a BOM, and writing it back as the default UTF-8 was a silent
+               transcode of the user's only copy — reading honored the BOM, saving discarded
+               it. A scratch session (and a BOM-less file) has null here and keeps the default
+               UTF-8-without-BOM this always wrote. */
+            AtomicFile.WriteAllText(path, session.QueryEditor.Text, session.SourceFileEncoding);
             session.SourceFilePath = path;
             // Only a write that actually happened settles the dirty state; the catch below
             // deliberately leaves the session modified so the work is still guarded.
@@ -278,6 +284,8 @@ public partial class MainWindow : Window
             var session = new QuerySessionControl(_credentialService, _connectionStore);
             session.QueryEditor.Text = text;
             session.SourceFilePath = filePath;
+            // What the file declared is what a save must write back — see SourceFileEncoding.
+            session.SourceFileEncoding = DetectBomEncoding(filePath);
             // What was just loaded is what is on disk — the baseline every later edit is measured against.
             session.MarkClean();
 
@@ -290,6 +298,38 @@ public partial class MainWindow : Window
         {
             ShowFileError("Error Opening File", $"Failed to open: {Path.GetFileName(filePath)}", ex.Message);
         }
+    }
+
+    /// <summary>
+    /// The encoding a file's byte order mark declares, or null when it has none.
+    ///
+    /// <para>Deliberately a sniff of the mark rather than StreamReader.CurrentEncoding after a
+    /// read: CurrentEncoding only moves off its default for UTF-16/32 marks, so it cannot tell
+    /// a UTF-8-with-BOM file from a plain one — and the default instance it reports EMITS a
+    /// mark on write, so handing it to the save would stamp BOMs onto files that never had
+    /// one, a silent change in the opposite direction from the one being fixed. The mark is
+    /// the fact being preserved, so the mark is what gets read.</para>
+    /// </summary>
+    private static Encoding? DetectBomEncoding(string filePath)
+    {
+        Span<byte> mark = stackalloc byte[4];
+        int read;
+        using (var stream = File.OpenRead(filePath))
+            read = stream.Read(mark);
+
+        // UTF-32 LE opens with UTF-16 LE's mark plus two zero bytes, so it is checked first.
+        if (read >= 4 && mark[0] == 0xFF && mark[1] == 0xFE && mark[2] == 0x00 && mark[3] == 0x00)
+            return new UTF32Encoding(bigEndian: false, byteOrderMark: true);
+        if (read >= 4 && mark[0] == 0x00 && mark[1] == 0x00 && mark[2] == 0xFE && mark[3] == 0xFF)
+            return new UTF32Encoding(bigEndian: true, byteOrderMark: true);
+        if (read >= 3 && mark[0] == 0xEF && mark[1] == 0xBB && mark[2] == 0xBF)
+            return new UTF8Encoding(encoderShouldEmitUTF8Identifier: true);
+        if (read >= 2 && mark[0] == 0xFF && mark[1] == 0xFE)
+            return Encoding.Unicode;
+        if (read >= 2 && mark[0] == 0xFE && mark[1] == 0xFF)
+            return Encoding.BigEndianUnicode;
+
+        return null;
     }
 
     /// <summary>

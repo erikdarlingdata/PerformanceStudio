@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.Threading;
 using PlanViewer.App;
 using PlanViewer.App.Controls;
 using PlanViewer.Core.Models;
@@ -202,6 +203,78 @@ public class ComparePlansAvailabilityTests
                 "the session existed before the second plan did, and must still notice it"));
         });
     }
+
+    /// <summary>
+    /// A session that leaves for its own window leaves the window-wide count behind: detached,
+    /// it can only ever compare its own plans, and the sub-tab watcher that keeps the button
+    /// honest fires on sub-tab changes — of which a detach makes none. The button used to keep
+    /// its pre-detach answer until the next plan landed, offering a comparison whose second
+    /// plan was in a window it could no longer reach.
+    /// </summary>
+    [Fact]
+    public void DetachingASessionRecomputesCompareFromItsOwnPlans()
+    {
+        HeadlessUi.Run(() =>
+        {
+            var window = new MainWindow();
+
+            window.LoadPlanFile(PlanPath("row_goal_plan.sqlplan"));
+            var session = NewSession(window);
+            RunQuery(session, "key_lookup_plan.sqlplan", "Plan 1");
+
+            Assert.True(CompareButton(session).IsEnabled,
+                "docked, the window's plan and the session's own make a pair");
+
+            var tab = window.FindControl<TabControl>("MainTabControl")!.Items
+                .OfType<TabItem>().First(t => t.Content == session);
+            var detached = window.DetachTabToWindow(tab)!;
+
+            Assert.False(CompareButton(session).IsEnabled,
+                "detached, the session holds one plan and the window's other one is out of reach");
+
+            /* And coming back is noticed without any hand-written call: re-docking adds a tab,
+               which is exactly what the window's collection watcher listens for. */
+            RedockButton(detached).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Dispatcher.UIThread.RunJobs();
+
+            Assert.True(CompareButton(session).IsEnabled, "docked again, the pair is back");
+        });
+    }
+
+    /// <summary>
+    /// The other direction of the same recompute: a session that owns a pair keeps its button
+    /// through a detach, because the honest own-plans answer is still yes.
+    /// </summary>
+    [Fact]
+    public void ADetachedSessionWithTwoOwnPlansKeepsCompare()
+    {
+        HeadlessUi.Run(() =>
+        {
+            var window = new MainWindow();
+            var session = NewSession(window);
+            RunQuery(session, "row_goal_plan.sqlplan", "Plan 1");
+            RunQuery(session, "key_lookup_plan.sqlplan", "Plan 2");
+
+            var tab = window.FindControl<TabControl>("MainTabControl")!.Items
+                .OfType<TabItem>().First(t => t.Content == session);
+            var detached = window.DetachTabToWindow(tab)!;
+            try
+            {
+                Assert.True(CompareButton(session).IsEnabled,
+                    "both plans travelled with the session, so there is still a pair to offer");
+            }
+            finally
+            {
+                // Nothing dirty, so the close takes the silent first-pass path.
+                detached.Close();
+                Dispatcher.UIThread.RunJobs();
+            }
+        });
+    }
+
+    private static Button RedockButton(Window detached) =>
+        ((DockPanel)detached.Content!).Children.OfType<StackPanel>().Single()
+            .Children.OfType<Button>().Single();
 
     /// <summary>
     /// Runs a query in a session as far as a test without a SQL Server can.

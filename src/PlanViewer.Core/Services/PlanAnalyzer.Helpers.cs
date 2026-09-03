@@ -8,11 +8,20 @@ namespace PlanViewer.Core.Services;
 
 public static partial class PlanAnalyzer
 {
+    /* Both passes below match on WarningType alone, and a type name is not unique to us:
+       "Implicit Conversion" is rule 29's legacy-listed type AND what the parser stamps on the
+       engine's own PlanAffectingConvert element (Source = SqlServer). Matching by name only
+       therefore branded the ENGINE's record "[SQL Server] [legacy]" — a badge that exists to
+       flag our un-migrated rules on a warning that is not ours at all — and TryOverrideSeverity
+       routed a user's rule-number override onto engine warnings the rule never produced (the
+       Contains matching makes it worse: every engine Spill variant lands on rule 7, "Memory
+       Grant" on rule 9). Legacy status and rule severity are facts about OUR rules, so anything
+       the engine said is skipped by both. */
     private static void MarkLegacyWarnings(PlanStatement stmt)
     {
         foreach (var w in stmt.PlanWarnings)
         {
-            if (LegacyWarningTypes.Contains(w.WarningType))
+            if (w.Source != PlanWarningSource.SqlServer && LegacyWarningTypes.Contains(w.WarningType))
                 w.IsLegacy = true;
         }
         if (stmt.RootNode != null)
@@ -23,7 +32,7 @@ public static partial class PlanAnalyzer
     {
         foreach (var w in node.Warnings)
         {
-            if (LegacyWarningTypes.Contains(w.WarningType))
+            if (w.Source != PlanWarningSource.SqlServer && LegacyWarningTypes.Contains(w.WarningType))
                 w.IsLegacy = true;
         }
         foreach (var child in node.Children)
@@ -58,6 +67,11 @@ public static partial class PlanAnalyzer
 
     private static void TryOverrideSeverity(PlanWarning warning, AnalyzerConfig cfg)
     {
+        /* The engine's warnings carry no rule number because no rule of ours produced them; see
+           the comment on MarkLegacyWarnings for what the name-only matching did to them here. */
+        if (warning.Source == PlanWarningSource.SqlServer)
+            return;
+
         // Find the rule number for this warning type (partial match for flexibility)
         int? ruleNumber = null;
         foreach (var (rule, type) in RuleWarningTypes)

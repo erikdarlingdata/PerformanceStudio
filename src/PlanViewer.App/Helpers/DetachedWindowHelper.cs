@@ -87,6 +87,14 @@ internal static class DetachedWindowHelper
 		// Set once the guard has answered, so the re-issued close is not questioned again.
 		bool closeConfirmed = false;
 
+		/* Set while a guard is still ASKING, which closeConfirmed cannot cover — it only
+		   latches after a yes. The guard's prompt is modal to this window, but a Save As
+		   picked from that prompt is not, so a second X during the picker used to reach the
+		   guard again and stack a second prompt over the first. Same walk-in-progress latch
+		   MainWindow.OnClosing carries, for the same reentrancy (#485 review's update-link
+		   class). */
+		bool closeGuardPending = false;
+
 		redockBtn.Click += (_, _) =>
 		{
 			if (redocked) return;
@@ -104,16 +112,25 @@ internal static class DetachedWindowHelper
 		// latch that stops the second pass asking all over again.
 		async Task ReissueCloseIfConfirmed(Task<bool> pending)
 		{
-			if (!await pending)
-				return;
+			try
+			{
+				if (!await pending)
+					return;
 
-			closeConfirmed = true;
+				closeConfirmed = true;
 
-			// Posted rather than called: a guard that answers without ever actually waiting
-			// would otherwise land Close() in the middle of the Closing handler that called
-			// it. Safe to post because the guard returns null during app shutdown, so nothing
-			// is ever queued against a dispatcher that is going away.
-			Dispatcher.UIThread.Post(detachedWindow.Close);
+				// Posted rather than called: a guard that answers without ever actually waiting
+				// would otherwise land Close() in the middle of the Closing handler that called
+				// it. Safe to post because the guard returns null during app shutdown, so nothing
+				// is ever queued against a dispatcher that is going away.
+				Dispatcher.UIThread.Post(detachedWindow.Close);
+			}
+			finally
+			{
+				// Cleared on every ending — refused, confirmed, or thrown — so a kept-open
+				// window can be asked about again the next time someone tries to close it.
+				closeGuardPending = false;
+			}
 		}
 
 		detachedWindow.Closing += (_, e) =>
@@ -123,9 +140,18 @@ internal static class DetachedWindowHelper
 
 			if (!closeConfirmed && closeGuard != null)
 			{
+				if (closeGuardPending)
+				{
+					// A guard is already asking about this window; a second close request
+					// joins that question rather than raising its own copy of it.
+					e.Cancel = true;
+					return;
+				}
+
 				var pending = closeGuard(content, detachedWindow);
 				if (pending != null)
 				{
+					closeGuardPending = true;
 					e.Cancel = true;
 					_ = ReissueCloseIfConfirmed(pending);
 					return;
