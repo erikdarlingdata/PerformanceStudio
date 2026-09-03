@@ -105,6 +105,16 @@ app.UseCors();
 
 const int MaxTtlDays = 365;
 
+// Depth ceiling for parsing an uploaded share, mirroring PlanViewer.Core's
+// AnalysisJson.MaxDepth — that class is the source of truth for how deep a serialized
+// AnalysisResult can go (#431: an operator costs two JSON levels, so the JsonDocument
+// default of 64 rejects a plan ~30 operators deep as "Invalid JSON" after the client
+// happily serialized it at 1024). Mirrored rather than referenced because this project
+// deliberately takes no dependency on PlanViewer.Core, and a shared constant only helps
+// call sites that reference it; this one cannot. If AnalysisJson.MaxDepth ever changes,
+// change this with it — the client-side depth tests pin 1024, so start there.
+var shareDocumentOptions = new JsonDocumentOptions { MaxDepth = 1024 };
+
 // --- Endpoints ---
 
 app.MapGet("/health", () => Results.Content("OK", "text/plain"));
@@ -127,11 +137,13 @@ app.MapPost("/api/share", async (HttpContext ctx) =>
         return Results.BadRequest("Empty body");
     }
 
-    // Parse and extract ttl_days from the JSON
+    // Parse and extract ttl_days from the JSON. shareDocumentOptions, not defaults: this body
+    // wraps a full serialized analysis, and the default 64-level ceiling turned a deep plan's
+    // legitimate upload into a 400 before ttl_days was ever read.
     int ttlDays = 7;
     try
     {
-        using var doc = JsonDocument.Parse(body);
+        using var doc = JsonDocument.Parse(body, shareDocumentOptions);
         if (doc.RootElement.TryGetProperty("ttl_days", out var ttlProp) && ttlProp.TryGetInt32(out var t))
             ttlDays = Math.Clamp(t, 1, MaxTtlDays);
     }
