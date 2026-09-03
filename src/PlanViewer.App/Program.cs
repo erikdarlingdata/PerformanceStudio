@@ -61,11 +61,21 @@ class Program
 
         if (!newInstanceRequested)
         {
-            // The pre-#489 forwarding, kept first and unchanged: a with-file launch tries
-            // the pipe before anything else. Beyond being the common case, probing before
-            // the mutex is version-skew-proof — an already-running build that predates the
-            // mutex answers its pipe but holds no mutex, and a mutex-first flow would run a
-            // second full window beside it instead of handing the file over.
+            /* The pre-#489 forwarding, kept first and unchanged: a with-file launch tries
+               the pipe before anything else. Beyond being the common case, probing before
+               the mutex makes the WITH-FILE path version-skew-proof — an already-running
+               build that predates the mutex answers its pipe but holds no mutex, and a
+               mutex-first flow would run a second full window beside it instead of handing
+               the file over.
+
+               A BARE launch during that same skew is the one #489 case deliberately left
+               open: it cannot probe first, because an old receiver silently drops the
+               sentinel (File.Exists guard) while delivery still reports success — the
+               launch would exit having surfaced nothing, which is worse than a second
+               instance. So a bare launch beside a pre-mutex build claims the free mutex
+               and runs fully: the pre-#489 status quo, for one transient upgrade window
+               that ends when the old instance exits. Documented rather than solved; a
+               real fix needs an acknowledged (duplex) surfacing protocol. */
             if (effectiveArgs.Length > 0 && TrySendToRunningInstance(effectiveArgs[0], maxAttempts: 1))
                 return;
 

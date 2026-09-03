@@ -71,16 +71,33 @@ public class SingleInstanceTests
     /// <summary>
     /// The entire backward-compatibility story of the sentinel, pinned: a pre-#489
     /// receiver's only guard is <c>File.Exists(line)</c>, so the sentinel is safe to send
-    /// to an old running build exactly as long as it can never name an existing file. The
-    /// double-colons are illegal in Windows file names by design; if someone ever
-    /// "tidies" the token into something path-representable, this fails and points here.
+    /// to an old running build exactly as long as it can never name an existing file.
+    ///
+    /// <para>Pinned as a STRING property, not with File.Exists — the gate review caught
+    /// that a File.Exists assertion is vacuous on the ubuntu CI runner, where ':' is a
+    /// legal filename character and the check only proves no such file sits in the test
+    /// CWD. What actually guarantees old-Windows-receiver safety is the colon, which
+    /// Windows rejects in file names; asserting the characters directly means "tidying"
+    /// the token into a path-representable word fails this test on every platform. An old
+    /// LINUX receiver next to an adversarially created "::activate::" file remains the
+    /// accepted floor (new receivers classify the sentinel before File.Exists, so only
+    /// pre-#489 builds are exposed, and only until they restart).</para>
     /// </summary>
     [Fact]
-    public void TheSentinelCanNeverBeMistakenForAFileByAnOldReceiver()
+    public void TheSentinelCanNeverBeMistakenForAFileByAnOldWindowsReceiver()
     {
-        Assert.False(
-            File.Exists(SingleInstance.ActivateSentinel),
-            "an old receiver File.Exists-guards every pipe line, so the sentinel must never resolve to a real file");
+        Assert.Contains(':', SingleInstance.ActivateSentinel);
+        Assert.StartsWith("::", SingleInstance.ActivateSentinel, StringComparison.Ordinal);
+        Assert.EndsWith("::", SingleInstance.ActivateSentinel, StringComparison.Ordinal);
+
+        /* Belt and braces for the platform where the guarantee lives: on Windows the
+           token must actually be rejected by the file-name rules, not just assumed to be. */
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.Contains(
+                SingleInstance.ActivateSentinel,
+                c => Path.GetInvalidFileNameChars().Contains(c));
+        }
     }
 
     /* ---- StripNewInstanceFlag: argv scrubbing -------------------------------------- */
