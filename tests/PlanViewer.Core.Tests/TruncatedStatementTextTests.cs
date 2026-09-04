@@ -107,6 +107,27 @@ public class TruncatedStatementTextTests
         });
     }
 
+    /// <summary>
+    /// A plan captured around EXEC has one statement in its batch and several rows in the grid, since
+    /// the grid descends into the procedure body. Counting batch statements would call that
+    /// single-statement and hand the outer EXEC back for a truncated body statement — a confidently
+    /// wrong answer, which is worse than a short one. The count has to match what the grid lists.
+    /// </summary>
+    [Fact]
+    public void StoredProcedureBody_IsNotTreatedAsASingleStatementPlan()
+    {
+        HeadlessUi.Run(() =>
+        {
+            var viewer = LoadPlan("exec_stored_procedure_plan.sqlplan", Truncated, CapturedQuery);
+
+            // Pins that this fixture actually exercises the bug: counting batches calls it
+            // single-statement, so a test that passes here is passing for the right reason.
+            Assert.Equal(1, viewer.CurrentPlan!.Batches.Sum(b => b.Statements.Count));
+
+            Assert.NotEqual(CapturedQuery, OpenInEditorText(viewer));
+        });
+    }
+
     [Fact]
     public void UntruncatedPlan_IsUnaffectedByAnyOfThis()
     {

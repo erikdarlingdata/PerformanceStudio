@@ -189,7 +189,7 @@ public partial class PlanViewerControl : UserControl
     private void UpdateStatementMenuForSelection()
     {
         var substitutable = StatementsGrid.SelectedItem is StatementRow row
-            && ParameterSubstitution.Apply(PlanOrCapturedStatementText(row.Statement), row.Statement.Parameters)
+            && ParameterSubstitution.Apply(row.Statement.StatementText, row.Statement.Parameters)
                 .SubstitutionCount > 0;
 
         // Say so on the label rather than substituting silently: the text the plan records and the
@@ -219,7 +219,11 @@ public partial class PlanViewerControl : UserControl
     private async void CopyParameterizedStatementText_Click(object? sender, RoutedEventArgs e)
     {
         if (StatementsGrid.SelectedItem is not StatementRow row) return;
-        var text = PlanOrCapturedStatementText(row.Statement);
+        /* Deliberately the plan's copy, truncated or not: this entry exists to hand over the
+           placeholder form, and the captured text is the query as written, with literals where the
+           plan has parameters. Substituting it here would silently collapse the very distinction the
+           entry was added for (#467). Rule 39 reports the truncation instead. */
+        var text = row.Statement.StatementText;
         if (string.IsNullOrEmpty(text)) return;
 
         await ClipboardHelper.TrySetTextAsync(this, text);
@@ -262,9 +266,17 @@ public partial class PlanViewerControl : UserControl
             ? _queryText!
             : statement.StatementText;
 
-    /// <summary>True when the loaded plan holds exactly one statement across all of its batches.</summary>
-    private bool IsSingleStatementPlan =>
-        _currentPlan != null && _currentPlan.Batches.Sum(b => b.Statements.Count) == 1;
+    /// <summary>
+    /// True when the plan holds exactly one statement — counted the way the grid counts, over
+    /// <see cref="_allStatements"/>.
+    ///
+    /// <para>Not <c>Batches</c>: that stops at the outer batch and does not descend into stored
+    /// procedure and UDF bodies, which the grid does list. A plan captured around
+    /// <c>EXEC dbo.SomeProc</c> has one batch statement and several rows, so counting batches would
+    /// call it single-statement and hand the outer EXEC back for a truncated body statement — the
+    /// confidently wrong answer this guard exists to prevent.</para>
+    /// </summary>
+    private bool IsSingleStatementPlan => _allStatements?.Count == 1;
 
     private static void CollectNodeWarnings(PlanNode node, List<PlanWarning> warnings)
     {
