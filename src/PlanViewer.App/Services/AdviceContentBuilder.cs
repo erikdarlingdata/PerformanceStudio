@@ -174,7 +174,7 @@ internal static partial class AdviceContentBuilder
             // Statement text (SQL) — highlight keywords
             if (isStatementText)
             {
-                body.AddLine(0, BuildSqlHighlightedLine(line));
+                body.AddLine(BuildSqlHighlightedLine(line));
                 continue;
             }
 

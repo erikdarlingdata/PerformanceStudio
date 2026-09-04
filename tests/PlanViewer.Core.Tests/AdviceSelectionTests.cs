@@ -90,6 +90,25 @@ public class AdviceSelectionTests
         });
     }
 
+    /// <summary>
+    /// A helper that builds a line expresses its indent as a Margin, and a Margin is precisely what
+    /// is lost when the runs move into a shared block. The first cut of this dropped the SQL indent
+    /// that way, so the indent is pinned here rather than trusted.
+    /// </summary>
+    [Fact]
+    public void StatementSqlKeepsItsIndentAfterMerging()
+    {
+        HeadlessUi.Run(() =>
+        {
+            var body = BodyBlocks("=== Statement 1 ===\nSELECT p.Id\nFROM dbo.Posts AS p\n").Single();
+
+            body.SelectAll();
+
+            // 8px of Margin becomes a leading space at the pane's monospace body size.
+            Assert.StartsWith(" SELECT", body.SelectedText);
+        });
+    }
+
     [Fact]
     public void TheSectionHeaderIsStillItsOwnBlock()
     {

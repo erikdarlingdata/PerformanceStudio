@@ -53,11 +53,17 @@ internal static partial class AdviceContentBuilder
             AddLine(indentPixels, new Run(text) { Foreground = foreground });
 
         /// <summary>
-        /// Folds in the runs a helper already built for a single line — SQL keyword highlighting, the
-        /// SNIFFING marker — instead of letting that line stand alone as its own block.
+        /// Folds in the runs a helper already built for a single line — SQL keyword highlighting —
+        /// instead of letting that line stand alone as its own block.
+        ///
+        /// <para>The indent comes from the block the helper built, not from the caller. The helper
+        /// expressed it as a Margin, and a Margin is exactly what is lost when its runs move into a
+        /// shared block; making the caller restate the number is how the SQL indent got dropped on
+        /// the first cut of this.</para>
         /// </summary>
-        public void AddLine(double indentPixels, SelectableTextBlock built)
+        public void AddLine(SelectableTextBlock built)
         {
+            var indentPixels = built.Margin.Left;
             if (built.Inlines is { Count: > 0 })
             {
                 // Moved rather than shared: an Inline belongs to one block at a time.
