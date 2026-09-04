@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using Avalonia;
@@ -189,7 +189,7 @@ public partial class PlanViewerControl : UserControl
     private void UpdateStatementMenuForSelection()
     {
         var substitutable = StatementsGrid.SelectedItem is StatementRow row
-            && ParameterSubstitution.Apply(row.Statement.StatementText, row.Statement.Parameters)
+            && ParameterSubstitution.Apply(PlanOrCapturedStatementText(row.Statement), row.Statement.Parameters)
                 .SubstitutionCount > 0;
 
         // Say so on the label rather than substituting silently: the text the plan records and the
@@ -219,7 +219,7 @@ public partial class PlanViewerControl : UserControl
     private async void CopyParameterizedStatementText_Click(object? sender, RoutedEventArgs e)
     {
         if (StatementsGrid.SelectedItem is not StatementRow row) return;
-        var text = row.Statement.StatementText;
+        var text = PlanOrCapturedStatementText(row.Statement);
         if (string.IsNullOrEmpty(text)) return;
 
         await ClipboardHelper.TrySetTextAsync(this, text);
@@ -237,13 +237,34 @@ public partial class PlanViewerControl : UserControl
     /// <summary>
     /// The statement text with the plan's parameter values put back, or the text as-is when the plan
     /// carries no values to put back.
-    ///
-    /// <para>The plan is the only source used. The query editor's buffer holds the original text in
-    /// exactly one case — the user just executed it from that tab — and is wrong for a plan opened
-    /// from a file, from Query Store, or from another session.</para>
     /// </summary>
-    private static string RunnableStatementText(PlanStatement statement) =>
-        ParameterSubstitution.Apply(statement.StatementText, statement.Parameters).Text;
+    private string RunnableStatementText(PlanStatement statement) =>
+        ParameterSubstitution.Apply(PlanOrCapturedStatementText(statement), statement.Parameters).Text;
+
+    /// <summary>
+    /// The text to hand the user for a statement: the plan's copy normally, the text this plan was
+    /// captured from when the plan's copy has been truncated (#502).
+    ///
+    /// <para>This used to read the plan and nothing else, on the reasoning that the query editor's
+    /// buffer is only right when the user just executed from that tab. That reasoning still holds
+    /// for the buffer — but this is not the buffer. It is the text handed to <c>LoadPlan</c> at the
+    /// moment the plan was captured, which is null for a plan opened from a file and is the stored
+    /// query for one opened from Query Store. When it is there, it is the same query the plan
+    /// describes, minus SQL Server's 4,000-character cap.</para>
+    ///
+    /// <para>Single-statement plans only. The captured text is the whole batch, and showplan records
+    /// no statement offsets, so for a multi-statement batch there is no way to tell which slice of it
+    /// belongs to the row the user picked — and handing back a confidently wrong statement is worse
+    /// than handing back a short one. Rule 39 says so on the plan either way.</para>
+    /// </summary>
+    private string PlanOrCapturedStatementText(PlanStatement statement) =>
+        statement.IsTextTruncated && !string.IsNullOrEmpty(_queryText) && IsSingleStatementPlan
+            ? _queryText!
+            : statement.StatementText;
+
+    /// <summary>True when the loaded plan holds exactly one statement across all of its batches.</summary>
+    private bool IsSingleStatementPlan =>
+        _currentPlan != null && _currentPlan.Batches.Sum(b => b.Statements.Count) == 1;
 
     private static void CollectNodeWarnings(PlanNode node, List<PlanWarning> warnings)
     {
