@@ -1,4 +1,5 @@
-using Avalonia.Controls;
+﻿using Avalonia.Controls;
+using Avalonia.Controls.Documents;
 using PlanViewer.App.Services;
 
 namespace PlanViewer.Core.Tests;
@@ -120,6 +121,40 @@ public class AdviceSelectionTests
             // inside the body could carry but which would let a drag start mid-title.
             Assert.Equal(2, panel.Children.OfType<SelectableTextBlock>().Count());
             Assert.Equal("Server Context", FirstBlock(panel).Text);
+        });
+    }
+
+    /// <summary>
+    /// Merging lines put LineBreaks between them, and a LineBreak occupies a position in the
+    /// laid-out text while exposing no Text of its own. The Node-link hit test walked Runs only, so
+    /// every offset past the first line slid backwards and a "Node N" on a later line resolved to
+    /// the wrong run. Checks the arithmetic directly rather than through a laid-out click, which
+    /// would be testing the font.
+    /// </summary>
+    [Fact]
+    public void NodeLinkHitTestingSurvivesTheLineBreaksBetweenMergedLines()
+    {
+        HeadlessUi.Run(() =>
+        {
+            var link = new Run("Node 42")
+            {
+                TextDecorations = Avalonia.Media.TextDecorations.Underline
+            };
+            var block = new SelectableTextBlock();
+            block.Inlines!.Add(new Run("first line, Node 1"));
+            block.Inlines.Add(new LineBreak());
+            block.Inlines.Add(new Run("second line, "));
+            block.Inlines.Add(link);
+
+            // The index the layout would report for the link's own text.
+            var index = block.Inlines.Text!.IndexOf("Node 42", System.StringComparison.Ordinal);
+            Assert.True(index > 0, "fixture should place the link after the break");
+
+            Assert.Same(link, AdviceContentBuilder.RunAtCharIndex(block, index));
+            Assert.Same(link, AdviceContentBuilder.RunAtCharIndex(block, index + 3));
+
+            // And the run before the break still resolves to itself.
+            Assert.Equal("first line, Node 1", AdviceContentBuilder.RunAtCharIndex(block, 0)!.Text);
         });
     }
 

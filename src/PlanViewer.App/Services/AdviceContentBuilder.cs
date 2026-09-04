@@ -214,13 +214,6 @@ internal static partial class AdviceContentBuilder
             // SNIFFING marker
             if (line.Contains("[SNIFFING]"))
             {
-                var tb = new SelectableTextBlock
-                {
-                    FontFamily = MonoFont,
-                    FontSize = 12,
-                    TextWrapping = TextWrapping.Wrap,
-                    Margin = new Avalonia.Thickness(12, 1, 0, 1)
-                };
                 var sniffIdx = line.IndexOf("[SNIFFING]");
                 body.AddLine(
                     12,

@@ -196,39 +196,25 @@ internal static partial class AdviceContentBuilder
             var hit = stb.TextLayout.HitTestPoint(point);
             if (!hit.IsInside) return;
 
-            var charIndex = hit.TextPosition;
+            var run = RunAtCharIndex(stb, hit.TextPosition);
+            if (run?.Text == null
+                || run.TextDecorations != Avalonia.Media.TextDecorations.Underline
+                || run.Foreground != LinkBrush)
+                return;
 
-            // Walk through inlines to find which Run the charIndex falls in
-            int runStart = 0;
-            foreach (var inline in stb.Inlines!)
-            {
-                if (inline is Run run && run.Text != null)
-                {
-                    var runEnd = runStart + run.Text.Length;
-                    if (charIndex >= runStart && charIndex < runEnd)
-                    {
-                        if (run.TextDecorations == Avalonia.Media.TextDecorations.Underline
-                            && run.Foreground == LinkBrush)
-                        {
-                            var m = NodeRefRegex.Match(run.Text);
-                            if (m.Success && int.TryParse(m.Groups[1].Value, out var nodeId))
-                            {
-                                e.Handled = true;
+            var m = NodeRefRegex.Match(run.Text);
+            if (!m.Success || !int.TryParse(m.Groups[1].Value, out var nodeId))
+                return;
 
-                                // Clear any text selection and release pointer capture
-                                // to prevent SelectableTextBlock from starting a selection drag
-                                stb.SelectionStart = 0;
-                                stb.SelectionEnd = 0;
-                                e.Pointer.Capture(null);
+            e.Handled = true;
 
-                                onNodeClick(nodeId);
-                            }
-                        }
-                        return;
-                    }
-                    runStart = runEnd;
-                }
-            }
+            // Clear any text selection and release pointer capture
+            // to prevent SelectableTextBlock from starting a selection drag
+            stb.SelectionStart = 0;
+            stb.SelectionEnd = 0;
+            e.Pointer.Capture(null);
+
+            onNodeClick(nodeId);
         }, Avalonia.Interactivity.RoutingStrategies.Tunnel);
 
         // Change cursor on hover over link runs
@@ -242,25 +228,68 @@ internal static partial class AdviceContentBuilder
                 return;
             }
 
-            var charIndex = hit.TextPosition;
-            int runStart = 0;
-            foreach (var inline in stb.Inlines!)
-            {
-                if (inline is Run run && run.Text != null)
-                {
-                    var runEnd = runStart + run.Text.Length;
-                    if (charIndex >= runStart && charIndex < runEnd)
-                    {
-                        stb.Cursor = run.TextDecorations == Avalonia.Media.TextDecorations.Underline
-                            && run.Foreground == LinkBrush
-                            ? HandCursor
-                            : Avalonia.Input.Cursor.Default;
-                        return;
-                    }
-                    runStart = runEnd;
-                }
-            }
-            stb.Cursor = Avalonia.Input.Cursor.Default;
+            var run = RunAtCharIndex(stb, hit.TextPosition);
+            stb.Cursor = run != null
+                && run.TextDecorations == Avalonia.Media.TextDecorations.Underline
+                && run.Foreground == LinkBrush
+                ? HandCursor
+                : Avalonia.Input.Cursor.Default;
         };
+    }
+
+    /// <summary>
+    /// The <see cref="Run"/> covering <paramref name="charIndex"/> in the block's laid-out text, or
+    /// null when the index falls outside every Run.
+    ///
+    /// <para>Walking Runs alone was correct while every block held one line. #503 merges a section's
+    /// lines into a single block separated by LineBreaks, and a LineBreak takes up a position in the
+    /// laid-out text while exposing no Text of its own — so skipping it slides every later Run's
+    /// offset backwards, and a click on a "Node N" past the first line resolves to the wrong run or
+    /// to none.</para>
+    ///
+    /// <para>How much a non-Run inline contributes is derived from the collection's own text rather
+    /// than hardcoded, so this cannot drift if the framework changes what it writes for one.</para>
+    ///
+    /// <para>Internal so a test can check the offset math directly: driving it through a real click
+    /// would mean placing a pointer at a laid-out coordinate, which tests the font more than the
+    /// arithmetic that was wrong.</para>
+    /// </summary>
+    internal static Run? RunAtCharIndex(SelectableTextBlock stb, int charIndex)
+    {
+        var inlines = stb.Inlines;
+        if (inlines == null)
+            return null;
+
+        var runChars = 0;
+        var nonRuns = 0;
+        foreach (var inline in inlines)
+        {
+            if (inline is Run r)
+                runChars += r.Text?.Length ?? 0;
+            else
+                nonRuns++;
+        }
+
+        var perNonRun = nonRuns > 0
+            ? Math.Max(0, (inlines.Text?.Length ?? runChars) - runChars) / nonRuns
+            : 0;
+
+        var start = 0;
+        foreach (var inline in inlines)
+        {
+            if (inline is Run run && run.Text != null)
+            {
+                var end = start + run.Text.Length;
+                if (charIndex >= start && charIndex < end)
+                    return run;
+                start = end;
+            }
+            else
+            {
+                start += perNonRun;
+            }
+        }
+
+        return null;
     }
 }
