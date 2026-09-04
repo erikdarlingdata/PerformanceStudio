@@ -87,6 +87,8 @@ internal static partial class AdviceContentBuilder
     {
         var panel = new StackPanel { Margin = new Avalonia.Thickness(4, 0) };
         var lines = content.Split('\n');
+        // #503: consecutive body lines go into one selectable block instead of one per line.
+        var body = new BodyTextAccumulator();
         var inCodeBlock = false;
         var codeBlockIndent = 0;
         var isStatementText = false;
@@ -107,11 +109,17 @@ internal static partial class AdviceContentBuilder
                 {
                     var card = CreateTriageSummaryCard(analysis.Statements[statementIndex]);
                     if (card != null)
+                    {
+                        body.Flush(panel);
                         panel.Children.Add(card);
+                    }
                     needsTriageCard = false;
                 }
 
-                panel.Children.Add(new Border { Height = 8 });
+                // Kept inside the current block: a blank line between a section's lines belongs to
+                // that section, and breaking here would drop a selection boundary in the middle of
+                // what the user is dragging across.
+                body.AddBlankLine();
                 inCodeBlock = false;
                 isStatementText = false;
                 inSubSection = false;
@@ -124,6 +132,8 @@ internal static partial class AdviceContentBuilder
                 inCodeBlock = false;
                 isStatementText = false;
                 inSubSection = false;
+
+                body.Flush(panel);
 
                 // Strip === markers, just show the text
                 var headerText = line.Trim('=', ' ');
@@ -164,23 +174,26 @@ internal static partial class AdviceContentBuilder
             // Statement text (SQL) — highlight keywords
             if (isStatementText)
             {
-                panel.Children.Add(BuildSqlHighlightedLine(line));
+                body.AddLine(BuildSqlHighlightedLine(line));
                 continue;
             }
 
             // Warning lines: [Critical], [Warning], [Info] — with left accent border
             if (line.Contains("[Critical]"))
             {
+                body.Flush(panel);
                 panel.Children.Add(CreateWarningBlock(line, CriticalBrush));
                 continue;
             }
             if (line.Contains("[Warning]"))
             {
+                body.Flush(panel);
                 panel.Children.Add(CreateWarningBlock(line, WarningBrush));
                 continue;
             }
             if (line.Contains("[Info]"))
             {
+                body.Flush(panel);
                 panel.Children.Add(CreateWarningBlock(line, InfoBrush));
                 continue;
             }
@@ -190,15 +203,10 @@ internal static partial class AdviceContentBuilder
             // Grouped explanation line: "  -> The overestimate may have..."
             if (trimmed.StartsWith("-> "))
             {
-                panel.Children.Add(new SelectableTextBlock
+                body.AddLine(20, new Run(trimmed[3..])
                 {
-                    Text = trimmed[3..],
-                    FontFamily = MonoFont,
-                    FontSize = 12,
                     FontStyle = Avalonia.Media.FontStyle.Italic,
-                    Foreground = MutedBrush,
-                    Margin = new Avalonia.Thickness(20, 2, 0, 4),
-                    TextWrapping = TextWrapping.Wrap
+                    Foreground = MutedBrush
                 });
                 continue;
             }
@@ -206,24 +214,18 @@ internal static partial class AdviceContentBuilder
             // SNIFFING marker
             if (line.Contains("[SNIFFING]"))
             {
-                var tb = new SelectableTextBlock
-                {
-                    FontFamily = MonoFont,
-                    FontSize = 12,
-                    TextWrapping = TextWrapping.Wrap,
-                    Margin = new Avalonia.Thickness(12, 1, 0, 1)
-                };
                 var sniffIdx = line.IndexOf("[SNIFFING]");
-                tb.Inlines!.Add(new Run(line[..sniffIdx].TrimStart()) { Foreground = ValueBrush });
-                tb.Inlines.Add(new Run("[SNIFFING]")
-                    { Foreground = CriticalBrush, FontWeight = FontWeight.SemiBold });
-                panel.Children.Add(tb);
+                body.AddLine(
+                    12,
+                    new Run(line[..sniffIdx].TrimStart()) { Foreground = ValueBrush },
+                    new Run("[SNIFFING]") { Foreground = CriticalBrush, FontWeight = FontWeight.SemiBold });
                 continue;
             }
 
             // Missing index impact line: "dbo.Posts (impact: 95%)"
             if (trimmed.Contains("(impact:") && trimmed.EndsWith("%)"))
             {
+                body.Flush(panel);
                 panel.Children.Add(CreateMissingIndexImpactLine(trimmed));
                 continue;
             }
@@ -252,15 +254,7 @@ internal static partial class AdviceContentBuilder
                     ? new string(' ', codeBlockIndent) + trimmed
                     : line;
 
-                panel.Children.Add(new SelectableTextBlock
-                {
-                    Text = displayLine,
-                    FontFamily = MonoFont,
-                    FontSize = 12,
-                    Foreground = CodeBrush,
-                    TextWrapping = TextWrapping.Wrap,
-                    Margin = new Avalonia.Thickness(12, 1, 0, 1)
-                });
+                body.AddLine(12, displayLine, CodeBrush);
                 continue;
             }
 
@@ -295,6 +289,7 @@ internal static partial class AdviceContentBuilder
                     }
                 }
                 i = peekIdx - 1; // skip consumed lines
+                body.Flush(panel);
                 panel.Children.Add(CreateOperatorGroup(line, timingLine, statsLine));
                 continue;
             }
@@ -303,6 +298,7 @@ internal static partial class AdviceContentBuilder
             if ((trimmed.Contains("ms CPU") || trimmed.Contains("ms elapsed"))
                 && trimmed.Length > 0 && char.IsDigit(trimmed[0]))
             {
+                body.Flush(panel);
                 panel.Children.Add(CreateOperatorTimingLine(trimmed));
                 continue;
             }
@@ -312,15 +308,11 @@ internal static partial class AdviceContentBuilder
             if (IsSubSectionLabel(trimmed))
             {
                 inSubSection = true;
-                panel.Children.Add(new SelectableTextBlock
+                body.AddLine(8, new Run(trimmed)
                 {
-                    Text = trimmed,
-                    FontFamily = MonoFont,
                     FontSize = 13,
                     FontWeight = FontWeight.SemiBold,
-                    Foreground = LabelBrush,
-                    Margin = new Avalonia.Thickness(8, 6, 0, 4),
-                    TextWrapping = TextWrapping.Wrap
+                    Foreground = LabelBrush
                 });
                 continue;
             }
@@ -328,15 +320,7 @@ internal static partial class AdviceContentBuilder
             // Bullet lines: "   * ..."
             if (trimmed.StartsWith("* "))
             {
-                panel.Children.Add(new SelectableTextBlock
-                {
-                    Text = line,
-                    FontFamily = MonoFont,
-                    FontSize = 12,
-                    Foreground = MutedBrush,
-                    Margin = new Avalonia.Thickness(12, 1, 0, 1),
-                    TextWrapping = TextWrapping.Wrap
-                });
+                body.AddLine(12, line, MutedBrush);
                 continue;
             }
 
@@ -380,6 +364,7 @@ internal static partial class AdviceContentBuilder
                         }
 
                         // Render all lines with consistent scaling
+                        body.Flush(panel);
                         foreach (var (name, val) in waitGroup)
                             panel.Children.Add(CreateWaitStatLine(name, val, maxWaitMs));
 
@@ -396,31 +381,19 @@ internal static partial class AdviceContentBuilder
                 if (labelPart.Length < 40 && !labelPart.Contains('(') && !labelPart.Contains('='))
                 {
                     var indent = inSubSection ? 12.0 : 8.0;
-                    var tb = new SelectableTextBlock
-                    {
-                        FontFamily = MonoFont,
-                        FontSize = 12,
-                        TextWrapping = TextWrapping.Wrap,
-                        Margin = new Avalonia.Thickness(indent, 1, 0, 1)
-                    };
-                    tb.Inlines!.Add(new Run(labelPart + ":") { Foreground = LabelBrush });
-                    tb.Inlines.Add(new Run(line[(colonIdx + 1)..]) { Foreground = ValueBrush });
-                    panel.Children.Add(tb);
+                    body.AddLine(
+                        indent,
+                        new Run(labelPart + ":") { Foreground = LabelBrush },
+                        new Run(line[(colonIdx + 1)..]) { Foreground = ValueBrush });
                     continue;
                 }
             }
 
             // Default: regular text
-            panel.Children.Add(new SelectableTextBlock
-            {
-                Text = line,
-                FontFamily = MonoFont,
-                FontSize = 12,
-                Foreground = ValueBrush,
-                TextWrapping = TextWrapping.Wrap,
-                Margin = new Avalonia.Thickness(0, 1)
-            });
+            body.AddLine(0, line, ValueBrush);
         }
+
+        body.Flush(panel);
 
         // Post-process: make "Node N" references clickable
         if (onNodeClick != null)
