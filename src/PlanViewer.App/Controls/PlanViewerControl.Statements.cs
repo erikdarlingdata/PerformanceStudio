@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using Avalonia;
@@ -219,6 +219,10 @@ public partial class PlanViewerControl : UserControl
     private async void CopyParameterizedStatementText_Click(object? sender, RoutedEventArgs e)
     {
         if (StatementsGrid.SelectedItem is not StatementRow row) return;
+        /* Deliberately the plan's copy, truncated or not: this entry exists to hand over the
+           placeholder form, and the captured text is the query as written, with literals where the
+           plan has parameters. Substituting it here would silently collapse the very distinction the
+           entry was added for (#467). Rule 39 reports the truncation instead. */
         var text = row.Statement.StatementText;
         if (string.IsNullOrEmpty(text)) return;
 
@@ -237,13 +241,42 @@ public partial class PlanViewerControl : UserControl
     /// <summary>
     /// The statement text with the plan's parameter values put back, or the text as-is when the plan
     /// carries no values to put back.
-    ///
-    /// <para>The plan is the only source used. The query editor's buffer holds the original text in
-    /// exactly one case — the user just executed it from that tab — and is wrong for a plan opened
-    /// from a file, from Query Store, or from another session.</para>
     /// </summary>
-    private static string RunnableStatementText(PlanStatement statement) =>
-        ParameterSubstitution.Apply(statement.StatementText, statement.Parameters).Text;
+    private string RunnableStatementText(PlanStatement statement) =>
+        ParameterSubstitution.Apply(PlanOrCapturedStatementText(statement), statement.Parameters).Text;
+
+    /// <summary>
+    /// The text to hand the user for a statement: the plan's copy normally, the text this plan was
+    /// captured from when the plan's copy has been truncated (#502).
+    ///
+    /// <para>This used to read the plan and nothing else, on the reasoning that the query editor's
+    /// buffer is only right when the user just executed from that tab. That reasoning still holds
+    /// for the buffer — but this is not the buffer. It is the text handed to <c>LoadPlan</c> at the
+    /// moment the plan was captured, which is null for a plan opened from a file and is the stored
+    /// query for one opened from Query Store. When it is there, it is the same query the plan
+    /// describes, minus SQL Server's 4,000-character cap.</para>
+    ///
+    /// <para>Single-statement plans only. The captured text is the whole batch, and showplan records
+    /// no statement offsets, so for a multi-statement batch there is no way to tell which slice of it
+    /// belongs to the row the user picked — and handing back a confidently wrong statement is worse
+    /// than handing back a short one. Rule 39 says so on the plan either way.</para>
+    /// </summary>
+    private string PlanOrCapturedStatementText(PlanStatement statement) =>
+        statement.IsTextTruncated && !string.IsNullOrEmpty(_queryText) && IsSingleStatementPlan
+            ? _queryText!
+            : statement.StatementText;
+
+    /// <summary>
+    /// True when the plan holds exactly one statement — counted the way the grid counts, over
+    /// <see cref="_allStatements"/>.
+    ///
+    /// <para>Not <c>Batches</c>: that stops at the outer batch and does not descend into stored
+    /// procedure and UDF bodies, which the grid does list. A plan captured around
+    /// <c>EXEC dbo.SomeProc</c> has one batch statement and several rows, so counting batches would
+    /// call it single-statement and hand the outer EXEC back for a truncated body statement — the
+    /// confidently wrong answer this guard exists to prevent.</para>
+    /// </summary>
+    private bool IsSingleStatementPlan => _allStatements?.Count == 1;
 
     private static void CollectNodeWarnings(PlanNode node, List<PlanWarning> warnings)
     {

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -22,6 +22,33 @@ public static partial class PlanAnalyzer
         Rule38_StandardEditionDop(stmt, cfg, serverMetadata);
         Rule30_MissingIndexQuality(stmt, cfg, serverMetadata);
         Rule22Stmt_TableVariable(stmt, cfg, serverMetadata);
+        Rule39_TruncatedStatementText(stmt, cfg, serverMetadata);
+    }
+
+    /// <summary>
+    /// Rule 39: the plan's copy of the query text hit SQL Server's showplan cap (#502).
+    ///
+    /// <para>Worth saying out loud rather than leaving the user to work it out. Everything
+    /// downstream of the plan reads this text — the advice on this screen, Copy Query Text, Open in
+    /// Query Editor — so all of them show a query that stops mid-statement, and re-running or
+    /// formatting that text fails with a syntax error that points nowhere near the real cause. The
+    /// full query is not in the plan at all; only the session that ran it still has it.</para>
+    /// </summary>
+    private static void Rule39_TruncatedStatementText(PlanStatement stmt, AnalyzerConfig cfg, ServerMetadata? serverMetadata)
+    {
+        if (cfg.IsRuleDisabled(39) || !stmt.IsTextTruncated)
+            return;
+
+        stmt.PlanWarnings.Add(new PlanWarning
+        {
+            WarningType = "Truncated Query Text",
+            Message =
+                "SQL Server truncated this query's text at 4,000 characters when it wrote the plan, "
+                + "so the query shown here stops early and is not valid T-SQL on its own. "
+                + "Advice, copied text, and Open in Query Editor are all working from the shortened "
+                + "version. Go back to the original query text to re-run or format it.",
+            Severity = PlanWarningSeverity.Info
+        });
     }
 
     private static void Rule03_SerialPlan(PlanStatement stmt, AnalyzerConfig cfg, ServerMetadata? serverMetadata)
@@ -105,7 +132,7 @@ public static partial class PlanAnalyzer
             {
                 var text = stmt.StatementText ?? "";
                 var hasMaxdop1InText = Regex.IsMatch(text, @"MAXDOP\s+1\b", RegexOptions.IgnoreCase);
-                var isTruncated = text.Length >= 3990;
+                var isTruncated = stmt.IsTextTruncated;
 
                 if (hasMaxdop1InText)
                 {
