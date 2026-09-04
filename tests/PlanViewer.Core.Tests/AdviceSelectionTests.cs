@@ -158,6 +158,30 @@ public class AdviceSelectionTests
         });
     }
 
+    /// <summary>
+    /// Two runs can carry the same text — the same node referenced on two lines. Locating each run by
+    /// searching forward from the previous one has to land on the second occurrence for the second
+    /// run, not re-find the first.
+    /// </summary>
+    [Fact]
+    public void RepeatedRunTextResolvesToTheRightOccurrence()
+    {
+        HeadlessUi.Run(() =>
+        {
+            var first = new Run("Node 4");
+            var second = new Run("Node 4");
+            var block = new SelectableTextBlock();
+            block.Inlines!.Add(first);
+            block.Inlines.Add(new LineBreak());
+            block.Inlines.Add(second);
+
+            var secondIndex = block.Inlines.Text!.LastIndexOf("Node 4", System.StringComparison.Ordinal);
+
+            Assert.Same(first, AdviceContentBuilder.RunAtCharIndex(block, 0));
+            Assert.Same(second, AdviceContentBuilder.RunAtCharIndex(block, secondIndex));
+        });
+    }
+
     // ---------------------------------------------------------------
     // Helpers
     // ---------------------------------------------------------------

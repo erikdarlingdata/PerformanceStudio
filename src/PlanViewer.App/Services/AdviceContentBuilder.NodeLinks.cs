@@ -247,8 +247,13 @@ internal static partial class AdviceContentBuilder
     /// offset backwards, and a click on a "Node N" past the first line resolves to the wrong run or
     /// to none.</para>
     ///
-    /// <para>How much a non-Run inline contributes is derived from the collection's own text rather
-    /// than hardcoded, so this cannot drift if the framework changes what it writes for one.</para>
+    /// <para>Rather than assume what a non-Run inline contributes, each Run is located in the text
+    /// the collection actually laid out, searching forward from the end of the previous one. That is
+    /// exact for any interleaving — a LineBreak today, an InlineUIContainer tomorrow — where
+    /// distributing the leftover characters evenly across non-Runs would only hold while they are all
+    /// the same kind, and would go quietly wrong rather than loudly the day they are not. Scanning
+    /// forward rather than from zero is also what keeps repeated text (two runs both reading
+    /// "Node 4") landing on the right one.</para>
     ///
     /// <para>Internal so a test can check the offset math directly: driving it through a real click
     /// would mean placing a pointer at a laid-out coordinate, which tests the font more than the
@@ -260,34 +265,23 @@ internal static partial class AdviceContentBuilder
         if (inlines == null)
             return null;
 
-        var runChars = 0;
-        var nonRuns = 0;
+        var text = inlines.Text ?? "";
+        var cursor = 0;
+
         foreach (var inline in inlines)
         {
-            if (inline is Run r)
-                runChars += r.Text?.Length ?? 0;
-            else
-                nonRuns++;
-        }
+            if (inline is not Run run || string.IsNullOrEmpty(run.Text))
+                continue;
 
-        var perNonRun = nonRuns > 0
-            ? Math.Max(0, (inlines.Text?.Length ?? runChars) - runChars) / nonRuns
-            : 0;
+            var start = text.IndexOf(run.Text, cursor, StringComparison.Ordinal);
+            if (start < 0)
+                return null;
 
-        var start = 0;
-        foreach (var inline in inlines)
-        {
-            if (inline is Run run && run.Text != null)
-            {
-                var end = start + run.Text.Length;
-                if (charIndex >= start && charIndex < end)
-                    return run;
-                start = end;
-            }
-            else
-            {
-                start += perNonRun;
-            }
+            var end = start + run.Text.Length;
+            if (charIndex >= start && charIndex < end)
+                return run;
+
+            cursor = end;
         }
 
         return null;
