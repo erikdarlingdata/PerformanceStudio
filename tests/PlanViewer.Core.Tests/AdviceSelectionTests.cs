@@ -1,0 +1,132 @@
+using Avalonia.Controls;
+using PlanViewer.App.Services;
+
+namespace PlanViewer.Core.Tests;
+
+/// <summary>
+/// #503: the advice pane put every line in its own <see cref="SelectableTextBlock"/>, and Avalonia
+/// gives each one its own selection with nothing coordinating a drag between them. So a selection
+/// could never be longer than a single line — the reporter could grab a one-line query but not
+/// Server Context, Parameters, or Missing indexes, which are several lines each. Copying everything
+/// into Notepad was the only way to get a piece of it.
+///
+/// <para>These assert on selection rather than on the control tree, because "one block per section"
+/// is the mechanism and "a drag covers more than one line" is the thing that was broken.</para>
+/// </summary>
+public class AdviceSelectionTests
+{
+    private const string ServerContext =
+        "=== Server Context ===\n"
+        + "SQL Server: 16.0.1000\n"
+        + "Edition: Developer\n"
+        + "Cores: 8\n"
+        + "Max server memory: 32768 MB\n";
+
+    [Fact]
+    public void ASectionsBodyIsOneSelectionCoveringEveryLineInIt()
+    {
+        HeadlessUi.Run(() =>
+        {
+            var body = BodyBlocks(ServerContext).Single();
+
+            body.SelectAll();
+
+            // The whole point: one drag reaches the first value and the last one.
+            Assert.Contains("16.0.1000", body.SelectedText);
+            Assert.Contains("Developer", body.SelectedText);
+            Assert.Contains("32768 MB", body.SelectedText);
+        });
+    }
+
+    [Fact]
+    public void ABlankLineInsideASectionDoesNotSplitTheSelection()
+    {
+        HeadlessUi.Run(() =>
+        {
+            // A blank line is a paragraph break in the text, not a section break, so a drag has to
+            // run straight through it.
+            var body = BodyBlocks("=== Server Context ===\nEdition: Developer\n\nCores: 8\n").Single();
+
+            body.SelectAll();
+
+            Assert.Contains("Developer", body.SelectedText);
+            Assert.Contains("Cores", body.SelectedText);
+        });
+    }
+
+    [Fact]
+    public void AMultiLineQueryIsOneSelection()
+    {
+        HeadlessUi.Run(() =>
+        {
+            var body = BodyBlocks(
+                "=== Statement 1 ===\nSELECT p.Id\nFROM dbo.Posts AS p\nWHERE p.Score > 10;\n").Single();
+
+            body.SelectAll();
+
+            Assert.Contains("SELECT", body.SelectedText);
+            Assert.Contains("FROM", body.SelectedText);
+            Assert.Contains("WHERE", body.SelectedText);
+        });
+    }
+
+    /// <summary>
+    /// Warning blocks are Bordered cards, not text runs, so they cannot join a text block. They still
+    /// break the body either side of them — that is the ceiling on what merging can do here, and it
+    /// is worth pinning so a later change does not quietly assume the whole pane is one selection.
+    /// </summary>
+    [Fact]
+    public void AWarningCardStillStandsOnItsOwnAndSplitsTheBodyEitherSide()
+    {
+        HeadlessUi.Run(() =>
+        {
+            // Deliberately not a "Statement" header: that sets isStatementText, and every line after
+            // it takes the SQL path without ever reaching the severity checks.
+            var panel = Build(
+                "=== Warnings ===\nEdition: Developer\n[Critical] Something is wrong\nCores: 8\n");
+
+            Assert.Single(panel.Children.OfType<Border>());
+            Assert.Equal(2, BodyBlocks(panel).Count);
+        });
+    }
+
+    [Fact]
+    public void TheSectionHeaderIsStillItsOwnBlock()
+    {
+        HeadlessUi.Run(() =>
+        {
+            var panel = Build(ServerContext);
+
+            // Header block + one body block. The header keeps its own size and weight, which a Run
+            // inside the body could carry but which would let a drag start mid-title.
+            Assert.Equal(2, panel.Children.OfType<SelectableTextBlock>().Count());
+            Assert.Equal("Server Context", FirstBlock(panel).Text);
+        });
+    }
+
+    // ---------------------------------------------------------------
+    // Helpers
+    // ---------------------------------------------------------------
+
+    private static StackPanel Build(string content)
+    {
+        var panel = AdviceContentBuilder.Build(content);
+
+        // Selection needs a laid-out control attached to a TopLevel.
+        var window = new Window { Content = panel, Width = 1000, Height = 700 };
+        window.Show();
+        window.UpdateLayout();
+
+        return panel;
+    }
+
+    private static SelectableTextBlock FirstBlock(StackPanel panel) =>
+        panel.Children.OfType<SelectableTextBlock>().First();
+
+    /// <summary>The body blocks: every selectable block except the section header.</summary>
+    private static System.Collections.Generic.List<SelectableTextBlock> BodyBlocks(StackPanel panel) =>
+        panel.Children.OfType<SelectableTextBlock>().Skip(1).ToList();
+
+    private static System.Collections.Generic.List<SelectableTextBlock> BodyBlocks(string content) =>
+        BodyBlocks(Build(content));
+}
