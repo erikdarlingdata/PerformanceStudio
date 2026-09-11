@@ -8,13 +8,18 @@ namespace PlanViewer.Core.Output;
 /// </summary>
 public static class ResultMapper
 {
-    public static AnalysisResult Map(ParsedPlan plan, string source, ServerMetadata? metadata = null) =>
-        MapCancellable(plan, source, metadata, CancellationToken.None);
+    public static AnalysisResult Map(
+        ParsedPlan plan,
+        string source,
+        ServerMetadata? metadata = null,
+        string? capturedQueryText = null) =>
+        MapCancellable(plan, source, metadata, capturedQueryText, CancellationToken.None);
 
     internal static AnalysisResult MapCancellable(
         ParsedPlan plan,
         string source,
         ServerMetadata? metadata,
+        string? capturedQueryText,
         CancellationToken cancellationToken)
     {
         var result = new AnalysisResult
@@ -27,10 +32,30 @@ public static class ResultMapper
         /* #455: includes statements nested inside a stored procedure or UDF body. Without this the
            summary counted the EXEC and nothing else, so a procedure carrying dozens of statement
            plans reported total_statements 1 and max_estimated_cost 0. */
+        var statements = new List<PlanStatement>();
         foreach (var stmt in PlanStatements.EnumerateAll(plan))
         {
             cancellationToken.ThrowIfCancellationRequested();
-            result.Statements.Add(MapStatement(stmt, cancellationToken));
+            statements.Add(stmt);
+        }
+
+        /* #502 follow-up: the plan's own copy of the statement stops at SQL Server's 4,000-character
+           showplan cap, and every advice surface — Advice for Humans, Advice for Robots, the MCP
+           tools — reads its statement text from this mapping, so this is where the query the session
+           actually ran goes back in. Single-statement plans only, same reasoning as the viewer's
+           PlanOrCapturedStatementText: the captured text is the whole batch and showplan records no
+           statement offsets, so with more than one statement there is no way to say which slice
+           belongs to which row, and a confidently wrong query is worse than a short one. */
+        var recoveredFullText = statements.Count == 1
+            && statements[0].IsTextTruncated
+            && !string.IsNullOrEmpty(capturedQueryText)
+                ? capturedQueryText
+                : null;
+
+        foreach (var stmt in statements)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            result.Statements.Add(MapStatement(stmt, recoveredFullText, cancellationToken));
         }
 
         result.Summary = BuildSummary(result, cancellationToken);
@@ -84,6 +109,7 @@ public static class ResultMapper
 
     private static StatementResult MapStatement(
         PlanStatement stmt,
+        string? recoveredFullText,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -95,8 +121,12 @@ public static class ResultMapper
 
            The parser's PlanStatement is deliberately untouched: the analyzer's rules regex over that
            text (OPTIMIZE FOR UNKNOWN, NOT IN, MAXDOP hints), the properties panel shows what the plan
-           records, and none of that should start reading manufactured literals. */
-        var runnable = ParameterSubstitution.Apply(stmt.StatementText, stmt.Parameters);
+           records, and none of that should start reading manufactured literals. That is also why the
+           #502 recovery lands here rather than on the model: the full captured query replaces the
+           plan's truncated copy in the OUTPUT only, and Rule 39 plus the properties panel keep
+           reporting what the plan itself records. */
+        var sourceText = recoveredFullText ?? stmt.StatementText;
+        var runnable = ParameterSubstitution.Apply(sourceText, stmt.Parameters);
 
         var result = new StatementResult
         {
@@ -106,7 +136,7 @@ public static class ResultMapper
                and get_repro_script has to pair a query body with a declared parameter list. Null when
                nothing was substituted so it never appears on the overwhelming majority of statements
                that have nothing to say here. */
-            ParameterizedStatementText = runnable.SubstitutionCount > 0 ? stmt.StatementText : null,
+            ParameterizedStatementText = runnable.SubstitutionCount > 0 ? sourceText : null,
             StatementType = stmt.StatementType,
             EstimatedCost = stmt.StatementSubTreeCost,
             EstimatedRows = stmt.StatementEstRows,
@@ -204,11 +234,22 @@ public static class ResultMapper
         // Statement-level warnings
         foreach (var w in stmt.PlanWarnings)
         {
+            /* When the full query was recovered from the session, Rule 39's stock message would
+               describe the one thing this result no longer shows — a shortened statement — right
+               next to the complete text. Swap in what actually happened; the model's warning is
+               untouched, so surfaces that read the plan directly still get the plan's truth. */
+            var message = recoveredFullText != null && w.WarningType == "Truncated Query Text"
+                ? "SQL Server capped this query's text at 4,000 characters when it wrote the plan, "
+                    + "but the source this plan came from still had the original query, so the "
+                    + "statement text shown here is the complete query. The plan's own copy of the "
+                    + "text remains shortened."
+                : w.Message;
+
             result.Warnings.Add(new WarningResult
             {
                 Type = w.WarningType,
                 Severity = w.Severity.ToString(),
-                Message = w.Message,
+                Message = message,
                 MaxBenefitPercent = w.MaxBenefitPercent,
                 ActionableFix = w.ActionableFix,
                 IsLegacy = w.IsLegacy,

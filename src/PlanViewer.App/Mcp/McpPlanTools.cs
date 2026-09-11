@@ -330,7 +330,7 @@ public sealed class McpPlanTools
     }
 
     private static AnalysisResult GetAnalysisSnapshot(PlanSession session) =>
-        session.Analysis ?? ResultMapper.Map(session.Plan, session.Source);
+        session.Analysis ?? ResultMapper.Map(session.Plan, session.Source, capturedQueryText: session.QueryText);
 
     private static string? GetRawPlanXml(PlanSession session) =>
         session.RawPlanXml ?? session.Plan.RawXml;

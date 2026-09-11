@@ -39,14 +39,19 @@ public static partial class PlanAnalyzer
         if (cfg.IsRuleDisabled(39) || !stmt.IsTextTruncated)
             return;
 
+        /* The wording describes the plan's own record, nothing more: whether a given surface shows
+           the shortened copy depends on whether the session still holds the original query, which
+           this rule cannot see. Where the full text was recovered (#502), ResultMapper swaps this
+           message for one that says so. */
         stmt.PlanWarnings.Add(new PlanWarning
         {
             WarningType = "Truncated Query Text",
             Message =
                 "SQL Server truncated this query's text at 4,000 characters when it wrote the plan, "
-                + "so the query shown here stops early and is not valid T-SQL on its own. "
-                + "Advice, copied text, and Open in Query Editor are all working from the shortened "
-                + "version. Go back to the original query text to re-run or format it.",
+                + "so the plan's copy of the query stops early and is not valid T-SQL on its own. "
+                + "Anything built from the plan alone shows the shortened version, and re-running or "
+                + "formatting that text fails with a syntax error that points nowhere near the real "
+                + "cause. Go back to the original query text to re-run or format it.",
             Severity = PlanWarningSeverity.Info
         });
     }
