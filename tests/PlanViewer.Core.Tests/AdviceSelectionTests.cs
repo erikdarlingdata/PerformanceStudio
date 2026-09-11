@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Controls.Documents;
+using Avalonia.LogicalTree;
 using PlanViewer.App.Services;
 
 namespace PlanViewer.Core.Tests;
@@ -179,6 +180,46 @@ public class AdviceSelectionTests
 
             Assert.Same(first, AdviceContentBuilder.RunAtCharIndex(block, 0));
             Assert.Same(second, AdviceContentBuilder.RunAtCharIndex(block, secondIndex));
+        });
+    }
+
+    /// <summary>
+    /// Every text block in the pane, composites included, takes a press anywhere in its rectangle
+    /// (#503 follow-up).
+    ///
+    /// <para>A text block with no background is only hit-testable where its glyphs rendered, so a
+    /// press in the indent, past the end of a short line, or in the empty run beside a wrapped one
+    /// fell through to the panel and no drag ever started. That is exactly where a person puts the
+    /// pointer to grab a section — which is why merging lines into one block read to the reporter as
+    /// no fix at all, while the statement's wall-to-wall SQL (any press lands on a glyph) kept
+    /// selecting fine.</para>
+    ///
+    /// <para>Asserts a non-null background rather than a simulated drag: without a real rendering
+    /// backend the headless session cannot hit-test glyphs at all, so a drag test would fail for
+    /// every block and prove nothing. The drag itself was verified against a Skia-rendering session
+    /// while diagnosing the follow-up. Non-null rather than exactly Transparent, because a block
+    /// that one day carries its own background is just as hit-testable — the invariant is coverage,
+    /// not the brush.</para>
+    /// </summary>
+    [Fact]
+    public void EveryTextBlockTakesAPressAnywhereInItsRectangle()
+    {
+        HeadlessUi.Run(() =>
+        {
+            // Content chosen to produce both body blocks and composites: an operator group
+            // (Border around a panel), wait-stat bars, a warning card (Border around a block),
+            // a missing-index impact line, and a CREATE INDEX code block.
+            var panel = Build(
+                "=== Statement 1 ===\nSELECT 1;\n\nExpensive operators:\n  Sort (dbo.Posts):\n    1,234ms CPU (50%)\n"
+                + "Wait stats:\n  CXPACKET: 1,000ms\n  PAGEIOLATCH_SH: 500ms\n"
+                + "[Warning] Something is off\ndbo.Posts (impact: 95%)\n    CREATE INDEX IX_P ON dbo.Posts (Id)\n");
+
+            /* The logical tree, deliberately not a hand-rolled walk mirroring the production
+               traversal's container cases: a mirror shares the traversal's blind spots, so a block
+               nested in a shape the fix misses would be invisible to the very test guarding it. */
+            var blocks = panel.GetLogicalDescendants().OfType<SelectableTextBlock>().ToList();
+            Assert.True(blocks.Count >= 7, $"fixture should produce a spread of blocks, got {blocks.Count}");
+            Assert.All(blocks, b => Assert.NotNull(b.Background));
         });
     }
 

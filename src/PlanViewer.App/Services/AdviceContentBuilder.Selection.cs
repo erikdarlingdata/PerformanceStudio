@@ -9,6 +9,47 @@ namespace PlanViewer.App.Services;
 internal static partial class AdviceContentBuilder
 {
     /// <summary>
+    /// Gives every <see cref="SelectableTextBlock"/> in the pane a transparent background,
+    /// composites included (#503 follow-up).
+    ///
+    /// <para>A text block with no background is only hit-testable where its glyphs rendered. The
+    /// natural way to start a drag over a section is to press just left of its first character, past
+    /// the end of a short line, or in the empty run beside a wrapped one — and every one of those
+    /// presses fell through to the panel, so no selection ever started. That is why merging a
+    /// section's lines into one block (#503) read as no fix at all: the merged block still only
+    /// answered presses that landed on a glyph, which the statement's wall-to-wall SQL always
+    /// satisfied and a section of short labelled lines almost never did. A transparent background
+    /// makes the whole rectangle accept the press; nothing changes visually.</para>
+    ///
+    /// <para>Run over the finished panel rather than set at each construction site, so a block added
+    /// next month is covered without anyone remembering why.</para>
+    /// </summary>
+    private static void MakeTextBlocksHitTestable(Panel panel)
+    {
+        foreach (var child in panel.Children)
+        {
+            switch (child)
+            {
+                case SelectableTextBlock stb:
+                    stb.Background ??= Brushes.Transparent;
+                    break;
+                case Panel inner:
+                    MakeTextBlocksHitTestable(inner);
+                    break;
+                case Border { Child: Panel borderPanel }:
+                    MakeTextBlocksHitTestable(borderPanel);
+                    break;
+                case Border { Child: SelectableTextBlock borderStb }:
+                    borderStb.Background ??= Brushes.Transparent;
+                    break;
+                case Expander { Content: Panel expanderPanel }:
+                    MakeTextBlocksHitTestable(expanderPanel);
+                    break;
+            }
+        }
+    }
+
+    /// <summary>
     /// Collects consecutive body lines into a single <see cref="SelectableTextBlock"/> (#503).
     ///
     /// <para>Avalonia gives each SelectableTextBlock its own selection and nothing coordinates a drag
