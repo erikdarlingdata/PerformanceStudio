@@ -61,14 +61,14 @@ public partial class MainWindow : Window
         Action showHumanAdvice = () =>
         {
             if (viewer.CurrentPlan == null) return;
-            var analysis = ResultMapper.Map(viewer.CurrentPlan, "file", viewer.Metadata);
+            var analysis = ResultMapper.Map(viewer.CurrentPlan, "file", viewer.Metadata, viewer.QueryText);
             ShowAdviceWindow("Advice for Humans", TextFormatter.Format(analysis), analysis, viewer);
         };
 
         Action showRobotAdvice = () =>
         {
             if (viewer.CurrentPlan == null) return;
-            var analysis = ResultMapper.Map(viewer.CurrentPlan, "file", viewer.Metadata);
+            var analysis = ResultMapper.Map(viewer.CurrentPlan, "file", viewer.Metadata, viewer.QueryText);
             string json;
             try
             {
@@ -354,8 +354,8 @@ public partial class MainWindow : Window
             var (labelA, viewerA) = planTabs[idxA];
             var (labelB, viewerB) = planTabs[idxB];
 
-            var analysisA = ResultMapper.Map(viewerA.CurrentPlan!, "file");
-            var analysisB = ResultMapper.Map(viewerB.CurrentPlan!, "file");
+            var analysisA = ResultMapper.Map(viewerA.CurrentPlan!, "file", capturedQueryText: viewerA.QueryText);
+            var analysisB = ResultMapper.Map(viewerB.CurrentPlan!, "file", capturedQueryText: viewerB.QueryText);
 
             var comparison = ComparisonFormatter.Compare(analysisA, analysisB, labelA, labelB);
             dialog.Close();

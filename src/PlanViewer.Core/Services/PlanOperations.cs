@@ -148,7 +148,8 @@ public sealed class PlanOperations
         if (!plan.Batches.SelectMany(batch => batch.Statements).Any())
             throw new InvalidDataException("Could not parse any statements from the plan XML.");
 
-        var analysis = ResultMapper.MapCancellable(plan, label, metadata: null, cancellationToken);
+        var analysis = ResultMapper.MapCancellable(
+            plan, label, metadata: null, capturedQueryText: null, cancellationToken);
         plan.RawXml = string.Empty;
         plan.Batches.Clear();
         var baseId = CreateBaseSessionId(Path.GetFileNameWithoutExtension(label));
@@ -565,7 +566,8 @@ public sealed class PlanOperations
     public AnalysisResult GetAnalysis(PlanSession session)
     {
         ArgumentNullException.ThrowIfNull(session);
-        return session.Analysis ?? ResultMapper.Map(session.Plan, session.Source);
+        return session.Analysis ?? ResultMapper.Map(
+            session.Plan, session.Source, capturedQueryText: session.QueryText);
     }
 
     private sealed class NoopDisposable : IDisposable
@@ -580,7 +582,8 @@ public sealed class PlanOperations
     private static AnalysisResult GetAnalysisCancellable(
         PlanSession session,
         CancellationToken cancellationToken) =>
-        session.Analysis ?? ResultMapper.MapCancellable(session.Plan, session.Source, metadata: null, cancellationToken);
+        session.Analysis ?? ResultMapper.MapCancellable(
+            session.Plan, session.Source, metadata: null, session.QueryText, cancellationToken);
 
     private static void ValidateComplexity(ParsedPlan plan, CancellationToken cancellationToken)
     {

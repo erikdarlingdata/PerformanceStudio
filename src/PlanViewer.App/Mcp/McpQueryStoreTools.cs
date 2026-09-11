@@ -310,7 +310,9 @@ public sealed class McpQueryStoreTools
         string? queryText,
         string connectionInfo)
     {
-        var analysis = ResultMapper.Map(parsed, "query-store");
+        /* Query Store keeps the full query_sql_text, so a statement past the showplan cap gets its
+           complete text in the analysis the same way a session-captured plan does (#502). */
+        var analysis = ResultMapper.Map(parsed, "query-store", capturedQueryText: queryText);
 
         /* #456 follow-up: the counts used to come from a second walk over batch.Statements while
            the Analysis stored on this very session is mapped from PlanStatements.EnumerateAll —

@@ -417,9 +417,11 @@ public static class QueryStoreCommand
                 var planPath = Path.Combine(outDir, $"{label}.sqlplan");
                 await File.WriteAllTextAsync(planPath, qsPlan.PlanXml);
 
-                // Parse, analyze, map
+                /* Parse, analyze, map. Query Store keeps the full query_sql_text, so a statement
+                   past the showplan cap gets its complete text in the output (#502) — the same
+                   hand-off the MCP Query Store path makes. */
                 var plan = PlanAnalysisRunner.Analyze(qsPlan.PlanXml, analyzerConfig, serverMetadata);
-                var result = ResultMapper.Map(plan, $"{label}.sqlplan");
+                var result = ResultMapper.Map(plan, $"{label}.sqlplan", capturedQueryText: qsPlan.QueryText);
 
                 await PlanAnalysisRunner.WriteResultFilesAsync(
                     result, outDir, label, outputFormat, compact ? CompactJsonOptions : JsonOptions, warningsOnly);

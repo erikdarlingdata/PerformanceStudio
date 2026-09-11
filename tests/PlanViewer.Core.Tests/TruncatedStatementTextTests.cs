@@ -7,6 +7,7 @@ using Avalonia.Interactivity;
 using Avalonia.LogicalTree;
 using PlanViewer.App.Controls;
 using PlanViewer.Core.Models;
+using PlanViewer.Core.Output;
 using PlanViewer.Core.Services;
 
 namespace PlanViewer.Core.Tests;
@@ -140,8 +141,134 @@ public class TruncatedStatementTextTests
     }
 
     // ---------------------------------------------------------------
+    // The advice reads the captured query too (#502 follow-up)
+    // ---------------------------------------------------------------
+    //
+    // The first cut recovered the full query for Copy Query Text and Open in Query Editor but left
+    // Human Advice, Robot Advice, and the MCP tools analyzing the plan's short copy — which is the
+    // surface the reporter actually screenshotted, so the fix read as no fix at all. The mapping is
+    // where every one of those surfaces gets its statement text, so the recovery lands there, under
+    // the same single-statement guard.
+
+    [Fact]
+    public void Advice_SingleTruncatedStatement_ShowsTheCapturedQuery()
+    {
+        var result = ResultMapper.Map(
+            SingleTruncatedPlan(), "query editor", capturedQueryText: CapturedQuery);
+
+        Assert.Equal(CapturedQuery, Assert.Single(result.Statements).StatementText);
+
+        // The reported symptom, end to end: the Advice for Humans text carries the whole query.
+        Assert.Contains(CapturedQuery, TextFormatter.Format(result));
+    }
+
+    /// <summary>
+    /// Showing the complete query next to a warning that says the text "stops early" would read as a
+    /// contradiction, so the mapped warning says what actually happened. The model's own warning is
+    /// untouched — the properties panel keeps reporting what the plan records.
+    /// </summary>
+    [Fact]
+    public void Advice_WhenTheQueryWasRecovered_TheTruncationWarningSaysSo()
+    {
+        var plan = SingleTruncatedPlan();
+
+        var recovered = ResultMapper.Map(plan, "query editor", capturedQueryText: CapturedQuery);
+        var warning = Assert.Single(recovered.Statements[0].Warnings, w => w.Type == "Truncated Query Text");
+        Assert.Contains("complete query", warning.Message);
+
+        var modelWarning = Assert.Single(PlanTestHelper.WarningsOfType(plan, "Truncated Query Text"));
+        Assert.DoesNotContain("complete query", modelWarning.Message);
+    }
+
+    [Fact]
+    public void Advice_MultiStatementPlan_KeepsThePlanTextEvenThoughItIsTruncated()
+    {
+        var plan = new ParsedPlan();
+        plan.Batches.Add(new PlanBatch
+        {
+            Statements =
+            {
+                StatementOfLength(PlanStatement.TruncationLengthThreshold),
+                StatementOfLength(PlanStatement.TruncationLengthThreshold)
+            }
+        });
+        PlanAnalyzer.Analyze(plan);
+
+        var result = ResultMapper.Map(plan, "query editor", capturedQueryText: CapturedQuery);
+
+        Assert.All(result.Statements, s => Assert.NotEqual(CapturedQuery, s.StatementText));
+
+        // Rule 39 fires per statement; none of them may claim the text was recovered.
+        var warnings = result.Statements.SelectMany(s => s.Warnings)
+            .Where(w => w.Type == "Truncated Query Text").ToList();
+        Assert.Equal(2, warnings.Count);
+        Assert.All(warnings, w => Assert.DoesNotContain("complete query", w.Message));
+    }
+
+    [Fact]
+    public void Advice_WithNothingCaptured_StillShowsThePlanText()
+    {
+        var result = ResultMapper.Map(SingleTruncatedPlan(), "file");
+
+        Assert.True(Assert.Single(result.Statements).StatementText.Length
+            >= PlanStatement.TruncationLengthThreshold);
+    }
+
+    [Fact]
+    public void Advice_UntruncatedStatement_IgnoresTheCapturedText()
+    {
+        var plan = new ParsedPlan();
+        plan.Batches.Add(new PlanBatch
+        {
+            Statements = { StatementOfLength(PlanStatement.TruncationLengthThreshold - 1) }
+        });
+        PlanAnalyzer.Analyze(plan);
+
+        var result = ResultMapper.Map(plan, "query editor", capturedQueryText: CapturedQuery);
+
+        Assert.NotEqual(CapturedQuery, Assert.Single(result.Statements).StatementText);
+    }
+
+    /// <summary>
+    /// The recovered text goes through the same parameter substitution as the plan's copy, and the
+    /// parameterized form the result carries alongside is then the recovered text too — the pairing
+    /// get_repro_script depends on.
+    /// </summary>
+    [Fact]
+    public void Advice_RecoveredQuery_StillGetsParameterValuesSubstituted()
+    {
+        var stmt = StatementOfLength(PlanStatement.TruncationLengthThreshold);
+        stmt.Parameters.Add(new PlanParameter
+        {
+            Name = "@p", CompiledValue = "(5)"
+        });
+        var plan = new ParsedPlan();
+        plan.Batches.Add(new PlanBatch { Statements = { stmt } });
+        PlanAnalyzer.Analyze(plan);
+
+        var captured = "SELECT c FROM t WHERE id = @p;";
+        var result = ResultMapper.Map(plan, "query editor", capturedQueryText: captured);
+
+        var mapped = Assert.Single(result.Statements);
+        // ParameterSubstitution unwraps showplan's "(5)" to the bare literal.
+        Assert.Equal("SELECT c FROM t WHERE id = 5;", mapped.StatementText);
+        Assert.Equal(captured, mapped.ParameterizedStatementText);
+    }
+
+    // ---------------------------------------------------------------
     // Helpers
     // ---------------------------------------------------------------
+
+    private static ParsedPlan SingleTruncatedPlan()
+    {
+        var plan = new ParsedPlan();
+        plan.Batches.Add(new PlanBatch
+        {
+            Statements = { StatementOfLength(PlanStatement.TruncationLengthThreshold) }
+        });
+        PlanAnalyzer.Analyze(plan);
+        return plan;
+    }
 
     private static PlanStatement StatementOfLength(int length) =>
         new() { StatementText = new string('x', length), StatementType = "SELECT" };
