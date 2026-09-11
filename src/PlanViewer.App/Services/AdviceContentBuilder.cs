@@ -399,6 +399,8 @@ internal static partial class AdviceContentBuilder
         if (onNodeClick != null)
             MakeNodeRefsClickable(panel, onNodeClick);
 
+        MakeTextBlocksHitTestable(panel);
+
         return panel;
     }
 
