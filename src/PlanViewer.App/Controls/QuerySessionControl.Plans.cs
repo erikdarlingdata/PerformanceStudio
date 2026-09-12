@@ -415,8 +415,8 @@ public partial class QuerySessionControl : UserControl
             var (labelA, viewerA) = planTabs[idxA];
             var (labelB, viewerB) = planTabs[idxB];
 
-            var analysisA = ResultMapper.Map(viewerA.CurrentPlan!, "query editor", _serverMetadata);
-            var analysisB = ResultMapper.Map(viewerB.CurrentPlan!, "query editor", _serverMetadata);
+            var analysisA = ResultMapper.Map(viewerA.CurrentPlan!, "query editor", _serverMetadata, viewerA.QueryText);
+            var analysisB = ResultMapper.Map(viewerB.CurrentPlan!, "query editor", _serverMetadata, viewerB.QueryText);
 
             var comparison = ComparisonFormatter.Compare(analysisA, analysisB, labelA, labelB);
             dialog.Close();

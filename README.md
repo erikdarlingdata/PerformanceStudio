@@ -68,6 +68,10 @@ Ask Claude Code to analyze loaded plans, identify warnings, suggest indexes, and
 
 ![MCP Integration](screenshots/MCP%20Integration.png)
 
+#### Compact output (GCF)
+
+Set `PLANVIEWER_OUTPUT_FORMAT=gcf` to have the MCP server return tool results as [GCF](https://gcformat.com) instead of JSON. GCF factors the repeated field names of record-heavy results (Query Store plan lists, connection and statement listings) into a single header, so a model spends roughly a third fewer tokens reading them. The substitution is opt-in and conservative: a result is re-encoded only when the wire is both smaller than the JSON and decodes back to the same value, so anything it cannot losslessly shrink is returned as the original JSON.
+
 ## What It Does
 
 Feed it a query plan and it tells you what's wrong:

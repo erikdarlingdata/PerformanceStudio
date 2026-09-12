@@ -420,9 +420,11 @@ public static class AnalyzeCommand
                 var planPath = Path.Combine(outDir, $"{name}.sqlplan");
                 await File.WriteAllTextAsync(planPath, planXml);
 
-                // Parse, analyze, map result
+                /* Parse, analyze, map result. This path just executed sqlText itself, so a
+                   single-statement query past the showplan cap gets its full text in the output
+                   instead of the plan's 4,000-character stub (#502). */
                 var plan = PlanAnalysisRunner.Analyze(planXml, analyzerConfig, serverMetadata);
-                var result = ResultMapper.Map(plan, $"{name}.sql");
+                var result = ResultMapper.Map(plan, $"{name}.sql", capturedQueryText: sqlText);
 
                 await PlanAnalysisRunner.WriteResultFilesAsync(
                     result, outDir, name, outputFormat, compact ? CompactJsonOptions : JsonOptions, warningsOnly);

@@ -80,6 +80,14 @@ updates:
       # one is handled by hand.
       - dependency-name: "Velopack"
 
+      # BlackwellSystems.Gcf transforms every MCP tool result when
+      # PLANVIEWER_OUTPUT_FORMAT=gcf is set, and it is maintained by the same
+      # external contributor who introduced it (#501). Dependabot PRs skip the
+      # AI review gate (claude-code-review.yml), so an auto-bump would put new
+      # third-party code on that path with build+test as the only gate. Bump it
+      # by hand in a reviewed PR instead.
+      - dependency-name: "BlackwellSystems.Gcf"
+
       # Repl / Repl.Mcp / Repl.Testing (#388) are pre-1.0. Under semver a 0.x
       # minor bump is allowed to break, and Dependabot classifies 0.11 -> 0.12
       # as a *minor*, so the usual "majors only get their own PR" split does not

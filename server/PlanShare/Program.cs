@@ -263,11 +263,15 @@ app.MapGet("/api/stats", (HttpContext ctx) =>
     // keeps the current public behaviour so the dashboard cannot break just by
     // deploying this. Compared with a fixed-time comparison so the token cannot
     // be recovered a byte at a time.
+    //
+    // Header only, no ?token= fallback: a query-string token is written to the
+    // nginx access log in plaintext — the exact leak the dashboard's
+    // fragment-based bootstrap (#token=..., sent back as X-Stats-Token) exists
+    // to avoid.
     var expectedToken = Environment.GetEnvironmentVariable("STATS_TOKEN");
     if (!string.IsNullOrEmpty(expectedToken))
     {
         var supplied = ctx.Request.Headers["X-Stats-Token"].FirstOrDefault()
-                       ?? ctx.Request.Query["token"].FirstOrDefault()
                        ?? "";
         var a = Encoding.UTF8.GetBytes(supplied);
         var b = Encoding.UTF8.GetBytes(expectedToken);

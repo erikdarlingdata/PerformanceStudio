@@ -75,6 +75,12 @@
                                                 MinuteIncrement="15"/>
                                 </StackPanel>
                             </StackPanel>
+                            <!-- Says what is wrong instead of quietly moving the end time (#507) -->
+                            <TextBlock x:Name="RangeValidationMessage"
+                                       IsVisible="False"
+                                       FontSize="11"
+                                       TextWrapping="Wrap"
+                                       Foreground="{DynamicResource SlicerValidationBrush}"/>
                             <!-- Action buttons -->
                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8"
                                         Margin="0,4,0,0">

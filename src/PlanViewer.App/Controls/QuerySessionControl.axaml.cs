@@ -223,7 +223,7 @@ public partial class QuerySessionControl : UserControl
         if (SubTabControl.SelectedItem is TabItem tab && tab.Content is PlanViewerControl viewer
             && viewer.CurrentPlan != null)
         {
-            return (ResultMapper.Map(viewer.CurrentPlan, "query editor", _serverMetadata), viewer);
+            return (ResultMapper.Map(viewer.CurrentPlan, "query editor", _serverMetadata, viewer.QueryText), viewer);
         }
 
         // Fallback: find the most recent plan tab
@@ -232,7 +232,9 @@ public partial class QuerySessionControl : UserControl
             if (SubTabControl.Items[i] is TabItem planTab && planTab.Content is PlanViewerControl v
                 && v.CurrentPlan != null)
             {
-                return (ResultMapper.Map(v.CurrentPlan, "query editor"), v);
+                /* Same session, same server: the fallback tab's advice gets the Server Context
+                   section the selected-tab path above already had. */
+                return (ResultMapper.Map(v.CurrentPlan, "query editor", _serverMetadata, v.QueryText), v);
             }
         }
 

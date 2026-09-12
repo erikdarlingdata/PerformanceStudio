@@ -71,6 +71,8 @@
     <SolidColorBrush x:Key="SlicerBorderBrush" Color="#3A3D45"/>
     <SolidColorBrush x:Key="SlicerLabelBrush" Color="#E4E6EB"/>
     <SolidColorBrush x:Key="SlicerToggleBrush" Color="#E4E6EB"/>
+    <!-- Custom range validation text. Same red the advice pane uses for Critical. -->
+    <SolidColorBrush x:Key="SlicerValidationBrush" Color="#E57373"/>
 
     <!-- Wait Stats category colors (fixed per category) -->
     <SolidColorBrush x:Key="WaitCategory.Unknown"            Color="#8E8E93"/>

@@ -79,7 +79,10 @@ public sealed class McpHostService : BackgroundService
                 })
                 .WithHttpTransport()
                 .WithTools<McpPlanTools>()
-                .WithTools<McpQueryStoreTools>();
+                .WithTools<McpQueryStoreTools>()
+                /* Opt-in GCF output (PLANVIEWER_OUTPUT_FORMAT=gcf): one call-tool filter
+                   re-encodes each tool's JSON result as a smaller, lossless GCF wire. */
+                .WithRequestFilters(filters => filters.AddCallToolFilter(GcfCallToolFilter.Instance));
 
             _app = builder.Build();
 

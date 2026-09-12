@@ -160,6 +160,7 @@ public partial class TimeRangeSlicerControl : UserControl
     private void CustomFilter_Click(object? sender, RoutedEventArgs e)
     {
         PopulatePickersFromSelection();
+        ClearRangeValidation();
         DateTimePopup.IsOpen = true;
     }
 
@@ -172,19 +173,28 @@ public partial class TimeRangeSlicerControl : UserControl
         var endDate = EndDatePicker.SelectedDate;
         var endTime = EndTimePicker.SelectedTime;
 
-        if (!startDate.HasValue || !endDate.HasValue) { DateTimePopup.IsOpen = false; return; }
+        // Convert display time back to UTC. Null until both halves of a bound are present.
+        DateTime? startUtc = startDate.HasValue
+            ? ConvertFromDisplay(startDate.Value.Date + (startTime ?? TimeSpan.Zero))
+            : null;
+        DateTime? endUtc = endDate.HasValue
+            ? ConvertFromDisplay(endDate.Value.Date + (endTime ?? TimeSpan.Zero))
+            : null;
 
-        var startDt = startDate.Value.Date + (startTime ?? TimeSpan.Zero);
-        var endDt = endDate.Value.Date + (endTime ?? TimeSpan.Zero);
+        /* #507: this used to close the popup on a missing date and quietly rewrite an end that
+           landed before the start, both of which read as the picker ignoring what you typed. Say
+           what is wrong and stay open on the entered values so they can be seen and corrected. */
+        var problem = DescribeRangeProblem(startUtc, endUtc);
+        if (problem != null)
+        {
+            ShowRangeValidation(problem);
+            return;
+        }
 
-        // Convert display time back to UTC
-        var startUtc = ConvertFromDisplay(startDt);
-        var endUtc = ConvertFromDisplay(endDt);
+        ClearRangeValidation();
 
-        if (endUtc <= startUtc) endUtc = startUtc.AddHours(1);
-
-        _rangeStart = GetNormFromDateTime(startUtc);
-        _rangeEnd = GetNormFromDateTime(endUtc);
+        _rangeStart = GetNormFromDateTime(startUtc!.Value);
+        _rangeEnd = GetNormFromDateTime(endUtc!.Value);
 
         // Enforce minimum interval
         if (_rangeEnd - _rangeStart < MinNormInterval)
@@ -248,6 +258,47 @@ public partial class TimeRangeSlicerControl : UserControl
             }
         }
     }
+
+    /// <summary>
+    /// What is wrong with an entered custom range, or null when it can be applied (#507).
+    ///
+    /// <para>Separate from the click handler and static so the rule can be tested without standing up
+    /// a popup and driving two CalendarDatePickers, and so that adding a rule later means changing
+    /// one method rather than the middle of an event handler.</para>
+    /// </summary>
+    internal static string? DescribeRangeProblem(DateTime? startUtc, DateTime? endUtc)
+    {
+        if (!startUtc.HasValue || !endUtc.HasValue)
+            return "Pick both a start and an end date.";
+
+        if (endUtc.Value == startUtc.Value)
+            return "Start and end are the same. The end has to be after the start.";
+
+        if (endUtc.Value < startUtc.Value)
+            return "The end is before the start. Swap them, or move the end later.";
+
+        return null;
+    }
+
+    /// <summary>
+    /// Shows why the entered range was not applied, leaving the popup open on the values that caused
+    /// it. Internal so a test can read the message a given pair of inputs produces (#507).
+    /// </summary>
+    internal void ShowRangeValidation(string message)
+    {
+        RangeValidationMessage.Text = message;
+        RangeValidationMessage.IsVisible = true;
+    }
+
+    internal void ClearRangeValidation()
+    {
+        RangeValidationMessage.Text = "";
+        RangeValidationMessage.IsVisible = false;
+    }
+
+    /// <summary>The validation text currently shown, or null when the popup is not complaining.</summary>
+    internal string? CurrentRangeValidation =>
+        RangeValidationMessage.IsVisible ? RangeValidationMessage.Text : null;
 
     private void PopulatePickersFromSelection()
     {
