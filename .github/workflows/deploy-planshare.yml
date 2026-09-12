@@ -104,13 +104,18 @@ jobs:
       - name: Verify through nginx
         id: verify
         run: |
+          # /api/stats is the probe because /health is not routed through nginx.
+          # 401 counts as healthy: it means nginx routed the request and the app
+          # answered with STATS_TOKEN auth enforced. Requiring 200 here would
+          # make every deploy after the token is set "fail" verification and
+          # auto-roll-back a good release.
           for i in 1 2 3 4 5; do
             code=$(curl -s -o /dev/null -w '%{http_code}' -m 20 "$PUBLIC_URL/api/stats" || echo 000)
             echo "attempt $i: /api/stats -> $code"
-            if [ "$code" = "200" ]; then echo "verified=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+            if [ "$code" = "200" ] || [ "$code" = "401" ]; then echo "verified=true" >> "$GITHUB_OUTPUT"; exit 0; fi
             sleep 5
           done
-          echo "::error::PlanShare did not return 200 through nginx after deploy."
+          echo "::error::PlanShare did not answer (200/401) through nginx after deploy."
           exit 1
 
       - name: Roll back on failed verification
