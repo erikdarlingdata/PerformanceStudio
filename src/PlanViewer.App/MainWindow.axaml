@@ -44,7 +44,68 @@
         <!-- Top-level TabControl for query sessions and plan files -->
         <Grid>
             <TabControl x:Name="MainTabControl"
-                        Background="{DynamicResource BackgroundBrush}" Padding="0"/>
+                        Background="{DynamicResource BackgroundBrush}" Padding="0">
+                <!-- The stock TabControl lays its headers out in a WrapPanel, so tabs stack into
+                     a second and third row as they accumulate: eight tabs made three rows at
+                     laptop width, and with the session toolbar under them that was six rows of
+                     chrome above the query. The strip is one row that scrolls instead.
+
+                     Retemplated rather than restyled because the stock template has no
+                     ScrollViewer to turn on: PART_ItemsPresenter sits bare in the DockPanel,
+                     and an ItemsPanelTemplate can only hold a Panel, so a horizontal panel on
+                     its own would put the overflow tabs out of reach instead of on a second row.
+                     Everything else is the stock arrangement, and the selected-tab underline is
+                     untouched: it lives in TabItem's own template (PART_SelectedPipe), not here.
+
+                     The rail stays visible on this one, unlike the session toolbar's: dragging it
+                     is the affordance that says there are more tabs off-screen. -->
+                <TabControl.Template>
+                    <ControlTemplate TargetType="TabControl">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}">
+                            <DockPanel>
+                                <ScrollViewer Name="TabStripScroll" DockPanel.Dock="Top"
+                                              PointerWheelChanged="TabStrip_PointerWheel"
+                                              HorizontalScrollBarVisibility="Auto"
+                                              VerticalScrollBarVisibility="Disabled">
+                                    <ItemsPresenter Name="PART_ItemsPresenter"
+                                                    ItemsPanel="{TemplateBinding ItemsPanel}"/>
+                                </ScrollViewer>
+                                <ContentPresenter Name="PART_SelectedContentHost"
+                                                  Margin="{TemplateBinding Padding}"
+                                                  HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                                  VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+                                                  Content="{TemplateBinding SelectedContent}"
+                                                  ContentTemplate="{TemplateBinding SelectedContentTemplate}"/>
+                            </DockPanel>
+                        </Border>
+                    </ControlTemplate>
+                </TabControl.Template>
+                <TabControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <StackPanel Orientation="Horizontal"/>
+                    </ItemsPanelTemplate>
+                </TabControl.ItemsPanel>
+                <!-- A tab header is [label][close button] in a StackPanel. Capping the LABEL is
+                     what trims it: a StackPanel measures its children with infinite width along
+                     its orientation, so a MaxWidth on the TabItem alone never makes the label
+                     ellipsize, it just pushes the close button off the end of a long name. 170
+                     plus the button and padding lands the header near 220.
+
+                     The selector is anchored at this control by name on purpose. Avalonia matches
+                     selectors against the LOGICAL tree, and a query session's own sub-tab headers
+                     are the same TabItem, StackPanel, TextBlock shape one level further down.
+                     Every looser spelling of this rule (and hosting it on the items panel, which
+                     is not in the headers' logical chain at all and so reaches nothing) either
+                     misses these headers or also caps the sub-tabs inside every session. -->
+                <TabControl.Styles>
+                    <Style Selector="TabControl#MainTabControl &gt; TabItem &gt; StackPanel &gt; TextBlock">
+                        <Setter Property="MaxWidth" Value="170"/>
+                        <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+                    </Style>
+                </TabControl.Styles>
+            </TabControl>
 
             <!-- Empty state overlay -->
             <Border x:Name="EmptyOverlay" Background="{DynamicResource BackgroundBrush}"
