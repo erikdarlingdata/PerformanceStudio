@@ -975,19 +975,38 @@ public partial class MainWindow : Window
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Icon = this.Icon,
             Background = new SolidColorBrush(Color.Parse("#1A1D23")),
-            Foreground = new SolidColorBrush(Color.Parse("#E4E6EB")),
-            Content = new StackPanel
+            Foreground = new SolidColorBrush(Color.Parse("#E4E6EB"))
+        };
+
+        /* IsDefault/IsCancel so Enter and Esc both dismiss - this dialog used to offer no
+           way out but the titlebar X, and Alt+Tab could park it over the app indefinitely. */
+        var okButton = new Button
+        {
+            Content = "OK",
+            Width = 80,
+            Height = 32,
+            IsDefault = true,
+            IsCancel = true,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center,
+            Theme = (Avalonia.Styling.ControlTheme)this.FindResource("AppButton")!
+        };
+        okButton.Click += (_, _) => dialog.Close();
+
+        DockPanel.SetDock(okButton, Dock.Bottom);
+        dialog.Content = new DockPanel
+        {
+            Margin = new Avalonia.Thickness(20),
+            Children =
             {
-                Margin = new Avalonia.Thickness(20),
-                Children =
+                okButton,
+                new TextBlock
                 {
-                    new TextBlock
-                    {
-                        Text = message,
-                        TextWrapping = TextWrapping.Wrap,
-                        FontSize = 13,
-                        Foreground = new SolidColorBrush(Color.Parse("#E4E6EB"))
-                    }
+                    Text = message,
+                    TextWrapping = TextWrapping.Wrap,
+                    FontSize = 13,
+                    Foreground = new SolidColorBrush(Color.Parse("#E4E6EB"))
                 }
             }
         };
@@ -996,6 +1015,8 @@ public partial class MainWindow : Window
             dialog.ShowDialog(this);
         else
             dialog.Show();
+
+        okButton.Focus();
     }
 
     private async Task CheckForUpdatesOnStartupAsync()
