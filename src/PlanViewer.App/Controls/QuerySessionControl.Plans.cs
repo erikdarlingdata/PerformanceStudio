@@ -38,6 +38,8 @@ public partial class QuerySessionControl : UserControl
         var label = labelOverride ?? (estimated ? $"Est Plan {_planCounter}" : $"Plan {_planCounter}");
 
         var viewer = new PlanViewerControl();
+        // Sub-tab of this session: the session's toolbar above it owns the connection (#U5).
+        viewer.HostedInSession = true;
         viewer.Metadata = _serverMetadata;
         viewer.ConnectionString = _connectionString;
         viewer.SetConnectionServices(_credentialService, _connectionStore);

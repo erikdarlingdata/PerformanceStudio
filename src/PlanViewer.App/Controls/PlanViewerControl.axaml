@@ -14,20 +14,28 @@
                 BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
             <DockPanel>
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Left" Spacing="4">
-                    <Button x:Name="PlanConnectButton" Content="Connect" Click="PlanConnect_Click"
-                            Height="28" Padding="8,0" FontSize="12"
-                            Theme="{StaticResource AppButton}"
-                            ToolTip.Tip="Connect to a SQL Server for schema lookups"/>
-                    <TextBlock x:Name="PlanServerLabel" Text=""
-                               VerticalAlignment="Center" FontSize="12"
-                               Foreground="{DynamicResource ForegroundBrush}" Margin="2,0,0,0"/>
-                    <TextBlock Text="|" VerticalAlignment="Center"
-                               Foreground="{DynamicResource ForegroundBrush}" Margin="2,0"/>
-                    <ComboBox x:Name="PlanDatabaseBox" Width="180" Height="28" FontSize="12"
-                              IsEnabled="False" PlaceholderText="Database"
-                              SelectionChanged="PlanDatabase_SelectionChanged"/>
-                    <TextBlock Text="|" VerticalAlignment="Center"
-                               Foreground="{DynamicResource ForegroundBrush}" Margin="2,0"/>
+                    <!-- Connection controls, collapsed by HostedInSession. A plan opened as a
+                         sub-tab of a query session sits directly under that session's toolbar,
+                         which already carries a live Connect button, server label and database
+                         picker for the same connection — this row repeated all three, with its
+                         Database combo permanently disabled. A standalone .sqlplan tab has no
+                         toolbar above it and genuinely needs them. -->
+                    <StackPanel x:Name="PlanConnectionControls" Orientation="Horizontal" Spacing="4">
+                        <Button x:Name="PlanConnectButton" Content="Connect" Click="PlanConnect_Click"
+                                Height="28" Padding="8,0" FontSize="12"
+                                Theme="{StaticResource AppButton}"
+                                ToolTip.Tip="Connect to a SQL Server for schema lookups"/>
+                        <TextBlock x:Name="PlanServerLabel" Text=""
+                                   VerticalAlignment="Center" FontSize="12"
+                                   Foreground="{DynamicResource ForegroundBrush}" Margin="2,0,0,0"/>
+                        <TextBlock Text="|" VerticalAlignment="Center"
+                                   Foreground="{DynamicResource ForegroundBrush}" Margin="2,0"/>
+                        <ComboBox x:Name="PlanDatabaseBox" Width="180" Height="28" FontSize="12"
+                                  IsEnabled="False" PlaceholderText="Database"
+                                  SelectionChanged="PlanDatabase_SelectionChanged"/>
+                        <TextBlock Text="|" VerticalAlignment="Center"
+                                   Foreground="{DynamicResource ForegroundBrush}" Margin="2,0"/>
+                    </StackPanel>
                     <Button Content="+" Click="ZoomIn_Click" Width="28" Height="28" Padding="0" FontSize="16"
                             FontWeight="Bold" ToolTip.Tip="Zoom In"
                             Theme="{StaticResource AppButton}"/>

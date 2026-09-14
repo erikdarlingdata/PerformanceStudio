@@ -215,6 +215,33 @@ public partial class PlanViewerControl : UserControl
     /// </summary>
     public string? ConnectionString { get; set; }
 
+    /// <summary>
+    /// Whether this viewer is living as a sub-tab inside a query session, rather than as a
+    /// top-level tab of its own.
+    ///
+    /// <para>Hosted, it drops the connection half of its toolbar — Reconnect, the server label
+    /// and the Database picker — because the session's toolbar is one row above showing the same
+    /// connection, and its own picker was permanently disabled there anyway: a plan inside a
+    /// session inherits <see cref="ConnectionString"/> from the session (see
+    /// QuerySessionControl.AddPlanTab), and never populates a database list of its own. Two
+    /// stacked toolbars, three of the controls duplicated, one of them dead.</para>
+    ///
+    /// <para>Everything plan-scoped stays: zoom, Fit, the zoom readout, Save .sqlplan and
+    /// Statements. And schema lookups keep working, since they read ConnectionString rather than
+    /// the controls.</para>
+    /// </summary>
+    public bool HostedInSession
+    {
+        get => _hostedInSession;
+        set
+        {
+            _hostedInSession = value;
+            PlanConnectionControls.IsVisible = !value;
+        }
+    }
+
+    private bool _hostedInSession;
+
     // Connection state for plans that connect via the toolbar
     private ServerConnection? _planConnection;
     private ICredentialService? _planCredentialService;
