@@ -346,11 +346,21 @@
                            TextAlignment="Center" HorizontalAlignment="Center" Margin="0,8,0,0"/>
             </StackPanel>
 
-            <!-- Properties Splitter. Hover feedback is wired in PlanViewerControl.Properties.cs:
-                 at 5px on a 4K display this was a grey hairline nobody could see, let alone grab. -->
+            <!-- Properties Splitter. At 5px on a 4K display this was a grey hairline nobody
+                 could see, let alone grab; Fluent's GridSplitter theme has no pointer-over
+                 state of its own, so the accent fill is added here. Both states have to be
+                 Setters: a Background attribute is a local value and would outrank them. -->
             <GridSplitter x:Name="PropertiesSplitter" Grid.Column="3" Width="6"
-                          Background="{DynamicResource BorderBrush}"
-                          IsVisible="False"/>
+                          IsVisible="False">
+                <GridSplitter.Styles>
+                    <Style Selector="GridSplitter">
+                        <Setter Property="Background" Value="{DynamicResource BorderBrush}"/>
+                    </Style>
+                    <Style Selector="GridSplitter:pointerover">
+                        <Setter Property="Background" Value="{DynamicResource AccentBrush}"/>
+                    </Style>
+                </GridSplitter.Styles>
+            </GridSplitter>
 
             <!-- Properties Panel -->
             <Border x:Name="PropertiesPanel" Grid.Column="4"

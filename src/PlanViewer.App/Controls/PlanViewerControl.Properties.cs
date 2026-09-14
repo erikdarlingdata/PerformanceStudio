@@ -26,9 +26,6 @@ public partial class PlanViewerControl : UserControl
     private static double _propertiesPanelWidth = DefaultPropertiesWidth;
     private bool _propertiesChromeWired;
 
-    // Accent fill for the properties splitter while the pointer is over it.
-    private static readonly SolidColorBrush SplitterHoverBrush = new(Color.FromRgb(0x2E, 0xAE, 0xF1));
-
     // The amber this panel already uses for Warning-severity warnings.
     private static readonly SolidColorBrush PropWarningBrush = new(Color.FromRgb(0xFF, 0xB3, 0x47));
 
@@ -1141,17 +1138,13 @@ public partial class PlanViewerControl : UserControl
     }
 
     /// <summary>
-    /// One-time wiring for the panel chrome that lives in AXAML: the splitter's hover
-    /// feedback, and remembering the width the user drags the panel to.
+    /// One-time wiring for the panel chrome that lives in AXAML: remembering the width the
+    /// user drags the panel to.
     /// </summary>
     private void EnsurePropertiesChrome()
     {
         if (_propertiesChromeWired) return;
         _propertiesChromeWired = true;
-
-        var splitterIdleBrush = PropertiesSplitter.Background ?? Brushes.Transparent;
-        PropertiesSplitter.PointerEntered += (_, _) => PropertiesSplitter.Background = SplitterHoverBrush;
-        PropertiesSplitter.PointerExited += (_, _) => PropertiesSplitter.Background = splitterIdleBrush;
 
         // The splitter writes the dragged size straight onto the column, so that is where the
         // remembered width comes from - no drag tracking of our own.
@@ -1492,6 +1485,27 @@ public partial class PlanViewerControl : UserControl
         _currentSection.Rows.Add(entry);
     }
 
+    /// <summary>
+    /// Routes a value's Ctrl+C through the guarded clipboard helper.
+    ///
+    /// <para>SelectableTextBlock.Copy() is async void over an unguarded SetTextAsync - the same
+    /// shape that crashed the app when another process held the clipboard (#415). The app-wide
+    /// guard in <see cref="TextBoxClipboardGuard"/> hangs off TextBox's own routed events, and
+    /// SelectableTextBlock registers its own, so these values would have gone from guarded
+    /// (they were read-only TextBoxes) to unguarded. Handling the event stops the built-in path
+    /// before it reaches the clipboard.</para>
+    /// </summary>
+    private static void GuardValueCopy(SelectableTextBlock value)
+        => value.AddHandler(SelectableTextBlock.CopyingToClipboardEvent, OnPropertyValueCopying);
+
+    private static void OnPropertyValueCopying(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not SelectableTextBlock value || !value.CanCopy) return;
+
+        e.Handled = true;
+        _ = ClipboardHelper.TrySetTextAsync(value, value.SelectedText);
+    }
+
     private static TextBlock NewPropertyLabel(string label, bool indent) => new()
     {
         Text = label,
@@ -1539,6 +1553,8 @@ public partial class PlanViewerControl : UserControl
     {
         control.ContextMenu = entry.Menu ??= BuildPropertyRowMenu(entry);
         control.ContextFlyout = null;
+        if (control is SelectableTextBlock value)
+            GuardValueCopy(value);
     }
 
     private ContextMenu BuildPropertyRowMenu(PropertyPanelRow entry)
