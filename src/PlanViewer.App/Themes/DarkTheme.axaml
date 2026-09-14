@@ -75,7 +75,18 @@
 
     <!-- ===== 5. Control themes =============================================================== -->
 
-    <!-- Button style: brand blue on hover -->
+    <!--
+        AppButton — the app's only button style, applied by ~40 call sites in XAML and by the
+        toolbars built in code-behind (FindResource("AppButton")).
+
+        States are deliberately bounded. The previous version filled the whole button with
+        AccentBrush on hover, which flashed cyan on every mouse pass and, worse, could strand a
+        button looking permanently "on": a button that lost the pointer while a view was opening
+        kept :pointerover, and a full accent fill reads as a toggled state even though no toggle
+        code exists anywhere. Hover is now a surface step plus an accent border, pressed is a 12%
+        accent wash, and focus is its own explicit visual. Nothing here paints a solid accent
+        background, so no combination of stuck pseudo-classes can invent a selected-looking button.
+    -->
     <ControlTheme x:Key="AppButton" TargetType="Button">
         <Setter Property="Background" Value="{DynamicResource BackgroundLightBrush}"/>
         <Setter Property="Foreground" Value="{DynamicResource ForegroundBrush}"/>
@@ -101,20 +112,25 @@
             </ControlTemplate>
         </Setter>
 
+        <!-- Hover: lift the surface one step and light the border. Foreground stays put, so text
+             never has to re-contrast against a saturated fill. -->
         <Style Selector="^:pointerover /template/ Border#PART_Border">
-            <Setter Property="Background" Value="{DynamicResource AccentBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource SurfaceHoverBrush}"/>
             <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
         </Style>
-        <Style Selector="^:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Foreground" Value="White"/>
-        </Style>
+
+        <!-- Pressed: a 12% accent wash. Enough to feel the click, not enough to look latched. -->
         <Style Selector="^:pressed /template/ Border#PART_Border">
-            <Setter Property="Background" Value="#2596d4"/>
-            <Setter Property="BorderBrush" Value="#2596d4"/>
+            <Setter Property="Background" Value="{DynamicResource AccentSoftBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
         </Style>
-        <Style Selector="^:pressed /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Foreground" Value="White"/>
+
+        <!-- Keyboard focus. This template replaces Fluent's, which takes its focus adorner with
+             it, so without this rule a tabbing user gets no ring at all. -->
+        <Style Selector="^:focus-visible /template/ Border#PART_Border">
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
         </Style>
+
         <Style Selector="^:disabled">
             <Setter Property="Opacity" Value="0.4"/>
         </Style>
