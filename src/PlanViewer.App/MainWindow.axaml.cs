@@ -827,7 +827,7 @@ public partial class MainWindow : Window
         Close();
     }
 
-    private void Settings_Click(object? sender, RoutedEventArgs e)
+    private async void Settings_Click(object? sender, RoutedEventArgs e)
     {
         if (_settingsWindow != null)
         {
@@ -841,7 +841,10 @@ public partial class MainWindow : Window
             _appSettings = settings;
         };
         _settingsWindow.Closed += (_, _) => _settingsWindow = null;
-        _settingsWindow.Show(this);
+
+        // Modal: Settings owns the interaction until it closes, so its own child prompts
+        // (the unsaved-changes discard dialog) cannot be talked over from this window.
+        await _settingsWindow.ShowDialog(this);
     }
 
     private void About_Click(object? sender, RoutedEventArgs e)
