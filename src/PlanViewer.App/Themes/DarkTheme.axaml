@@ -51,7 +51,14 @@
     <SolidColorBrush x:Key="WarningBrush" Color="#FFB347"/>
     <!-- Reads "connected / ok" on the dark ground without the glare of LimeGreen. -->
     <SolidColorBrush x:Key="SuccessBrush" Color="#58B368"/>
-    <SolidColorBrush x:Key="ErrorBrush" Color="#E06C75"/>
+    <!-- #E57373, the red 16 call sites already mean: AdviceContentBuilder's Critical, every
+         PlanWarningSeverity.Critical branch in the plan surface, the runtime-summary grant waits,
+         the session status strip, WaitStats "Lock". #E06C75 was a single-file outlier - one line
+         of PlanViewerControl.axaml - and this token briefly adopted it. Canonicalising on the
+         majority is what stops a SECOND error red getting invented when those call sites migrate.
+         SlicerValidationBrush below is now identical by design; its key stays put, and consumers
+         can collapse onto ErrorBrush during later migrations. -->
+    <SolidColorBrush x:Key="ErrorBrush" Color="#E57373"/>
 
     <!-- ===== 3. Insight panel accents ======================================================== -->
 
