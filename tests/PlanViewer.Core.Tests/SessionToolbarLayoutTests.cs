@@ -1,6 +1,7 @@
 using System.Linq;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.VisualTree;
 using PlanViewer.App;
 using PlanViewer.App.Controls;
 
@@ -75,6 +76,50 @@ public class SessionToolbarLayoutTests
                 Assert.Equal(40, scroll.Offset.X);
                 Assert.Equal(subTabsY, subTabs.Bounds.Y);
             }
+        });
+    }
+
+    /// <summary>
+    /// The colour sweep swapped twelve hex literals for dictionary lookups that fall back to those
+    /// same literals, which means a lookup that never resolves renders exactly like the code it
+    /// replaced — the theme would quietly stop reaching the control and nothing would say so. This
+    /// pins the mechanism rather than the colours: the keys the session asks for are keys it can
+    /// find, from where it sits in the tree. ErrorBrush is deliberately not in the list; the theme
+    /// has no such key yet, and that call is written to keep its literal until it does.
+    /// </summary>
+    [Fact]
+    public void TheThemeKeysTheSessionAsksForResolve()
+    {
+        HeadlessUi.Run(() =>
+        {
+            var window = new MainWindow();
+            window.Show();
+            window.NewQuery_Click(window, new RoutedEventArgs());
+            window.UpdateLayout();
+
+            var session = window.FindControl<TabControl>("MainTabControl")!.Items
+                .OfType<TabItem>().Select(t => t.Content).OfType<QuerySessionControl>().Last();
+
+            foreach (var key in new[] { "ForegroundBrush", "BackgroundBrush", "ForegroundMutedBrush",
+                "BackgroundDarkBrush", "BorderBrush", "AppButton" })
+            {
+                Assert.True(session.TryFindResource(key, out var value) && value is not null,
+                    $"the session cannot resolve {key}");
+            }
+
+            /* Same trap, same shape: the group dividers between the toolbar's slots are class-styled
+               Borders, and a class style that matches nothing leaves them zero-width and unpainted —
+               a toolbar quietly missing its dividers, with nothing to see in the XAML. */
+            var dividers = session.FindControl<ScrollViewer>("ToolbarScroll")!
+                .GetVisualDescendants().OfType<Border>()
+                .Where(b => b.Classes.Contains("separator")).ToList();
+
+            Assert.Equal(6, dividers.Count);
+            Assert.All(dividers, d =>
+            {
+                Assert.Equal(1, d.Bounds.Width);
+                Assert.NotNull(d.Background);
+            });
         });
     }
 }

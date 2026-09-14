@@ -23,10 +23,10 @@
                 BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
             <DockPanel>
                 <!-- Docked right, so it holds the row's right edge and gives up space first:
-                     capped it trims to an ellipsis (with the full text on hover, set alongside
-                     the text) instead of shoving the toolbar off-screen. 240 rather than
-                     something roomier because whatever it takes comes straight out of the
-                     buttons' visible width, and the hover carries the rest of a SQL error. -->
+                     capped at 240 it trims to an ellipsis (with the full text on hover, set
+                     alongside the text) instead of shoving the toolbar off-screen. That number
+                     rather than something roomier because whatever it takes comes straight out
+                     of the buttons' visible width, and the hover carries the rest of an error. -->
                 <TextBlock x:Name="StatusText" DockPanel.Dock="Right"
                            HorizontalAlignment="Right" VerticalAlignment="Center"
                            MaxWidth="240"
