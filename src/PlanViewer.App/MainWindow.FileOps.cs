@@ -40,7 +40,11 @@ public partial class MainWindow : Window
         UpdateEmptyOverlay();
     }
 
-    private async void OpenFile_Click(object? sender, RoutedEventArgs e)
+    /// <summary>
+    /// Internal, like <see cref="NewQuery_Click"/>: the empty state on a fresh query tab offers
+    /// this action and calls the menu's own handler rather than growing a second copy of it.
+    /// </summary>
+    internal async void OpenFile_Click(object? sender, RoutedEventArgs e)
     {
         var storage = StorageProvider;
         var files = await storage.OpenFilePickerAsync(new FilePickerOpenOptions
@@ -220,7 +224,8 @@ public partial class MainWindow : Window
         }
     }
 
-    private async void PasteXml_Click(object? sender, RoutedEventArgs e)
+    /// <summary>Internal for the same reason as <see cref="OpenFile_Click"/>.</summary>
+    internal async void PasteXml_Click(object? sender, RoutedEventArgs e)
     {
         await PasteXmlAsync();
     }

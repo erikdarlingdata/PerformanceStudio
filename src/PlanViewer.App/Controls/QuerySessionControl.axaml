@@ -126,17 +126,104 @@
                         </ComboBox>
                     </StackPanel>
                 </TabItem.Header>
-                <ae:TextEditor x:Name="QueryEditor"
-                               FontFamily="Consolas, Menlo, monospace"
-                               FontSize="13"
-                               ShowLineNumbers="True"
-                               Background="{DynamicResource BackgroundBrush}"
-                               Foreground="{DynamicResource ForegroundBrush}"
-                               HorizontalScrollBarVisibility="Auto"
-                               VerticalScrollBarVisibility="Auto"
-                               HorizontalAlignment="Stretch"
-                               VerticalAlignment="Stretch"
-                               Padding="4"/>
+                <Grid>
+                    <ae:TextEditor x:Name="QueryEditor"
+                                   FontFamily="Consolas, Menlo, monospace"
+                                   FontSize="13"
+                                   ShowLineNumbers="True"
+                                   Background="{DynamicResource BackgroundBrush}"
+                                   Foreground="{DynamicResource ForegroundBrush}"
+                                   HorizontalScrollBarVisibility="Auto"
+                                   VerticalScrollBarVisibility="Auto"
+                                   HorizontalAlignment="Stretch"
+                                   VerticalAlignment="Stretch"
+                                   Padding="4"/>
+
+                    <!-- Empty state. Over the editor only while this session is completely
+                         empty — nothing typed and no sub-tab but this one — so a new Query tab
+                         offers its primary actions instead of a blank wall. It never traps
+                         typing: the editor keeps focus underneath, a click on the background
+                         hands focus back to it, and the overlay leaves the moment there is any
+                         text or any other sub-tab (RefreshEmptyState). -->
+                    <Border x:Name="EmptyStateOverlay"
+                            Background="{DynamicResource BackgroundBrush}"
+                            IsVisible="False"
+                            PointerPressed="EmptyStateBackground_PointerPressed">
+                        <Border.Styles>
+                            <Style Selector="Border.action">
+                                <Setter Property="CornerRadius" Value="4"/>
+                                <Setter Property="Padding" Value="10,7"/>
+                                <Setter Property="Cursor" Value="Hand"/>
+                            </Style>
+                            <Style Selector="Border.action TextBlock.label">
+                                <Setter Property="FontSize" Value="13"/>
+                                <Setter Property="Foreground" Value="{DynamicResource ForegroundBrush}"/>
+                                <Setter Property="VerticalAlignment" Value="Center"/>
+                            </Style>
+                            <!-- gesture is a keyboard shortcut, path is a recent plan's folder:
+                                 same quiet treatment, kept apart so each can be found on its own. -->
+                            <Style Selector="Border.action TextBlock.gesture, Border.action TextBlock.path">
+                                <Setter Property="FontSize" Value="11"/>
+                                <Setter Property="Foreground" Value="{DynamicResource ForegroundMutedBrush}"/>
+                                <Setter Property="VerticalAlignment" Value="Center"/>
+                            </Style>
+                            <!-- Hover shows in the text rather than behind it, because each row
+                                 sets its own Background (below) and a local value outranks a
+                                 style setter — a :pointerover background here would never win. -->
+                            <Style Selector="Border.action:pointerover TextBlock.label">
+                                <Setter Property="Foreground" Value="{DynamicResource AccentBrush}"/>
+                            </Style>
+                            <Style Selector="Border.action:pointerover TextBlock.gesture, Border.action:pointerover TextBlock.path">
+                                <Setter Property="Foreground" Value="{DynamicResource AccentBrush}"/>
+                            </Style>
+                        </Border.Styles>
+
+                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"
+                                    Width="340">
+                            <TextBlock Text="Get started" FontSize="14"
+                                       Foreground="{DynamicResource ForegroundMutedBrush}"
+                                       HorizontalAlignment="Center"
+                                       Margin="0,0,0,10"/>
+
+                            <!-- Background="Transparent" on every row is load-bearing, not
+                                 cosmetic: a control with a null background hit-tests only what it
+                                 draws, so a row would answer a click on its glyphs and ignore the
+                                 gaps between the words.
+
+                                 Hidden when this session has no window to ask (a detached
+                                 session): both of these are File menu actions. -->
+                            <StackPanel x:Name="EmptyStateFileActions">
+                                <Border Classes="action" Background="Transparent"
+                                        PointerPressed="EmptyStateOpenPlan_PointerPressed">
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <TextBlock Grid.Column="0" Classes="label" Text="Open a plan&#x2026;"/>
+                                        <TextBlock Grid.Column="1" Classes="gesture" Text="Ctrl+O"/>
+                                    </Grid>
+                                </Border>
+                                <Border Classes="action" Background="Transparent"
+                                        PointerPressed="EmptyStatePastePlan_PointerPressed">
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <TextBlock Grid.Column="0" Classes="label" Text="Paste plan XML"/>
+                                        <TextBlock Grid.Column="1" Classes="gesture" Text="Ctrl+V"/>
+                                    </Grid>
+                                </Border>
+                            </StackPanel>
+
+                            <Border Classes="action" Background="Transparent"
+                                    PointerPressed="EmptyStateConnect_PointerPressed">
+                                <TextBlock Classes="label" Text="Connect to a server"/>
+                            </Border>
+
+                            <StackPanel x:Name="EmptyStateRecentSection" IsVisible="False"
+                                        Margin="0,14,0,0">
+                                <TextBlock Text="Recent plans" FontSize="11"
+                                           Foreground="{DynamicResource ForegroundMutedBrush}"
+                                           Margin="10,0,0,4"/>
+                                <StackPanel x:Name="EmptyStateRecentPlans"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                </Grid>
             </TabItem>
         </TabControl>
     </Grid>

@@ -21,9 +21,11 @@
                 <MenuItem Header="_Save Query..." Click="SaveQuery_Click"
                           InputGesture="Ctrl+S"/>
                 <Separator/>
-                <MenuItem Header="_Open .sqlplan..." Click="OpenFile_Click"
+                <!-- Named so a test can hold these gestures against the ones the query tab's
+                     empty state prints beside the same two actions. -->
+                <MenuItem x:Name="OpenPlanMenuItem" Header="_Open .sqlplan..." Click="OpenFile_Click"
                           InputGesture="Ctrl+O"/>
-                <MenuItem Header="_Paste Plan XML" Click="PasteXml_Click"
+                <MenuItem x:Name="PastePlanXmlMenuItem" Header="_Paste Plan XML" Click="PasteXml_Click"
                           InputGesture="Ctrl+V"/>
                 <Separator/>
                 <MenuItem x:Name="RecentPlansMenu" Header="_Recent Plans"/>

@@ -137,7 +137,13 @@ public partial class QuerySessionControl : UserControl
 
         // #462: every edit is a chance for the tab's modified marker to change, in both
         // directions — an undo back to the saved text clears it again.
-        QueryEditor.TextChanged += (_, _) => DirtyStateChanged?.Invoke(this, EventArgs.Empty);
+        QueryEditor.TextChanged += (_, _) =>
+        {
+            DirtyStateChanged?.Invoke(this, EventArgs.Empty);
+            // The first keystroke is what takes the empty state away, and deleting the last
+            // one is what brings it back.
+            RefreshEmptyState();
+        };
 
         // Focus the editor when the control is attached to the visual tree
         // Re-install TextMate if it was disposed on detach (tab switching disposes it)
@@ -146,8 +152,11 @@ public partial class QuerySessionControl : UserControl
             if (_textMateInstallation == null)
                 SetupSyntaxHighlighting();
 
-            QueryEditor.Focus();
-            QueryEditor.TextArea.Focus();
+            FocusEditor();
+
+            /* The empty state's recent plans come off the owning window, which a session built
+               moments ago cannot see yet. Attaching is when it can. */
+            RefreshEmptyState();
         };
 
         // Dispose TextMate when detached (e.g. tab switch) to release renderers/transformers.
@@ -168,16 +177,19 @@ public partial class QuerySessionControl : UserControl
            called at each site that produces a plan, because the sites that produce a plan are the
            ones nobody remembers: executing a query fills in a tab that already exists, which is
            neither an Add nor a Remove and is exactly the case the first fix missed. */
-        TabContentWatcher.Watch(SubTabControl, UpdateCompareButtonState);
+        TabContentWatcher.Watch(SubTabControl, () =>
+        {
+            UpdateCompareButtonState();
+            // A plan, Query Store grid or schema tab opening or closing decides the other half
+            // of whether this session is empty.
+            RefreshEmptyState();
+        });
 
         // Focus the editor when the Editor tab is selected; toggle plan-dependent buttons
         SubTabControl.SelectionChanged += (_, _) =>
         {
             if (SubTabControl.SelectedIndex == 0)
-            {
-                QueryEditor.Focus();
-                QueryEditor.TextArea.Focus();
-            }
+                FocusEditor();
             UpdatePlanTabButtonState();
 
             /* The strip sits above the sub-tabs and says nothing about which one it is talking
@@ -185,6 +197,12 @@ public partial class QuerySessionControl : UserControl
                user moved to. Whatever it was saying was about the view they just left. */
             ClearStatus();
         };
+
+        /* A brand new session is the empty state's whole reason for existing, and neither the
+           watcher (which only reports changes) nor a keystroke (there has been none) would say
+           so. The attach above refreshes it again once there is a window to read recent plans
+           from. */
+        RefreshEmptyState();
     }
 
 
