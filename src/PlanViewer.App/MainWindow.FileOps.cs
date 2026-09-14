@@ -401,6 +401,25 @@ public partial class MainWindow : Window
     {
         try
         {
+            /* Reopening a plan that is already open selects its tab instead of stacking a
+               duplicate: three tabs all named another-parallel-spill.sqlplan cannot be told
+               apart, and the strip starts wrapping rows for no new information. Session
+               restore comes through here too, so a restore list that accumulated duplicates
+               heals down to one tab per file. */
+            var fullPath = Path.GetFullPath(filePath);
+            foreach (var item in MainTabControl.Items)
+            {
+                if (item is TabItem existing && existing.Content is DockPanel dock
+                    && dock.Children.OfType<PlanViewerControl>().FirstOrDefault() is { } open
+                    && open.SourceFilePath is { } openPath
+                    && string.Equals(Path.GetFullPath(openPath), fullPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    MainTabControl.SelectedItem = existing;
+                    TrackRecentPlan(filePath);
+                    return;
+                }
+            }
+
             var xml = File.ReadAllText(filePath);
 
             // SSMS saves plans as UTF-16 with encoding="utf-16" in the XML declaration.
