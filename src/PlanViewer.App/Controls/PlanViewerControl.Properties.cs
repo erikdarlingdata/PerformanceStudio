@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using System.Text.RegularExpressions;
 using Avalonia;
 using Avalonia.Controls;
@@ -28,11 +29,49 @@ public partial class PlanViewerControl : UserControl
     // Accent fill for the properties splitter while the pointer is over it.
     private static readonly SolidColorBrush SplitterHoverBrush = new(Color.FromRgb(0x2E, 0xAE, 0xF1));
 
+    private static readonly FontFamily CodeFontFamily = new("Consolas");
+
+    /// <summary>
+    /// One row of the properties panel: what it says, what the filter box matches it against,
+    /// and what the copy menu hands back. Recorded while the panel is built because the panel
+    /// is raw controls with no bindings behind them, so once a row is in the visual tree its
+    /// text is the only thing left to work from.
+    /// </summary>
+    private sealed class PropertyPanelRow
+    {
+        public string Label { get; init; } = "";
+        public string Value { get; init; } = "";
+        public bool IsCode { get; init; }
+
+        /// <summary>
+        /// Plain text for rows that are not a label/value pair - the per-thread breakdown.
+        /// Null for ordinary rows, which the copy menu renders from Label and Value.
+        /// </summary>
+        public string? BlockText { get; init; }
+
+        public string SearchText { get; init; } = "";
+
+        /// <summary>Every control the row occupies, so the filter can hide all of them.</summary>
+        public List<Control> Controls { get; } = new();
+    }
+
+    private sealed class PropertyPanelSection
+    {
+        public string Title { get; init; } = "";
+        public Expander Expander { get; init; } = null!;
+        public List<PropertyPanelRow> Rows { get; } = new();
+    }
+
+    private readonly List<PropertyPanelSection> _propertySections = new();
+    private PropertyPanelSection? _currentSection;
+
     private void ShowPropertiesPanel(PlanNode node)
     {
         EnsurePropertiesChrome();
         PropertiesContent.Children.Clear();
         _sectionLabelColumns.Clear();
+        _propertySections.Clear();
+        _currentSection = null;
         _currentSectionGrid = null;
         _currentSectionRowIndex = 0;
 
@@ -676,6 +715,9 @@ public partial class PlanViewerControl : UserControl
             // === Template Plan Guide ===
             if (!string.IsNullOrEmpty(s.TemplatePlanGuideName))
             {
+                // Without its own section these two rows land in whichever grid was built last,
+                // which reads as an unrelated section growing two mystery rows.
+                AddPropertySection("Template Plan Guide");
                 AddPropertyRow("Template Plan Guide", s.TemplatePlanGuideName);
                 if (!string.IsNullOrEmpty(s.TemplatePlanGuideDB))
                     AddPropertyRow("Template Guide DB", s.TemplatePlanGuideDB);
@@ -821,6 +863,7 @@ public partial class PlanViewerControl : UserControl
             if (s.PlanWarnings.Count > 0)
             {
                 var planWarningsPanel = new StackPanel();
+                var planWarningRows = new List<PropertyPanelRow>();
                 var sortedPlanWarnings = s.PlanWarnings
                     .OrderByDescending(w => w.MaxBenefitPercent ?? -1)
                     .ThenByDescending(w => w.Severity)
@@ -865,6 +908,7 @@ public partial class PlanViewerControl : UserControl
                         });
                     }
                     planWarningsPanel.Children.Add(warnPanel);
+                    planWarningRows.Add(NewWarningRow(planWarnHeader, w.Message, w.ActionableFix, warnPanel));
                 }
 
                 var planWarningsExpander = new Expander
@@ -888,6 +932,7 @@ public partial class PlanViewerControl : UserControl
                     HorizontalContentAlignment = HorizontalAlignment.Stretch
                 };
                 PropertiesContent.Children.Add(planWarningsExpander);
+                RegisterPropertySection("Plan Warnings", planWarningsExpander).Rows.AddRange(planWarningRows);
             }
 
             /* === Operator Warnings (#440) ===
@@ -903,6 +948,7 @@ public partial class PlanViewerControl : UserControl
             if (operatorWarnings.Count > 0)
             {
                 var operatorWarningsPanel = new StackPanel();
+                var operatorWarningRows = new List<PropertyPanelRow>();
                 foreach (var (originNode, w) in operatorWarnings
                              .OrderByDescending(x => x.Warning.MaxBenefitPercent ?? -1)
                              .ThenByDescending(x => x.Warning.Severity)
@@ -933,6 +979,8 @@ public partial class PlanViewerControl : UserControl
                         Margin = new Thickness(16, 0, 0, 0)
                     });
                     operatorWarningsPanel.Children.Add(opWarnPanel);
+                    operatorWarningRows.Add(
+                        NewWarningRow(opHeaderText, OperatorOriginLabel(originNode), null, opWarnPanel));
                 }
 
                 var operatorWarningsExpander = new Expander
@@ -960,6 +1008,8 @@ public partial class PlanViewerControl : UserControl
                     HorizontalContentAlignment = HorizontalAlignment.Stretch
                 };
                 PropertiesContent.Children.Add(operatorWarningsExpander);
+                RegisterPropertySection($"Operator Warnings ({operatorWarnings.Count})", operatorWarningsExpander)
+                    .Rows.AddRange(operatorWarningRows);
             }
 
             // === Missing Indexes ===
@@ -979,6 +1029,7 @@ public partial class PlanViewerControl : UserControl
         if (node.HasWarnings)
         {
             var warningsPanel = new StackPanel();
+            var nodeWarningRows = new List<PropertyPanelRow>();
             var sortedNodeWarnings = node.Warnings
                 .OrderByDescending(w => w.MaxBenefitPercent ?? -1)
                 .ThenByDescending(w => w.Severity)
@@ -1009,6 +1060,7 @@ public partial class PlanViewerControl : UserControl
                     Margin = new Thickness(16, 0, 0, 0)
                 });
                 warningsPanel.Children.Add(warnPanel);
+                nodeWarningRows.Add(NewWarningRow(nodeWarnHeader, w.Message, null, warnPanel));
             }
 
             var warningsExpander = new Expander
@@ -1032,6 +1084,7 @@ public partial class PlanViewerControl : UserControl
                 HorizontalContentAlignment = HorizontalAlignment.Stretch
             };
             PropertiesContent.Children.Add(warningsExpander);
+            RegisterPropertySection("Warnings", warningsExpander).Rows.AddRange(nodeWarningRows);
         }
 
         /* Show the panel. The width is set only when the panel is opening: setting it on every
@@ -1072,6 +1125,40 @@ public partial class PlanViewerControl : UserControl
         };
     }
 
+    /// <summary>
+    /// Wraps one already-built warning panel as a filterable, copyable row.
+    /// </summary>
+    private static PropertyPanelRow NewWarningRow(
+        string header, string body, string? fix, Control panel)
+    {
+        var text = new StringBuilder();
+        text.Append("  ").AppendLine(header);
+        if (!string.IsNullOrEmpty(body)) text.Append("    ").AppendLine(body);
+        if (!string.IsNullOrEmpty(fix)) text.Append("    ").AppendLine(fix);
+
+        var row = new PropertyPanelRow
+        {
+            Label = header,
+            Value = body,
+            BlockText = text.ToString().TrimEnd(),
+            SearchText = $"{header} {body} {fix}"
+        };
+        row.Controls.Add(panel);
+        return row;
+    }
+
+    /// <summary>
+    /// Registers an expander that was built by hand rather than through
+    /// <see cref="AddPropertySection"/> - the warning lists, which are stacked panels of prose
+    /// rather than label/value grids - so the filter and the copy menu cover them too.
+    /// </summary>
+    private PropertyPanelSection RegisterPropertySection(string title, Expander expander)
+    {
+        var section = new PropertyPanelSection { Title = title, Expander = expander };
+        _propertySections.Add(section);
+        return section;
+    }
+
     private void AddPropertySection(string title)
     {
         var labelCol = new ColumnDefinition { Width = new GridLength(_propertyLabelWidth) };
@@ -1099,6 +1186,26 @@ public partial class PlanViewerControl : UserControl
         sectionGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(4) });
         sectionGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
+        /* The label/value drag handle, in the 4px gap column. It used to be created with the
+           section's first row; it lives here now because a section can open with a full-width
+           code row, and that row has no label column for the handle to sit beside.
+
+           ZIndex keeps it under its siblings so the full-width rows own their strip of it -
+           nothing else is ever in column 1, so over an ordinary row it still takes the press. */
+        var labelSplitter = new GridSplitter
+        {
+            Width = 4,
+            Background = Brushes.Transparent,
+            Foreground = Brushes.Transparent,
+            BorderThickness = new Thickness(0),
+            ZIndex = -1,
+            Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.SizeWestEast)
+        };
+        Grid.SetColumn(labelSplitter, 1);
+        Grid.SetRow(labelSplitter, 0);
+        Grid.SetRowSpan(labelSplitter, 100);
+        sectionGrid.Children.Add(labelSplitter);
+
         _currentSectionGrid = sectionGrid;
         _currentSectionRowIndex = 0;
 
@@ -1123,62 +1230,99 @@ public partial class PlanViewerControl : UserControl
             HorizontalContentAlignment = HorizontalAlignment.Stretch
         };
         PropertiesContent.Children.Add(expander);
+
+        _currentSection = new PropertyPanelSection { Title = title, Expander = expander };
+        _propertySections.Add(_currentSection);
     }
 
     private void AddPropertyRow(string label, string value, bool isCode = false, bool indent = false)
     {
-        if (_currentSectionGrid == null) return;
+        if (_currentSectionGrid == null || _currentSection == null) return;
 
-        var row = _currentSectionRowIndex++;
-        _currentSectionGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-
-        var labelBlock = new TextBlock
+        var entry = new PropertyPanelRow
         {
-            Text = label,
-            FontSize = indent ? 10 : 11,
-            Foreground = TooltipFgBrush,
-            VerticalAlignment = VerticalAlignment.Top,
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(indent ? 16 : 4, 2, 0, 2)
+            Label = label,
+            Value = value,
+            IsCode = isCode,
+            SearchText = $"{label} {value}"
         };
-        Grid.SetColumn(labelBlock, 0);
-        Grid.SetRow(labelBlock, row);
-        _currentSectionGrid.Children.Add(labelBlock);
 
-        // GridSplitter in column 1 (only in first row per section)
-        if (row == 0)
+        if (isCode)
         {
-            var splitter = new GridSplitter
+            /* Code values get the whole panel width, label on its own line above them. In the
+               label|value split a seek predicate or an output column list wraps inside a ~180px
+               column and comes out a tower of [Database].[schema].[fragment] pieces, one or two
+               per line, which is the least readable thing in this panel by a distance. */
+            if (!string.IsNullOrEmpty(label))
+                AddSectionRowControl(NewPropertyLabel(label, indent), entry, fullWidth: true);
+
+            AddSectionRowControl(new SelectableTextBlock
             {
-                Width = 4,
+                Text = value,
+                FontFamily = CodeFontFamily,
+                FontSize = indent ? 10 : 11,
+                Foreground = TooltipFgBrush,
+                TextWrapping = TextWrapping.Wrap,
+                // Without a background a text block is only hit-testable where its glyphs
+                // landed, so presses in the margins never start a selection (#503).
                 Background = Brushes.Transparent,
-                Foreground = Brushes.Transparent,
-                BorderThickness = new Thickness(0),
-                Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.SizeWestEast)
-            };
-            Grid.SetColumn(splitter, 1);
-            Grid.SetRow(splitter, 0);
-            Grid.SetRowSpan(splitter, 100); // span all rows
-            _currentSectionGrid.Children.Add(splitter);
+                Margin = new Thickness(indent ? 20 : 10, 0, 4, 3)
+            }, entry, fullWidth: true);
+        }
+        else
+        {
+            var row = NextSectionRow();
+            AddSectionRowControl(NewPropertyLabel(label, indent), entry, fullWidth: false, row: row);
+            AddSectionRowControl(new SelectableTextBlock
+            {
+                Text = value,
+                FontSize = indent ? 10 : 11,
+                Foreground = TooltipFgBrush,
+                TextWrapping = TextWrapping.Wrap,
+                Background = Brushes.Transparent,
+                Margin = new Thickness(0, 2, 4, 2),
+                VerticalAlignment = VerticalAlignment.Top
+            }, entry, fullWidth: false, row: row, column: 2);
         }
 
-        var valueBox = new TextBox
+        _currentSection.Rows.Add(entry);
+    }
+
+    private static TextBlock NewPropertyLabel(string label, bool indent) => new()
+    {
+        Text = label,
+        FontSize = indent ? 10 : 11,
+        Foreground = TooltipFgBrush,
+        VerticalAlignment = VerticalAlignment.Top,
+        TextWrapping = TextWrapping.Wrap,
+        Background = Brushes.Transparent,
+        Margin = new Thickness(indent ? 16 : 4, 2, 0, 2)
+    };
+
+    private int NextSectionRow()
+    {
+        _currentSectionGrid!.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        return _currentSectionRowIndex++;
+    }
+
+    /// <summary>
+    /// Places a control in the current section's grid and records it on <paramref name="entry"/>,
+    /// which is what lets the filter hide the row later. Full-width controls take a row of their
+    /// own spanning all three columns.
+    /// </summary>
+    private void AddSectionRowControl(
+        Control control, PropertyPanelRow entry, bool fullWidth, int row = -1, int column = 0)
+    {
+        if (fullWidth)
         {
-            Text = value,
-            FontSize = indent ? 10 : 11,
-            Foreground = TooltipFgBrush,
-            TextWrapping = TextWrapping.Wrap,
-            IsReadOnly = true,
-            BorderThickness = new Thickness(0),
-            Background = Brushes.Transparent,
-            Padding = new Thickness(0),
-            Margin = new Thickness(0, 2, 4, 2),
-            VerticalAlignment = VerticalAlignment.Top
-        };
-        if (isCode) valueBox.FontFamily = new FontFamily("Consolas");
-        Grid.SetColumn(valueBox, 2);
-        Grid.SetRow(valueBox, row);
-        _currentSectionGrid.Children.Add(valueBox);
+            row = NextSectionRow();
+            Grid.SetColumnSpan(control, 3);
+        }
+
+        Grid.SetRow(control, row);
+        Grid.SetColumn(control, column);
+        _currentSectionGrid!.Children.Add(control);
+        entry.Controls.Add(control);
     }
 
     private void CloseProperties_Click(object? sender, RoutedEventArgs e)
