@@ -153,6 +153,8 @@ public partial class QueryStoreGridControl : UserControl
 
     private void SetColumnFilterButton(DataGridColumn col, string columnId, string label)
     {
+        _columnLabels[columnId] = label;
+
         var icon = new TextBlock
         {
             Text = "▽",
@@ -215,7 +217,9 @@ public partial class QueryStoreGridControl : UserControl
         EnsureFilterPopup();
         _activeFilters.TryGetValue(columnId, out var existing);
         var canSearchServer = MapColumnToServerKind(columnId) is not null;
-        _filterPopupContent!.Initialize(columnId, existing, canSearchServer);
+        // Title the popup with the grid header ("Query Hash"), not the property name ("QueryHash").
+        var label = _columnLabels.TryGetValue(columnId, out var header) ? header : columnId;
+        _filterPopupContent!.Initialize(columnId, label, existing, canSearchServer);
         _filterPopup!.PlacementTarget = button;
         _filterPopup.IsOpen = true;
     }

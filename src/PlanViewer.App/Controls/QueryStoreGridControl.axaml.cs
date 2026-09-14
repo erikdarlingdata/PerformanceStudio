@@ -30,6 +30,8 @@ public partial class QueryStoreGridControl : UserControl
     private ObservableCollection<QueryStoreRow> _rows = new();
     private ObservableCollection<QueryStoreRow> _filteredRows = new();
     private readonly Dictionary<string, ColumnFilterState> _activeFilters = new();
+    /// <summary>Column id → the header text shown in the grid, for user-facing filter labels.</summary>
+    private readonly Dictionary<string, string> _columnLabels = new();
     private Popup? _filterPopup;
     private ColumnFilterPopup? _filterPopupContent;
     private string? _sortedColumnTag;

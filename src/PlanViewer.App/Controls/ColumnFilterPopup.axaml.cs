@@ -36,10 +36,15 @@ public partial class ColumnFilterPopup : UserControl
         OperatorComboBox.SelectedIndex = 0;
     }
 
-    public void Initialize(string columnName, ColumnFilterState? existingFilter, bool canSearchServer)
+    /// <summary>
+    /// Prepares the popup for one column. <paramref name="columnName"/> is the internal column id
+    /// the filter is keyed and evaluated by; <paramref name="displayName"/> is the grid header the
+    /// user actually sees, and is all that is shown in the popup.
+    /// </summary>
+    public void Initialize(string columnName, string displayName, ColumnFilterState? existingFilter, bool canSearchServer)
     {
         _currentColumnName = columnName;
-        HeaderText.Text = $"Filter: {columnName}";
+        HeaderText.Text = $"Filter: {(string.IsNullOrEmpty(displayName) ? columnName : displayName)}";
         SearchServerButton.IsVisible = canSearchServer;
 
         if (existingFilter?.IsActive == true)
