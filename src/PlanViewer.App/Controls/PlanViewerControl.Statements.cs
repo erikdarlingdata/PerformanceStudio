@@ -32,9 +32,10 @@ public partial class PlanViewerControl : UserControl
 
         StatementsGrid.Columns.Add(new DataGridTextColumn
         {
-            Header = "#",
+            Header = GridHeader("#", "Statement order within the plan"),
             Binding = new Avalonia.Data.Binding("Index"),
             Width = new DataGridLength(40),
+            MinWidth = 40,
             IsReadOnly = true
         });
 
@@ -60,11 +61,14 @@ public partial class PlanViewerControl : UserControl
             return tb;
         }, supportsRecycling: false);
 
+        /* Query takes the slack so the measured columns can each be wide enough to spell their own
+           header out (round-1 finding V4: "Est. C...", "Cri...", "W..."). */
         StatementsGrid.Columns.Add(new DataGridTemplateColumn
         {
-            Header = "Query",
+            Header = GridHeader("Query", "Statement text — hover a row for the full text"),
             CellTemplate = queryTemplate,
-            Width = new DataGridLength(250),
+            Width = new DataGridLength(1, DataGridLengthUnitType.Star),
+            MinWidth = 150,
             IsReadOnly = true
         });
 
@@ -72,17 +76,19 @@ public partial class PlanViewerControl : UserControl
         {
             StatementsGrid.Columns.Add(new DataGridTextColumn
             {
-                Header = "CPU",
+                Header = GridHeader("CPU", "CPU time (ms)"),
                 Binding = new Avalonia.Data.Binding("CpuDisplay"),
-                Width = new DataGridLength(70),
+                Width = new DataGridLength(76),
+                MinWidth = 76,
                 IsReadOnly = true,
                 CustomSortComparer = new LongComparer(r => r.CpuMs)
             });
             StatementsGrid.Columns.Add(new DataGridTextColumn
             {
-                Header = "Elapsed",
+                Header = GridHeader("Elapsed", "Elapsed time (ms)"),
                 Binding = new Avalonia.Data.Binding("ElapsedDisplay"),
-                Width = new DataGridLength(70),
+                Width = new DataGridLength(92),
+                MinWidth = 92,
                 IsReadOnly = true,
                 CustomSortComparer = new LongComparer(r => r.ElapsedMs)
             });
@@ -92,9 +98,10 @@ public partial class PlanViewerControl : UserControl
         {
             StatementsGrid.Columns.Add(new DataGridTextColumn
             {
-                Header = "UDF",
+                Header = GridHeader("UDF", "Scalar UDF elapsed time (ms)"),
                 Binding = new Avalonia.Data.Binding("UdfDisplay"),
-                Width = new DataGridLength(70),
+                Width = new DataGridLength(76),
+                MinWidth = 76,
                 IsReadOnly = true,
                 CustomSortComparer = new LongComparer(r => r.UdfMs)
             });
@@ -104,9 +111,10 @@ public partial class PlanViewerControl : UserControl
         {
             StatementsGrid.Columns.Add(new DataGridTextColumn
             {
-                Header = "Est. Cost",
+                Header = GridHeader("Est. Cost", "Estimated subtree cost"),
                 Binding = new Avalonia.Data.Binding("CostDisplay"),
-                Width = new DataGridLength(80),
+                Width = new DataGridLength(104),
+                MinWidth = 104,
                 IsReadOnly = true,
                 CustomSortComparer = new DoubleComparer(r => r.EstCost)
             });
@@ -114,17 +122,19 @@ public partial class PlanViewerControl : UserControl
 
         StatementsGrid.Columns.Add(new DataGridTextColumn
         {
-            Header = "Critical",
+            Header = GridHeader("Critical", "Critical warnings found on this statement"),
             Binding = new Avalonia.Data.Binding("Critical"),
-            Width = new DataGridLength(60),
+            Width = new DataGridLength(90),
+            MinWidth = 90,
             IsReadOnly = true
         });
 
         StatementsGrid.Columns.Add(new DataGridTextColumn
         {
-            Header = "Warnings",
+            Header = GridHeader("Warnings", "Non-critical warnings found on this statement"),
             Binding = new Avalonia.Data.Binding("Warnings"),
-            Width = new DataGridLength(70),
+            Width = new DataGridLength(100),
+            MinWidth = 100,
             IsReadOnly = true
         });
 
@@ -166,6 +176,17 @@ public partial class PlanViewerControl : UserControl
         }
 
         StatementsGrid.ItemsSource = rows;
+    }
+
+    /// <summary>
+    /// A grid header that keeps its full text and hangs the units off a tooltip, so the header is
+    /// never the thing the column truncates.
+    /// </summary>
+    private static TextBlock GridHeader(string text, string tip)
+    {
+        var header = new TextBlock { Text = text, VerticalAlignment = VerticalAlignment.Center };
+        ToolTip.SetTip(header, tip);
+        return header;
     }
 
     private void StatementsGrid_SelectionChanged(object? sender, SelectionChangedEventArgs e)
@@ -300,7 +321,9 @@ public partial class PlanViewerControl : UserControl
 
     private void ShowStatementsPanel()
     {
-        _statementsColumn.Width = new GridLength(450);
+        // Wide enough that the measured columns and a readable Query column all fit without a
+        // horizontal scrollbar on first open; the splitter is still there to take it back.
+        _statementsColumn.Width = new GridLength(560);
         _statementsSplitterColumn.Width = new GridLength(5);
         StatementsSplitter.IsVisible = true;
         StatementsPanel.IsVisible = true;
