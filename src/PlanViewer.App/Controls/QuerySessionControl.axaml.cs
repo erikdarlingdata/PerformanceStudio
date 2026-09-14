@@ -131,6 +131,13 @@ public partial class QuerySessionControl : UserControl
         // Ctrl+mousewheel for font zoom — use Tunnel so it fires before ScrollViewer consumes scroll-down
         QueryEditor.AddHandler(Avalonia.Input.InputElement.PointerWheelChangedEvent, OnEditorPointerWheel, Avalonia.Interactivity.RoutingStrategies.Tunnel);
 
+        /* The toolbar is one non-wrapping row that scrolls when it is wider than the window, and
+           Avalonia only turns a vertical wheel into horizontal scrolling when Shift is held
+           (ScrollContentPresenter.OnPointerWheelChanged swaps the delta vector on Shift alone).
+           A toolbar you can only pan with a modifier held is a toolbar nobody pans, so a plain
+           wheel over it scrolls it. Tunnel, so the buttons underneath never eat the wheel first. */
+        ToolbarScroll.AddHandler(Avalonia.Input.InputElement.PointerWheelChangedEvent, OnToolbarWheel, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+
         // Code completion
         QueryEditor.TextArea.TextEntering += OnTextEntering;
         QueryEditor.TextArea.TextEntered += OnTextEntered;
@@ -265,6 +272,35 @@ public partial class QuerySessionControl : UserControl
 
         return (null, null);
     }
+
+
+    /// <summary>
+    /// Pans the fixed toolbar row when it is wider than the window. Wheel up scrolls left, the
+    /// same direction the tab strip's handler moves, and a horizontal wheel (trackpad swipe)
+    /// wins over the vertical one when the device sends both.
+    /// </summary>
+    private void OnToolbarWheel(object? sender, PointerWheelEventArgs e)
+    {
+        var max = Math.Max(0, ToolbarScroll.Extent.Width - ToolbarScroll.Viewport.Width);
+        if (max <= 0)
+            return; // whole toolbar is visible — leave the wheel to whatever is under it
+
+        var delta = e.Delta.X != 0 ? e.Delta.X : e.Delta.Y;
+        if (delta == 0)
+            return;
+
+        ToolbarScroll.Offset = new Avalonia.Vector(
+            Math.Clamp(ToolbarScroll.Offset.X - (delta * 48), 0, max),
+            ToolbarScroll.Offset.Y);
+        e.Handled = true;
+    }
+
+    /// <summary>
+    /// A theme brush by key, or <paramref name="fallback"/> when the key is not in the
+    /// dictionary — so a control still renders something sane if a token is missing.
+    /// </summary>
+    private IBrush Token(string key, IBrush fallback) =>
+        this.TryFindResource(key, out var value) && value is IBrush brush ? brush : fallback;
 
 
     public IEnumerable<(string label, PlanViewerControl viewer)> GetPlanTabs()

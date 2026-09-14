@@ -4,98 +4,124 @@
              x:Class="PlanViewer.App.Controls.QuerySessionControl"
              Background="{DynamicResource BackgroundBrush}">
     <Grid RowDefinitions="Auto,*">
-        <!-- Toolbar -->
+        <!-- Toolbar.
+
+             One fixed row of slots, in an order that never changes with connection state:
+             [Connect | server | database] [Actual Plan | Estimated Plan]
+             [Human Advice | Robot Advice | Compare Plans] [Query Store | QS Overview]
+             [Copy Repro | Run Repro] [Format]. Buttons disable rather than vanish, and the
+             two slots whose CONTENT changes on connect — the button's Connect/Reconnect and
+             the server name — are width-pinned so nothing downstream of them moves either.
+
+             It scrolls rather than wraps when it is wider than the window. The old WrapPanel
+             reflowed on every state change (Format jumping between rows) and stacked up to
+             three rows at 1280, and each reflow dragged the sub-tab row up or down with it.
+             A single row of known height is the whole point: MinHeight pins the strip so the
+             sub-tab row below is nailed down whatever the toolbar is doing. -->
         <Border Grid.Row="0" Background="{DynamicResource BackgroundDarkBrush}" Padding="8,6"
+                MinHeight="44"
                 BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
             <DockPanel>
+                <!-- Docked right, so it holds the row's right edge and gives up space first:
+                     capped at 320 it trims to an ellipsis (with the full text on hover, set
+                     alongside the text) instead of shoving the toolbar off-screen. -->
                 <TextBlock x:Name="StatusText" DockPanel.Dock="Right"
                            HorizontalAlignment="Right" VerticalAlignment="Center"
+                           MaxWidth="320"
                            FontSize="11" Foreground="{DynamicResource ForegroundBrush}"
                            TextTrimming="CharacterEllipsis" Margin="8,0,0,0"/>
-                <WrapPanel Orientation="Horizontal">
-                    <WrapPanel.Styles>
-                        <Style Selector="Button">
-                            <Setter Property="Margin" Value="0,2,4,2"/>
-                        </Style>
-                        <Style Selector="ComboBox">
-                            <Setter Property="Margin" Value="0,2,4,2"/>
-                        </Style>
-                    </WrapPanel.Styles>
-                    <Button x:Name="ConnectButton" Content="Connect" Click="Connect_Click"
-                            Height="28" Padding="8,0" FontSize="12"
-                            Theme="{StaticResource AppButton}"
-                            ToolTip.Tip="Connect to a SQL Server"/>
-                    <TextBlock x:Name="ServerLabel" Text="Not connected"
-                               VerticalAlignment="Center" FontSize="12"
-                               Foreground="{DynamicResource ForegroundBrush}" Margin="2,0,0,0"/>
-                    <TextBlock Text="|" VerticalAlignment="Center"
-                               Foreground="{DynamicResource ForegroundBrush}" Margin="2,0"/>
-                    <ComboBox x:Name="DatabaseBox" Width="200" Height="28" FontSize="12"
-                              IsEnabled="False" PlaceholderText="Database"
-                              SelectionChanged="Database_SelectionChanged"/>
-                    <TextBlock Text="|" VerticalAlignment="Center"
-                               Foreground="{DynamicResource ForegroundBrush}" Margin="2,0"/>
-                    <Button x:Name="ExecuteButton" Content="&#x25B6; Actual Plan" Click="Execute_Click"
-                            Height="28" Padding="8,0" FontSize="12" IsEnabled="False"
-                            Theme="{StaticResource AppButton}"
-                            ToolTip.Tip="Run query and capture execution plan with runtime stats (F5 / Ctrl+E)"/>
-                    <Button x:Name="ExecuteEstButton" Content="&#x25C7; Estimated Plan" Click="ExecuteEstimated_Click"
-                            Height="28" Padding="8,0" FontSize="12" IsEnabled="False"
-                            Theme="{StaticResource AppButton}"
-                            ToolTip.Tip="Capture estimated plan without executing (Ctrl+L)"/>
-                    <TextBlock Text="|" VerticalAlignment="Center"
-                               Foreground="{DynamicResource ForegroundBrush}" Margin="2,0"/>
-                    <Button x:Name="HumanAdviceButton" Content="&#x1F9D1; Human Advice"
-                            Click="HumanAdvice_Click"
-                            Height="28" Padding="8,0" FontSize="12" IsEnabled="False"
-                            Theme="{StaticResource AppButton}"
-                            ToolTip.Tip="Human-readable plan analysis"/>
-                    <Button x:Name="RobotAdviceButton" Content="&#x1F916; Robot Advice"
-                            Click="RobotAdvice_Click"
-                            Height="28" Padding="8,0" FontSize="12" IsEnabled="False"
-                            Theme="{StaticResource AppButton}"
-                            ToolTip.Tip="JSON analysis for LLMs and automation"/>
-                    <TextBlock Text="|" VerticalAlignment="Center"
-                               Foreground="{DynamicResource ForegroundBrush}" Margin="2,0"/>
-                    <!-- Starts disabled with the disabled explanation; both are kept honest from
-                         then on by ComparePlansButtonState, which the window calls whenever the
-                         number of open plans changes. -->
-                    <Button x:Name="ComparePlansButton" Content="&#x2194; Compare Plans"
-                            Click="ComparePlans_Click"
-                            Height="28" Padding="8,0" FontSize="12" IsEnabled="False"
-                            Theme="{StaticResource AppButton}"
-                            ToolTip.Tip="Open a second plan to compare"/>
-                    <TextBlock Text="|" VerticalAlignment="Center"
-                               Foreground="{DynamicResource ForegroundBrush}" Margin="2,0"/>
-                    <Button x:Name="QueryStoreButton" Content="&#x1F4CA; Query Store"
-                            Click="QueryStore_Click"
-                            Height="28" Padding="8,0" FontSize="12"
-                            Theme="{StaticResource AppButton}"
-                            ToolTip.Tip="Analyze top queries from Query Store"/>
-                    <Button x:Name="QueryStoreOverviewButton" Content="&#x1F4CA; QS Overview"
-                            Click="QueryStoreOverview_Click"
-                            Height="28" Padding="8,0" FontSize="12"
-                            Theme="{StaticResource AppButton}"
-                            ToolTip.Tip="Query Stores Overview across all databases"/>
-                    <TextBlock Text="|" VerticalAlignment="Center"
-                               Foreground="{DynamicResource ForegroundBrush}" Margin="2,0"/>
-                    <Button x:Name="CopyReproButton" Content="&#x1F4CB; Copy Repro"
-                            Click="CopyRepro_Click"
-                            Height="28" Padding="8,0" FontSize="12" IsEnabled="False"
-                            Theme="{StaticResource AppButton}"
-                            ToolTip.Tip="Copy reproduction script to clipboard"/>
-                    <Button x:Name="GetActualPlanButton" Content="&#x25B6; Run Repro"
-                            Click="GetActualPlan_Click"
-                            Height="28" Padding="8,0" FontSize="12" IsEnabled="False"
-                            Theme="{StaticResource AppButton}"
-                            ToolTip.Tip="Execute the repro script and capture actual plan with runtime stats"/>
-                    <TextBlock Text="|" VerticalAlignment="Center"
-                               Foreground="{DynamicResource ForegroundBrush}" Margin="4,0"/>
-                    <Button x:Name="FormatButton" Content="&#x1F4DD; Format" Click="Format_Click"
-                            Height="28" Padding="10,0" FontSize="12"
-                            Theme="{StaticResource AppButton}"
-                            ToolTip.Tip="Format the SQL query"/>
-                </WrapPanel>
+                <!-- Scrollbar suppressed on purpose: a rail under a 28px button row is noise,
+                     and at the app's non-overlay scrollbar setting it would add its own height
+                     to the strip the moment overflow started — reintroducing the row shift this
+                     layout exists to kill. The wheel scrolls it instead (see OnToolbarWheel). -->
+                <ScrollViewer x:Name="ToolbarScroll"
+                              HorizontalScrollBarVisibility="Hidden"
+                              VerticalScrollBarVisibility="Disabled">
+                    <StackPanel Orientation="Horizontal">
+                        <StackPanel.Styles>
+                            <Style Selector="Button">
+                                <Setter Property="Margin" Value="0,2,4,2"/>
+                            </Style>
+                            <Style Selector="ComboBox">
+                                <Setter Property="Margin" Value="0,2,4,2"/>
+                            </Style>
+                            <!-- Hairline group divider, replacing the old "|" glyphs -->
+                            <Style Selector="Border.separator">
+                                <Setter Property="Width" Value="1"/>
+                                <Setter Property="Margin" Value="4,3,8,3"/>
+                                <Setter Property="Background" Value="{DynamicResource BorderBrush}"/>
+                            </Style>
+                        </StackPanel.Styles>
+                        <Button x:Name="ConnectButton" Content="Connect" Click="Connect_Click"
+                                Height="28" Width="92" Padding="8,0" FontSize="12"
+                                Theme="{StaticResource AppButton}"
+                                ToolTip.Tip="Connect to a SQL Server"/>
+                        <TextBlock x:Name="ServerLabel" Text="Not connected"
+                                   Width="150" TextTrimming="CharacterEllipsis"
+                                   VerticalAlignment="Center" FontSize="12"
+                                   Foreground="{DynamicResource ForegroundMutedBrush}"
+                                   Margin="2,0,0,0"/>
+                        <Border Classes="separator"/>
+                        <ComboBox x:Name="DatabaseBox" Width="180" Height="28" FontSize="12"
+                                  IsEnabled="False" PlaceholderText="Database"
+                                  SelectionChanged="Database_SelectionChanged"/>
+                        <Border Classes="separator"/>
+                        <Button x:Name="ExecuteButton" Content="Actual Plan" Click="Execute_Click"
+                                Height="28" Padding="8,0" FontSize="12" IsEnabled="False"
+                                Theme="{StaticResource AppButton}"
+                                ToolTip.Tip="Run query and capture execution plan with runtime stats (F5 / Ctrl+E)"/>
+                        <Button x:Name="ExecuteEstButton" Content="Estimated Plan" Click="ExecuteEstimated_Click"
+                                Height="28" Padding="8,0" FontSize="12" IsEnabled="False"
+                                Theme="{StaticResource AppButton}"
+                                ToolTip.Tip="Capture estimated plan without executing (Ctrl+L)"/>
+                        <Border Classes="separator"/>
+                        <Button x:Name="HumanAdviceButton" Content="Human Advice"
+                                Click="HumanAdvice_Click"
+                                Height="28" Padding="8,0" FontSize="12" IsEnabled="False"
+                                Theme="{StaticResource AppButton}"
+                                ToolTip.Tip="Human-readable plan analysis"/>
+                        <Button x:Name="RobotAdviceButton" Content="Robot Advice"
+                                Click="RobotAdvice_Click"
+                                Height="28" Padding="8,0" FontSize="12" IsEnabled="False"
+                                Theme="{StaticResource AppButton}"
+                                ToolTip.Tip="JSON analysis for LLMs and automation"/>
+                        <!-- Starts disabled with the disabled explanation; both are kept honest
+                             from then on by ComparePlansButtonState, which the window calls
+                             whenever the number of open plans changes. -->
+                        <Button x:Name="ComparePlansButton" Content="Compare Plans"
+                                Click="ComparePlans_Click"
+                                Height="28" Padding="8,0" FontSize="12" IsEnabled="False"
+                                Theme="{StaticResource AppButton}"
+                                ToolTip.Tip="Open a second plan to compare"/>
+                        <Border Classes="separator"/>
+                        <Button x:Name="QueryStoreButton" Content="Query Store"
+                                Click="QueryStore_Click"
+                                Height="28" Padding="8,0" FontSize="12"
+                                Theme="{StaticResource AppButton}"
+                                ToolTip.Tip="Analyze top queries from Query Store"/>
+                        <Button x:Name="QueryStoreOverviewButton" Content="QS Overview"
+                                Click="QueryStoreOverview_Click"
+                                Height="28" Padding="8,0" FontSize="12"
+                                Theme="{StaticResource AppButton}"
+                                ToolTip.Tip="Query Stores Overview across all databases"/>
+                        <Border Classes="separator"/>
+                        <Button x:Name="CopyReproButton" Content="Copy Repro"
+                                Click="CopyRepro_Click"
+                                Height="28" Padding="8,0" FontSize="12" IsEnabled="False"
+                                Theme="{StaticResource AppButton}"
+                                ToolTip.Tip="Copy reproduction script to clipboard"/>
+                        <Button x:Name="GetActualPlanButton" Content="Run Repro"
+                                Click="GetActualPlan_Click"
+                                Height="28" Padding="8,0" FontSize="12" IsEnabled="False"
+                                Theme="{StaticResource AppButton}"
+                                ToolTip.Tip="Execute the repro script and capture actual plan with runtime stats"/>
+                        <Border Classes="separator"/>
+                        <Button x:Name="FormatButton" Content="Format" Click="Format_Click"
+                                Height="28" Padding="10,0" FontSize="12"
+                                Theme="{StaticResource AppButton}"
+                                ToolTip.Tip="Format the SQL query"/>
+                    </StackPanel>
+                </ScrollViewer>
             </DockPanel>
         </Border>
 

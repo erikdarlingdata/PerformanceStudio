@@ -50,7 +50,11 @@ public partial class QuerySessionControl : UserControl
             ServerLabel.Text = _serverConnection.ApplicationIntentReadOnly
                 ? $"{_serverConnection.ServerName} (Read-only)"
                 : _serverConnection.ServerName;
-            ServerLabel.Foreground = Brushes.LimeGreen;
+            /* The label sits in a width-pinned slot so connecting cannot shove the rest of the
+               toolbar sideways, which means a long server name ellipsizes — the hover is where
+               the rest of it has to live. */
+            ToolTip.SetTip(ServerLabel, ServerLabel.Text);
+            ServerLabel.Foreground = Token("SuccessBrush", Brushes.LimeGreen);
             ConnectButton.Content = "Reconnect";
 
             await PopulateDatabases();
