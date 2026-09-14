@@ -16,8 +16,21 @@ namespace PlanViewer.App.Controls;
 
 public partial class PlanViewerControl : UserControl
 {
+    // Properties panel sizing. The width is static so a width the user drags out survives
+    // closing the panel and switching plan tabs, the same way the minimap remembers its size.
+    private const double DefaultPropertiesWidth = 380;
+    private const double MinPropertiesWidth = 280;
+    private const double MaxPropertiesWidth = 800;
+    private const double PropertiesSplitterWidth = 6;
+    private static double _propertiesPanelWidth = DefaultPropertiesWidth;
+    private bool _propertiesChromeWired;
+
+    // Accent fill for the properties splitter while the pointer is over it.
+    private static readonly SolidColorBrush SplitterHoverBrush = new(Color.FromRgb(0x2E, 0xAE, 0xF1));
+
     private void ShowPropertiesPanel(PlanNode node)
     {
+        EnsurePropertiesChrome();
         PropertiesContent.Children.Clear();
         _sectionLabelColumns.Clear();
         _currentSectionGrid = null;
@@ -1021,11 +1034,42 @@ public partial class PlanViewerControl : UserControl
             PropertiesContent.Children.Add(warningsExpander);
         }
 
-        // Show the panel
-        _propertiesColumn.Width = new GridLength(320);
-        _splitterColumn.Width = new GridLength(5);
-        PropertiesSplitter.IsVisible = true;
-        PropertiesPanel.IsVisible = true;
+        /* Show the panel. The width is set only when the panel is opening: setting it on every
+           selection threw away whatever width the user had dragged, on every single click. */
+        if (!PropertiesPanel.IsVisible)
+        {
+            _propertiesColumn.MinWidth = MinPropertiesWidth;
+            _propertiesColumn.MaxWidth = MaxPropertiesWidth;
+            _propertiesColumn.Width = new GridLength(
+                Math.Clamp(_propertiesPanelWidth, MinPropertiesWidth, MaxPropertiesWidth));
+            _splitterColumn.Width = new GridLength(PropertiesSplitterWidth);
+            PropertiesSplitter.IsVisible = true;
+            PropertiesPanel.IsVisible = true;
+        }
+    }
+
+    /// <summary>
+    /// One-time wiring for the panel chrome that lives in AXAML: the splitter's hover
+    /// feedback, and remembering the width the user drags the panel to.
+    /// </summary>
+    private void EnsurePropertiesChrome()
+    {
+        if (_propertiesChromeWired) return;
+        _propertiesChromeWired = true;
+
+        var splitterIdleBrush = PropertiesSplitter.Background ?? Brushes.Transparent;
+        PropertiesSplitter.PointerEntered += (_, _) => PropertiesSplitter.Background = SplitterHoverBrush;
+        PropertiesSplitter.PointerExited += (_, _) => PropertiesSplitter.Background = splitterIdleBrush;
+
+        // The splitter writes the dragged size straight onto the column, so that is where the
+        // remembered width comes from - no drag tracking of our own.
+        _propertiesColumn.PropertyChanged += (_, args) =>
+        {
+            if (args.Property.Name != "Width" || !PropertiesPanel.IsVisible) return;
+            var width = _propertiesColumn.Width;
+            if (width.IsAbsolute && width.Value > 0)
+                _propertiesPanelWidth = width.Value;
+        };
     }
 
     private void AddPropertySection(string title)
@@ -1146,6 +1190,10 @@ public partial class PlanViewerControl : UserControl
     {
         PropertiesPanel.IsVisible = false;
         PropertiesSplitter.IsVisible = false;
+        // Clear the open-state bounds first: MinWidth clamps the column whatever its Width
+        // says, so leaving it set would hold a 280px strip open on a closed panel.
+        _propertiesColumn.MinWidth = 0;
+        _propertiesColumn.MaxWidth = double.PositiveInfinity;
         _propertiesColumn.Width = new GridLength(0);
         _splitterColumn.Width = new GridLength(0);
 

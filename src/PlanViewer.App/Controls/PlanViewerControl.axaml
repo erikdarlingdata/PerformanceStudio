@@ -346,8 +346,9 @@
                            TextAlignment="Center" HorizontalAlignment="Center" Margin="0,8,0,0"/>
             </StackPanel>
 
-            <!-- Properties Splitter -->
-            <GridSplitter x:Name="PropertiesSplitter" Grid.Column="3" Width="5"
+            <!-- Properties Splitter. Hover feedback is wired in PlanViewerControl.Properties.cs:
+                 at 5px on a 4K display this was a grey hairline nobody could see, let alone grab. -->
+            <GridSplitter x:Name="PropertiesSplitter" Grid.Column="3" Width="6"
                           Background="{DynamicResource BorderBrush}"
                           IsVisible="False"/>
 
