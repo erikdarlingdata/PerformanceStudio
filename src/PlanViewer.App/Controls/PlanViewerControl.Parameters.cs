@@ -25,23 +25,26 @@ public partial class PlanViewerControl : UserControl
 
         if (parameters.Count == 0)
         {
+            ParametersHeader.Text = "Parameters";
             var localVars = FindUnresolvedVariables(statement.StatementText, parameters, statement.RootNode);
             if (localVars.Count > 0)
             {
-                ParametersHeader.Text = "Parameters";
+                // Local variables are still something to say, so this card stays lit.
                 AddParameterAnnotation(
                     $"Local variables detected ({string.Join(", ", localVars)}) — values not captured in plan XML",
-                    "#FFB347");
+                    "WarningBrush");
+                SetInsightQuiet(ParametersHeader, ParametersAccent, false);
             }
             else
             {
-                ParametersHeader.Text = "Parameters";
                 ParametersEmpty.IsVisible = true;
+                SetInsightQuiet(ParametersHeader, ParametersAccent, true);
             }
             return;
         }
 
         ParametersHeader.Text = $"Parameters ({parameters.Count})";
+        SetInsightQuiet(ParametersHeader, ParametersAccent, false);
 
         var allCompiledNull = parameters.All(p => p.CompiledValue == null);
         var hasCompiled = parameters.Any(p => p.CompiledValue != null);
@@ -72,14 +75,19 @@ public partial class PlanViewerControl : UserControl
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions(colDef) };
         int rowIndex = 0;
 
+        var columnHeaderBrush = FindBrushResource("InsightParamsBrush");
+        var valueBrush = FindBrushResource("ForegroundBrush");
+        var missingBrush = FindBrushResource("ErrorBrush");
+        var sniffedBrush = FindBrushResource("WarningBrush");
+
         // Header row
         grid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
-        AddParamCell(grid, rowIndex, 0, "Parameter", "#7BCF7B", FontWeight.SemiBold);
-        AddParamCell(grid, rowIndex, 1, "Data Type", "#7BCF7B", FontWeight.SemiBold);
+        AddParamCell(grid, rowIndex, 0, "Parameter", columnHeaderBrush, FontWeight.SemiBold);
+        AddParamCell(grid, rowIndex, 1, "Data Type", columnHeaderBrush, FontWeight.SemiBold);
         if (compiledCol >= 0)
-            AddParamCell(grid, rowIndex, compiledCol, hasCompiled ? "Compiled" : "Value", "#7BCF7B", FontWeight.SemiBold);
+            AddParamCell(grid, rowIndex, compiledCol, hasCompiled ? "Compiled" : "Value", columnHeaderBrush, FontWeight.SemiBold);
         if (runtimeCol >= 0)
-            AddParamCell(grid, rowIndex, runtimeCol, "Runtime", "#7BCF7B", FontWeight.SemiBold);
+            AddParamCell(grid, rowIndex, runtimeCol, "Runtime", columnHeaderBrush, FontWeight.SemiBold);
         rowIndex++;
 
         foreach (var param in parameters)
@@ -87,18 +95,18 @@ public partial class PlanViewerControl : UserControl
             grid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
 
             // Name
-            AddParamCell(grid, rowIndex, 0, param.Name, "#E4E6EB", FontWeight.SemiBold);
+            AddParamCell(grid, rowIndex, 0, param.Name, valueBrush, FontWeight.SemiBold);
 
             // Data type
-            AddParamCell(grid, rowIndex, 1, param.DataType, "#E4E6EB");
+            AddParamCell(grid, rowIndex, 1, param.DataType, valueBrush);
 
             // Compiled value
             if (compiledCol >= 0)
             {
                 var compiledText = param.CompiledValue ?? (allCompiledNull ? "" : "?");
-                var compiledColor = param.CompiledValue != null ? "#E4E6EB"
-                    : allCompiledNull ? "#E4E6EB" : "#E57373";
-                AddParamCell(grid, rowIndex, compiledCol, compiledText, compiledColor);
+                var compiledBrush = param.CompiledValue != null || allCompiledNull
+                    ? valueBrush : missingBrush;
+                AddParamCell(grid, rowIndex, compiledCol, compiledText, compiledBrush);
             }
 
             // Runtime value — amber if it differs from compiled
@@ -108,11 +116,11 @@ public partial class PlanViewerControl : UserControl
                 var sniffed = param.RuntimeValue != null
                     && param.CompiledValue != null
                     && param.RuntimeValue != param.CompiledValue;
-                var runtimeColor = sniffed ? "#FFB347" : "#E4E6EB";
                 var tooltip = sniffed
                     ? "Runtime value differs from compiled — possible parameter sniffing"
                     : null;
-                AddParamCell(grid, rowIndex, runtimeCol, runtimeText, runtimeColor, tooltip: tooltip);
+                AddParamCell(grid, rowIndex, runtimeCol, runtimeText,
+                    sniffed ? sniffedBrush : valueBrush, tooltip: tooltip);
             }
 
             rowIndex++;
@@ -131,13 +139,13 @@ public partial class PlanViewerControl : UserControl
             {
                 AddParameterAnnotation(
                     "OPTIMIZE FOR UNKNOWN — optimizer used average density estimates instead of sniffed values",
-                    "#6BB5FF");
+                    "AccentBrush");
             }
             else
             {
                 AddParameterAnnotation(
                     "OPTION(RECOMPILE) — parameter values embedded as literals, not sniffed",
-                    "#FFB347");
+                    "WarningBrush");
             }
         }
 
@@ -146,11 +154,11 @@ public partial class PlanViewerControl : UserControl
         {
             AddParameterAnnotation(
                 $"Unresolved variables: {string.Join(", ", unresolved)} — not in parameter list",
-                "#FFB347");
+                "WarningBrush");
         }
     }
 
-    private static void AddParamCell(Grid grid, int row, int col, string text, string color,
+    private static void AddParamCell(Grid grid, int row, int col, string text, IBrush brush,
         FontWeight fontWeight = default, string? tooltip = null)
     {
         var tb = new TextBlock
@@ -158,7 +166,7 @@ public partial class PlanViewerControl : UserControl
             Text = text,
             FontSize = 11,
             FontWeight = fontWeight == default ? FontWeight.Normal : fontWeight,
-            Foreground = new SolidColorBrush(Color.Parse(color)),
+            Foreground = brush,
             Margin = new Thickness(0, 2, 10, 2),
             TextTrimming = TextTrimming.CharacterEllipsis,
             MaxWidth = 200
@@ -175,14 +183,14 @@ public partial class PlanViewerControl : UserControl
         grid.Children.Add(tb);
     }
 
-    private void AddParameterAnnotation(string text, string color)
+    private void AddParameterAnnotation(string text, string brushKey)
     {
         ParametersContent.Children.Add(new TextBlock
         {
             Text = text,
             FontSize = 11,
             FontStyle = FontStyle.Italic,
-            Foreground = new SolidColorBrush(Color.Parse(color)),
+            Foreground = FindBrushResource(brushKey),
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 6, 0, 0)
         });

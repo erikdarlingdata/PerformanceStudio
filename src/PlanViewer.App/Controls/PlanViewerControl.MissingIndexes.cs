@@ -22,8 +22,11 @@ public partial class PlanViewerControl : UserControl
 
         if (indexes.Count > 0)
         {
-            // Update expander header with count
-            MissingIndexHeader.Text = $"  Missing Index Suggestions ({indexes.Count})";
+            MissingIndexHeader.Text = $"Missing Index Suggestions ({indexes.Count})";
+            SetInsightQuiet(MissingIndexHeader, MissingIndexAccent, false);
+
+            var labelBrush = FindBrushResource("ForegroundBrush");
+            var impactBrush = FindBrushResource("WarningBrush");
 
             // Build each missing index row manually (no ItemsControl template binding)
             foreach (var mi in indexes)
@@ -35,19 +38,19 @@ public partial class PlanViewerControl : UserControl
                 {
                     Text = mi.Table,
                     FontWeight = FontWeight.SemiBold,
-                    Foreground = new SolidColorBrush(Color.Parse("#E4E6EB")),
+                    Foreground = labelBrush,
                     FontSize = 12
                 });
                 headerRow.Children.Add(new TextBlock
                 {
                     Text = $" \u2014 Impact: ",
-                    Foreground = new SolidColorBrush(Color.Parse("#E4E6EB")),
+                    Foreground = labelBrush,
                     FontSize = 12
                 });
                 headerRow.Children.Add(new TextBlock
                 {
                     Text = $"{mi.Impact:F1}%",
-                    Foreground = new SolidColorBrush(Color.Parse("#FFB347")),
+                    Foreground = impactBrush,
                     FontSize = 12
                 });
                 itemPanel.Children.Add(headerRow);
@@ -59,7 +62,7 @@ public partial class PlanViewerControl : UserControl
                         Text = mi.CreateStatement,
                         FontFamily = new FontFamily("Consolas"),
                         FontSize = 11,
-                        Foreground = TooltipFgBrush,
+                        Foreground = labelBrush,
                         TextWrapping = TextWrapping.Wrap,
                         Margin = new Thickness(12, 2, 0, 0)
                     });
@@ -74,6 +77,7 @@ public partial class PlanViewerControl : UserControl
         {
             MissingIndexHeader.Text = "Missing Index Suggestions";
             MissingIndexEmpty.IsVisible = true;
+            SetInsightQuiet(MissingIndexHeader, MissingIndexAccent, true);
         }
     }
 
