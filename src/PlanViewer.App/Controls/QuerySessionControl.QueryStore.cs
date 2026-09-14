@@ -108,8 +108,6 @@ public partial class QuerySessionControl : UserControl
                 return;
         }
 
-        SetStatus("Loading Query Store Overview...");
-
         var supportsWaitStats = _serverMetadata?.SupportsQueryStoreWaitStats ?? false;
         var overview = new QueryStoreOverviewControl(_serverConnection, _credentialService,
             supportsWaitStats: supportsWaitStats);
@@ -125,14 +123,18 @@ public partial class QuerySessionControl : UserControl
         SubTabControl.Items.Add(tab);
         SubTabControl.SelectedItem = tab;
 
+        /* After the tab is selected, not before: selecting a sub-tab clears the strip, so a
+           "loading" message set ahead of the switch would be wiped by its own tab arriving. */
+        SetStatus("Loading Query Store Overview...");
+
         try
         {
             await overview.LoadAsync();
-            SetStatus("");
+            ClearStatus();
         }
         catch (Exception ex)
         {
-            SetStatus(ex.Message, autoClear: false);
+            SetStatusFromException(ex);
         }
     }
 
@@ -147,7 +149,7 @@ public partial class QuerySessionControl : UserControl
             var (enabled, state, readOnlyReplica) = await QueryStoreService.CheckEnabledAsync(connStr);
             if (!enabled)
             {
-                SetStatus(readOnlyReplica
+                SetErrorStatus(readOnlyReplica
                     ? $"{database} is a read-only replica with no Query Store data ({state ?? "unknown"}); enable it on the primary"
                     : $"Query Store not enabled on {database} ({state ?? "unknown"})");
                 return;
@@ -155,11 +157,11 @@ public partial class QuerySessionControl : UserControl
         }
         catch (Exception ex)
         {
-            SetStatus(ex.Message, autoClear: false);
+            SetStatusFromException(ex);
             return;
         }
 
-        SetStatus("");
+        ClearStatus();
 
         // Check if wait stats are supported
         var supportsWaitStats = _serverMetadata?.SupportsQueryStoreWaitStats ?? false;
@@ -208,7 +210,7 @@ public partial class QuerySessionControl : UserControl
             var (enabled, state, readOnlyReplica) = await QueryStoreService.CheckEnabledAsync(_connectionString);
             if (!enabled)
             {
-                SetStatus(readOnlyReplica
+                SetErrorStatus(readOnlyReplica
                     ? $"Read-only replica with no Query Store data ({state ?? "unknown"}); enable it on the primary"
                     : $"Query Store not enabled ({state ?? "unknown"})");
                 return;
@@ -221,11 +223,11 @@ public partial class QuerySessionControl : UserControl
                the actual available width; doing it again in code just threw away text the control
                would have kept, and with it the tooltip that now carries the full message. Same
                family as #448. */
-            SetStatus(ex.Message, autoClear: false);
+            SetStatusFromException(ex);
             return;
         }
 
-        SetStatus("");
+        ClearStatus();
 
         // Check if wait stats are supported (SQL 2017+ / Azure) and capture is enabled
         var supportsWaitStats = _serverMetadata?.SupportsQueryStoreWaitStats ?? false;

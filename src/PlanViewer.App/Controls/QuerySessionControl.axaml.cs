@@ -151,14 +151,16 @@ public partial class QuerySessionControl : UserControl
         };
 
         // Dispose TextMate when detached (e.g. tab switch) to release renderers/transformers.
-        // Also cancel any in-flight status-clear dispatch so it doesn't fire on a dead control.
+        /* Emptying the strip cancels the in-flight status-clear dispatch — it must not fire on a
+           dead control — and, since the timer is what would have taken the message down, it is
+           also the only thing that can: a session detaches when the user switches to another
+           top-level tab, and whatever the strip was saying would otherwise be waiting, timer
+           cancelled and therefore forever, when they came back. */
         DetachedFromVisualTree += (_, _) =>
         {
             _textMateInstallation?.Dispose();
             _textMateInstallation = null;
-            _statusClearCts?.Cancel();
-            _statusClearCts?.Dispose();
-            _statusClearCts = null;
+            ClearStatus();
         };
 
         /* #447: a plan appearing in — or leaving — this session changes whether Compare Plans is
@@ -177,6 +179,11 @@ public partial class QuerySessionControl : UserControl
                 QueryEditor.TextArea.Focus();
             }
             UpdatePlanTabButtonState();
+
+            /* The strip sits above the sub-tabs and says nothing about which one it is talking
+               about, so a message that outlives its view reads as a complaint about the view the
+               user moved to. Whatever it was saying was about the view they just left. */
+            ClearStatus();
         };
     }
 

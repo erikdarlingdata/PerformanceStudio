@@ -44,7 +44,7 @@ public partial class QuerySessionControl : UserControl
     {
         if (_serverConnection == null || _selectedDatabase == null)
         {
-            SetStatus("Connect to a server first", autoClear: false);
+            SetErrorStatus("Connect to a server first");
             return;
         }
 
@@ -57,7 +57,7 @@ public partial class QuerySessionControl : UserControl
                         ?? QueryEditor.Text?.Trim();
         if (string.IsNullOrEmpty(queryText))
         {
-            SetStatus("Enter a query", autoClear: false);
+            SetErrorStatus("Enter a query");
             return;
         }
 
@@ -203,7 +203,11 @@ public partial class QuerySessionControl : UserControl
         }
         catch (OperationCanceledException)
         {
-            SetStatus("Cancelled");
+            /* Nothing in the strip. The user cancelled this themselves — Escape, the Cancel
+               button, or by starting the next query — and the spinner tab vanishing is the
+               answer to that. Saying so as well used to be harmless and is no longer even
+               visible: removing the selected tab moves the selection, and a selection change
+               now empties the strip. */
             SubTabControl.Items.Remove(loadingTab);
         }
         catch (SqlException ex)
@@ -277,13 +281,13 @@ public partial class QuerySessionControl : UserControl
         var viewer = GetSelectedPlanViewer();
         if (viewer == null)
         {
-            SetStatus("Select a plan tab first");
+            SetErrorStatus("Select a plan tab first");
             return;
         }
 
         if (_connectionString == null || _selectedDatabase == null)
         {
-            SetStatus("Connect to a server first", autoClear: false);
+            SetErrorStatus("Connect to a server first");
             return;
         }
 
@@ -292,7 +296,7 @@ public partial class QuerySessionControl : UserControl
 
         if (string.IsNullOrEmpty(queryText))
         {
-            SetStatus("No query text available for this plan");
+            SetErrorStatus("No query text available for this plan");
             return;
         }
 
@@ -424,7 +428,8 @@ public partial class QuerySessionControl : UserControl
         }
         catch (OperationCanceledException)
         {
-            SetStatus("Cancelled");
+            // Same as the capture path above: the cancel was the user's own, and the tab going
+            // away says so. See that catch for why the message is gone.
             SubTabControl.Items.Remove(loadingTab);
         }
         catch (SqlException ex)

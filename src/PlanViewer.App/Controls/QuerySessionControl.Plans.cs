@@ -50,7 +50,7 @@ public partial class QuerySessionControl : UserControl
             // Blank XML or a parse failure. Don't navigate away from the current view
             // (e.g. the Query Store grid) to a blank tab — surface why and stay put.
             viewer.OpenInEditorRequested -= OnOpenInEditorRequested;
-            SetStatus($"Couldn't load {label}: {viewer.LastLoadError}", autoClear: false);
+            SetErrorStatus($"Couldn't load {label}: {viewer.LastLoadError}");
             return false;
         }
 
@@ -287,7 +287,7 @@ public partial class QuerySessionControl : UserControl
         var planTabs = GetPlanTabs().ToList();
         if (planTabs.Count < 2)
         {
-            SetStatus("Need at least 2 plans open to compare");
+            SetErrorStatus("Need at least 2 plans open to compare");
             return;
         }
 
