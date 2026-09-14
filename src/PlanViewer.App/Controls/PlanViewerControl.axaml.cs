@@ -41,18 +41,12 @@ public class StatementRow
     public int Warnings { get; set; }
     public PlanStatement Statement { get; set; } = null!;
 
-    // Display helpers
-    public string CpuDisplay => FormatDuration(CpuMs);
-    public string ElapsedDisplay => FormatDuration(ElapsedMs);
-    public string UdfDisplay => UdfMs > 0 ? FormatDuration(UdfMs) : "";
-    public string CostDisplay => EstCost > 0 ? $"{EstCost:F2}" : "";
-
-    private static string FormatDuration(long ms)
-    {
-        if (ms < 1000) return $"{ms}ms";
-        if (ms < 60_000) return $"{ms / 1000.0:F1}s";
-        return $"{ms / 60_000}m {(ms % 60_000) / 1000}s";
-    }
+    // Display helpers. The duration ladder this grid used to carry privately is now
+    // MetricFormatter's, so the panels and tooltips scale the same numbers the same way.
+    public string CpuDisplay => MetricFormatter.FormatDuration(CpuMs);
+    public string ElapsedDisplay => MetricFormatter.FormatDuration(ElapsedMs);
+    public string UdfDisplay => UdfMs > 0 ? MetricFormatter.FormatDuration(UdfMs) : "";
+    public string CostDisplay => EstCost > 0 ? MetricFormatter.FormatCost(EstCost) : "";
 }
 
 public partial class PlanViewerControl : UserControl

@@ -75,28 +75,28 @@ public static class ComparisonFormatter
 
         // Estimated metrics (always available)
         WriteMetricLine(writer, "Estimated cost", a.EstimatedCost, b.EstimatedCost,
-            "F4", "", "cheaper", lowerIsBetter: true);
+            FormatCost, "cheaper", lowerIsBetter: true);
         WriteMetricLine(writer, "Estimated rows", a.EstimatedRows, b.EstimatedRows,
-            "N0", "", "fewer", lowerIsBetter: true);
+            FormatCount, "fewer", lowerIsBetter: true);
 
         // Runtime (actual plans only)
         if (a.QueryTime != null || b.QueryTime != null)
         {
             WriteMetricLine(writer, "Runtime",
                 a.QueryTime?.ElapsedTimeMs, b.QueryTime?.ElapsedTimeMs,
-                "N0", "ms", "faster", lowerIsBetter: true);
+                FormatDuration, "faster", lowerIsBetter: true);
             WriteMetricLine(writer, "CPU time",
                 a.QueryTime?.CpuTimeMs, b.QueryTime?.CpuTimeMs,
-                "N0", "ms", "faster", lowerIsBetter: true);
+                FormatDuration, "faster", lowerIsBetter: true);
         }
 
         // I/O from operator tree
         var (aLR, aPR) = SumTreeIO(a.OperatorTree);
         var (bLR, bPR) = SumTreeIO(b.OperatorTree);
         if (aLR > 0 || bLR > 0)
-            WriteMetricLine(writer, "Logical reads", aLR, bLR, "N0", "", "fewer", lowerIsBetter: true);
+            WriteMetricLine(writer, "Logical reads", aLR, bLR, FormatCount, "fewer", lowerIsBetter: true);
         if (aPR > 0 || bPR > 0)
-            WriteMetricLine(writer, "Physical reads", aPR, bPR, "N0", "", "fewer", lowerIsBetter: true);
+            WriteMetricLine(writer, "Physical reads", aPR, bPR, FormatCount, "fewer", lowerIsBetter: true);
 
         // Memory grant
         if ((a.MemoryGrant != null && a.MemoryGrant.GrantedKB > 0) ||
@@ -104,7 +104,9 @@ public static class ComparisonFormatter
         {
             var aGrantMB = a.MemoryGrant != null ? a.MemoryGrant.GrantedKB / 1024.0 : 0;
             var bGrantMB = b.MemoryGrant != null ? b.MemoryGrant.GrantedKB / 1024.0 : 0;
-            WriteMetricLine(writer, "Memory grant", aGrantMB, bGrantMB, "N1", " MB", "less", lowerIsBetter: true);
+            // Fixed at MB on both sides: a per-side scale would put "512 KB" opposite "2.1 GB"
+            // and make the one line whose whole job is a side-by-side unreadable.
+            WriteMetricLine(writer, "Memory grant", aGrantMB, bGrantMB, FormatMegabytes, "less", lowerIsBetter: true);
         }
 
         // DOP — show raw values, no percentage
@@ -126,7 +128,7 @@ public static class ComparisonFormatter
             {
                 writer.WriteLine("    Plan A:");
                 foreach (var w in a.WaitStats.OrderByDescending(w => w.WaitTimeMs))
-                    writer.WriteLine($"      - {w.WaitType} {w.WaitTimeMs:N0}ms");
+                    writer.WriteLine($"      - {w.WaitType} {MetricFormatter.FormatDuration(w.WaitTimeMs)}");
             }
             if (a.WaitStats.Count > 0 && b.WaitStats.Count > 0)
                 writer.WriteLine();
@@ -134,23 +136,31 @@ public static class ComparisonFormatter
             {
                 writer.WriteLine("    Plan B:");
                 foreach (var w in b.WaitStats.OrderByDescending(w => w.WaitTimeMs))
-                    writer.WriteLine($"      - {w.WaitType} {w.WaitTimeMs:N0}ms");
+                    writer.WriteLine($"      - {w.WaitType} {MetricFormatter.FormatDuration(w.WaitTimeMs)}");
             }
         }
 
         writer.WriteLine();
     }
 
+    // The per-metric display shapes. Costs and durations go through the shared
+    // MetricFormatter so a number reads the same here as it does in the properties
+    // panel; counts and megabytes are local because nothing else displays them.
+    private static string FormatCost(double cost) => MetricFormatter.FormatCost(cost);
+    private static string FormatDuration(double ms) => MetricFormatter.FormatDuration((long)ms);
+    private static string FormatCount(double count) => count.ToString("N0");
+    private static string FormatMegabytes(double mb) => mb.ToString("N1") + " MB";
+
     private static void WriteMetricLine(
         TextWriter writer, string label,
         double? valA, double? valB,
-        string format, string unit, string betterWord,
+        Func<double, string> formatValue, string betterWord,
         bool lowerIsBetter)
     {
         if (!valA.HasValue && !valB.HasValue) return;
 
-        var aStr = valA.HasValue ? valA.Value.ToString(format) + unit : "N/A";
-        var bStr = valB.HasValue ? valB.Value.ToString(format) + unit : "N/A";
+        var aStr = valA.HasValue ? formatValue(valA.Value) : "N/A";
+        var bStr = valB.HasValue ? formatValue(valB.Value) : "N/A";
 
         var padded = $"  {label}:".PadRight(22);
 
