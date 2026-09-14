@@ -131,11 +131,21 @@ public partial class QueryStoreGridControl : UserControl
     private void ResultsGrid_DoubleTapped(object? sender, TappedEventArgs e)
     {
         if (e.Source is not Visual v) return;
-        if (v.FindAncestorOfType<Button>() != null) return;
+        // Buttons handle their own double-click: the expand chevron and the select checkbox
+        // (CheckBox derives from Button). includeSelf, so a press on the button itself counts.
+        if (v.FindAncestorOfType<Button>(includeSelf: true) != null) return;
         if (v.FindAncestorOfType<DataGridRow>() == null) return;
         if (ResultsGrid.SelectedItem is not QueryStoreRow row) return;
-        if (!row.HasChildren) return;
-        ToggleRowExpansion(row);
+
+        // A grouped header row has no plan of its own, so it keeps expanding and collapsing.
+        if (row.HasChildren)
+        {
+            ToggleRowExpansion(row);
+            return;
+        }
+
+        // Every other row loads exactly what the context menu's "Load Plan" would load.
+        LoadHighlightedPlan_Click(sender, e);
     }
 
     private void ToggleRowExpansion(QueryStoreRow row)
