@@ -90,7 +90,25 @@
         <Border Grid.Row="0" Background="{DynamicResource BackgroundDarkBrush}" Padding="8,6"
                 BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
             <DockPanel>
-                <StackPanel Orientation="Horizontal" DockPanel.Dock="Left" Spacing="4">
+                <!-- Background so the error tooltip this picks up on a failed cost query is
+                     reachable from the whole label, not just where glyphs happen to be drawn. -->
+                <TextBlock x:Name="CostText" DockPanel.Dock="Right" VerticalAlignment="Center"
+                           HorizontalAlignment="Right" Background="Transparent"
+                           Foreground="{DynamicResource ForegroundBrush}" FontSize="11"/>
+                <!-- Same contract as the session toolbar: one fixed row that scrolls instead of
+                     wrapping or clipping, rail suppressed, plain wheel scrolls it. -->
+                <ScrollViewer x:Name="PlanToolbarScroll"
+                              HorizontalScrollBarVisibility="Hidden"
+                              VerticalScrollBarVisibility="Disabled">
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                    <StackPanel.Styles>
+                        <!-- Hairline group divider, replacing the old "|" glyphs -->
+                        <Style Selector="Border.separator">
+                            <Setter Property="Width" Value="1"/>
+                            <Setter Property="Margin" Value="4,3,8,3"/>
+                            <Setter Property="Background" Value="{DynamicResource BorderBrush}"/>
+                        </Style>
+                    </StackPanel.Styles>
                     <!-- Connection controls, collapsed by HostedInSession. A plan opened as a
                          sub-tab of a query session sits directly under that session's toolbar,
                          which already carries a live Connect button, server label and database
@@ -103,15 +121,14 @@
                                 Theme="{StaticResource AppButton}"
                                 ToolTip.Tip="Connect to a SQL Server for schema lookups"/>
                         <TextBlock x:Name="PlanServerLabel" Text=""
+                                   MaxWidth="150" TextTrimming="CharacterEllipsis"
                                    VerticalAlignment="Center" FontSize="12"
                                    Foreground="{DynamicResource ForegroundBrush}" Margin="2,0,0,0"/>
-                        <TextBlock Text="|" VerticalAlignment="Center"
-                                   Foreground="{DynamicResource ForegroundBrush}" Margin="2,0"/>
+                        <Border Classes="separator"/>
                         <ComboBox x:Name="PlanDatabaseBox" Width="180" Height="28" FontSize="12"
                                   IsEnabled="False" PlaceholderText="Database"
                                   SelectionChanged="PlanDatabase_SelectionChanged"/>
-                        <TextBlock Text="|" VerticalAlignment="Center"
-                                   Foreground="{DynamicResource ForegroundBrush}" Margin="2,0"/>
+                        <Border Classes="separator"/>
                     </StackPanel>
                     <Button Content="+" Click="ZoomIn_Click" Width="28" Height="28" Padding="0" FontSize="16"
                             FontWeight="Bold" ToolTip.Tip="Zoom In"
@@ -124,24 +141,17 @@
                             Theme="{StaticResource AppButton}"/>
                     <TextBlock x:Name="ZoomLevelText" Text="100%" VerticalAlignment="Center"
                                Foreground="{DynamicResource ForegroundBrush}" Margin="4,0,0,0" FontSize="11"/>
-                    <TextBlock Text="|" VerticalAlignment="Center"
-                               Foreground="{DynamicResource ForegroundBrush}" Margin="6,0"/>
+                    <Border Classes="separator"/>
                     <Button x:Name="SavePlanButton" Content="Save .sqlplan" Click="SavePlan_Click" Height="28" Padding="8,0"
                             ToolTip.Tip="Save plan as .sqlplan file"
                             Theme="{StaticResource AppButton}"/>
-                    <TextBlock Text="|" VerticalAlignment="Center"
-                               Foreground="{DynamicResource ForegroundBrush}" Margin="6,0"
-                               x:Name="StatementsButtonSeparator" IsVisible="False"/>
+                    <Border Classes="separator" x:Name="StatementsButtonSeparator" IsVisible="False"/>
                     <Button x:Name="StatementsButton" Content="Statements" Click="ToggleStatements_Click"
                             Height="28" Padding="8,0" IsVisible="False"
                             ToolTip.Tip="Show/hide statement list"
                             Theme="{StaticResource AppButton}"/>
                 </StackPanel>
-                <!-- Background so the error tooltip this picks up on a failed cost query is
-                     reachable from the whole label, not just where glyphs happen to be drawn. -->
-                <TextBlock x:Name="CostText" DockPanel.Dock="Right" VerticalAlignment="Center"
-                           HorizontalAlignment="Right" Background="Transparent"
-                           Foreground="{DynamicResource ForegroundBrush}" FontSize="11"/>
+                </ScrollViewer>
             </DockPanel>
         </Border>
 

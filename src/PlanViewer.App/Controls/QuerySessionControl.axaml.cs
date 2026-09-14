@@ -118,6 +118,22 @@ public partial class QuerySessionControl : UserControl
         _connectionStore = connectionStore;
         InitializeComponent();
 
+        /* Icon adoption for the XAML-declared toolbar. Set here rather than in the XAML
+           because a bare PathIcon's stock theme overrides the inherited foreground;
+           AppIcons.MakeContent installs the corrected theme. The Actual/Estimated pair
+           stays text-only on purpose: they are the primary verbs of this toolbar and no
+           icon in the set says "estimated" — a lone play glyph on one of the pair would
+           read as the difference between them being run-vs-not, which it is not. */
+        ConnectButton.Content = Helpers.AppIcons.MakeContent(Helpers.AppIcons.Connect, "Connect");
+        HumanAdviceButton.Content = Helpers.AppIcons.MakeContent(Helpers.AppIcons.HumanAdvice, "Human Advice");
+        RobotAdviceButton.Content = Helpers.AppIcons.MakeContent(Helpers.AppIcons.RobotAdvice, "Robot Advice");
+        ComparePlansButton.Content = Helpers.AppIcons.MakeContent(Helpers.AppIcons.Compare, "Compare Plans");
+        QueryStoreButton.Content = Helpers.AppIcons.MakeContent(Helpers.AppIcons.QueryStore, "Query Store");
+        QueryStoreOverviewButton.Content = Helpers.AppIcons.MakeContent(Helpers.AppIcons.Overview, "QS Overview");
+        CopyReproButton.Content = Helpers.AppIcons.MakeContent(Helpers.AppIcons.CopyRepro, "Copy Repro");
+        GetActualPlanButton.Content = Helpers.AppIcons.MakeContent(Helpers.AppIcons.RunRepro, "Run Repro");
+        FormatButton.Content = Helpers.AppIcons.MakeContent(Helpers.AppIcons.Format, "Format");
+
         // Initialize editor with empty text so the document is ready
         QueryEditor.Text = "";
         ZoomBox.SelectedIndex = 2; // 100%

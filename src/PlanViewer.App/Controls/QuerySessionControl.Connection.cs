@@ -55,7 +55,7 @@ public partial class QuerySessionControl : UserControl
                the rest of it has to live. */
             ToolTip.SetTip(ServerLabel, ServerLabel.Text);
             ServerLabel.Foreground = Token("SuccessBrush", Brushes.LimeGreen);
-            ConnectButton.Content = "Reconnect";
+            ConnectButton.Content = Helpers.AppIcons.MakeContent(Helpers.AppIcons.Connect, "Reconnect");
 
             await PopulateDatabases();
             await FetchServerMetadataAsync();

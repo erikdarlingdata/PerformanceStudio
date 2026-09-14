@@ -134,6 +134,27 @@ public partial class PlanViewerControl : UserControl
     private Border? _minimapSelectedNode;
     private PlanNode? _selectedNode;
 
+    /// <summary>
+    /// Pans the plan toolbar when it is wider than the window — the same contract as the
+    /// session toolbar's row: wheel up scrolls left, a horizontal wheel wins when the device
+    /// sends both, and a fully visible toolbar leaves the wheel to whatever is under it.
+    /// </summary>
+    private void OnPlanToolbarWheel(object? sender, PointerWheelEventArgs e)
+    {
+        var max = Math.Max(0, PlanToolbarScroll.Extent.Width - PlanToolbarScroll.Viewport.Width);
+        if (max <= 0)
+            return;
+
+        var delta = e.Delta.X != 0 ? e.Delta.X : e.Delta.Y;
+        if (delta == 0)
+            return;
+
+        PlanToolbarScroll.Offset = new Avalonia.Vector(
+            Math.Clamp(PlanToolbarScroll.Offset.X - (delta * 48), 0, max),
+            PlanToolbarScroll.Offset.Y);
+        e.Handled = true;
+    }
+
     public PlanViewerControl()
     {
         InitializeComponent();
@@ -144,6 +165,9 @@ public partial class PlanViewerControl : UserControl
         PlanConnectButton.Content = AppIcons.MakeContent(AppIcons.Connect, "Connect");
         SavePlanButton.Content = AppIcons.MakeContent(AppIcons.Save, "Save .sqlplan");
         StatementsButton.Content = AppIcons.MakeContent(AppIcons.Statements, "Statements");
+
+        // Same wheel contract as the session toolbar's scrolling row (see OnPlanToolbarWheel).
+        PlanToolbarScroll.AddHandler(PointerWheelChangedEvent, OnPlanToolbarWheel, Avalonia.Interactivity.RoutingStrategies.Tunnel);
 
         // Use Tunnel routing so Ctrl+wheel zoom fires before ScrollViewer consumes the event
         PlanScrollViewer.AddHandler(PointerWheelChangedEvent, PlanScrollViewer_PointerWheelChanged, Avalonia.Interactivity.RoutingStrategies.Tunnel);
@@ -271,7 +295,7 @@ public partial class PlanViewerControl : UserControl
     public void SetConnectionStatus(string serverName, string? database)
     {
         PlanServerLabel.Text = serverName;
-        PlanServerLabel.Foreground = Brushes.LimeGreen;
+        PlanServerLabel.Foreground = FindBrushResource("SuccessBrush");
         PlanConnectButton.Content = AppIcons.MakeContent(AppIcons.Connect, "Reconnect");
         if (database != null)
             _planSelectedDatabase = database;
@@ -525,7 +549,7 @@ public partial class PlanViewerControl : UserControl
         ConnectionString = _planConnection.GetConnectionString(_planCredentialService, _planSelectedDatabase);
 
         PlanServerLabel.Text = _planConnection.ServerName;
-        PlanServerLabel.Foreground = Brushes.LimeGreen;
+        PlanServerLabel.Foreground = FindBrushResource("SuccessBrush");
         PlanConnectButton.Content = AppIcons.MakeContent(AppIcons.Connect, "Reconnect");
 
         // Populate database dropdown

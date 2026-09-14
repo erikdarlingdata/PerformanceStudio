@@ -57,7 +57,7 @@
                             </Style>
                         </StackPanel.Styles>
                         <Button x:Name="ConnectButton" Content="Connect" Click="Connect_Click"
-                                Height="28" Width="92" Padding="8,0" FontSize="12"
+                                Height="28" Width="118" Padding="8,0" FontSize="12"
                                 Theme="{StaticResource AppButton}"
                                 ToolTip.Tip="Connect to a SQL Server"/>
                         <TextBlock x:Name="ServerLabel" Text="Not connected"
