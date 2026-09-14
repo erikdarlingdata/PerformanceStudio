@@ -35,7 +35,7 @@ public partial class QuerySessionControl : UserControl
         var viewer = GetSelectedPlanViewer();
         if (viewer == null)
         {
-            SetStatus("Select a plan tab first");
+            SetErrorStatus("Select a plan tab first");
             return;
         }
 
@@ -44,7 +44,7 @@ public partial class QuerySessionControl : UserControl
 
         if (string.IsNullOrEmpty(queryText) && string.IsNullOrEmpty(planXml))
         {
-            SetStatus("No query or plan data available");
+            SetErrorStatus("No query or plan data available");
             return;
         }
 
@@ -63,7 +63,7 @@ public partial class QuerySessionControl : UserControl
         if (await ClipboardHelper.TrySetTextAsync(this, reproScript))
             SetStatus("Repro script copied to clipboard");
         else
-            SetStatus("Clipboard busy - could not copy repro script");
+            SetErrorStatus("Clipboard busy - could not copy repro script");
     }
 
     private async void Format_Click(object? sender, RoutedEventArgs e)
@@ -115,7 +115,7 @@ public partial class QuerySessionControl : UserControl
                     }
                 };
                 await dialog.ShowDialog(GetParentWindow());
-                SetStatus($"Format failed: {errors.Count} error(s)");
+                SetErrorStatus($"Format failed: {errors.Count} error(s)");
                 return;
             }
 
@@ -137,7 +137,7 @@ public partial class QuerySessionControl : UserControl
         catch (Exception ex)
         {
             // async void handler: an unhandled throw here would crash the app.
-            SetStatus($"Format failed: {ex.Message}");
+            SetStatusFromException(ex, "Format failed: ");
         }
         finally
         {

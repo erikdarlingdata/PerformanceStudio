@@ -16,6 +16,7 @@
         <Grid Grid.Row="1" x:Name="ServerNameGrid" ColumnDefinitions="*,Auto" Margin="0,0,0,12" ColumnSpacing="0">
             <TextBox x:Name="ServerNameBox"
                      Watermark="e.g. sql2022 or server.database.windows.net"
+                     TextChanged="RequiredField_TextChanged"
                      FontSize="13" Height="32"/>
             <Button Grid.Column="1" Click="DropdownButton_Click"
                     Height="32" Width="32" Padding="0"
@@ -56,7 +57,8 @@
         <StackPanel Grid.Row="4" x:Name="LoginPanel" IsVisible="False" Margin="0,0,0,12">
             <TextBlock Text="Login" Foreground="{DynamicResource ForegroundBrush}"
                        FontSize="12" Margin="0,0,0,4"/>
-            <TextBox x:Name="LoginBox" FontSize="13" Height="32" Watermark="sa"/>
+            <TextBox x:Name="LoginBox" FontSize="13" Height="32" Watermark="sa"
+                     TextChanged="RequiredField_TextChanged"/>
         </StackPanel>
 
         <!-- Password -->
@@ -64,7 +66,8 @@
             <TextBlock Text="Password" Foreground="{DynamicResource ForegroundBrush}"
                        FontSize="12" Margin="0,0,0,4"/>
             <TextBox x:Name="PasswordBox" FontSize="13" Height="32"
-                     PasswordChar="&#x25CF;" Watermark="Password"/>
+                     PasswordChar="&#x25CF;" Watermark="Password"
+                     TextChanged="RequiredField_TextChanged"/>
         </StackPanel>
 
         <!-- Connection Options -->
@@ -92,7 +95,7 @@
                            Foreground="{DynamicResource ForegroundBrush}" FontSize="12"/>
                 <TextBox x:Name="DatabaseInputBox" FontSize="13" Height="32"
                          Watermark="Leave empty to connect to master"
-                         ToolTip.Tip="Connects directly to this database instead of master. Useful for Azure SQL Database or Just-In-Time access where the login can't open master. Test Connection will pre-select it below."/>
+                         ToolTip.Tip="Connects directly to this database instead of master. Useful for Azure SQL Database or Just-In-Time access where the login can't open master. It is pre-selected below once the database list loads."/>
             </StackPanel>
         </StackPanel>
 
@@ -110,7 +113,7 @@
                    FontSize="12" Margin="0,0,0,4"/>
         <ComboBox Grid.Row="9" x:Name="DatabaseBox" Height="32" FontSize="13"
                   HorizontalAlignment="Stretch" Margin="0,0,0,12"
-                  IsEnabled="False" PlaceholderText="Connect first to load databases"/>
+                  IsEnabled="False" PlaceholderText="Optional - Test Connection to browse databases"/>
 
         <!-- Spacer -->
         <Panel Grid.Row="10"/>
@@ -118,7 +121,7 @@
         <!-- Buttons -->
         <StackPanel Grid.Row="11" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
             <Button Content="Connect" Click="Connect_Click" x:Name="ConnectButton"
-                    Height="32" Padding="20,0" FontSize="13" IsEnabled="False"
+                    Height="32" Padding="20,0" FontSize="13"
                     Theme="{StaticResource AppButton}"/>
             <Button Content="Cancel" Click="Cancel_Click"
                     Height="32" Padding="20,0" FontSize="13"

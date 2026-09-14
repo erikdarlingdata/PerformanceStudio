@@ -41,18 +41,12 @@ public class StatementRow
     public int Warnings { get; set; }
     public PlanStatement Statement { get; set; } = null!;
 
-    // Display helpers
-    public string CpuDisplay => FormatDuration(CpuMs);
-    public string ElapsedDisplay => FormatDuration(ElapsedMs);
-    public string UdfDisplay => UdfMs > 0 ? FormatDuration(UdfMs) : "";
-    public string CostDisplay => EstCost > 0 ? $"{EstCost:F2}" : "";
-
-    private static string FormatDuration(long ms)
-    {
-        if (ms < 1000) return $"{ms}ms";
-        if (ms < 60_000) return $"{ms / 1000.0:F1}s";
-        return $"{ms / 60_000}m {(ms % 60_000) / 1000}s";
-    }
+    // Display helpers. The duration ladder this grid used to carry privately is now
+    // MetricFormatter's, so the panels and tooltips scale the same numbers the same way.
+    public string CpuDisplay => MetricFormatter.FormatDuration(CpuMs);
+    public string ElapsedDisplay => MetricFormatter.FormatDuration(ElapsedMs);
+    public string UdfDisplay => UdfMs > 0 ? MetricFormatter.FormatDuration(UdfMs) : "";
+    public string CostDisplay => EstCost > 0 ? MetricFormatter.FormatCost(EstCost) : "";
 }
 
 public partial class PlanViewerControl : UserControl
@@ -220,6 +214,33 @@ public partial class PlanViewerControl : UserControl
     /// Connection string for schema lookups. Set when the plan was loaded from a connected session.
     /// </summary>
     public string? ConnectionString { get; set; }
+
+    /// <summary>
+    /// Whether this viewer is living as a sub-tab inside a query session, rather than as a
+    /// top-level tab of its own.
+    ///
+    /// <para>Hosted, it drops the connection half of its toolbar — Reconnect, the server label
+    /// and the Database picker — because the session's toolbar is one row above showing the same
+    /// connection, and its own picker was permanently disabled there anyway: a plan inside a
+    /// session inherits <see cref="ConnectionString"/> from the session (see
+    /// QuerySessionControl.AddPlanTab), and never populates a database list of its own. Two
+    /// stacked toolbars, three of the controls duplicated, one of them dead.</para>
+    ///
+    /// <para>Everything plan-scoped stays: zoom, Fit, the zoom readout, Save .sqlplan and
+    /// Statements. And schema lookups keep working, since they read ConnectionString rather than
+    /// the controls.</para>
+    /// </summary>
+    public bool HostedInSession
+    {
+        get => _hostedInSession;
+        set
+        {
+            _hostedInSession = value;
+            PlanConnectionControls.IsVisible = !value;
+        }
+    }
+
+    private bool _hostedInSession;
 
     // Connection state for plans that connect via the toolbar
     private ServerConnection? _planConnection;
@@ -483,7 +504,8 @@ public partial class PlanViewerControl : UserControl
     {
         if (_planCredentialService == null || _planConnectionStore == null) return;
 
-        var dialog = new ConnectionDialog(_planCredentialService, _planConnectionStore);
+        // Pass the current database so a reconnect comes back to it rather than master.
+        var dialog = new ConnectionDialog(_planCredentialService, _planConnectionStore, _planSelectedDatabase);
         var topLevel = TopLevel.GetTopLevel(this);
         if (topLevel is not Window parentWindow) return;
 

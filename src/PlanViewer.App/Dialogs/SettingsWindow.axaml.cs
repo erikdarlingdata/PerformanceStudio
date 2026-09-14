@@ -14,6 +14,7 @@ using Avalonia.Data;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Threading;
 using PlanViewer.App.Services;
 using PlanViewer.Core.Services;
 
@@ -23,6 +24,21 @@ internal partial class SettingsWindow : Window
 {
 	private AppSettings _settings;
 	private bool _isDirty;
+
+	/// <summary>
+	/// Set while a section is being built and initialized. Giving a control its starting value
+	/// raises ValueChanged/SelectionChanged/TextChanged/PropertyChanged - some synchronously,
+	/// some later when the control is templated and its bindings run on the layout pass - so the
+	/// dirty handlers no-op while this is set. Without it, merely opening Settings looks like an
+	/// edit and Cancel always asks to discard changes.
+	/// </summary>
+	private bool _building;
+
+	/// <summary>Identifies the most recent build so an older one cannot release the guard early.</summary>
+	private int _buildToken;
+
+	/// <summary>Set while the discard prompt is up, so a second close cannot stack another.</summary>
+	private bool _closeWalkInProgress;
 
 	// QueryStore controls
 	private NumericUpDown? _slicerDaysBox;
@@ -70,6 +86,9 @@ internal partial class SettingsWindow : Window
 
 	private void ShowSection(int index)
 	{
+		var token = ++_buildToken;
+		_building = true;
+
 		DetailPanel.Content = index switch
 		{
 			0 => BuildQueryStoreSection(),
@@ -77,6 +96,22 @@ internal partial class SettingsWindow : Window
 			2 => BuildScriptOptionsSection(),
 			_ => null
 		};
+
+		// Controls keep initializing after this returns: templates are applied and cell bindings
+		// (the format DataGrid writes back through them) run on the layout pass. Release the guard
+		// once the UI has settled, so only real user edits mark the dialog dirty.
+		Dispatcher.UIThread.Post(() =>
+		{
+			if (_buildToken == token)
+				_building = false;
+		}, DispatcherPriority.Background);
+	}
+
+	/// <summary>Marks the dialog dirty unless a section is still being built and initialized.</summary>
+	private void MarkDirty()
+	{
+		if (!_building)
+			_isDirty = true;
 	}
 
 	// ── Query Store Section ──────────────────────────────────────────
@@ -116,27 +151,27 @@ internal partial class SettingsWindow : Window
 		panel.Children.Add(CreateChapterHeader("Query Store"));
 
 		_slicerDaysBox = CreateNumericUpDown(_settings.QueryStoreSlicerDays, 1, 365);
-		_slicerDaysBox.ValueChanged += (_, _) => _isDirty = true;
+		_slicerDaysBox.ValueChanged += (_, _) => MarkDirty();
 		panel.Children.Add(CreateRow("Default history length (days)", _slicerDaysBox));
 
 		_defaultMetricBox = CreateTagComboBox(MetricOptions, _settings.QueryStoreDefaultMetric);
-		_defaultMetricBox.SelectionChanged += (_, _) => _isDirty = true;
+		_defaultMetricBox.SelectionChanged += (_, _) => MarkDirty();
 		panel.Children.Add(CreateRow("Default metric for top", _defaultMetricBox));
 
 		_topLimitBox = CreateNumericUpDown(_settings.QueryStoreTopLimit, 1, 200);
-		_topLimitBox.ValueChanged += (_, _) => _isDirty = true;
+		_topLimitBox.ValueChanged += (_, _) => MarkDirty();
 		panel.Children.Add(CreateRow("Top elements limit", _topLimitBox));
 
 		_defaultTimeRangeBox = CreateTagComboBox(TimeRangeOptions, _settings.QueryStoreDefaultTimeRange);
-		_defaultTimeRangeBox.SelectionChanged += (_, _) => _isDirty = true;
+		_defaultTimeRangeBox.SelectionChanged += (_, _) => MarkDirty();
 		panel.Children.Add(CreateRow("Default time range", _defaultTimeRangeBox));
 
 		_defaultTimeDisplayBox = CreateTagComboBox(TimeDisplayOptions, _settings.QueryStoreDefaultTimeDisplay);
-		_defaultTimeDisplayBox.SelectionChanged += (_, _) => _isDirty = true;
+		_defaultTimeDisplayBox.SelectionChanged += (_, _) => MarkDirty();
 		panel.Children.Add(CreateRow("Default time display", _defaultTimeDisplayBox));
 
 		_defaultGroupByBox = CreateTagComboBox(GroupByOptions, _settings.QueryStoreDefaultGroupBy);
-		_defaultGroupByBox.SelectionChanged += (_, _) => _isDirty = true;
+		_defaultGroupByBox.SelectionChanged += (_, _) => MarkDirty();
 		panel.Children.Add(CreateRow("Default group by", _defaultGroupByBox));
 
 		// Chapter 2: Multi QS Overview
@@ -145,7 +180,7 @@ internal partial class SettingsWindow : Window
 		_topDbCountBox = CreateNumericUpDown(_settings.MultiQsTopDbCount, 2, 20);
 		_topDbCountBox.ValueChanged += (_, e) =>
 		{
-			_isDirty = true;
+			MarkDirty();
 			RebuildColorList();
 		};
 		panel.Children.Add(CreateRow("Number of top databases", _topDbCountBox));
@@ -185,7 +220,7 @@ internal partial class SettingsWindow : Window
 			var index = i;
 			textBox.TextChanged += (_, _) =>
 			{
-				_isDirty = true;
+				MarkDirty();
 				if (index < _colorPreviews.Count)
 					_colorPreviews[index].Fill = TryParseBrush(textBox.Text ?? "");
 			};
@@ -247,11 +282,11 @@ internal partial class SettingsWindow : Window
 		panel.Children.Add(CreateChapterHeader("Query History"));
 
 		_historyMetricBox = CreateTagComboBox(HistoryMetricOptions, _settings.QueryHistoryDefaultMetric);
-		_historyMetricBox.SelectionChanged += (_, _) => _isDirty = true;
+		_historyMetricBox.SelectionChanged += (_, _) => MarkDirty();
 		panel.Children.Add(CreateRow("Default chart metric", _historyMetricBox));
 
 		_historyMaxPlansBox = CreateNumericUpDown(_settings.QueryHistoryMaxPlans, 1, 100);
-		_historyMaxPlansBox.ValueChanged += (_, _) => _isDirty = true;
+		_historyMaxPlansBox.ValueChanged += (_, _) => MarkDirty();
 		panel.Children.Add(CreateRow("Max plans fetched per query", _historyMaxPlansBox));
 
 		return panel;
@@ -314,7 +349,7 @@ internal partial class SettingsWindow : Window
 				ChoiceOptions = choiceOptions,
 				PropertyInfo = prop
 			};
-			row.PropertyChanged += (_, _) => _isDirty = true;
+			row.PropertyChanged += (_, _) => MarkDirty();
 			_formatRows.Add(row);
 		}
 
@@ -660,18 +695,33 @@ internal partial class SettingsWindow : Window
 
 	private async void TryClose()
 	{
+		/* Only one close walk at a time. OnClosing cancels every close unconditionally - one
+		   arriving mid-prompt must not fall through to base while the prompt is still asking -
+		   but a second one must not stack a second discard dialog. Mirrors MainWindow's
+		   _closeWalkInProgress latch; the walk's own Close() below clears _isDirty first, so it
+		   sails through OnClosing rather than being swallowed here. */
+		if (_closeWalkInProgress)
+			return;
+
 		if (!_isDirty)
 		{
-			_isDirty = false;
 			Close();
 			return;
 		}
 
-		var result = await ShowDiscardDialog();
-		if (result)
+		_closeWalkInProgress = true;
+		try
 		{
-			_isDirty = false;
-			Close();
+			if (await ShowDiscardDialog())
+			{
+				_isDirty = false;
+				Close();
+			}
+		}
+		finally
+		{
+			// Cleared however the walk ends, so Cancel or the X can start a fresh one.
+			_closeWalkInProgress = false;
 		}
 	}
 
@@ -727,7 +777,9 @@ internal partial class SettingsWindow : Window
 
 		discardBtn.Click += (_, _) => { tcs.TrySetResult(true); dialog.Close(); };
 		cancelBtn.Click += (_, _) => { tcs.TrySetResult(false); dialog.Close(); };
-		dialog.Closing += (_, _) => tcs.TrySetResult(false);
+		// Closed, not Closing: an owner-driven teardown closes the window without ever raising
+		// Closing, which would leave the await below waiting forever.
+		dialog.Closed += (_, _) => tcs.TrySetResult(false);
 
 		await dialog.ShowDialog(this);
 		return await tcs.Task;

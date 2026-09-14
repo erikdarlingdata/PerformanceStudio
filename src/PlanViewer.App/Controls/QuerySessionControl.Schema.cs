@@ -72,7 +72,7 @@ public partial class QuerySessionControl : UserControl
         }
         catch (Exception ex)
         {
-            SetStatus($"Error: {ex.Message}", autoClear: false);
+            SetStatusFromException(ex, "Error: ");
             Debug.WriteLine($"Schema lookup error: {ex}");
         }
     }

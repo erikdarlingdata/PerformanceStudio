@@ -38,7 +38,7 @@ public partial class QuerySessionControl : UserControl
     private void HumanAdvice_Click(object? sender, RoutedEventArgs e)
     {
         var (analysis, viewer) = GetCurrentAnalysisWithViewer();
-        if (analysis == null) { SetStatus("No plan to analyze", autoClear: false); return; }
+        if (analysis == null) { SetErrorStatus("No plan to analyze"); return; }
 
         var text = TextFormatter.Format(analysis);
         ShowAdviceWindow("Advice for Humans", text, analysis, viewer);
@@ -47,7 +47,7 @@ public partial class QuerySessionControl : UserControl
     private void RobotAdvice_Click(object? sender, RoutedEventArgs e)
     {
         var analysis = GetCurrentAnalysis();
-        if (analysis == null) { SetStatus("No plan to analyze", autoClear: false); return; }
+        if (analysis == null) { SetErrorStatus("No plan to analyze"); return; }
 
         string json;
         try
@@ -60,7 +60,7 @@ public partial class QuerySessionControl : UserControl
                process down with no dialog and nothing logged. AnalysisJson's depth ceiling makes this
                unreachable for any plan seen in the field — this catch is here so that "unreachable" is
                not the only thing standing between a deep plan and a silent crash. */
-            SetStatus($"Could not build robot advice for this plan: {ex.Message}", autoClear: false);
+            SetErrorStatus($"Could not build robot advice for this plan: {ex.Message}");
             return;
         }
 

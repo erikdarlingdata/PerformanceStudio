@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using System.Text.RegularExpressions;
 using Avalonia;
 using Avalonia.Controls;
@@ -16,10 +17,71 @@ namespace PlanViewer.App.Controls;
 
 public partial class PlanViewerControl : UserControl
 {
+    // Properties panel sizing. The width is static so a width the user drags out survives
+    // closing the panel and switching plan tabs, the same way the minimap remembers its size.
+    private const double DefaultPropertiesWidth = 380;
+    private const double MinPropertiesWidth = 280;
+    private const double MaxPropertiesWidth = 800;
+    private const double PropertiesSplitterWidth = 6;
+    private static double _propertiesPanelWidth = DefaultPropertiesWidth;
+    private bool _propertiesChromeWired;
+
+    // The amber this panel already uses for Warning-severity warnings.
+    private static readonly SolidColorBrush PropWarningBrush = new(Color.FromRgb(0xFF, 0xB3, 0x47));
+
+    private static readonly FontFamily CodeFontFamily = new("Consolas");
+
+    /// <summary>
+    /// One row of the properties panel: what it says, what the filter box matches it against,
+    /// and what the copy menu hands back. Recorded while the panel is built because the panel
+    /// is raw controls with no bindings behind them, so once a row is in the visual tree its
+    /// text is the only thing left to work from.
+    /// </summary>
+    private sealed class PropertyPanelRow
+    {
+        public string Label { get; init; } = "";
+        public string Value { get; init; } = "";
+        public bool IsCode { get; init; }
+
+        /// <summary>
+        /// Plain text for rows that are not a label/value pair - the per-thread breakdown.
+        /// Null for ordinary rows, which the copy menu renders from Label and Value.
+        /// </summary>
+        public string? BlockText { get; init; }
+
+        public string SearchText { get; init; } = "";
+
+        /// <summary>Every control the row occupies, so the filter can hide all of them.</summary>
+        public List<Control> Controls { get; } = new();
+
+        /// <summary>The copy menu, shared by every control in the row.</summary>
+        public ContextMenu? Menu { get; set; }
+
+        /// <summary>What "Copy value" hands back.</summary>
+        public string CopyValue => BlockText ?? Value;
+
+        /// <summary>What "Copy name and value" hands back.</summary>
+        public string CopyLabelAndValue => BlockText
+            ?? (string.IsNullOrEmpty(Label) ? Value : $"{Label}: {Value}");
+    }
+
+    private sealed class PropertyPanelSection
+    {
+        public string Title { get; init; } = "";
+        public Expander Expander { get; init; } = null!;
+        public List<PropertyPanelRow> Rows { get; } = new();
+    }
+
+    private readonly List<PropertyPanelSection> _propertySections = new();
+    private PropertyPanelSection? _currentSection;
+
     private void ShowPropertiesPanel(PlanNode node)
     {
+        EnsurePropertiesChrome();
         PropertiesContent.Children.Clear();
         _sectionLabelColumns.Clear();
+        _propertySections.Clear();
+        _currentSection = null;
         _currentSectionGrid = null;
         _currentSectionRowIndex = 0;
 
@@ -304,10 +366,10 @@ public partial class PlanViewerControl : UserControl
 
         // === Estimated Costs Section ===
         AddPropertySection("Estimated Costs");
-        AddPropertyRow("Operator Cost", $"{node.EstimatedOperatorCost:F6} ({node.CostPercent}%)");
-        AddPropertyRow("Subtree Cost", $"{node.EstimatedTotalSubtreeCost:F6}");
-        AddPropertyRow("I/O Cost", $"{node.EstimateIO:F6}");
-        AddPropertyRow("CPU Cost", $"{node.EstimateCPU:F6}");
+        AddPropertyRow("Operator Cost", $"{MetricFormatter.FormatCost(node.EstimatedOperatorCost)} ({node.CostPercent}%)");
+        AddPropertyRow("Subtree Cost", MetricFormatter.FormatCost(node.EstimatedTotalSubtreeCost));
+        AddPropertyRow("I/O Cost", MetricFormatter.FormatCost(node.EstimateIO));
+        AddPropertyRow("CPU Cost", MetricFormatter.FormatCost(node.EstimateCPU));
 
         // === Estimated Rows Section ===
         AddPropertySection("Estimated Rows");
@@ -330,20 +392,9 @@ public partial class PlanViewerControl : UserControl
         {
             AddPropertySection("Actual Statistics");
             AddPropertyRow("Actual Rows", $"{node.ActualRows:N0}");
-            if (node.PerThreadStats.Count > 1)
-                foreach (var t in node.PerThreadStats)
-                    AddPropertyRow($"  Thread {t.ThreadId}", $"{t.ActualRows:N0}", indent: true);
             if (node.ActualRowsRead > 0)
-            {
                 AddPropertyRow("Actual Rows Read", $"{node.ActualRowsRead:N0}");
-                if (node.PerThreadStats.Count > 1)
-                    foreach (var t in node.PerThreadStats.Where(t => t.ActualRowsRead > 0))
-                        AddPropertyRow($"  Thread {t.ThreadId}", $"{t.ActualRowsRead:N0}", indent: true);
-            }
             AddPropertyRow("Actual Executions", $"{node.ActualExecutions:N0}");
-            if (node.PerThreadStats.Count > 1)
-                foreach (var t in node.PerThreadStats)
-                    AddPropertyRow($"  Thread {t.ThreadId}", $"{t.ActualExecutions:N0}", indent: true);
             if (node.ActualRebinds > 0)
                 AddPropertyRow("Actual Rebinds", $"{node.ActualRebinds:N0}");
             if (node.ActualRewinds > 0)
@@ -357,29 +408,30 @@ public partial class PlanViewerControl : UserControl
                     AddPropertyRow("Partition Ranges", node.PartitionRanges);
             }
 
+            // Rows and executions list every thread, idle ones included: a thread sitting at
+            // zero while its siblings work is the whole point of looking at the breakdown.
+            AddPerThreadBreakdown(node,
+                ("Rows", t => t.ActualRows, true, ""),
+                ("Rows Read", t => t.ActualRowsRead, false, ""),
+                ("Executions", t => t.ActualExecutions, true, ""));
+
             // Timing
             if (node.ActualElapsedMs > 0 || node.ActualCPUMs > 0
                 || node.UdfCpuTimeMs > 0 || node.UdfElapsedTimeMs > 0)
             {
                 AddPropertySection("Actual Timing");
                 if (node.ActualElapsedMs > 0)
-                {
                     AddPropertyRow("Elapsed Time", $"{node.ActualElapsedMs:N0} ms");
-                    if (node.PerThreadStats.Count > 1)
-                        foreach (var t in node.PerThreadStats.Where(t => t.ActualElapsedMs > 0))
-                            AddPropertyRow($"  Thread {t.ThreadId}", $"{t.ActualElapsedMs:N0} ms", indent: true);
-                }
                 if (node.ActualCPUMs > 0)
-                {
                     AddPropertyRow("CPU Time", $"{node.ActualCPUMs:N0} ms");
-                    if (node.PerThreadStats.Count > 1)
-                        foreach (var t in node.PerThreadStats.Where(t => t.ActualCPUMs > 0))
-                            AddPropertyRow($"  Thread {t.ThreadId}", $"{t.ActualCPUMs:N0} ms", indent: true);
-                }
                 if (node.UdfElapsedTimeMs > 0)
                     AddPropertyRow("UDF Elapsed", $"{node.UdfElapsedTimeMs:N0} ms");
                 if (node.UdfCpuTimeMs > 0)
                     AddPropertyRow("UDF CPU", $"{node.UdfCpuTimeMs:N0} ms");
+
+                AddPerThreadBreakdown(node,
+                    ("Elapsed", t => t.ActualElapsedMs, false, " ms"),
+                    ("CPU", t => t.ActualCPUMs, false, " ms"));
             }
 
             // I/O
@@ -390,34 +442,22 @@ public partial class PlanViewerControl : UserControl
             {
                 AddPropertySection("Actual I/O");
                 AddPropertyRow("Logical Reads", $"{node.ActualLogicalReads:N0}");
-                if (node.PerThreadStats.Count > 1)
-                    foreach (var t in node.PerThreadStats.Where(t => t.ActualLogicalReads > 0))
-                        AddPropertyRow($"  Thread {t.ThreadId}", $"{t.ActualLogicalReads:N0}", indent: true);
                 if (node.ActualPhysicalReads > 0)
-                {
                     AddPropertyRow("Physical Reads", $"{node.ActualPhysicalReads:N0}");
-                    if (node.PerThreadStats.Count > 1)
-                        foreach (var t in node.PerThreadStats.Where(t => t.ActualPhysicalReads > 0))
-                            AddPropertyRow($"  Thread {t.ThreadId}", $"{t.ActualPhysicalReads:N0}", indent: true);
-                }
                 if (node.ActualScans > 0)
-                {
                     AddPropertyRow("Scans", $"{node.ActualScans:N0}");
-                    if (node.PerThreadStats.Count > 1)
-                        foreach (var t in node.PerThreadStats.Where(t => t.ActualScans > 0))
-                            AddPropertyRow($"  Thread {t.ThreadId}", $"{t.ActualScans:N0}", indent: true);
-                }
                 if (node.ActualReadAheads > 0)
-                {
                     AddPropertyRow("Read-Ahead Reads", $"{node.ActualReadAheads:N0}");
-                    if (node.PerThreadStats.Count > 1)
-                        foreach (var t in node.PerThreadStats.Where(t => t.ActualReadAheads > 0))
-                            AddPropertyRow($"  Thread {t.ThreadId}", $"{t.ActualReadAheads:N0}", indent: true);
-                }
                 if (node.ActualSegmentReads > 0)
                     AddPropertyRow("Segment Reads", $"{node.ActualSegmentReads:N0}");
                 if (node.ActualSegmentSkips > 0)
                     AddPropertyRow("Segment Skips", $"{node.ActualSegmentSkips:N0}");
+
+                AddPerThreadBreakdown(node,
+                    ("Logical Reads", t => t.ActualLogicalReads, false, ""),
+                    ("Physical Reads", t => t.ActualPhysicalReads, false, ""),
+                    ("Scans", t => t.ActualScans, false, ""),
+                    ("Read-Ahead Reads", t => t.ActualReadAheads, false, ""));
             }
 
             // LOB I/O
@@ -663,6 +703,9 @@ public partial class PlanViewerControl : UserControl
             // === Template Plan Guide ===
             if (!string.IsNullOrEmpty(s.TemplatePlanGuideName))
             {
+                // Without its own section these two rows land in whichever grid was built last,
+                // which reads as an unrelated section growing two mystery rows.
+                AddPropertySection("Template Plan Guide");
                 AddPropertyRow("Template Plan Guide", s.TemplatePlanGuideName);
                 if (!string.IsNullOrEmpty(s.TemplatePlanGuideDB))
                     AddPropertyRow("Template Guide DB", s.TemplatePlanGuideDB);
@@ -808,6 +851,7 @@ public partial class PlanViewerControl : UserControl
             if (s.PlanWarnings.Count > 0)
             {
                 var planWarningsPanel = new StackPanel();
+                var planWarningRows = new List<PropertyPanelRow>();
                 var sortedPlanWarnings = s.PlanWarnings
                     .OrderByDescending(w => w.MaxBenefitPercent ?? -1)
                     .ThenByDescending(w => w.Severity)
@@ -852,6 +896,7 @@ public partial class PlanViewerControl : UserControl
                         });
                     }
                     planWarningsPanel.Children.Add(warnPanel);
+                    planWarningRows.Add(NewWarningRow(planWarnHeader, w.Message, w.ActionableFix, warnPanel));
                 }
 
                 var planWarningsExpander = new Expander
@@ -875,6 +920,7 @@ public partial class PlanViewerControl : UserControl
                     HorizontalContentAlignment = HorizontalAlignment.Stretch
                 };
                 PropertiesContent.Children.Add(planWarningsExpander);
+                RegisterPropertySection("Plan Warnings", planWarningsExpander).Rows.AddRange(planWarningRows);
             }
 
             /* === Operator Warnings (#440) ===
@@ -890,6 +936,7 @@ public partial class PlanViewerControl : UserControl
             if (operatorWarnings.Count > 0)
             {
                 var operatorWarningsPanel = new StackPanel();
+                var operatorWarningRows = new List<PropertyPanelRow>();
                 foreach (var (originNode, w) in operatorWarnings
                              .OrderByDescending(x => x.Warning.MaxBenefitPercent ?? -1)
                              .ThenByDescending(x => x.Warning.Severity)
@@ -920,6 +967,8 @@ public partial class PlanViewerControl : UserControl
                         Margin = new Thickness(16, 0, 0, 0)
                     });
                     operatorWarningsPanel.Children.Add(opWarnPanel);
+                    operatorWarningRows.Add(
+                        NewWarningRow(opHeaderText, OperatorOriginLabel(originNode), null, opWarnPanel));
                 }
 
                 var operatorWarningsExpander = new Expander
@@ -947,6 +996,8 @@ public partial class PlanViewerControl : UserControl
                     HorizontalContentAlignment = HorizontalAlignment.Stretch
                 };
                 PropertiesContent.Children.Add(operatorWarningsExpander);
+                RegisterPropertySection($"Operator Warnings ({operatorWarnings.Count})", operatorWarningsExpander)
+                    .Rows.AddRange(operatorWarningRows);
             }
 
             // === Missing Indexes ===
@@ -966,6 +1017,7 @@ public partial class PlanViewerControl : UserControl
         if (node.HasWarnings)
         {
             var warningsPanel = new StackPanel();
+            var nodeWarningRows = new List<PropertyPanelRow>();
             var sortedNodeWarnings = node.Warnings
                 .OrderByDescending(w => w.MaxBenefitPercent ?? -1)
                 .ThenByDescending(w => w.Severity)
@@ -996,6 +1048,7 @@ public partial class PlanViewerControl : UserControl
                     Margin = new Thickness(16, 0, 0, 0)
                 });
                 warningsPanel.Children.Add(warnPanel);
+                nodeWarningRows.Add(NewWarningRow(nodeWarnHeader, w.Message, null, warnPanel));
             }
 
             var warningsExpander = new Expander
@@ -1019,13 +1072,288 @@ public partial class PlanViewerControl : UserControl
                 HorizontalContentAlignment = HorizontalAlignment.Stretch
             };
             PropertiesContent.Children.Add(warningsExpander);
+            RegisterPropertySection("Warnings", warningsExpander).Rows.AddRange(nodeWarningRows);
         }
 
-        // Show the panel
-        _propertiesColumn.Width = new GridLength(320);
-        _splitterColumn.Width = new GridLength(5);
-        PropertiesSplitter.IsVisible = true;
-        PropertiesPanel.IsVisible = true;
+        // The filter box keeps its text across selections, so a rebuilt panel has to re-apply it.
+        ApplyPropertiesFilter();
+
+        /* Show the panel. The width is set only when the panel is opening: setting it on every
+           selection threw away whatever width the user had dragged, on every single click. */
+        if (!PropertiesPanel.IsVisible)
+        {
+            _propertiesColumn.MinWidth = MinPropertiesWidth;
+            _propertiesColumn.MaxWidth = MaxPropertiesWidth;
+            _propertiesColumn.Width = new GridLength(
+                Math.Clamp(_propertiesPanelWidth, MinPropertiesWidth, MaxPropertiesWidth));
+            _splitterColumn.Width = new GridLength(PropertiesSplitterWidth);
+            PropertiesSplitter.IsVisible = true;
+            PropertiesPanel.IsVisible = true;
+        }
+    }
+
+    private void PropertiesFilter_TextChanged(object? sender, TextChangedEventArgs e)
+        => ApplyPropertiesFilter();
+
+    private void PropertiesFilter_KeyDown(object? sender, Avalonia.Input.KeyEventArgs e)
+    {
+        if (e.Key != Avalonia.Input.Key.Escape) return;
+        PropertiesFilterBox.Text = "";
+        e.Handled = true;
+    }
+
+    /// <summary>
+    /// Hides every row whose label and value miss the filter text, and hides a section outright
+    /// once nothing in it is left showing.
+    ///
+    /// <para>A section whose own title matches keeps all of its rows, so typing a section name
+    /// is a way to jump to that section rather than a way to empty it.</para>
+    ///
+    /// <para>An empty section is hidden even with no filter text. A few of them can be built
+    /// with no rows at all - Operator Details when the only thing that qualified the node
+    /// contributes no row of its own, for one - and an expander with nothing inside it is
+    /// noise whether or not anyone is filtering.</para>
+    /// </summary>
+    private void ApplyPropertiesFilter()
+    {
+        var filter = PropertiesFilterBox.Text?.Trim() ?? "";
+
+        foreach (var section in _propertySections)
+        {
+            var sectionMatches = filter.Length == 0
+                || section.Title.Contains(filter, StringComparison.OrdinalIgnoreCase);
+
+            var anyVisible = false;
+            foreach (var row in section.Rows)
+            {
+                var visible = sectionMatches
+                    || row.SearchText.Contains(filter, StringComparison.OrdinalIgnoreCase);
+                foreach (var control in row.Controls)
+                    control.IsVisible = visible;
+                anyVisible |= visible;
+            }
+
+            section.Expander.IsVisible = anyVisible;
+        }
+    }
+
+    /// <summary>
+    /// One-time wiring for the panel chrome that lives in AXAML: remembering the width the
+    /// user drags the panel to.
+    /// </summary>
+    private void EnsurePropertiesChrome()
+    {
+        if (_propertiesChromeWired) return;
+        _propertiesChromeWired = true;
+
+        // The splitter writes the dragged size straight onto the column, so that is where the
+        // remembered width comes from - no drag tracking of our own.
+        _propertiesColumn.PropertyChanged += (_, args) =>
+        {
+            if (args.Property.Name != "Width" || !PropertiesPanel.IsVisible) return;
+            var width = _propertiesColumn.Width;
+            if (width.IsAbsolute && width.Value > 0)
+                _propertiesPanelWidth = width.Value;
+        };
+    }
+
+    /// <summary>
+    /// Moves a section's per-thread numbers out of the flat row list and into one collapsed
+    /// sub-expander, grouped under a small header per metric.
+    ///
+    /// <para>Every actual metric used to emit one indented "Thread N" row per thread inline,
+    /// right under its own summary row. A DOP 4 hash match produced about thirty of them and
+    /// DOP 8 produces hundreds, so the summary numbers most people open this panel for were
+    /// buried in a scroll marathon of detail almost nobody wants expanded by default.</para>
+    ///
+    /// <para>Metrics with no per-thread data at all are skipped, so a section only shows the
+    /// breakdown when there is something in it.</para>
+    /// </summary>
+    private void AddPerThreadBreakdown(
+        PlanNode node,
+        params (string Metric, Func<PerThreadRuntimeInfo, long> Value, bool IncludeIdleThreads, string Unit)[] metrics)
+    {
+        if (_currentSectionGrid == null || _currentSection == null || node.PerThreadStats.Count <= 1)
+            return;
+
+        var panel = new StackPanel { Margin = new Thickness(10, 2, 6, 4) };
+        var copyText = new StringBuilder();
+        var searchText = new StringBuilder();
+        var groupCount = 0;
+
+        foreach (var metric in metrics)
+        {
+            var threads = node.PerThreadStats
+                .Where(t => metric.IncludeIdleThreads || metric.Value(t) > 0)
+                .ToList();
+            if (threads.Count == 0 || threads.All(t => metric.Value(t) == 0))
+                continue;
+
+            groupCount++;
+            panel.Children.Add(new TextBlock
+            {
+                Text = metric.Metric,
+                FontSize = 10,
+                FontWeight = FontWeight.SemiBold,
+                Foreground = SectionHeaderBrush,
+                Margin = new Thickness(0, groupCount == 1 ? 0 : 5, 0, 1)
+            });
+            copyText.Append("    ").AppendLine(metric.Metric);
+            searchText.Append(metric.Metric).Append(' ');
+
+            var threadGrid = new Grid { Margin = new Thickness(8, 0, 0, 0) };
+            threadGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(72) });
+            threadGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+            var rowIndex = 0;
+            foreach (var t in threads)
+            {
+                threadGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+                var threadValue = $"{metric.Value(t):N0}{metric.Unit}";
+
+                var threadLabelBlock = new TextBlock
+                {
+                    Text = $"Thread {t.ThreadId}",
+                    FontSize = 10,
+                    Foreground = TooltipFgBrush
+                };
+                Grid.SetRow(threadLabelBlock, rowIndex);
+                Grid.SetColumn(threadLabelBlock, 0);
+                threadGrid.Children.Add(threadLabelBlock);
+
+                var threadValueBlock = new TextBlock
+                {
+                    Text = threadValue,
+                    FontSize = 10,
+                    Foreground = TooltipFgBrush,
+                    TextWrapping = TextWrapping.Wrap
+                };
+                Grid.SetRow(threadValueBlock, rowIndex);
+                Grid.SetColumn(threadValueBlock, 1);
+                threadGrid.Children.Add(threadValueBlock);
+
+                copyText.Append("      Thread ").Append(t.ThreadId).Append(": ").AppendLine(threadValue);
+                searchText.Append("Thread ").Append(t.ThreadId).Append(' ').Append(threadValue).Append(' ');
+                rowIndex++;
+            }
+
+            panel.Children.Add(threadGrid);
+        }
+
+        if (groupCount == 0) return;
+
+        var headerText = $"Per-thread breakdown ({node.PerThreadStats.Count} threads)";
+        var (isSkewed, maxRows, minRows) = ThreadRowSkew(node);
+        var skewSuffix = isSkewed ? $"(skewed: {maxRows:N0} max / {minRows:N0} min)" : "";
+
+        var header = new StackPanel { Orientation = Orientation.Horizontal };
+        header.Children.Add(new TextBlock
+        {
+            Text = headerText,
+            FontWeight = FontWeight.SemiBold,
+            FontSize = 11,
+            Foreground = SectionHeaderBrush,
+            VerticalAlignment = VerticalAlignment.Center
+        });
+        if (isSkewed)
+        {
+            header.Children.Add(new TextBlock
+            {
+                Text = skewSuffix,
+                FontWeight = FontWeight.SemiBold,
+                FontSize = 11,
+                Foreground = PropWarningBrush,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(6, 0, 0, 0)
+            });
+        }
+
+        var breakdown = new Expander
+        {
+            IsExpanded = false,
+            Header = header,
+            Content = panel,
+            Margin = new Thickness(0, 2, 0, 2),
+            Padding = new Thickness(0),
+            Foreground = SectionHeaderBrush,
+            BorderThickness = new Thickness(0),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Stretch
+        };
+
+        var entry = new PropertyPanelRow
+        {
+            Label = headerText,
+            BlockText = $"  {headerText} {skewSuffix}".TrimEnd()
+                + Environment.NewLine + copyText.ToString().TrimEnd(),
+            SearchText = $"{headerText} {skewSuffix} {searchText}"
+        };
+        AddSectionRowControl(breakdown, entry, fullWidth: true);
+        _currentSection.Rows.Add(entry);
+    }
+
+    /// <summary>
+    /// Per-thread row skew, for the breakdown header.
+    ///
+    /// <para>The share test mirrors PlanAnalyzer's Rule 8 (Parallel Skew) so this header never
+    /// disagrees with the warning the same plan raises. The idle-thread test is additional: a
+    /// thread that returned no rows at all while its siblings did real work is the shape people
+    /// read as skew on sight, and Rule 8 stays quiet about it whenever the busiest thread is
+    /// still under its share threshold.</para>
+    /// </summary>
+    private static (bool IsSkewed, long MaxRows, long MinRows) ThreadRowSkew(PlanNode node)
+    {
+        // Thread 0 is the coordinator and normally moves no rows in a parallel operator.
+        var workers = node.PerThreadStats.Where(t => t.ThreadId > 0).ToList();
+        if (workers.Count < 2) workers = node.PerThreadStats;
+        if (workers.Count < 2) return (false, 0, 0);
+
+        var maxRows = workers.Max(t => t.ActualRows);
+        var minRows = workers.Min(t => t.ActualRows);
+        var totalRows = workers.Sum(t => t.ActualRows);
+
+        // Below this there are too few rows to distribute for a split to mean anything.
+        if (totalRows < workers.Count * 1000L) return (false, maxRows, minRows);
+
+        // At DOP 2 a 60/40 split is normal, so that case needs a higher bar.
+        var shareThreshold = workers.Count <= 2 ? 0.80 : 0.50;
+        var isSkewed = (double)maxRows / totalRows >= shareThreshold || minRows == 0;
+        return (isSkewed, maxRows, minRows);
+    }
+
+    /// <summary>
+    /// Wraps one already-built warning panel as a filterable, copyable row.
+    /// </summary>
+    private PropertyPanelRow NewWarningRow(
+        string header, string body, string? fix, Control panel)
+    {
+        var text = new StringBuilder();
+        text.Append("  ").AppendLine(header);
+        if (!string.IsNullOrEmpty(body)) text.Append("    ").AppendLine(body);
+        if (!string.IsNullOrEmpty(fix)) text.Append("    ").AppendLine(fix);
+
+        var row = new PropertyPanelRow
+        {
+            Label = header,
+            Value = body,
+            BlockText = text.ToString().TrimEnd(),
+            SearchText = $"{header} {body} {fix}"
+        };
+        row.Controls.Add(panel);
+        AttachPropertyRowMenu(panel, row);
+        return row;
+    }
+
+    /// <summary>
+    /// Registers an expander that was built by hand rather than through
+    /// <see cref="AddPropertySection"/> - the warning lists, which are stacked panels of prose
+    /// rather than label/value grids - so the filter and the copy menu cover them too.
+    /// </summary>
+    private PropertyPanelSection RegisterPropertySection(string title, Expander expander)
+    {
+        var section = new PropertyPanelSection { Title = title, Expander = expander };
+        _propertySections.Add(section);
+        return section;
     }
 
     private void AddPropertySection(string title)
@@ -1055,6 +1383,26 @@ public partial class PlanViewerControl : UserControl
         sectionGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(4) });
         sectionGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
+        /* The label/value drag handle, in the 4px gap column. It used to be created with the
+           section's first row; it lives here now because a section can open with a full-width
+           code row, and that row has no label column for the handle to sit beside.
+
+           ZIndex keeps it under its siblings so the full-width rows own their strip of it -
+           nothing else is ever in column 1, so over an ordinary row it still takes the press. */
+        var labelSplitter = new GridSplitter
+        {
+            Width = 4,
+            Background = Brushes.Transparent,
+            Foreground = Brushes.Transparent,
+            BorderThickness = new Thickness(0),
+            ZIndex = -1,
+            Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.SizeWestEast)
+        };
+        Grid.SetColumn(labelSplitter, 1);
+        Grid.SetRow(labelSplitter, 0);
+        Grid.SetRowSpan(labelSplitter, 100);
+        sectionGrid.Children.Add(labelSplitter);
+
         _currentSectionGrid = sectionGrid;
         _currentSectionRowIndex = 0;
 
@@ -1079,62 +1427,196 @@ public partial class PlanViewerControl : UserControl
             HorizontalContentAlignment = HorizontalAlignment.Stretch
         };
         PropertiesContent.Children.Add(expander);
+
+        _currentSection = new PropertyPanelSection { Title = title, Expander = expander };
+        _propertySections.Add(_currentSection);
     }
 
     private void AddPropertyRow(string label, string value, bool isCode = false, bool indent = false)
     {
-        if (_currentSectionGrid == null) return;
+        if (_currentSectionGrid == null || _currentSection == null) return;
 
-        var row = _currentSectionRowIndex++;
-        _currentSectionGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-
-        var labelBlock = new TextBlock
+        var entry = new PropertyPanelRow
         {
-            Text = label,
-            FontSize = indent ? 10 : 11,
-            Foreground = TooltipFgBrush,
-            VerticalAlignment = VerticalAlignment.Top,
-            TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(indent ? 16 : 4, 2, 0, 2)
+            Label = label,
+            Value = value,
+            IsCode = isCode,
+            SearchText = $"{label} {value}"
         };
-        Grid.SetColumn(labelBlock, 0);
-        Grid.SetRow(labelBlock, row);
-        _currentSectionGrid.Children.Add(labelBlock);
 
-        // GridSplitter in column 1 (only in first row per section)
-        if (row == 0)
+        if (isCode)
         {
-            var splitter = new GridSplitter
+            /* Code values get the whole panel width, label on its own line above them. In the
+               label|value split a seek predicate or an output column list wraps inside a ~180px
+               column and comes out a tower of [Database].[schema].[fragment] pieces, one or two
+               per line, which is the least readable thing in this panel by a distance. */
+            if (!string.IsNullOrEmpty(label))
+                AddSectionRowControl(NewPropertyLabel(label, indent), entry, fullWidth: true);
+
+            AddSectionRowControl(new SelectableTextBlock
             {
-                Width = 4,
+                Text = value,
+                FontFamily = CodeFontFamily,
+                FontSize = indent ? 10 : 11,
+                Foreground = TooltipFgBrush,
+                TextWrapping = TextWrapping.Wrap,
+                // Without a background a text block is only hit-testable where its glyphs
+                // landed, so presses in the margins never start a selection (#503).
                 Background = Brushes.Transparent,
-                Foreground = Brushes.Transparent,
-                BorderThickness = new Thickness(0),
-                Cursor = new Avalonia.Input.Cursor(Avalonia.Input.StandardCursorType.SizeWestEast)
-            };
-            Grid.SetColumn(splitter, 1);
-            Grid.SetRow(splitter, 0);
-            Grid.SetRowSpan(splitter, 100); // span all rows
-            _currentSectionGrid.Children.Add(splitter);
+                Margin = new Thickness(indent ? 20 : 10, 0, 4, 3)
+            }, entry, fullWidth: true);
+        }
+        else
+        {
+            var row = NextSectionRow();
+            AddSectionRowControl(NewPropertyLabel(label, indent), entry, fullWidth: false, row: row);
+            AddSectionRowControl(new SelectableTextBlock
+            {
+                Text = value,
+                FontSize = indent ? 10 : 11,
+                Foreground = TooltipFgBrush,
+                TextWrapping = TextWrapping.Wrap,
+                Background = Brushes.Transparent,
+                Margin = new Thickness(0, 2, 4, 2),
+                VerticalAlignment = VerticalAlignment.Top
+            }, entry, fullWidth: false, row: row, column: 2);
         }
 
-        var valueBox = new TextBox
+        _currentSection.Rows.Add(entry);
+    }
+
+    /// <summary>
+    /// Routes a value's Ctrl+C through the guarded clipboard helper.
+    ///
+    /// <para>SelectableTextBlock.Copy() is async void over an unguarded SetTextAsync - the same
+    /// shape that crashed the app when another process held the clipboard (#415). The app-wide
+    /// guard in <see cref="TextBoxClipboardGuard"/> hangs off TextBox's own routed events, and
+    /// SelectableTextBlock registers its own, so these values would have gone from guarded
+    /// (they were read-only TextBoxes) to unguarded. Handling the event stops the built-in path
+    /// before it reaches the clipboard.</para>
+    /// </summary>
+    private static void GuardValueCopy(SelectableTextBlock value)
+        => value.AddHandler(SelectableTextBlock.CopyingToClipboardEvent, OnPropertyValueCopying);
+
+    private static void OnPropertyValueCopying(object? sender, RoutedEventArgs e)
+    {
+        if (sender is not SelectableTextBlock value || !value.CanCopy) return;
+
+        e.Handled = true;
+        _ = ClipboardHelper.TrySetTextAsync(value, value.SelectedText);
+    }
+
+    private static TextBlock NewPropertyLabel(string label, bool indent) => new()
+    {
+        Text = label,
+        FontSize = indent ? 10 : 11,
+        Foreground = TooltipFgBrush,
+        VerticalAlignment = VerticalAlignment.Top,
+        TextWrapping = TextWrapping.Wrap,
+        Background = Brushes.Transparent,
+        Margin = new Thickness(indent ? 16 : 4, 2, 0, 2)
+    };
+
+    private int NextSectionRow()
+    {
+        _currentSectionGrid!.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        return _currentSectionRowIndex++;
+    }
+
+    /// <summary>
+    /// Places a control in the current section's grid and records it on <paramref name="entry"/>,
+    /// which is what lets the filter hide the row later. Full-width controls take a row of their
+    /// own spanning all three columns.
+    /// </summary>
+    private void AddSectionRowControl(
+        Control control, PropertyPanelRow entry, bool fullWidth, int row = -1, int column = 0)
+    {
+        if (fullWidth)
         {
-            Text = value,
-            FontSize = indent ? 10 : 11,
-            Foreground = TooltipFgBrush,
-            TextWrapping = TextWrapping.Wrap,
-            IsReadOnly = true,
-            BorderThickness = new Thickness(0),
-            Background = Brushes.Transparent,
-            Padding = new Thickness(0),
-            Margin = new Thickness(0, 2, 4, 2),
-            VerticalAlignment = VerticalAlignment.Top
-        };
-        if (isCode) valueBox.FontFamily = new FontFamily("Consolas");
-        Grid.SetColumn(valueBox, 2);
-        Grid.SetRow(valueBox, row);
-        _currentSectionGrid.Children.Add(valueBox);
+            row = NextSectionRow();
+            Grid.SetColumnSpan(control, 3);
+        }
+
+        Grid.SetRow(control, row);
+        Grid.SetColumn(control, column);
+        AttachPropertyRowMenu(control, entry);
+        _currentSectionGrid!.Children.Add(control);
+        entry.Controls.Add(control);
+    }
+
+    /// <summary>
+    /// Gives a control the row's copy menu, and clears any context flyout the theme put on it.
+    /// A read-only value used to answer right-click with the stock text menu: Cut and Copy
+    /// greyed out, Paste enabled, on data nobody can edit.
+    /// </summary>
+    private void AttachPropertyRowMenu(Control control, PropertyPanelRow entry)
+    {
+        control.ContextMenu = entry.Menu ??= BuildPropertyRowMenu(entry);
+        control.ContextFlyout = null;
+        if (control is SelectableTextBlock value)
+            GuardValueCopy(value);
+    }
+
+    private ContextMenu BuildPropertyRowMenu(PropertyPanelRow entry)
+    {
+        var menu = new ContextMenu();
+
+        var copyValueItem = new MenuItem { Header = "Copy value" };
+        copyValueItem.Click += async (_, _) => await SetClipboardTextAsync(entry.CopyValue);
+        menu.Items.Add(copyValueItem);
+
+        var copyRowItem = new MenuItem { Header = "Copy name and value" };
+        copyRowItem.Click += async (_, _) => await SetClipboardTextAsync(entry.CopyLabelAndValue);
+        menu.Items.Add(copyRowItem);
+
+        menu.Items.Add(new Separator());
+
+        var copyAllItem = new MenuItem { Header = "Copy all properties" };
+        copyAllItem.Click += async (_, _) => await SetClipboardTextAsync(BuildPropertiesText());
+        menu.Items.Add(copyAllItem);
+
+        return menu;
+    }
+
+    /// <summary>
+    /// The whole panel as plain text, for "Copy all properties": the operator header, then a
+    /// line per section title with "  Label: Value" beneath it. Code values go out verbatim on
+    /// their own lines, so a predicate or a CREATE INDEX comes back out pasteable rather than
+    /// re-indented into something that has to be cleaned up first.
+    /// </summary>
+    private string BuildPropertiesText()
+    {
+        var text = new StringBuilder();
+        text.AppendLine(PropertiesHeader.Text);
+        if (!string.IsNullOrEmpty(PropertiesSubHeader.Text))
+            text.AppendLine(PropertiesSubHeader.Text);
+
+        foreach (var section in _propertySections)
+        {
+            if (section.Rows.Count == 0) continue;
+
+            text.AppendLine();
+            text.AppendLine(section.Title);
+            foreach (var row in section.Rows)
+            {
+                if (row.BlockText != null)
+                {
+                    text.AppendLine(row.BlockText);
+                }
+                else if (row.IsCode)
+                {
+                    if (!string.IsNullOrEmpty(row.Label))
+                        text.Append("  ").Append(row.Label).AppendLine(":");
+                    text.AppendLine(row.Value);
+                }
+                else
+                {
+                    text.Append("  ").Append(row.Label).Append(": ").AppendLine(row.Value);
+                }
+            }
+        }
+
+        return text.ToString().TrimEnd();
     }
 
     private void CloseProperties_Click(object? sender, RoutedEventArgs e)
@@ -1146,6 +1628,10 @@ public partial class PlanViewerControl : UserControl
     {
         PropertiesPanel.IsVisible = false;
         PropertiesSplitter.IsVisible = false;
+        // Clear the open-state bounds first: MinWidth clamps the column whatever its Width
+        // says, so leaving it set would hold a 280px strip open on a closed panel.
+        _propertiesColumn.MinWidth = 0;
+        _propertiesColumn.MaxWidth = double.PositiveInfinity;
         _propertiesColumn.Width = new GridLength(0);
         _splitterColumn.Width = new GridLength(0);
 

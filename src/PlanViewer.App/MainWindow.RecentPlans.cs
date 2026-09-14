@@ -28,6 +28,12 @@ namespace PlanViewer.App;
 public partial class MainWindow : Window
 {
     /// <summary>
+    /// The recent plan paths, most recent first — what the File menu lists, and what a query
+    /// session's empty state offers as a way back into the last few plans.
+    /// </summary>
+    internal IReadOnlyList<string> RecentPlans => _appSettings.RecentPlans;
+
+    /// <summary>
     /// Adds a file path to the recent plans list, saves settings, and rebuilds the menu.
     /// </summary>
     private void TrackRecentPlan(string filePath)
@@ -88,6 +94,18 @@ public partial class MainWindow : Window
         if (sender is not MenuItem item || item.Tag is not string path)
             return;
 
+        OpenRecentPlan(path);
+    }
+
+    /// <summary>
+    /// Opens one remembered plan, or explains why it cannot and forgets it.
+    ///
+    /// <para>Split out of the menu handler because the empty state on a fresh query tab offers
+    /// the same list: a file that has been moved or deleted has to be reported and dropped there
+    /// too, not silently do nothing.</para>
+    /// </summary>
+    internal void OpenRecentPlan(string path)
+    {
         if (!File.Exists(path))
         {
             // File was moved or deleted — remove from the list and notify the user

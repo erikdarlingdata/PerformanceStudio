@@ -8,6 +8,8 @@
     <SolidColorBrush x:Key="ForegroundMutedBrush" Color="#B0B6C0"/>
     <SolidColorBrush x:Key="BorderBrush" Color="#3A3D45"/>
     <SolidColorBrush x:Key="AccentBrush" Color="#2eaef1"/>
+    <!-- Failure text. The same muted red the plan viewer's load error already uses. -->
+    <SolidColorBrush x:Key="ErrorBrush" Color="#E06C75"/>
 
     <!-- Fluent theme accent override: TabItem selected underline, focus rings, etc. -->
     <Color x:Key="SystemAccentColor">#2eaef1</Color>

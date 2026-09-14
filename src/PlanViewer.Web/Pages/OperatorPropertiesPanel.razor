@@ -114,10 +114,10 @@
                 <details class="prop-section" open>
                     <summary>Costs</summary>
                     <div class="prop-grid">
-                        <div class="prop-row"><span class="prop-label">Operator Cost</span><span class="prop-value">@Node.EstimatedOperatorCost.ToString("N4") (@(Node.CostPercent)%)</span></div>
-                        <div class="prop-row"><span class="prop-label">Subtree Cost</span><span class="prop-value">@Node.EstimatedTotalSubtreeCost.ToString("N4")</span></div>
-                        <div class="prop-row"><span class="prop-label">I/O Cost</span><span class="prop-value">@Node.EstimateIO.ToString("N4")</span></div>
-                        <div class="prop-row"><span class="prop-label">CPU Cost</span><span class="prop-value">@Node.EstimateCPU.ToString("N4")</span></div>
+                        <div class="prop-row"><span class="prop-label">Operator Cost</span><span class="prop-value">@MetricFormatter.FormatCost(Node.EstimatedOperatorCost) (@(Node.CostPercent)%)</span></div>
+                        <div class="prop-row"><span class="prop-label">Subtree Cost</span><span class="prop-value">@MetricFormatter.FormatCost(Node.EstimatedTotalSubtreeCost)</span></div>
+                        <div class="prop-row"><span class="prop-label">I/O Cost</span><span class="prop-value">@MetricFormatter.FormatCost(Node.EstimateIO)</span></div>
+                        <div class="prop-row"><span class="prop-label">CPU Cost</span><span class="prop-value">@MetricFormatter.FormatCost(Node.EstimateCPU)</span></div>
                     </div>
                 </details>
 

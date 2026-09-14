@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Microsoft.Data.SqlClient;
@@ -14,20 +15,30 @@ public partial class ConnectionDialog : Window
 {
     private readonly ICredentialService _credentialService;
     private readonly ConnectionStore _connectionStore;
+    private readonly string? _currentDatabase;
     private List<ServerConnection> _savedConnections = new();
+    private bool _connecting;
+    private bool _closed;
 
     public ServerConnection? ResultConnection { get; private set; }
     public string? ResultDatabase { get; private set; }
 
-    public ConnectionDialog(ICredentialService credentialService, ConnectionStore connectionStore)
+    /// <param name="currentDatabase">
+    /// The database the calling session is already on, when the dialog is opened to reconnect.
+    /// It is pre-selected once the database list loads; it never connects on its own.
+    /// </param>
+    public ConnectionDialog(ICredentialService credentialService, ConnectionStore connectionStore,
+        string? currentDatabase = null)
     {
         _credentialService = credentialService;
         _connectionStore = connectionStore;
+        _currentDatabase = string.IsNullOrWhiteSpace(currentDatabase) ? null : currentDatabase.Trim();
         InitializeComponent();
 
         AuthTypeBox.SelectedIndex = 0;
         EncryptBox.SelectedIndex = 0;
         PopulateSavedServers();
+        UpdateConnectEnabled();
     }
 
     private void PopulateSavedServers()
@@ -87,6 +98,8 @@ public partial class ConnectionDialog : Window
             LoginBox.Text = cred.Value.Username;
             PasswordBox.Text = cred.Value.Password;
         }
+
+        UpdateConnectEnabled();
     }
 
     private void ServerList_SelectionChanged(object? sender, SelectionChangedEventArgs e)
@@ -106,7 +119,10 @@ public partial class ConnectionDialog : Window
 
     private void AuthType_SelectionChanged(object? sender, SelectionChangedEventArgs e)
     {
-        if (AuthTypeBox.SelectedItem is not ComboBoxItem item) return;
+        // A XAML-wired selection (EncryptBox already has one) fires while the XAML is still
+        // loading, before the named fields exist, so read the sender and check what we touch.
+        if (LoginPanel is null || PasswordPanel is null) return;
+        if ((sender as ComboBox)?.SelectedItem is not ComboBoxItem item) return;
         var authType = item.Tag?.ToString();
 
         var showLogin = authType is "SqlServer" or "EntraMFA";
@@ -114,16 +130,55 @@ public partial class ConnectionDialog : Window
 
         LoginPanel.IsVisible = showLogin;
         PasswordPanel.IsVisible = showPassword;
+
+        UpdateConnectEnabled();
+    }
+
+    private void RequiredField_TextChanged(object? sender, TextChangedEventArgs e)
+    {
+        UpdateConnectEnabled();
+    }
+
+    /// <summary>
+    /// Connect is available as soon as the fields a connection actually needs are filled in:
+    /// a server name, plus a login and password when SQL Server authentication is selected.
+    /// Testing the connection first is optional, so Connect never sits disabled with no reason.
+    /// </summary>
+    private void UpdateConnectEnabled()
+    {
+        // Same story: a TextChanged during XAML load can land here before these are assigned.
+        if (ConnectButton is null || ServerNameBox is null ||
+            LoginBox is null || PasswordBox is null || AuthTypeBox is null)
+            return;
+
+        var hasServer = !string.IsNullOrWhiteSpace(ServerNameBox.Text);
+        var needsCredentials = GetSelectedAuthType() == AuthenticationTypes.SqlServer;
+        var hasCredentials = !needsCredentials ||
+            (!string.IsNullOrWhiteSpace(LoginBox.Text) && !string.IsNullOrEmpty(PasswordBox.Text));
+
+        ConnectButton.IsEnabled = !_connecting && hasServer && hasCredentials;
     }
 
     private async void TestConnection_Click(object? sender, RoutedEventArgs e)
+    {
+        // Optional secondary action: validate the settings and fill the Database dropdown so the
+        // user can browse databases before connecting.
+        await ConnectAndLoadDatabasesAsync();
+    }
+
+    /// <summary>
+    /// Opens a connection with the current settings and fills the Database dropdown with the
+    /// databases the login can see. Shared by Test Connection and Connect so both take the same
+    /// path. Reports progress and failures in StatusText; returns true when the connection opened.
+    /// </summary>
+    private async Task<bool> ConnectAndLoadDatabasesAsync()
     {
         var serverName = ServerNameBox.Text?.Trim();
         if (string.IsNullOrEmpty(serverName))
         {
             StatusText.Text = "Enter a server name";
             StatusText.Foreground = Avalonia.Media.Brushes.OrangeRed;
-            return;
+            return false;
         }
 
         // For Azure SQL DB / JIT access the login often can't open master, so connect
@@ -133,7 +188,9 @@ public partial class ConnectionDialog : Window
 
         StatusText.Text = "Connecting...";
         StatusText.Foreground = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.FromRgb(0xE4, 0xE6, 0xEB));
+        _connecting = true;
         TestButton.IsEnabled = false;
+        UpdateConnectEnabled();
 
         try
         {
@@ -161,47 +218,80 @@ public partial class ConnectionDialog : Window
                 !databases.Contains(typedDatabase, StringComparer.OrdinalIgnoreCase))
                 databases.Insert(0, typedDatabase);
 
+            // Re-loading the list drops the selection, so remember what was showing first.
+            var previouslySelected = DatabaseBox.SelectedItem?.ToString();
+
             DatabaseBox.ItemsSource = databases;
             DatabaseBox.IsEnabled = true;
-            ConnectButton.IsEnabled = true;
-
-            // Pre-select the named database when given, otherwise default to master.
-            var preferred = string.IsNullOrEmpty(typedDatabase) ? "master" : typedDatabase;
-            var preferredIdx = databases.FindIndex(d => d.Equals(preferred, StringComparison.OrdinalIgnoreCase));
-            if (preferredIdx >= 0) DatabaseBox.SelectedIndex = preferredIdx;
-            else if (databases.Count > 0) DatabaseBox.SelectedIndex = 0;
+            SelectPreferredDatabase(databases, previouslySelected, typedDatabase);
 
             StatusText.Text = $"Connected ({databases.Count} databases)";
             StatusText.Foreground = Avalonia.Media.Brushes.LimeGreen;
+            return true;
         }
         catch (Exception ex)
         {
             StatusText.Text = ex.Message;
             StatusText.Foreground = Avalonia.Media.Brushes.OrangeRed;
             DatabaseBox.IsEnabled = false;
-            ConnectButton.IsEnabled = false;
+            return false;
         }
         finally
         {
+            _connecting = false;
             TestButton.IsEnabled = true;
+            UpdateConnectEnabled();
         }
     }
 
-    private void Connect_Click(object? sender, RoutedEventArgs e)
+    /// <summary>
+    /// Picks the database to show in the dropdown, in order: whatever was already selected (a
+    /// pick the user made before re-testing), the database a reconnecting session is already on,
+    /// the named initial database, then master. The initial database box is a reachability hint
+    /// for logins that can't open master, so it does not outrank the session's own database.
+    /// </summary>
+    private void SelectPreferredDatabase(List<string> databases, string? previouslySelected, string? typedDatabase)
     {
+        foreach (var candidate in new[] { previouslySelected, _currentDatabase, typedDatabase, "master" })
+        {
+            if (string.IsNullOrEmpty(candidate)) continue;
+            var idx = databases.FindIndex(d => d.Equals(candidate, StringComparison.OrdinalIgnoreCase));
+            if (idx < 0) continue;
+            DatabaseBox.SelectedIndex = idx;
+            return;
+        }
+
+        DatabaseBox.SelectedIndex = databases.Count > 0 ? 0 : -1;
+    }
+
+    private async void Connect_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_connecting) return;
+
+        /* Capture what is about to be validated. The fields stay editable while the connection
+           opens, and ConnectAndLoadDatabasesAsync reads them in this same synchronous block, so
+           reading them again after the await could save a server that was never tested. */
         var connection = BuildServerConnection();
+        var login = LoginBox.Text?.Trim() ?? "";
+        var password = PasswordBox.Text ?? "";
+        var typedDatabase = DatabaseInputBox.Text?.Trim();
+
+        // Single step: connect and enumerate databases here, so Test Connection is never a
+        // prerequisite. On failure the message stays in StatusText and the dialog stays open.
+        if (!await ConnectAndLoadDatabasesAsync())
+            return;
+
+        // Cancel stays live while the connection opens, so the dialog may already be gone.
+        if (_closed)
+            return;
 
         // Save credentials
-        var authType = GetSelectedAuthType();
-        if (authType == AuthenticationTypes.SqlServer)
+        if (connection.AuthenticationType == AuthenticationTypes.SqlServer)
         {
-            var login = LoginBox.Text?.Trim() ?? "";
-            var password = PasswordBox.Text ?? "";
             _credentialService.SaveCredential(connection.Id, login, password);
         }
-        else if (authType == AuthenticationTypes.EntraMFA)
+        else if (connection.AuthenticationType == AuthenticationTypes.EntraMFA)
         {
-            var login = LoginBox.Text?.Trim() ?? "";
             if (!string.IsNullOrEmpty(login))
                 _credentialService.SaveCredential(connection.Id, login, "");
         }
@@ -210,8 +300,21 @@ public partial class ConnectionDialog : Window
         _connectionStore.AddOrUpdate(connection);
 
         ResultConnection = connection;
-        ResultDatabase = DatabaseBox.SelectedItem?.ToString();
+        ResultDatabase = ResolveResultDatabase(typedDatabase);
         Close(true);
+    }
+
+    /// <summary>
+    /// The database the session should open: the Database dropdown when it has a selection,
+    /// otherwise the named initial database that was validated, otherwise master.
+    /// </summary>
+    private string ResolveResultDatabase(string? typedDatabase)
+    {
+        var selected = DatabaseBox.SelectedItem?.ToString();
+        if (!string.IsNullOrEmpty(selected))
+            return selected;
+
+        return string.IsNullOrEmpty(typedDatabase) ? "master" : typedDatabase;
     }
 
     private void DropdownButton_Click(object? sender, RoutedEventArgs e)
@@ -223,6 +326,12 @@ public partial class ConnectionDialog : Window
     private void Cancel_Click(object? sender, RoutedEventArgs e)
     {
         Close(false);
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        _closed = true;
+        base.OnClosed(e);
     }
 
     private ServerConnection BuildServerConnection()
