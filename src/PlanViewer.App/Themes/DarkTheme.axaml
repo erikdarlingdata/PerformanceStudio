@@ -56,8 +56,8 @@
          the session status strip, WaitStats "Lock". #E06C75 was a single-file outlier - one line
          of PlanViewerControl.axaml - and this token briefly adopted it. Canonicalising on the
          majority is what stops a SECOND error red getting invented when those call sites migrate.
-         SlicerValidationBrush below is now identical by design; its key stays put, and consumers
-         can collapse onto ErrorBrush during later migrations. -->
+         SlicerValidationBrush in section 6 is an alias of this brush, so the slicer's validation
+         text and the app's Critical red are now one value rather than two that happened to match. -->
     <SolidColorBrush x:Key="ErrorBrush" Color="#E57373"/>
 
     <!-- ===== 3. Insight panel accents ======================================================== -->
@@ -145,18 +145,36 @@
 
     <!-- ===== 6. Time Range Slicer ============================================================ -->
 
-    <SolidColorBrush x:Key="SlicerBackgroundBrush" Color="#15171C"/>
-    <SolidColorBrush x:Key="SlicerChartLineBrush" Color="#2EAEF1"/>
+    <!--
+        The slicer names its own roles — "the handle colour", "the label colour" — and those names
+        are worth keeping. What was not worth keeping is that they held hardcoded COPIES of the core
+        tokens' hex, which made the slicer immune to the design system by construction: repaint
+        AccentBrush and the chart line and hover handle silently stayed behind.
+
+        Aliasing fixes that without touching a single consumer. Every key keeps its name and
+        resolves to exactly the colour it always did; the difference is that it now follows its core
+        token instead of shadowing it. Should a slicer role ever need to diverge, turn that one key
+        back into a literal — the other ten are unaffected.
+
+        StaticResource resolves backward only, so these have to stay below sections 1 and 2, where
+        every target is declared.
+    -->
+    <StaticResource x:Key="SlicerBackgroundBrush"  ResourceKey="BackgroundDarkBrush"/>
+    <StaticResource x:Key="SlicerChartLineBrush"   ResourceKey="AccentBrush"/>
+    <StaticResource x:Key="SlicerHandleBrush"      ResourceKey="ForegroundBrush"/>
+    <StaticResource x:Key="SlicerHandleHoverBrush" ResourceKey="AccentBrush"/>
+    <StaticResource x:Key="SlicerBorderBrush"      ResourceKey="BorderBrush"/>
+    <StaticResource x:Key="SlicerLabelBrush"       ResourceKey="ForegroundBrush"/>
+    <StaticResource x:Key="SlicerToggleBrush"      ResourceKey="ForegroundBrush"/>
+    <!-- Custom range validation text. Was a second copy of the Critical red; now it is that red. -->
+    <StaticResource x:Key="SlicerValidationBrush"  ResourceKey="ErrorBrush"/>
+
+    <!-- Deliberately NOT aliases. These three are translucency variants with no core token to
+         alias: an accent wash, a dimming scrim and a selection veil. They are genuinely the
+         slicer's own, so they stay literal. -->
     <SolidColorBrush x:Key="SlicerChartFillBrush" Color="#332EAEF1"/>
     <SolidColorBrush x:Key="SlicerOverlayBrush" Color="#99000000"/>
     <SolidColorBrush x:Key="SlicerSelectedBrush" Color="#22FFFFFF"/>
-    <SolidColorBrush x:Key="SlicerHandleBrush" Color="#E4E6EB"/>
-    <SolidColorBrush x:Key="SlicerHandleHoverBrush" Color="#2EAEF1"/>
-    <SolidColorBrush x:Key="SlicerBorderBrush" Color="#3A3D45"/>
-    <SolidColorBrush x:Key="SlicerLabelBrush" Color="#E4E6EB"/>
-    <SolidColorBrush x:Key="SlicerToggleBrush" Color="#E4E6EB"/>
-    <!-- Custom range validation text. Same red the advice pane uses for Critical. -->
-    <SolidColorBrush x:Key="SlicerValidationBrush" Color="#E57373"/>
 
     <!-- ===== 7. Wait Stats categories ======================================================== -->
 
