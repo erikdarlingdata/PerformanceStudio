@@ -23,11 +23,13 @@
                 BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
             <DockPanel>
                 <!-- Docked right, so it holds the row's right edge and gives up space first:
-                     capped at 320 it trims to an ellipsis (with the full text on hover, set
-                     alongside the text) instead of shoving the toolbar off-screen. -->
+                     capped it trims to an ellipsis (with the full text on hover, set alongside
+                     the text) instead of shoving the toolbar off-screen. 240 rather than
+                     something roomier because whatever it takes comes straight out of the
+                     buttons' visible width, and the hover carries the rest of a SQL error. -->
                 <TextBlock x:Name="StatusText" DockPanel.Dock="Right"
                            HorizontalAlignment="Right" VerticalAlignment="Center"
-                           MaxWidth="320"
+                           MaxWidth="240"
                            FontSize="11" Foreground="{DynamicResource ForegroundBrush}"
                            TextTrimming="CharacterEllipsis" Margin="8,0,0,0"/>
                 <!-- Scrollbar suppressed on purpose: a rail under a 28px button row is noise,
@@ -119,7 +121,7 @@
                         <Button x:Name="FormatButton" Content="Format" Click="Format_Click"
                                 Height="28" Padding="10,0" FontSize="12"
                                 Theme="{StaticResource AppButton}"
-                                ToolTip.Tip="Format the SQL query"/>
+                                ToolTip.Tip="Format the SQL query (Shift+Alt+F)"/>
                     </StackPanel>
                 </ScrollViewer>
             </DockPanel>

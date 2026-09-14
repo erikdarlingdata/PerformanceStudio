@@ -231,6 +231,17 @@ public partial class QuerySessionControl : UserControl
             ExecuteEstimated_Click(this, new RoutedEventArgs());
             e.Handled = true;
         }
+        /* Shift+Alt+F → Format, the shortcut every editor uses for it.
+           The toolbar is a fixed row that scrolls now, and at laptop width Format is one of the
+           slots that starts off the right-hand end of it. Every other button in that half either
+           has a shortcut already or acts on a plan you have to click to first; Format acts on the
+           query you are typing, so reaching it by wheeling the toolbar is the wrong ask. */
+        else if (e.Key == Key.F && e.KeyModifiers == (KeyModifiers.Shift | KeyModifiers.Alt)
+                 && FormatButton.IsEnabled)
+        {
+            Format_Click(this, new RoutedEventArgs());
+            e.Handled = true;
+        }
         // Escape → Cancel running query
         else if (e.Key == Key.Escape && _executionCts != null && !_executionCts.IsCancellationRequested)
         {
