@@ -592,7 +592,35 @@ public partial class PlanViewerControl : UserControl
             "BorderBrush" => new SolidColorBrush(Color.FromRgb(0x3A, 0x3D, 0x45)),
             "ForegroundBrush" => new SolidColorBrush(Color.FromRgb(0xE4, 0xE6, 0xEB)),
             "ForegroundMutedBrush" => new SolidColorBrush(Color.FromRgb(0xB0, 0xB6, 0xC0)),
+            "AccentBrush" => new SolidColorBrush(Color.FromRgb(0x2E, 0xAE, 0xF1)),
+            "ErrorBrush" => new SolidColorBrush(Color.FromRgb(0xE5, 0x73, 0x73)),
+            "WarningBrush" => new SolidColorBrush(Color.FromRgb(0xFF, 0xB3, 0x47)),
+            "SuccessBrush" => new SolidColorBrush(Color.FromRgb(0x58, 0xB3, 0x68)),
+            "InsightServerBrush" => new SolidColorBrush(Color.FromRgb(0x9B, 0x9B, 0xFF)),
+            "InsightIndexBrush" => new SolidColorBrush(Color.FromRgb(0xFF, 0xB3, 0x47)),
+            "InsightParamsBrush" => new SolidColorBrush(Color.FromRgb(0x7B, 0xCF, 0x7B)),
+            "InsightWaitsBrush" => new SolidColorBrush(Color.FromRgb(0x4F, 0xA3, 0xFF)),
             _ => Brushes.White
         };
+    }
+
+    /// <summary>
+    /// The token brush a warning of this severity is drawn in, everywhere one is drawn: the
+    /// properties panel, the node tooltips and the plan-level warning list.
+    /// </summary>
+    private IBrush WarningSeverityBrush(PlanWarningSeverity severity) => FindBrushResource(
+        severity == PlanWarningSeverity.Critical ? "ErrorBrush"
+        : severity == PlanWarningSeverity.Warning ? "WarningBrush"
+        : "AccentBrush");
+
+    /// <summary>
+    /// Flips one Plan Insights card between its normal and its quiet state. A card with nothing to
+    /// report drops its header to the muted foreground and dims its accent edge, so an empty panel
+    /// reads as empty instead of shouting in the panel's accent colour.
+    /// </summary>
+    private static void SetInsightQuiet(TextBlock header, Border accentEdge, bool isQuiet)
+    {
+        header.Classes.Set("empty", isQuiet);
+        accentEdge.Classes.Set("empty", isQuiet);
     }
 }
