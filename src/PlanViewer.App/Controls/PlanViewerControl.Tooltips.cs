@@ -188,14 +188,12 @@ public partial class PlanViewerControl : UserControl
 
                 foreach (var (type, severity, count, maxBenefit) in distinct)
                 {
-                    var warnColor = severity == PlanWarningSeverity.Critical ? "#E57373"
-                        : severity == PlanWarningSeverity.Warning ? "#FFB347" : "#6BB5FF";
                     var benefitSuffix = maxBenefit >= 0 ? $" \u2014 up to {maxBenefit:N0}%" : "";
                     var label = count > 1 ? $"\u26A0 {type} ({count}){benefitSuffix}" : $"\u26A0 {type}{benefitSuffix}";
                     stack.Children.Add(new TextBlock
                     {
                         Text = label,
-                        Foreground = new SolidColorBrush(Color.Parse(warnColor)),
+                        Foreground = WarningSeverityBrush(severity),
                         FontSize = 11,
                         Margin = new Thickness(0, 2, 0, 0)
                     });
@@ -206,12 +204,10 @@ public partial class PlanViewerControl : UserControl
                 // Individual node: show full warning messages
                 foreach (var w in warnings)
                 {
-                    var warnColor = w.Severity == PlanWarningSeverity.Critical ? "#E57373"
-                        : w.Severity == PlanWarningSeverity.Warning ? "#FFB347" : "#6BB5FF";
                     stack.Children.Add(new TextBlock
                     {
                         Text = $"\u26A0 {w.WarningType}: {w.Message}",
-                        Foreground = new SolidColorBrush(Color.Parse(warnColor)),
+                        Foreground = WarningSeverityBrush(w.Severity),
                         FontSize = 11,
                         TextWrapping = TextWrapping.Wrap,
                         Margin = new Thickness(0, 2, 0, 0)

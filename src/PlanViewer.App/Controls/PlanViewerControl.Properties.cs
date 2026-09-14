@@ -858,8 +858,6 @@ public partial class PlanViewerControl : UserControl
                     .ThenBy(w => w.WarningType);
                 foreach (var w in sortedPlanWarnings)
                 {
-                    var warnColor = w.Severity == PlanWarningSeverity.Critical ? "#E57373"
-                        : w.Severity == PlanWarningSeverity.Warning ? "#FFB347" : "#6BB5FF";
                     var warnPanel = new StackPanel { Margin = new Thickness(10, 2, 10, 2) };
                     var legacyTag = w.IsLegacy ? " [legacy]" : "";
                     var sourceTag = WarningSourceTag(w);
@@ -871,7 +869,7 @@ public partial class PlanViewerControl : UserControl
                         Text = planWarnHeader,
                         FontWeight = FontWeight.SemiBold,
                         FontSize = 11,
-                        Foreground = new SolidColorBrush(Color.Parse(warnColor))
+                        Foreground = WarningSeverityBrush(w.Severity)
                     };
                     AttachOriginNavigation(planWarnHeaderBlock, planWarnHeader, w.OriginNodeIds);
                     warnPanel.Children.Add(planWarnHeaderBlock);
@@ -942,8 +940,6 @@ public partial class PlanViewerControl : UserControl
                              .ThenByDescending(x => x.Warning.Severity)
                              .ThenBy(x => x.Warning.WarningType))
                 {
-                    var opWarnColor = w.Severity == PlanWarningSeverity.Critical ? "#E57373"
-                        : w.Severity == PlanWarningSeverity.Warning ? "#FFB347" : "#6BB5FF";
                     var opWarnPanel = new StackPanel { Margin = new Thickness(10, 2, 10, 2) };
                     var opBenefit = w.MaxBenefitPercent.HasValue
                         ? $" \u2014 up to {FormatBenefitPercent(w.MaxBenefitPercent.Value)}% benefit"
@@ -955,7 +951,7 @@ public partial class PlanViewerControl : UserControl
                         Text = opHeaderText,
                         FontWeight = FontWeight.SemiBold,
                         FontSize = 11,
-                        Foreground = new SolidColorBrush(Color.Parse(opWarnColor))
+                        Foreground = WarningSeverityBrush(w.Severity)
                     };
                     AttachOriginNavigation(opHeader, opHeaderText, w.OriginNodeIds);
                     opWarnPanel.Children.Add(opHeader);
@@ -1024,8 +1020,6 @@ public partial class PlanViewerControl : UserControl
                 .ThenBy(w => w.WarningType);
             foreach (var w in sortedNodeWarnings)
             {
-                var warnColor = w.Severity == PlanWarningSeverity.Critical ? "#E57373"
-                    : w.Severity == PlanWarningSeverity.Warning ? "#FFB347" : "#6BB5FF";
                 var warnPanel = new StackPanel { Margin = new Thickness(10, 2, 10, 2) };
                 var nodeLegacyTag = w.IsLegacy ? " [legacy]" : "";
                 var nodeSourceTag = WarningSourceTag(w);
@@ -1037,7 +1031,7 @@ public partial class PlanViewerControl : UserControl
                     Text = nodeWarnHeader,
                     FontWeight = FontWeight.SemiBold,
                     FontSize = 11,
-                    Foreground = new SolidColorBrush(Color.Parse(warnColor))
+                    Foreground = WarningSeverityBrush(w.Severity)
                 });
                 warnPanel.Children.Add(new TextBlock
                 {
