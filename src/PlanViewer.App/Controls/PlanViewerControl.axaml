@@ -126,7 +126,7 @@
                                Foreground="{DynamicResource ForegroundBrush}" Margin="4,0,0,0" FontSize="11"/>
                     <TextBlock Text="|" VerticalAlignment="Center"
                                Foreground="{DynamicResource ForegroundBrush}" Margin="6,0"/>
-                    <Button Content="Save .sqlplan" Click="SavePlan_Click" Height="28" Padding="8,0"
+                    <Button x:Name="SavePlanButton" Content="Save .sqlplan" Click="SavePlan_Click" Height="28" Padding="8,0"
                             ToolTip.Tip="Save plan as .sqlplan file"
                             Theme="{StaticResource AppButton}"/>
                     <TextBlock Text="|" VerticalAlignment="Center"

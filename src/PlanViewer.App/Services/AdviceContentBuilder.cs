@@ -17,12 +17,23 @@ namespace PlanViewer.App.Services;
 /// </summary>
 internal static partial class AdviceContentBuilder
 {
+    /* The three status colours resolve from the design tokens (DarkTheme.axaml) so this
+       window cannot drift from the app again; the fallbacks match the tokens byte for byte.
+       The rest of this palette is advice-window-specific presentation — it gets rebuilt
+       wholesale when the advice window becomes structured cards (roadmap phase 3), so
+       tokenising it now would be churn against a file scheduled for replacement. */
+    private static SolidColorBrush FromTheme(string key, string fallbackHex) =>
+        Avalonia.Application.Current?.TryGetResource(key, null, out var value) == true
+            && value is SolidColorBrush brush
+            ? brush
+            : new SolidColorBrush(Color.Parse(fallbackHex));
+
     private static readonly SolidColorBrush HeaderBrush = new(Color.Parse("#4FA3FF"));
-    private static readonly SolidColorBrush CriticalBrush = new(Color.Parse("#E57373"));
-    private static readonly SolidColorBrush WarningBrush = new(Color.Parse("#FFB347"));
+    private static readonly SolidColorBrush CriticalBrush = FromTheme("ErrorBrush", "#E57373");
+    private static readonly SolidColorBrush WarningBrush = FromTheme("WarningBrush", "#FFB347");
     private static readonly SolidColorBrush InfoBrush = new(Color.Parse("#6BB5FF"));
-    private static readonly SolidColorBrush LabelBrush = new(Color.Parse("#E4E6EB"));
-    private static readonly SolidColorBrush ValueBrush = new(Color.Parse("#E4E6EB"));
+    private static readonly SolidColorBrush LabelBrush = FromTheme("ForegroundBrush", "#E4E6EB");
+    private static readonly SolidColorBrush ValueBrush = FromTheme("ForegroundBrush", "#E4E6EB");
     private static readonly SolidColorBrush CodeBrush = new(Color.Parse("#7BCF7B"));
     private static readonly SolidColorBrush MutedBrush = new(Color.Parse("#E4E6EB"));
     private static readonly SolidColorBrush OperatorBrush = new(Color.Parse("#C792EA"));
