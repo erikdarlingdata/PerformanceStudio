@@ -222,6 +222,13 @@ public partial class QueryStoreGridControl : UserControl
         _filterPopupContent!.Initialize(columnId, label, existing, canSearchServer);
         _filterPopup!.PlacementTarget = button;
         _filterPopup.IsOpen = true;
+
+        // Posted at Loaded priority so the popup's child has a visual root by the time focus
+        // runs; focusing inline here (or inside Initialize) is a silent no-op, and the filter
+        // opened with a dead keyboard.
+        Avalonia.Threading.Dispatcher.UIThread.Post(
+            () => _filterPopupContent!.FocusValueBox(),
+            Avalonia.Threading.DispatcherPriority.Loaded);
     }
 
     private void OnFilterApplied(object? sender, FilterAppliedEventArgs e)

@@ -60,8 +60,14 @@ public partial class ColumnFilterPopup : UserControl
         }
 
         UpdateValueVisibility();
-        ValueTextBox.Focus();
     }
+
+    /// <summary>
+    /// Puts the caret in the value box. Only works once the popup is open: before that this
+    /// control has no visual root and Focus() is a silent no-op, which is why Initialize
+    /// cannot do it — the caller focuses after opening the popup.
+    /// </summary>
+    internal void FocusValueBox() => ValueTextBox.Focus();
 
     private void UpdateValueVisibility()
     {
