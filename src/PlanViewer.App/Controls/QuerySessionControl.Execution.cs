@@ -90,7 +90,7 @@ public partial class QuerySessionControl : UserControl
         {
             Text = $"Capturing {planType.ToLower()} plan...",
             FontSize = 14,
-            Foreground = new SolidColorBrush(Color.Parse("#E4E6EB")),
+            Foreground = ForegroundToken,
             HorizontalAlignment = HorizontalAlignment.Center,
             TextAlignment = Avalonia.Media.TextAlignment.Center,
             TextWrapping = TextWrapping.Wrap
@@ -117,7 +117,7 @@ public partial class QuerySessionControl : UserControl
 
         var loadingContainer = new Grid
         {
-            Background = new SolidColorBrush(Color.Parse("#1A1D23")),
+            Background = BackgroundToken,
             Focusable = true,
             Children = { loadingPanel }
         };
@@ -144,7 +144,7 @@ public partial class QuerySessionControl : UserControl
             Margin = new Avalonia.Thickness(6, 0, 0, 0),
             Background = Brushes.Transparent,
             BorderThickness = new Avalonia.Thickness(0),
-            Foreground = new SolidColorBrush(Color.FromRgb(0xE4, 0xE6, 0xEB)),
+            Foreground = ForegroundToken,
             VerticalAlignment = VerticalAlignment.Center,
             HorizontalContentAlignment = HorizontalAlignment.Center,
             VerticalContentAlignment = VerticalAlignment.Center
@@ -272,7 +272,10 @@ public partial class QuerySessionControl : UserControl
         panel.MaxWidth = 640;
 
         statusLabel.Text = message;
-        statusLabel.Foreground = new SolidColorBrush(Color.Parse("#E57373"));
+        /* Static, so it resolves off the label rather than off the session; the label is already
+           in the tree by the time a failure lands on it. ErrorBrush is not in the theme yet, and
+           until it is this falls back to the red the site used to construct here. */
+        statusLabel.Foreground = Token(statusLabel, "ErrorBrush", FallbackError);
 
         progressBar.IsVisible = false;
         cancelBtn.IsVisible = false;
@@ -334,7 +337,7 @@ public partial class QuerySessionControl : UserControl
         {
             Text = "Capturing actual plan...",
             FontSize = 14,
-            Foreground = new SolidColorBrush(Color.Parse("#E4E6EB")),
+            Foreground = ForegroundToken,
             HorizontalAlignment = HorizontalAlignment.Center,
             TextAlignment = Avalonia.Media.TextAlignment.Center,
             TextWrapping = TextWrapping.Wrap
@@ -361,7 +364,7 @@ public partial class QuerySessionControl : UserControl
 
         var loadingContainer = new Grid
         {
-            Background = new SolidColorBrush(Color.Parse("#1A1D23")),
+            Background = BackgroundToken,
             Focusable = true,
             Children = { loadingPanel }
         };
@@ -387,7 +390,7 @@ public partial class QuerySessionControl : UserControl
             Margin = new Avalonia.Thickness(6, 0, 0, 0),
             Background = Brushes.Transparent,
             BorderThickness = new Avalonia.Thickness(0),
-            Foreground = new SolidColorBrush(Color.FromRgb(0xE4, 0xE6, 0xEB)),
+            Foreground = ForegroundToken,
             VerticalAlignment = VerticalAlignment.Center,
             HorizontalContentAlignment = HorizontalAlignment.Center,
             VerticalContentAlignment = VerticalAlignment.Center
