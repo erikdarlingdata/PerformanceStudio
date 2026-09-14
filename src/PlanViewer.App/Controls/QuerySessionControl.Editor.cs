@@ -428,7 +428,15 @@ public partial class QuerySessionControl : UserControl
         _statusClearCts = cts;
         _ = Task.Delay(delay, cts.Token).ContinueWith(_ =>
         {
-            Avalonia.Threading.Dispatcher.UIThread.Post(ClearStatus);
+            /* Re-checked on the UI thread: a status set between the delay completing and this
+               posted job running has already cancelled this cts, but cancellation can no longer
+               stop a continuation that is past its token check — without the identity test the
+               stale timer would wipe the fresh message the moment it was posted. */
+            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            {
+                if (_statusClearCts == cts)
+                    ClearStatus();
+            });
         }, TaskContinuationOptions.OnlyOnRanToCompletion);
     }
 }

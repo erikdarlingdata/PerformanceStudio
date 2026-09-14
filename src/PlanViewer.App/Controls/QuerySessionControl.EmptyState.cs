@@ -131,20 +131,31 @@ public partial class QuerySessionControl : UserControl
         FocusEditor();
     }
 
+    /// <summary>
+    /// Only the left button activates an action row. PointerPressed fires for every button,
+    /// and a right- or middle-click on "Open a plan" opening the file picker is a surprise,
+    /// not a shortcut.
+    /// </summary>
+    private bool IsLeftButton(PointerPressedEventArgs e, object? sender) =>
+        sender is Control c && e.GetCurrentPoint(c).Properties.IsLeftButtonPressed;
+
     private void EmptyStateOpenPlan_PointerPressed(object? sender, PointerPressedEventArgs e)
     {
+        if (!IsLeftButton(e, sender)) return;
         e.Handled = true; // else this bubbles to the background handler above
         _owningWindow?.OpenFile_Click(this, new RoutedEventArgs());
     }
 
     private void EmptyStatePastePlan_PointerPressed(object? sender, PointerPressedEventArgs e)
     {
+        if (!IsLeftButton(e, sender)) return;
         e.Handled = true;
         _owningWindow?.PasteXml_Click(this, new RoutedEventArgs());
     }
 
     private void EmptyStateConnect_PointerPressed(object? sender, PointerPressedEventArgs e)
     {
+        if (!IsLeftButton(e, sender)) return;
         e.Handled = true;
         // The toolbar's own Connect handler, so the two entry points cannot diverge.
         Connect_Click(this, new RoutedEventArgs());
@@ -152,6 +163,7 @@ public partial class QuerySessionControl : UserControl
 
     private void EmptyStateRecentPlan_PointerPressed(object? sender, PointerPressedEventArgs e)
     {
+        if (!IsLeftButton(e, sender)) return;
         e.Handled = true;
 
         if (sender is Border { Tag: string path })

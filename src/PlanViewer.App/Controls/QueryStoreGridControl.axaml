@@ -253,7 +253,7 @@
                   CanUserSortColumns="True"
                   CanUserReorderColumns="True"
                   CanUserResizeColumns="True"
-                  IsReadOnly="False"
+                  IsReadOnly="True"
                   SelectionMode="Single"
                   GridLinesVisibility="Horizontal"
                   HeadersVisibility="Column"
