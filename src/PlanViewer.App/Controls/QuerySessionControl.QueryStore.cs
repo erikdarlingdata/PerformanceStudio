@@ -273,17 +273,25 @@ public partial class QuerySessionControl : UserControl
     internal void OnQueryStorePlansSelected(object? sender, List<QueryStorePlan> plans)
     {
         int loaded = 0;
+        var failures = new List<string>();
         foreach (var qsPlan in plans)
         {
             var tabLabel = $"QS {qsPlan.QueryId} / {qsPlan.PlanId}";
-            if (AddPlanTab(qsPlan.PlanXml, qsPlan.QueryText, estimated: true, labelOverride: tabLabel))
+            if (AddPlanTab(qsPlan.PlanXml, qsPlan.QueryText, estimated: true, labelOverride: tabLabel, out var failure))
                 loaded++;
+            else if (failure != null)
+                failures.Add(failure);
         }
 
-        // Only show the success summary when every plan loaded; otherwise AddPlanTab has
-        // already left a persistent status explaining the failure — don't clobber it.
-        if (loaded == plans.Count)
+        /* The one status that matters comes after the loop: every successful AddPlanTab selects
+           its new tab, and selecting a sub-tab clears the strip — so a failure reported mid-batch
+           is wiped by the very next success. Only a message written after the last tab survives. */
+        if (failures.Count == 0)
             SetStatus($"{plans.Count} Query Store plans loaded");
+        else if (plans.Count == 1)
+            SetErrorStatus(failures[0]);
+        else
+            SetErrorStatus($"Loaded {loaded} of {plans.Count} Query Store plans. {string.Join(" ", failures)}");
 
         HumanAdviceButton.IsEnabled = true;
         RobotAdviceButton.IsEnabled = true;
