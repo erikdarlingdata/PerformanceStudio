@@ -473,6 +473,17 @@ public class QueryStoreRow : INotifyPropertyChanged
 
     public long QueryId => Plan.QueryId;
     public long PlanId => Plan.PlanId;
+
+    /// <summary>
+    /// The ids as the grid shows them. A grouped parent row is an aggregate over many
+    /// plans, so the synthetic plan behind it carries no id at all and both come back 0 —
+    /// and a column of zeros reads like a real Query Store id rather than "not applicable".
+    /// Query Store ids start at 1, so anything at or below zero is the aggregate case and
+    /// shows blank; leaf rows keep the ids they actually have.
+    /// </summary>
+    public string QueryIdDisplay => QueryId > 0 ? QueryId.ToString() : "";
+    public string PlanIdDisplay => PlanId > 0 ? PlanId.ToString() : "";
+
     public string QueryHash => Plan.QueryHash;
     public string QueryPlanHash => Plan.QueryPlanHash;
     public string ModuleName => Plan.ModuleName;

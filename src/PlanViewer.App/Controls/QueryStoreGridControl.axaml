@@ -310,8 +310,8 @@
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
-                <DataGridTextColumn Header="QueryId" Binding="{ReflectionBinding QueryId}" SortMemberPath="QueryId" Width="90"/>
-                <DataGridTextColumn Header="PlanId" Binding="{ReflectionBinding PlanId}" SortMemberPath="PlanId" Width="80"/>
+                <DataGridTextColumn Header="QueryId" Binding="{ReflectionBinding QueryIdDisplay}" SortMemberPath="QueryId" Width="90"/>
+                <DataGridTextColumn Header="PlanId" Binding="{ReflectionBinding PlanIdDisplay}" SortMemberPath="PlanId" Width="80"/>
                 <DataGridTextColumn Header="Query Hash" Binding="{ReflectionBinding QueryHash}" SortMemberPath="QueryHash" Width="150"/>
                 <DataGridTextColumn Header="Plan Hash" Binding="{ReflectionBinding QueryPlanHash}" SortMemberPath="QueryPlanHash" Width="150"/>
                 <DataGridTextColumn Header="Module" Binding="{ReflectionBinding ModuleName}" SortMemberPath="ModuleName" Width="140"/>

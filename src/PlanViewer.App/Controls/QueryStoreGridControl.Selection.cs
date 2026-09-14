@@ -134,8 +134,10 @@ public partial class QueryStoreGridControl : UserControl
         var hasRow = row != null;
 
         ViewHistoryItem.IsEnabled = hasRow;
-        CopyQueryIdItem.IsEnabled = hasRow;
-        CopyPlanIdItem.IsEnabled = hasRow;
+        // Grouped parent rows have no id of their own, so there is nothing to copy — same
+        // rule the hash and module items already follow when their value is missing.
+        CopyQueryIdItem.IsEnabled = hasRow && row!.QueryId > 0;
+        CopyPlanIdItem.IsEnabled = hasRow && row!.PlanId > 0;
         CopyQueryHashItem.IsEnabled = hasRow && !string.IsNullOrEmpty(row!.QueryHash);
         CopyPlanHashItem.IsEnabled = hasRow && !string.IsNullOrEmpty(row!.QueryPlanHash);
         CopyModuleItem.IsEnabled = hasRow && !string.IsNullOrEmpty(row!.ModuleName);
@@ -153,8 +155,8 @@ public partial class QueryStoreGridControl : UserControl
 
         if (!hasRow) return;
 
-        CopyQueryIdItem.Tag = row!.QueryId.ToString();
-        CopyPlanIdItem.Tag = row.PlanId.ToString();
+        CopyQueryIdItem.Tag = row!.QueryIdDisplay;
+        CopyPlanIdItem.Tag = row.PlanIdDisplay;
         CopyQueryHashItem.Tag = row.QueryHash;
         CopyPlanHashItem.Tag = row.QueryPlanHash;
         CopyModuleItem.Tag = row.ModuleName;
@@ -178,7 +180,7 @@ public partial class QueryStoreGridControl : UserControl
 
     /// <summary>One results row as a tab-separated line, shared by Copy Row and Ctrl+C.</summary>
     private static string FormatRowForClipboard(QueryStoreRow row) =>
-        $"{row.QueryId}\t{row.PlanId}\t{row.QueryHash}\t{row.QueryPlanHash}\t{row.ModuleName}\t{row.LastExecutedLocal}\t{row.ExecsDisplay}\t{row.TotalCpuDisplay}\t{row.AvgCpuDisplay}\t{row.TotalDurDisplay}\t{row.AvgDurDisplay}\t{row.TotalReadsDisplay}\t{row.AvgReadsDisplay}\t{row.TotalWritesDisplay}\t{row.AvgWritesDisplay}\t{row.TotalPhysReadsDisplay}\t{row.AvgPhysReadsDisplay}\t{row.TotalMemDisplay}\t{row.AvgMemDisplay}\t{row.FullQueryText}";
+        $"{row.QueryIdDisplay}\t{row.PlanIdDisplay}\t{row.QueryHash}\t{row.QueryPlanHash}\t{row.ModuleName}\t{row.LastExecutedLocal}\t{row.ExecsDisplay}\t{row.TotalCpuDisplay}\t{row.AvgCpuDisplay}\t{row.TotalDurDisplay}\t{row.AvgDurDisplay}\t{row.TotalReadsDisplay}\t{row.AvgReadsDisplay}\t{row.TotalWritesDisplay}\t{row.AvgWritesDisplay}\t{row.TotalPhysReadsDisplay}\t{row.AvgPhysReadsDisplay}\t{row.TotalMemDisplay}\t{row.AvgMemDisplay}\t{row.FullQueryText}";
 
     private System.Threading.Tasks.Task SetClipboardTextAsync(string text)
         => ClipboardHelper.TrySetTextAsync(this, text);
