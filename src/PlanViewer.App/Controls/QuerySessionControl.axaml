@@ -106,7 +106,11 @@
             <TabItem>
                 <TabItem.Header>
                     <StackPanel Orientation="Horizontal" Spacing="8">
-                        <TextBlock Text="Query Editor" VerticalAlignment="Center"/>
+                        <!-- FontSize is not decoration here: without it this header inherits the
+                             Fluent TabItem default (~24px) while every sibling sub-tab header is
+                             built in code at 12 (see CreateSubTab and AddPlanTab), and the strip
+                             reads as two different controls stuck together. -->
+                        <TextBlock Text="Query Editor" VerticalAlignment="Center" FontSize="12"/>
                         <ComboBox x:Name="ZoomBox" Width="72" Height="22" FontSize="11"
                                   VerticalAlignment="Center"
                                   SelectionChanged="Zoom_SelectionChanged"
