@@ -25,7 +25,7 @@ public partial class PlanViewerControl : UserControl
             MissingIndexHeader.Text = $"Missing Index Suggestions ({indexes.Count})";
             SetInsightQuiet(MissingIndexHeader, MissingIndexAccent, false);
 
-            var labelBrush = FindBrushResource("ForegroundBrush");
+            var textBrush = FindBrushResource("ForegroundBrush");
             var impactBrush = FindBrushResource("WarningBrush");
 
             // Build each missing index row manually (no ItemsControl template binding)
@@ -38,13 +38,13 @@ public partial class PlanViewerControl : UserControl
                 {
                     Text = mi.Table,
                     FontWeight = FontWeight.SemiBold,
-                    Foreground = labelBrush,
+                    Foreground = textBrush,
                     FontSize = 12
                 });
                 headerRow.Children.Add(new TextBlock
                 {
                     Text = $" \u2014 Impact: ",
-                    Foreground = labelBrush,
+                    Foreground = textBrush,
                     FontSize = 12
                 });
                 headerRow.Children.Add(new TextBlock
@@ -62,7 +62,11 @@ public partial class PlanViewerControl : UserControl
                         Text = mi.CreateStatement,
                         FontFamily = new FontFamily("Consolas"),
                         FontSize = 11,
-                        Foreground = labelBrush,
+                        Foreground = textBrush,
+                        /* Selectable text with no background only hit-tests its glyphs, so a drag
+                           that starts in the whitespace between wrapped lines selects nothing. This
+                           is the one string in the strip a user actually wants to copy out. */
+                        Background = Brushes.Transparent,
                         TextWrapping = TextWrapping.Wrap,
                         Margin = new Thickness(12, 2, 0, 0)
                     });
