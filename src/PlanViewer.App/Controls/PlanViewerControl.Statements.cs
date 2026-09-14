@@ -48,7 +48,9 @@ public partial class PlanViewerControl : UserControl
                 TextWrapping = TextWrapping.Wrap,
                 MaxHeight = 80,
                 FontSize = 11,
-                Margin = new Thickness(4, 2)
+                Margin = new Thickness(4, 2),
+                // So the full-text tip covers the whole cell, not just the drawn glyphs.
+                Background = Brushes.Transparent
             };
             ToolTip.SetTip(tb, new TextBlock
             {
@@ -184,7 +186,14 @@ public partial class PlanViewerControl : UserControl
     /// </summary>
     private static TextBlock GridHeader(string text, string tip)
     {
-        var header = new TextBlock { Text = text, VerticalAlignment = VerticalAlignment.Center };
+        var header = new TextBlock
+        {
+            Text = text,
+            VerticalAlignment = VerticalAlignment.Center,
+            // Without a background the text only hit-tests its glyphs, so the tip would appear
+            // over the three letters of "CPU" and nowhere else in a 76px header cell.
+            Background = Brushes.Transparent
+        };
         ToolTip.SetTip(header, tip);
         return header;
     }
@@ -321,9 +330,12 @@ public partial class PlanViewerControl : UserControl
 
     private void ShowStatementsPanel()
     {
-        // Wide enough that the measured columns and a readable Query column all fit without a
-        // horizontal scrollbar on first open; the splitter is still there to take it back.
-        _statementsColumn.Width = new GridLength(560);
+        /* Sized for the widest column set this grid builds: 40 + CPU 76 + Elapsed 92 + UDF 76 +
+           Critical 90 + Warnings 100 = 474, plus the Query column's 150 MinWidth, plus the always-
+           visible vertical scrollbar and the panel's right border. Anything narrower and the grid
+           scrolls sideways on first open, which is the thing the column widths were widened to
+           avoid. The splitter is still there for anyone who wants the space back. */
+        _statementsColumn.Width = new GridLength(640);
         _statementsSplitterColumn.Width = new GridLength(5);
         StatementsSplitter.IsVisible = true;
         StatementsPanel.IsVisible = true;

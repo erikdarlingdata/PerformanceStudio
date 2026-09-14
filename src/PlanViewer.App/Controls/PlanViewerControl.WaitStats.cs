@@ -43,16 +43,26 @@ public partial class PlanViewerControl : UserControl
         var maxWait = sorted[0].WaitTimeMs;
         var totalWait = sorted.Sum(w => w.WaitTimeMs);
 
+        // The header ellipsizes in a narrow card, so the total it carries goes on a tooltip too.
         WaitStatsHeader.Text = $"Wait Stats \u2014 {totalWait:N0}ms total";
+        ToolTip.SetTip(WaitStatsHeader, $"{totalWait:N0} ms of waits across {sorted.Count} wait types");
 
-        /* One Grid for all rows so the columns align. Only the duration column flexes (round-1
-           finding V4): the wait type is capped and ellipsized, the bar is fixed, and the trailing
-           "up to N%" sits in an Auto column so it is never the thing that gets clipped. The panel's
-           horizontal scrolling is off, so squeezing the strip narrows the duration rather than
-           growing a sideways scrollbar. */
+        /* One Grid for all rows so the columns align (round-1 finding V4: rows clipped mid-word and
+           the panel grew a sideways scrollbar to show the rest).
+
+           The wait type and the duration are both star columns; the bar and the trailing
+           "up to N%" are Auto. That split matters at the strip's 280px minimum, where there is
+           roughly 244px of usable width and the four pieces want closer to 290. Star columns take
+           whatever is left after the Auto ones and shrink to zero if they must, so the two text
+           columns ellipsize (each with its full value on a tooltip) and nothing ever overflows the
+           card. Make the wait type Auto instead and it overflows a narrow card with horizontal
+           scrolling switched off, which is the original bug wearing a different hat.
+
+           Star-sizing the name also left-aligns every bar into a column, which is what makes them
+           comparable at a glance. */
         var grid = new Grid
         {
-            ColumnDefinitions = new ColumnDefinitions("Auto,Auto,*,Auto")
+            ColumnDefinitions = new ColumnDefinitions("*,Auto,*,Auto")
         };
         for (int i = 0; i < sorted.Count; i++)
             grid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
@@ -67,16 +77,16 @@ public partial class PlanViewerControl : UserControl
             var category = GetWaitCategory(w.WaitType);
             var categoryBrush = FindBrushResource(GetWaitCategoryBrushKey(category));
 
-            // Wait type name, colored by category. Capped so one long type cannot widen every row.
+            // Wait type name, colored by category
             var nameText = new TextBlock
             {
                 Text = w.WaitType,
                 FontSize = 12,
                 Foreground = categoryBrush,
-                MaxWidth = 150,
                 TextTrimming = TextTrimming.CharacterEllipsis,
                 VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 2, 10, 2)
+                Margin = new Thickness(0, 2, 10, 2),
+                Background = Brushes.Transparent
             };
             ToolTip.SetTip(nameText, $"{w.WaitType} \u2014 {category} wait");
             Grid.SetRow(nameText, i);
@@ -107,7 +117,8 @@ public partial class PlanViewerControl : UserControl
                 Foreground = durationBrush,
                 TextTrimming = TextTrimming.CharacterEllipsis,
                 VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 2, 8, 2)
+                Margin = new Thickness(0, 2, 8, 2),
+                Background = Brushes.Transparent
             };
             ToolTip.SetTip(durationText, $"{w.WaitTimeMs:N0} ms across {w.WaitCount:N0} waits");
             Grid.SetRow(durationText, i);
@@ -123,7 +134,8 @@ public partial class PlanViewerControl : UserControl
                     FontSize = 11,
                     Foreground = benefitBrush,
                     VerticalAlignment = VerticalAlignment.Center,
-                    Margin = new Thickness(0, 2, 0, 2)
+                    Margin = new Thickness(0, 2, 0, 2),
+                    Background = Brushes.Transparent
                 };
                 ToolTip.SetTip(benefitText,
                     $"Up to {benefitPct:N0}% of this statement's runtime could be recovered by removing {w.WaitType} waits");

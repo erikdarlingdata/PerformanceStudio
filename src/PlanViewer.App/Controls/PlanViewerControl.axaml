@@ -44,6 +44,9 @@
             <Setter Property="FontSize" Value="13"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="Margin" Value="0,0,0,6"/>
+            <!-- Headers carry counts and totals appended at runtime, and these cards do not scroll
+                 sideways, so a narrow strip has to ellipsize rather than hard-clip. -->
+            <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
         </Style>
         <Style Selector="TextBlock.insightHeader.neutral:not(.empty)">
             <Setter Property="Foreground" Value="{DynamicResource ForegroundBrush}"/>
@@ -134,8 +137,10 @@
                             ToolTip.Tip="Show/hide statement list"
                             Theme="{StaticResource AppButton}"/>
                 </StackPanel>
+                <!-- Background so the error tooltip this picks up on a failed cost query is
+                     reachable from the whole label, not just where glyphs happen to be drawn. -->
                 <TextBlock x:Name="CostText" DockPanel.Dock="Right" VerticalAlignment="Center"
-                           HorizontalAlignment="Right"
+                           HorizontalAlignment="Right" Background="Transparent"
                            Foreground="{DynamicResource ForegroundBrush}" FontSize="11"/>
             </DockPanel>
         </Border>

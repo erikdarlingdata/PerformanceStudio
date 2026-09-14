@@ -542,6 +542,10 @@ public partial class PlanViewerControl : UserControl
 
         header.Text = headerText + "  \u2192";
         header.Cursor = new Cursor(StandardCursorType.Hand);
+        /* Text with no background only hit-tests the pixels its glyphs drew, so both the hand
+           cursor and the click below would die in the gaps between words. This is a navigation
+           target; it needs the whole line to be clickable. */
+        header.Background = Brushes.Transparent;
         ToolTip.SetTip(header, originNodeIds.Count == 1
             ? $"Go to operator (Node {originNodeIds[0]})"
             : $"Go to Node {originNodeIds[0]} — also from {string.Join(", ", originNodeIds.Skip(1).Select(id => "Node " + id))}");

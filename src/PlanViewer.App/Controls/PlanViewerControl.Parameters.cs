@@ -169,7 +169,10 @@ public partial class PlanViewerControl : UserControl
             Foreground = brush,
             Margin = new Thickness(0, 2, 10, 2),
             TextTrimming = TextTrimming.CharacterEllipsis,
-            MaxWidth = 200
+            MaxWidth = 200,
+            // A trimmed cell is exactly the one whose tip matters, and text with no background
+            // only hit-tests its glyphs, so the ellipsis itself would be the only hover target.
+            Background = Brushes.Transparent
         };
         // Name and DataType columns are short — no need for max width
         if (col <= 1)
