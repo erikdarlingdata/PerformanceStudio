@@ -504,7 +504,8 @@ public partial class PlanViewerControl : UserControl
     {
         if (_planCredentialService == null || _planConnectionStore == null) return;
 
-        var dialog = new ConnectionDialog(_planCredentialService, _planConnectionStore);
+        // Pass the current database so a reconnect comes back to it rather than master.
+        var dialog = new ConnectionDialog(_planCredentialService, _planConnectionStore, _planSelectedDatabase);
         var topLevel = TopLevel.GetTopLevel(this);
         if (topLevel is not Window parentWindow) return;
 

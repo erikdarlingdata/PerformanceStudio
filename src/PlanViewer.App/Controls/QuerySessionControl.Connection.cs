@@ -37,7 +37,8 @@ public partial class QuerySessionControl : UserControl
 
     private async Task ShowConnectionDialogAsync()
     {
-        var dialog = new ConnectionDialog(_credentialService, _connectionStore);
+        // Pass the session's current database so a reconnect comes back to it rather than master.
+        var dialog = new ConnectionDialog(_credentialService, _connectionStore, _selectedDatabase);
         var result = await dialog.ShowDialog<bool?>(GetParentWindow());
 
         if (result == true && dialog.ResultConnection != null)
