@@ -1078,6 +1078,9 @@ public partial class PlanViewerControl : UserControl
             RegisterPropertySection("Warnings", warningsExpander).Rows.AddRange(nodeWarningRows);
         }
 
+        // The filter box keeps its text across selections, so a rebuilt panel has to re-apply it.
+        ApplyPropertiesFilter();
+
         /* Show the panel. The width is set only when the panel is opening: setting it on every
            selection threw away whatever width the user had dragged, on every single click. */
         if (!PropertiesPanel.IsVisible)
@@ -1089,6 +1092,51 @@ public partial class PlanViewerControl : UserControl
             _splitterColumn.Width = new GridLength(PropertiesSplitterWidth);
             PropertiesSplitter.IsVisible = true;
             PropertiesPanel.IsVisible = true;
+        }
+    }
+
+    private void PropertiesFilter_TextChanged(object? sender, TextChangedEventArgs e)
+        => ApplyPropertiesFilter();
+
+    private void PropertiesFilter_KeyDown(object? sender, Avalonia.Input.KeyEventArgs e)
+    {
+        if (e.Key != Avalonia.Input.Key.Escape) return;
+        PropertiesFilterBox.Text = "";
+        e.Handled = true;
+    }
+
+    /// <summary>
+    /// Hides every row whose label and value miss the filter text, and hides a section outright
+    /// once nothing in it is left showing.
+    ///
+    /// <para>A section whose own title matches keeps all of its rows, so typing a section name
+    /// is a way to jump to that section rather than a way to empty it.</para>
+    ///
+    /// <para>An empty section is hidden even with no filter text. A few of them can be built
+    /// with no rows at all - Operator Details when the only thing that qualified the node
+    /// contributes no row of its own, for one - and an expander with nothing inside it is
+    /// noise whether or not anyone is filtering.</para>
+    /// </summary>
+    private void ApplyPropertiesFilter()
+    {
+        var filter = PropertiesFilterBox.Text?.Trim() ?? "";
+
+        foreach (var section in _propertySections)
+        {
+            var sectionMatches = filter.Length == 0
+                || section.Title.Contains(filter, StringComparison.OrdinalIgnoreCase);
+
+            var anyVisible = false;
+            foreach (var row in section.Rows)
+            {
+                var visible = sectionMatches
+                    || row.SearchText.Contains(filter, StringComparison.OrdinalIgnoreCase);
+                foreach (var control in row.Controls)
+                    control.IsVisible = visible;
+                anyVisible |= visible;
+            }
+
+            section.Expander.IsVisible = anyVisible;
         }
     }
 
