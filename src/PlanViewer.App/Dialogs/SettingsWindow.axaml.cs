@@ -37,6 +37,9 @@ internal partial class SettingsWindow : Window
 	/// <summary>Identifies the most recent build so an older one cannot release the guard early.</summary>
 	private int _buildToken;
 
+	/// <summary>Set while the discard prompt is up, so a second close cannot stack another.</summary>
+	private bool _closeWalkInProgress;
+
 	// QueryStore controls
 	private NumericUpDown? _slicerDaysBox;
 	private ComboBox? _defaultMetricBox;
@@ -692,18 +695,33 @@ internal partial class SettingsWindow : Window
 
 	private async void TryClose()
 	{
+		/* Only one close walk at a time. OnClosing cancels every close unconditionally - one
+		   arriving mid-prompt must not fall through to base while the prompt is still asking -
+		   but a second one must not stack a second discard dialog. Mirrors MainWindow's
+		   _closeWalkInProgress latch; the walk's own Close() below clears _isDirty first, so it
+		   sails through OnClosing rather than being swallowed here. */
+		if (_closeWalkInProgress)
+			return;
+
 		if (!_isDirty)
 		{
-			_isDirty = false;
 			Close();
 			return;
 		}
 
-		var result = await ShowDiscardDialog();
-		if (result)
+		_closeWalkInProgress = true;
+		try
 		{
-			_isDirty = false;
-			Close();
+			if (await ShowDiscardDialog())
+			{
+				_isDirty = false;
+				Close();
+			}
+		}
+		finally
+		{
+			// Cleared however the walk ends, so Cancel or the X can start a fresh one.
+			_closeWalkInProgress = false;
 		}
 	}
 
@@ -759,7 +777,9 @@ internal partial class SettingsWindow : Window
 
 		discardBtn.Click += (_, _) => { tcs.TrySetResult(true); dialog.Close(); };
 		cancelBtn.Click += (_, _) => { tcs.TrySetResult(false); dialog.Close(); };
-		dialog.Closing += (_, _) => tcs.TrySetResult(false);
+		// Closed, not Closing: an owner-driven teardown closes the window without ever raising
+		// Closing, which would leave the await below waiting forever.
+		dialog.Closed += (_, _) => tcs.TrySetResult(false);
 
 		await dialog.ShowDialog(this);
 		return await tcs.Task;
