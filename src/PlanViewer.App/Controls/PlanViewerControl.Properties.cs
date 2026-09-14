@@ -56,6 +56,16 @@ public partial class PlanViewerControl : UserControl
 
         /// <summary>Every control the row occupies, so the filter can hide all of them.</summary>
         public List<Control> Controls { get; } = new();
+
+        /// <summary>The copy menu, shared by every control in the row.</summary>
+        public ContextMenu? Menu { get; set; }
+
+        /// <summary>What "Copy value" hands back.</summary>
+        public string CopyValue => BlockText ?? Value;
+
+        /// <summary>What "Copy name and value" hands back.</summary>
+        public string CopyLabelAndValue => BlockText
+            ?? (string.IsNullOrEmpty(Label) ? Value : $"{Label}: {Value}");
     }
 
     private sealed class PropertyPanelSection
@@ -1273,7 +1283,7 @@ public partial class PlanViewerControl : UserControl
     /// <summary>
     /// Wraps one already-built warning panel as a filterable, copyable row.
     /// </summary>
-    private static PropertyPanelRow NewWarningRow(
+    private PropertyPanelRow NewWarningRow(
         string header, string body, string? fix, Control panel)
     {
         var text = new StringBuilder();
@@ -1289,6 +1299,7 @@ public partial class PlanViewerControl : UserControl
             SearchText = $"{header} {body} {fix}"
         };
         row.Controls.Add(panel);
+        AttachPropertyRowMenu(panel, row);
         return row;
     }
 
@@ -1466,8 +1477,82 @@ public partial class PlanViewerControl : UserControl
 
         Grid.SetRow(control, row);
         Grid.SetColumn(control, column);
+        AttachPropertyRowMenu(control, entry);
         _currentSectionGrid!.Children.Add(control);
         entry.Controls.Add(control);
+    }
+
+    /// <summary>
+    /// Gives a control the row's copy menu, and clears any context flyout the theme put on it.
+    /// A read-only value used to answer right-click with the stock text menu: Cut and Copy
+    /// greyed out, Paste enabled, on data nobody can edit.
+    /// </summary>
+    private void AttachPropertyRowMenu(Control control, PropertyPanelRow entry)
+    {
+        control.ContextMenu = entry.Menu ??= BuildPropertyRowMenu(entry);
+        control.ContextFlyout = null;
+    }
+
+    private ContextMenu BuildPropertyRowMenu(PropertyPanelRow entry)
+    {
+        var menu = new ContextMenu();
+
+        var copyValueItem = new MenuItem { Header = "Copy value" };
+        copyValueItem.Click += async (_, _) => await SetClipboardTextAsync(entry.CopyValue);
+        menu.Items.Add(copyValueItem);
+
+        var copyRowItem = new MenuItem { Header = "Copy name and value" };
+        copyRowItem.Click += async (_, _) => await SetClipboardTextAsync(entry.CopyLabelAndValue);
+        menu.Items.Add(copyRowItem);
+
+        menu.Items.Add(new Separator());
+
+        var copyAllItem = new MenuItem { Header = "Copy all properties" };
+        copyAllItem.Click += async (_, _) => await SetClipboardTextAsync(BuildPropertiesText());
+        menu.Items.Add(copyAllItem);
+
+        return menu;
+    }
+
+    /// <summary>
+    /// The whole panel as plain text, for "Copy all properties": the operator header, then a
+    /// line per section title with "  Label: Value" beneath it. Code values go out verbatim on
+    /// their own lines, so a predicate or a CREATE INDEX comes back out pasteable rather than
+    /// re-indented into something that has to be cleaned up first.
+    /// </summary>
+    private string BuildPropertiesText()
+    {
+        var text = new StringBuilder();
+        text.AppendLine(PropertiesHeader.Text);
+        if (!string.IsNullOrEmpty(PropertiesSubHeader.Text))
+            text.AppendLine(PropertiesSubHeader.Text);
+
+        foreach (var section in _propertySections)
+        {
+            if (section.Rows.Count == 0) continue;
+
+            text.AppendLine();
+            text.AppendLine(section.Title);
+            foreach (var row in section.Rows)
+            {
+                if (row.BlockText != null)
+                {
+                    text.AppendLine(row.BlockText);
+                }
+                else if (row.IsCode)
+                {
+                    if (!string.IsNullOrEmpty(row.Label))
+                        text.Append("  ").Append(row.Label).AppendLine(":");
+                    text.AppendLine(row.Value);
+                }
+                else
+                {
+                    text.Append("  ").Append(row.Label).Append(": ").AppendLine(row.Value);
+                }
+            }
+        }
+
+        return text.ToString().TrimEnd();
     }
 
     private void CloseProperties_Click(object? sender, RoutedEventArgs e)
