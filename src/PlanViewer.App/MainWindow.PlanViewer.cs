@@ -91,6 +91,11 @@ public partial class MainWindow : Window
 
         var compareBtn = new Button
         {
+            /* Named so RefreshComparePlanAvailability can find it again. This toolbar is built
+               fresh for every plan tab and for every detached plan window, so there is no field
+               to hold them in, and whether Compare is available is a fact about the whole
+               window that changes long after the button was made. */
+            Name = Helpers.ComparePlansButtonState.Name,
             Content = "\u2194 Compare Plans",
             Height = 28,
             Padding = new Avalonia.Thickness(10, 0),
@@ -100,6 +105,12 @@ public partial class MainWindow : Window
             HorizontalContentAlignment = HorizontalAlignment.Center,
             Theme = (Avalonia.Styling.ControlTheme)this.FindResource("AppButton")!
         };
+
+        /* Born with the honest answer rather than enabled: this toolbar is often built by the
+           very call that makes the second plan exist (LoadPlanFile assigns the tab's content
+           after this returns), so the watcher's refresh may have already run for a window that
+           did not yet contain this plan. */
+        Helpers.ComparePlansButtonState.Apply(compareBtn, CollectAllPlanTabs().Count >= 2);
 
         compareBtn.Click += (_, _) => ShowCompareDialog();
 
@@ -231,7 +242,10 @@ public partial class MainWindow : Window
         var planTabs = CollectAllPlanTabs();
         if (planTabs.Count < 2)
         {
-            // Not enough plans to compare
+            /* Belt and braces: every Compare button in the window is disabled while this is
+               true (see RefreshComparePlanAvailability), so no click can reach here. It used to
+               be the only thing standing between a click and a dialog, which is exactly how the
+               button came to answer a click with nothing at all. */
             return;
         }
 

@@ -432,6 +432,12 @@ public partial class MainWindow : Window
            needs no twin call: adding the tab back fires MainWindow's collection watcher. */
         if (content is QuerySessionControl detachedSession)
             detachedSession.UpdateCompareButtonState();
+        else
+            /* A detached plan window keeps its own Compare button, still wired to THIS window's
+               picker — and the plan that just left is no longer in it, so the pair it was
+               offering may no longer exist. The watcher fired on the tab's removal, which was
+               before the detached register knew about this window. */
+            RefreshComparePlanAvailability();
 
         return detachedWindow;
     }

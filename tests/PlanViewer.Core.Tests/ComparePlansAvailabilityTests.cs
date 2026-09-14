@@ -272,6 +272,75 @@ public class ComparePlansAvailabilityTests
         });
     }
 
+    /// <summary>
+    /// The plan tab's OWN Compare button, which the #447 refresh never touched. It was built
+    /// enabled and stayed enabled, so with a single plan open clicking it ran
+    /// <c>ShowCompareDialog</c>'s early return: no dialog, no message, nothing at all. Both
+    /// toolbars now answer from the same window-wide count, and the disabled one says what would
+    /// fix it.
+    /// </summary>
+    [Fact]
+    public void ThePlanTabToolbarOffersCompareOnlyWhenTheWindowHasAPair()
+    {
+        HeadlessUi.Run(() =>
+        {
+            var window = new MainWindow();
+
+            window.LoadPlanFile(PlanPath("row_goal_plan.sqlplan"));
+
+            var onlyPlan = Assert.Single(PlanTabCompareButtons(window));
+            Assert.False(onlyPlan.IsEnabled, "there is nothing to compare this plan against");
+            Assert.Equal("Open a second plan to compare", ToolTip.GetTip(onlyPlan));
+
+            window.LoadPlanFile(PlanPath("key_lookup_plan.sqlplan"));
+
+            var withAPair = PlanTabCompareButtons(window).ToList();
+            Assert.Equal(2, withAPair.Count);
+            Assert.All(withAPair, button =>
+            {
+                Assert.True(button.IsEnabled, "two plans are open in this window");
+                Assert.Equal("Compare any two plans open in this window", ToolTip.GetTip(button));
+            });
+
+            /* And the session toolbar's button, which has always been refreshed, still agrees —
+               the two are driven from one count so they cannot drift apart. */
+            Assert.All(Sessions(window), session => Assert.True(CompareButton(session).IsEnabled));
+
+            CloseFirstPlanTab(window);
+
+            Assert.All(PlanTabCompareButtons(window), button => Assert.False(
+                button.IsEnabled, "one of the pair was closed, so there is nothing left to pick"));
+        });
+    }
+
+    /// <summary>
+    /// Closes the window's first plan tab through its own close button, the way a user does.
+    /// Plan tabs hold nothing unsaved, so the close walk completes without a prompt.
+    /// </summary>
+    private static void CloseFirstPlanTab(MainWindow window)
+    {
+        var tab = window.FindControl<TabControl>("MainTabControl")!.Items
+            .OfType<TabItem>()
+            .First(t => t.Content is DockPanel);
+
+        var closeButton = ((StackPanel)tab.Header!).Children.OfType<Button>().Last();
+        closeButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        Dispatcher.UIThread.RunJobs();
+    }
+
+    /// <summary>
+    /// Every Compare button in the window's plan-tab toolbars. Found by name rather than by
+    /// position, which is also how the window itself finds them to refresh.
+    /// </summary>
+    private static IEnumerable<Button> PlanTabCompareButtons(MainWindow window) =>
+        window.FindControl<TabControl>("MainTabControl")!.Items
+            .OfType<TabItem>()
+            .Select(tab => tab.Content)
+            .OfType<DockPanel>()
+            .SelectMany(dock => dock.Children.OfType<StackPanel>())
+            .SelectMany(toolbar => toolbar.Children.OfType<Button>())
+            .Where(button => button.Name == "ComparePlansButton");
+
     private static Button RedockButton(Window detached) =>
         ((DockPanel)detached.Content!).Children.OfType<StackPanel>().Single()
             .Children.OfType<Button>().Single();

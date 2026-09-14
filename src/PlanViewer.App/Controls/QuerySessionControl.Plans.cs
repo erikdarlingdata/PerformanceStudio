@@ -251,7 +251,8 @@ public partial class QuerySessionControl : UserControl
         SetCompareAvailability(CountOwnPlans() >= 2);
     }
 
-    internal void SetCompareAvailability(bool enabled) => ComparePlansButton.IsEnabled = enabled;
+    internal void SetCompareAvailability(bool enabled) =>
+        Helpers.ComparePlansButtonState.Apply(ComparePlansButton, enabled);
 
     private int CountOwnPlans()
     {

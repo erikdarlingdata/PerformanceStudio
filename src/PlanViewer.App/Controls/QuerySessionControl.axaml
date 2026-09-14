@@ -57,11 +57,14 @@
                             ToolTip.Tip="JSON analysis for LLMs and automation"/>
                     <TextBlock Text="|" VerticalAlignment="Center"
                                Foreground="{DynamicResource ForegroundBrush}" Margin="2,0"/>
+                    <!-- Starts disabled with the disabled explanation; both are kept honest from
+                         then on by ComparePlansButtonState, which the window calls whenever the
+                         number of open plans changes. -->
                     <Button x:Name="ComparePlansButton" Content="&#x2194; Compare Plans"
                             Click="ComparePlans_Click"
                             Height="28" Padding="8,0" FontSize="12" IsEnabled="False"
                             Theme="{StaticResource AppButton}"
-                            ToolTip.Tip="Compare any two plans open in this window"/>
+                            ToolTip.Tip="Open a second plan to compare"/>
                     <TextBlock Text="|" VerticalAlignment="Center"
                                Foreground="{DynamicResource ForegroundBrush}" Margin="2,0"/>
                     <Button x:Name="QueryStoreButton" Content="&#x1F4CA; Query Store"

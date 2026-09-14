@@ -858,21 +858,60 @@ public partial class MainWindow : Window
 
 
     /// <summary>
-    /// Re-decides whether Compare Plans is offered, for every query session in the window (#447).
+    /// Re-decides whether Compare Plans is offered, for every Compare button in the window (#447).
     ///
     /// <para>The button used to be enabled from a session's OWN plan count, so two queries in two
     /// separate sessions — one plan each — left it disabled in both, even though comparing them is
     /// exactly what it is for. The plans were always reachable: <see cref="CollectAllPlanTabs"/>
     /// spans sessions and is what the file-mode Compare button has always used, which is why saving
     /// a plan and reopening it worked around this.</para>
+    ///
+    /// <para>The plan-tab toolbar's own Compare button was left out of that fix and was never
+    /// disabled at all: with one plan open it looked available, and clicking it did nothing
+    /// whatsoever — <see cref="ShowCompareDialog"/> returns early and silently. It is refreshed
+    /// here too now, from the same count, so the two toolbars cannot disagree.</para>
     /// </summary>
     internal void RefreshComparePlanAvailability()
     {
         var comparable = CollectAllPlanTabs().Count >= 2;
+
         foreach (var item in MainTabControl.Items)
+            ApplyCompareAvailability((item as TabItem)?.Content as Control, comparable);
+
+        /* Detached PLAN windows keep their toolbar, and the button on it still opens THIS
+           window's picker — which cannot see the detached plan itself — so the window-wide
+           count is the honest answer there too. Left out, a plan window detached while a pair
+           existed kept an enabled button after the pair stopped existing.
+
+           Detached SESSIONS are deliberately not in this loop: their button falls back to their
+           own picker over their own plans, and QuerySessionControl.UpdateCompareButtonState
+           answers for them from that count (#447). */
+        foreach (var content in _detachedTabContents.OfType<DockPanel>())
+            ApplyCompareAvailability(content, comparable);
+    }
+
+    /// <summary>
+    /// Applies the window-wide answer to whatever Compare button one tab's content owns: a query
+    /// session has a named one in its own toolbar, and a plan tab has the code-built one from
+    /// <see cref="CreatePlanTabContent"/>.
+    /// </summary>
+    private static void ApplyCompareAvailability(Control? content, bool comparable)
+    {
+        if (content is QuerySessionControl session)
         {
-            if (item is TabItem { Content: QuerySessionControl session })
-                session.SetCompareAvailability(comparable);
+            session.SetCompareAvailability(comparable);
+            return;
+        }
+
+        if (content is not DockPanel dock) return;
+
+        foreach (var toolbar in dock.Children.OfType<StackPanel>())
+        {
+            foreach (var button in toolbar.Children.OfType<Button>())
+            {
+                if (button.Name == ComparePlansButtonState.Name)
+                    ComparePlansButtonState.Apply(button, comparable);
+            }
         }
     }
 
