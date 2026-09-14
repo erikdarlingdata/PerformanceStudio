@@ -3,8 +3,10 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Media;
+using Avalonia.Threading;
 using Avalonia.VisualTree;
 using PlanViewer.App;
+using PlanViewer.App.Services;
 
 namespace PlanViewer.Core.Tests;
 
@@ -31,49 +33,93 @@ public class TabStripLayoutTests
         HeadlessUi.Run(() =>
         {
             var window = new MainWindow { Width = 900, Height = 700 };
-            window.Show();
-
-            for (var i = 0; i < 20; i++)
-                window.NewQuery_Click(window, new RoutedEventArgs());
-
-            var tabs = window.FindControl<TabControl>("MainTabControl")!;
-
-            // a name long enough to need the ellipsis
-            var wide = tabs.Items.OfType<TabItem>().Select(t => t.Header).OfType<StackPanel>()
-                .First().Children.OfType<TextBlock>().First();
-            wide.Text = "a very long query tab name that nobody would ever type on purpose.sql";
-
-            window.UpdateLayout();
-
-            Assert.True(wide.Bounds.Width is > 0 and <= 170, $"long label took {wide.Bounds.Width}px");
-
-            var headers = tabs.Items.OfType<TabItem>().Select(t => t.Header).OfType<StackPanel>().ToList();
-            Assert.True(headers.Count >= 20, $"headers {headers.Count} of {tabs.Items.Count} tabs");
-
-            foreach (var header in headers)
+            try
             {
-                Assert.Equal(2, header.Children.Count); // label + close button
-                var label = Assert.IsType<TextBlock>(header.Children[0]);
-                Assert.Equal(170, label.MaxWidth);
-                Assert.Equal(TextTrimming.CharacterEllipsis, label.TextTrimming);
+                window.Show();
+
+                window.NewQuery_Click(window, new RoutedEventArgs());
+                window.UpdateLayout();
+
+                var tabs = window.FindControl<TabControl>("MainTabControl")!;
+
+                /* Height before overflow, to compare against height after it. The strip shows its
+                   rail at all times for this: the app runs its scrollbars non-overlay, so an Auto
+                   rail would appear the moment a tab tipped the strip into overflow and take its
+                   own height out of the window, shoving everything below it down -- the same shift
+                   the session toolbar refuses, arriving by a different door. */
+                var strip = window.GetVisualDescendants().OfType<ScrollViewer>()
+                    .First(sv => sv.Name == "TabStripScroll");
+                var heightBeforeOverflow = strip.Bounds.Height;
+
+                for (var i = 0; i < 19; i++)
+                    window.NewQuery_Click(window, new RoutedEventArgs());
+
+                // a name long enough to need the ellipsis
+                var wide = tabs.Items.OfType<TabItem>().Select(t => t.Header).OfType<StackPanel>()
+                    .First().Children.OfType<TextBlock>().First();
+                wide.Text = "a very long query tab name that nobody would ever type on purpose.sql";
+
+                window.UpdateLayout();
+
+                Assert.True(wide.Bounds.Width is > 0 and <= 170, $"long label took {wide.Bounds.Width}px");
+
+                var headers = tabs.Items.OfType<TabItem>().Select(t => t.Header).OfType<StackPanel>().ToList();
+                Assert.True(headers.Count >= 20, $"headers {headers.Count} of {tabs.Items.Count} tabs");
+
+                foreach (var header in headers)
+                {
+                    Assert.Equal(2, header.Children.Count); // label + close button
+                    var label = Assert.IsType<TextBlock>(header.Children[0]);
+                    Assert.Equal(170, label.MaxWidth);
+                    Assert.Equal(TextTrimming.CharacterEllipsis, label.TextTrimming);
+                }
+
+                // the cap must not leak down into a session's own sub-tab strip
+                var sub = window.GetVisualDescendants().OfType<TabControl>()
+                    .First(t => t.Name == "SubTabControl");
+                var subLabel = sub.Items.OfType<TabItem>().Select(t => t.Header).OfType<StackPanel>()
+                    .First().Children.OfType<TextBlock>().First();
+                Assert.Equal(double.PositiveInfinity, subLabel.MaxWidth);
+
+                // one row: a WrapPanel would have put these on two or three different Y values
+                var bounds = tabs.Items.OfType<TabItem>().Select(t => t.Bounds).ToList();
+                Assert.All(bounds, b => Assert.Equal(bounds[0].Y, b.Y));
+
+                Assert.True(strip.Extent.Width > strip.Viewport.Width,
+                    $"the strip should overflow and scroll: extent {strip.Extent.Width} viewport {strip.Viewport.Width}");
+
+                // ...and overflowing must not have changed how much room the strip takes
+                Assert.Equal(heightBeforeOverflow, strip.Bounds.Height);
             }
-
-            // the cap must not leak down into a session's own sub-tab strip
-            var sub = window.GetVisualDescendants().OfType<TabControl>()
-                .First(t => t.Name == "SubTabControl");
-            var subLabel = sub.Items.OfType<TabItem>().Select(t => t.Header).OfType<StackPanel>()
-                .First().Children.OfType<TextBlock>().First();
-            Assert.Equal(double.PositiveInfinity, subLabel.MaxWidth);
-
-            var strip = window.GetVisualDescendants().OfType<ScrollViewer>()
-                .FirstOrDefault(sv => sv.Name == "TabStripScroll");
-            Assert.NotNull(strip);
-
-            var bounds = tabs.Items.OfType<TabItem>().Select(t => t.Bounds).ToList();
-            Assert.All(bounds, b => Assert.Equal(bounds[0].Y, b.Y)); // one row, never wrapped
-
-            Assert.True(strip!.Extent.Width > strip.Viewport.Width,
-                $"the strip should overflow and scroll: extent {strip.Extent.Width} viewport {strip.Viewport.Width}");
+            finally
+            {
+                ChromeTestCleanup.PutAway(window);
+            }
         });
+    }
+}
+
+/// <summary>
+/// Shared hygiene for the chrome tests, which are the ones that have to open a real window and a
+/// pile of tabs to have anything to measure. Both halves are the suite's existing conventions: a
+/// window left open outlives its test and poisons the shared headless session (#474, and
+/// DetachedUnsavedChangesTests.PutAway), and anything left in the persisted tab list is restored
+/// by the next MainWindow constructed anywhere in the run (SessionPersistenceTests.ResetPersistedState).
+/// Twenty leftover query tabs reopening inside someone else's test is not a failure anybody would
+/// enjoy reading.
+/// </summary>
+internal static class ChromeTestCleanup
+{
+    internal static void PutAway(Window window)
+    {
+        foreach (var owned in window.OwnedWindows.ToList())
+            owned.Close();
+
+        window.Close();
+        Dispatcher.UIThread.RunJobs();
+
+        var settings = AppSettingsService.Load();
+        settings.OpenTabs.Clear();
+        AppSettingsService.Save(settings);
     }
 }

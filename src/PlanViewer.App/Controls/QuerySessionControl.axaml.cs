@@ -135,7 +135,11 @@ public partial class QuerySessionControl : UserControl
            Avalonia only turns a vertical wheel into horizontal scrolling when Shift is held
            (ScrollContentPresenter.OnPointerWheelChanged swaps the delta vector on Shift alone).
            A toolbar you can only pan with a modifier held is a toolbar nobody pans, so a plain
-           wheel over it scrolls it. Tunnel, so the buttons underneath never eat the wheel first. */
+           wheel over it scrolls it. Tunnel, so the buttons underneath never eat the wheel first.
+
+           One deliberate consequence: while the toolbar overflows, this also swallows the wheel
+           over the database ComboBox, which would otherwise change the database under you. An
+           accidental scroll that silently moves your execution context is the worse of the two. */
         ToolbarScroll.AddHandler(Avalonia.Input.InputElement.PointerWheelChangedEvent, OnToolbarWheel, Avalonia.Interactivity.RoutingStrategies.Tunnel);
 
         // Code completion
@@ -295,9 +299,10 @@ public partial class QuerySessionControl : UserControl
         e.Handled = true;
     }
 
-    /* The colours the theme holds today, as literals. They are what the code used to construct
-       inline at each site; keeping them as the fallbacks means a key that is missing from the
-       dictionary renders exactly as it did before rather than rendering nothing. */
+    /* The colours the theme holds today, as literals, so a key missing from the dictionary renders
+       something sane rather than nothing. Three of them are exactly what the code used to construct
+       inline at each site; FallbackMuted is not, because the muted site was constructing #A0A0A0
+       and the theme's muted brush is #B0B6C0 -- taking the token means taking its colour. */
     private static readonly IBrush FallbackForeground = new SolidColorBrush(Color.FromRgb(0xE4, 0xE6, 0xEB));
     private static readonly IBrush FallbackBackground = new SolidColorBrush(Color.FromRgb(0x1A, 0x1D, 0x23));
     private static readonly IBrush FallbackMuted = new SolidColorBrush(Color.FromRgb(0xB0, 0xB6, 0xC0));

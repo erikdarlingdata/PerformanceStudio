@@ -57,17 +57,38 @@
                      Everything else is the stock arrangement, and the selected-tab underline is
                      untouched: it lives in TabItem's own template (PART_SelectedPipe), not here.
 
-                     The rail stays visible on this one, unlike the session toolbar's: dragging it
-                     is the affordance that says there are more tabs off-screen. -->
+                     The rail stays on this one, unlike the session toolbar's: dragging it is the
+                     affordance that says there are more tabs off-screen. Visible rather than Auto,
+                     though, and that is not a preference. App.axaml turns AllowAutoHide off
+                     app-wide, and Fluent only spans the content presenter under the scrollbars
+                     when auto-hide is ON, so with it off a rail occupies its own grid row: on Auto
+                     the strip would grow by the rail's height at the exact moment a tab tipped it
+                     into overflow, and shrink back when one closed, shoving the toolbar, the
+                     sub-tab row and the editor down and up with it. That is the shift the session
+                     toolbar refuses for itself, and it would be no better here. Constant height at
+                     every tab count is worth the rail always showing. (If scrollbars ever go back
+                     to overlay auto-hide, Auto becomes the better setting.) -->
                 <TabControl.Template>
                     <ControlTemplate TargetType="TabControl">
                         <Border Background="{TemplateBinding Background}"
                                 BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}">
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="{TemplateBinding CornerRadius}">
                             <DockPanel>
+                                <!-- Dock is hardcoded where the stock template binds TabStripPlacement:
+                                     a horizontal scrolling strip only makes sense along the top, and
+                                     this template is scoped to this one control, which is always Top.
+
+                                     TabStripScroll lives in the template's namescope, so FindControl
+                                     from the window returns null for it; the handler below reaches it
+                                     through sender. And the handler is only reachable at all because
+                                     ScrollContentPresenter leaves a wheel unhandled when it changed no
+                                     offset. Turn vertical scrolling on here, or set
+                                     IsScrollChainingEnabled=False, and the plain-wheel handler goes
+                                     dead with no error to say so. -->
                                 <ScrollViewer Name="TabStripScroll" DockPanel.Dock="Top"
                                               PointerWheelChanged="TabStrip_PointerWheel"
-                                              HorizontalScrollBarVisibility="Auto"
+                                              HorizontalScrollBarVisibility="Visible"
                                               VerticalScrollBarVisibility="Disabled">
                                     <ItemsPresenter Name="PART_ItemsPresenter"
                                                     ItemsPanel="{TemplateBinding ItemsPanel}"/>
@@ -103,6 +124,11 @@
                     <Style Selector="TabControl#MainTabControl &gt; TabItem &gt; StackPanel &gt; TextBlock">
                         <Setter Property="MaxWidth" Value="170"/>
                         <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+                    </Style>
+                    <!-- Renaming swaps the label for a TextBox in the same slot (StartRename), and
+                         an uncapped one grows the header, and the whole strip, with every keystroke. -->
+                    <Style Selector="TabControl#MainTabControl &gt; TabItem &gt; StackPanel &gt; TextBox">
+                        <Setter Property="MaxWidth" Value="170"/>
                     </Style>
                 </TabControl.Styles>
             </TabControl>

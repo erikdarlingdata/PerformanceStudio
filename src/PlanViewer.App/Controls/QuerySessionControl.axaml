@@ -16,10 +16,12 @@
              It scrolls rather than wraps when it is wider than the window. The old WrapPanel
              reflowed on every state change (Format jumping between rows) and stacked up to
              three rows at 1280, and each reflow dragged the sub-tab row up or down with it.
-             A single row of known height is the whole point: MinHeight pins the strip so the
-             sub-tab row below is nailed down whatever the toolbar is doing. -->
+             One row is the whole point, and nothing in it can change height: every control in
+             the row is a fixed 28px, the row cannot wrap, and the scrollbar is suppressed so
+             overflow cannot add a rail's height either. That is what nails the sub-tab row
+             down, not a MinHeight: a minimum cannot stop a strip growing, which is the
+             direction that would move it. -->
         <Border Grid.Row="0" Background="{DynamicResource BackgroundDarkBrush}" Padding="8,6"
-                MinHeight="44"
                 BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
             <DockPanel>
                 <!-- Docked right, so it holds the row's right edge and gives up space first:
@@ -121,7 +123,7 @@
                         <Button x:Name="FormatButton" Content="Format" Click="Format_Click"
                                 Height="28" Padding="10,0" FontSize="12"
                                 Theme="{StaticResource AppButton}"
-                                ToolTip.Tip="Format the SQL query (Shift+Alt+F)"/>
+                                ToolTip.Tip="Format the SQL query (Ctrl+Shift+F)"/>
                     </StackPanel>
                 </ScrollViewer>
             </DockPanel>
