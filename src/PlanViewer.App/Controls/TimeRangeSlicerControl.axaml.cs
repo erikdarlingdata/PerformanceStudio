@@ -79,6 +79,14 @@ public partial class TimeRangeSlicerControl : UserControl
             // Restore a previous selection
             _rangeStart = GetNormFromDateTime(selectionStart.Value);
             _rangeEnd = GetNormFromDateTime(selectionEnd.Value);
+
+            /* Same floor SetRangeFromDateTimes enforces: each end clamps into [0,1] on its own,
+               so a preserved range lying entirely outside the new data window maps BOTH ends to
+               the same value — a zero-width selection with collapsed handles, refreshing over an
+               empty window. Reachable since the Overview re-applies its remembered range on every
+               reselect: leave a session open long enough and the old range drifts off the edge. */
+            if (_rangeEnd - _rangeStart < MinNormInterval)
+                _rangeEnd = Math.Min(1, _rangeStart + MinNormInterval);
         }
         else
         {
