@@ -34,6 +34,15 @@
                            MaxWidth="240"
                            FontSize="11" Foreground="{DynamicResource ForegroundBrush}"
                            TextTrimming="CharacterEllipsis" Margin="8,0,0,0"/>
+                <!-- Overflow chevron. Docked rather than sitting in the scrolled row, so it is the
+                     one thing that cannot scroll out of reach — the whole point of it is to be the
+                     visible affordance for the commands that did. Declared after StatusText so it
+                     docks inboard of the status message, immediately after the row it belongs to,
+                     and hidden until the menu actually holds something. -->
+                <Button x:Name="ToolbarOverflowButton" DockPanel.Dock="Right"
+                        IsVisible="False" Width="28" Height="28" Padding="0" Margin="4,2,0,2"
+                        Theme="{StaticResource AppButton}"
+                        ToolTip.Tip="More commands"/>
                 <!-- Scrollbar suppressed on purpose: a rail under a 28px button row is noise,
                      and at the app's non-overlay scrollbar setting it would add its own height
                      to the strip the moment overflow started — reintroducing the row shift this
@@ -49,15 +58,18 @@
                             <Style Selector="ComboBox">
                                 <Setter Property="Margin" Value="0,2,4,2"/>
                             </Style>
-                            <!-- Hairline group divider, replacing the old "|" glyphs -->
+                            <!-- Hairline group divider, replacing the old "|" glyphs. The gutters
+                                 are 3/6 rather than 4/8 because six dividers at the wider spacing
+                                 cost 18px of the row, and a hairline reads as a group break at
+                                 either number. -->
                             <Style Selector="Border.separator">
                                 <Setter Property="Width" Value="1"/>
-                                <Setter Property="Margin" Value="4,3,8,3"/>
+                                <Setter Property="Margin" Value="3,3,6,3"/>
                                 <Setter Property="Background" Value="{DynamicResource BorderBrush}"/>
                             </Style>
                         </StackPanel.Styles>
                         <Button x:Name="ConnectButton" Content="Connect" Click="Connect_Click"
-                                Height="28" Width="118" Padding="8,0" FontSize="12"
+                                Height="28" Width="118" Padding="7,0" FontSize="12"
                                 Theme="{StaticResource AppButton}"
                                 ToolTip.Tip="Connect to a SQL Server"/>
                         <TextBlock x:Name="ServerLabel" Text="Not connected"
@@ -71,22 +83,29 @@
                                   SelectionChanged="Database_SelectionChanged"/>
                         <Border Classes="separator"/>
                         <Button x:Name="ExecuteButton" Content="Actual Plan" Click="Execute_Click"
-                                Height="28" Padding="8,0" FontSize="12" IsEnabled="False"
+                                Height="28" Padding="7,0" FontSize="12" IsEnabled="False"
                                 Theme="{StaticResource AppButton}"
                                 ToolTip.Tip="Run query and capture execution plan with runtime stats (F5 / Ctrl+E)"/>
-                        <Button x:Name="ExecuteEstButton" Content="Estimated Plan" Click="ExecuteEstimated_Click"
-                                Height="28" Padding="8,0" FontSize="12" IsEnabled="False"
+                        <!-- "Est Plan", not "Estimated Plan": the product already calls these
+                             tabs "Est Plan N" everywhere they are created, so the short form is
+                             the name rather than an abbreviation of one. The tooltip still spells
+                             out what it does. -->
+                        <Button x:Name="ExecuteEstButton" Content="Est Plan" Click="ExecuteEstimated_Click"
+                                Height="28" Padding="7,0" FontSize="12" IsEnabled="False"
                                 Theme="{StaticResource AppButton}"
                                 ToolTip.Tip="Capture estimated plan without executing (Ctrl+L)"/>
-                        <Border Classes="separator"/>
+                        <!-- Named because the overflow owns it: the divider in front of a group
+                             has nothing to divide once the whole group has moved into the
+                             chevron menu (see ToolbarOverflow). -->
+                        <Border x:Name="AdviceGroupSeparator" Classes="separator"/>
                         <Button x:Name="HumanAdviceButton" Content="Human Advice"
                                 Click="HumanAdvice_Click"
-                                Height="28" Padding="8,0" FontSize="12" IsEnabled="False"
+                                Height="28" Padding="7,0" FontSize="12" IsEnabled="False"
                                 Theme="{StaticResource AppButton}"
                                 ToolTip.Tip="Human-readable plan analysis"/>
                         <Button x:Name="RobotAdviceButton" Content="Robot Advice"
                                 Click="RobotAdvice_Click"
-                                Height="28" Padding="8,0" FontSize="12" IsEnabled="False"
+                                Height="28" Padding="7,0" FontSize="12" IsEnabled="False"
                                 Theme="{StaticResource AppButton}"
                                 ToolTip.Tip="JSON analysis for LLMs and automation"/>
                         <!-- Starts disabled with the disabled explanation; both are kept honest
@@ -94,34 +113,34 @@
                              whenever the number of open plans changes. -->
                         <Button x:Name="ComparePlansButton" Content="Compare Plans"
                                 Click="ComparePlans_Click"
-                                Height="28" Padding="8,0" FontSize="12" IsEnabled="False"
+                                Height="28" Padding="7,0" FontSize="12" IsEnabled="False"
                                 Theme="{StaticResource AppButton}"
                                 ToolTip.Tip="Open a second plan to compare"/>
-                        <Border Classes="separator"/>
+                        <Border x:Name="QueryStoreGroupSeparator" Classes="separator"/>
                         <Button x:Name="QueryStoreButton" Content="Query Store"
                                 Click="QueryStore_Click"
-                                Height="28" Padding="8,0" FontSize="12"
+                                Height="28" Padding="7,0" FontSize="12"
                                 Theme="{StaticResource AppButton}"
                                 ToolTip.Tip="Analyze top queries from Query Store"/>
                         <Button x:Name="QueryStoreOverviewButton" Content="QS Overview"
                                 Click="QueryStoreOverview_Click"
-                                Height="28" Padding="8,0" FontSize="12"
+                                Height="28" Padding="7,0" FontSize="12"
                                 Theme="{StaticResource AppButton}"
                                 ToolTip.Tip="Query Stores Overview across all databases"/>
-                        <Border Classes="separator"/>
+                        <Border x:Name="ReproGroupSeparator" Classes="separator"/>
                         <Button x:Name="CopyReproButton" Content="Copy Repro"
                                 Click="CopyRepro_Click"
-                                Height="28" Padding="8,0" FontSize="12" IsEnabled="False"
+                                Height="28" Padding="7,0" FontSize="12" IsEnabled="False"
                                 Theme="{StaticResource AppButton}"
                                 ToolTip.Tip="Copy reproduction script to clipboard"/>
                         <Button x:Name="GetActualPlanButton" Content="Run Repro"
                                 Click="GetActualPlan_Click"
-                                Height="28" Padding="8,0" FontSize="12" IsEnabled="False"
+                                Height="28" Padding="7,0" FontSize="12" IsEnabled="False"
                                 Theme="{StaticResource AppButton}"
                                 ToolTip.Tip="Execute the repro script and capture actual plan with runtime stats"/>
-                        <Border Classes="separator"/>
+                        <Border x:Name="FormatGroupSeparator" Classes="separator"/>
                         <Button x:Name="FormatButton" Content="Format" Click="Format_Click"
-                                Height="28" Padding="10,0" FontSize="12"
+                                Height="28" Padding="8,0" FontSize="12"
                                 Theme="{StaticResource AppButton}"
                                 ToolTip.Tip="Format the SQL query (Ctrl+Shift+F)"/>
                     </StackPanel>

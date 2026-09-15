@@ -95,6 +95,12 @@
                 <TextBlock x:Name="CostText" DockPanel.Dock="Right" VerticalAlignment="Center"
                            HorizontalAlignment="Right" Background="Transparent"
                            Foreground="{DynamicResource ForegroundBrush}" FontSize="11"/>
+                <!-- Same contract as the session toolbar's chevron: docked so it cannot scroll
+                     away, inboard of the cost readout, hidden until the menu holds something. -->
+                <Button x:Name="PlanToolbarOverflowButton" DockPanel.Dock="Right"
+                        IsVisible="False" Width="28" Height="28" Padding="0" Margin="4,0,0,0"
+                        Theme="{StaticResource AppButton}"
+                        ToolTip.Tip="More commands"/>
                 <!-- Same contract as the session toolbar: one fixed row that scrolls instead of
                      wrapping or clipping, rail suppressed, plain wheel scrolls it. -->
                 <ScrollViewer x:Name="PlanToolbarScroll"
@@ -102,10 +108,11 @@
                               VerticalScrollBarVisibility="Disabled">
                 <StackPanel Orientation="Horizontal" Spacing="4">
                     <StackPanel.Styles>
-                        <!-- Hairline group divider, replacing the old "|" glyphs -->
+                        <!-- Hairline group divider, replacing the old "|" glyphs. Same 3/6 gutters
+                             as the session toolbar's dividers, for the same reason. -->
                         <Style Selector="Border.separator">
                             <Setter Property="Width" Value="1"/>
-                            <Setter Property="Margin" Value="4,3,8,3"/>
+                            <Setter Property="Margin" Value="3,3,6,3"/>
                             <Setter Property="Background" Value="{DynamicResource BorderBrush}"/>
                         </Style>
                     </StackPanel.Styles>
@@ -117,7 +124,7 @@
                          toolbar above it and genuinely needs them. -->
                     <StackPanel x:Name="PlanConnectionControls" Orientation="Horizontal" Spacing="4">
                         <Button x:Name="PlanConnectButton" Content="Connect" Click="PlanConnect_Click"
-                                Height="28" Width="118" Padding="8,0" FontSize="12"
+                                Height="28" Width="118" Padding="7,0" FontSize="12"
                                 Theme="{StaticResource AppButton}"
                                 ToolTip.Tip="Connect to a SQL Server for schema lookups"/>
                         <TextBlock x:Name="PlanServerLabel" Text=""
@@ -136,18 +143,20 @@
                     <Button Content="&#x2212;" Click="ZoomOut_Click" Width="28" Height="28" Padding="0" FontSize="16"
                             FontWeight="Bold" ToolTip.Tip="Zoom Out"
                             Theme="{StaticResource AppButton}"/>
-                    <Button Content="Fit" Click="ZoomFit_Click" Height="28" Padding="8,0"
+                    <Button Content="Fit" Click="ZoomFit_Click" Height="28" Padding="7,0"
                             ToolTip.Tip="Zoom to Fit"
                             Theme="{StaticResource AppButton}"/>
                     <TextBlock x:Name="ZoomLevelText" Text="100%" VerticalAlignment="Center"
                                Foreground="{DynamicResource ForegroundBrush}" Margin="4,0,0,0" FontSize="11"/>
-                    <Border Classes="separator"/>
-                    <Button x:Name="SavePlanButton" Content="Save .sqlplan" Click="SavePlan_Click" Height="28" Padding="8,0"
+                    <!-- Named because the overflow owns it: nothing left to divide once Save has
+                         moved into the chevron menu (see ToolbarOverflow). -->
+                    <Border x:Name="SavePlanSeparator" Classes="separator"/>
+                    <Button x:Name="SavePlanButton" Content="Save .sqlplan" Click="SavePlan_Click" Height="28" Padding="7,0"
                             ToolTip.Tip="Save plan as .sqlplan file"
                             Theme="{StaticResource AppButton}"/>
                     <Border Classes="separator" x:Name="StatementsButtonSeparator" IsVisible="False"/>
                     <Button x:Name="StatementsButton" Content="Statements" Click="ToggleStatements_Click"
-                            Height="28" Padding="8,0" IsVisible="False"
+                            Height="28" Padding="7,0" IsVisible="False"
                             ToolTip.Tip="Show/hide statement list"
                             Theme="{StaticResource AppButton}"/>
                 </StackPanel>
