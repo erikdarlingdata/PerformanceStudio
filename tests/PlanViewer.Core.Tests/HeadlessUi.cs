@@ -79,6 +79,10 @@ internal static class HeadlessUi
 
         SettingsRedirectRoot = Directory.CreateTempSubdirectory("PlanViewer.Core.Tests-").FullName;
         AppSettingsService.RedirectStorageForTestHost(SettingsRedirectRoot);
+
+        // The other settings store: MCP port and proxy configuration, which Settings >
+        // Integrations writes. Redirected for the same reason as the line above.
+        SettingsFile.RedirectForTestHost(SettingsRedirectRoot);
     }
 
     /// <summary>

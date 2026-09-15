@@ -62,6 +62,31 @@ internal partial class SettingsWindow : Window
 	private readonly ObservableCollection<FormatOptionRow> _formatRows = new();
 	private DataGrid? _formatGrid;
 
+	/* Integrations (MCP server + proxy). These do not live in AppSettings: MCP is two raw keys in
+	   settings.json and the proxy password is in the OS credential store, so this section keeps its
+	   own pending state and commits it in Save_Click. Unlike the other sections, the controls write
+	   back on every change rather than being read at save time — the pending fields survive
+	   navigating away and back, which an orphaned control's value does not. */
+	private CheckBox? _mcpEnabledBox;
+	private NumericUpDown? _mcpPortBox;
+	private TextBlock? _mcpCopyStatus;
+	private RadioButton? _proxySystemRadio;
+	private RadioButton? _proxyManualRadio;
+	private Grid? _proxyManualPanel;
+	private TextBox? _proxyPasswordBox;
+
+	private bool _integrationsLoaded;
+	private bool _mcpEnabled;
+	private int _mcpPort = 5152;
+	private ProxyMode _proxyMode = ProxyMode.System;
+	private string _proxyAddress = "";
+	private string _proxyUsername = "";
+	private string _proxyTypedPassword = "";
+	private bool _hasStoredProxyPassword;
+
+	/// <summary>The loaded values, so Save can skip writing a section the user never touched.</summary>
+	private (bool Enabled, int Port, ProxyMode Mode, string Address, string Username) _integrationsOriginal;
+
 	internal event Action<AppSettings>? SettingsSaved;
 
 	public SettingsWindow()
@@ -94,6 +119,7 @@ internal partial class SettingsWindow : Window
 			0 => BuildQueryStoreSection(),
 			1 => BuildQueryHistorySection(),
 			2 => BuildScriptOptionsSection(),
+			3 => BuildIntegrationsSection(),
 			_ => null
 		};
 
@@ -290,6 +316,244 @@ internal partial class SettingsWindow : Window
 		panel.Children.Add(CreateRow("Max plans fetched per query", _historyMaxPlansBox));
 
 		return panel;
+	}
+
+	// ── Integrations Section ─────────────────────────────────────────
+
+	/// <summary>
+	/// Reads the MCP and proxy settings once per dialog. Deferred until the section is first
+	/// shown so merely opening Settings does not hit the credential store.
+	/// </summary>
+	private void EnsureIntegrationsLoaded()
+	{
+		if (_integrationsLoaded) return;
+
+		var mcp = Mcp.McpSettings.Load();
+		_mcpEnabled = mcp.Enabled;
+		_mcpPort = mcp.Port;
+
+		/* The stored proxy password is deliberately not put into the TextBox. PasswordChar only
+		   masks the glyph — the cleartext still sits in the visual and accessibility trees. The
+		   watermark says it is saved, and an empty box at save time means "keep what is there". */
+		var proxy = ProxySettings.Load();
+		_hasStoredProxyPassword = !string.IsNullOrEmpty(proxy.Password);
+		_proxyMode = proxy.Mode;
+		_proxyAddress = proxy.Address;
+		_proxyUsername = proxy.Username;
+		_proxyTypedPassword = "";
+
+		_integrationsOriginal = (_mcpEnabled, _mcpPort, _proxyMode, _proxyAddress, _proxyUsername);
+		_integrationsLoaded = true;
+	}
+
+	private Control BuildIntegrationsSection()
+	{
+		EnsureIntegrationsLoaded();
+
+		var panel = new StackPanel { Spacing = 16 };
+
+		panel.Children.Add(CreateChapterHeader("MCP Server"));
+		panel.Children.Add(new TextBlock
+		{
+			Text = "Lets an AI assistant read plans you have open in Performance Studio. "
+				 + "The server listens on this machine only.",
+			FontSize = 12, Opacity = 0.8, TextWrapping = TextWrapping.Wrap, MaxWidth = 520
+		});
+
+		_mcpEnabledBox = new CheckBox
+		{
+			Content = "Enable MCP server",
+			IsChecked = _mcpEnabled,
+			FontSize = 13
+		};
+		_mcpEnabledBox.IsCheckedChanged += (_, _) =>
+		{
+			_mcpEnabled = _mcpEnabledBox?.IsChecked == true;
+			MarkDirty();
+		};
+		panel.Children.Add(_mcpEnabledBox);
+
+		_mcpPortBox = CreateNumericUpDown(_mcpPort, 1024, 65535);
+		_mcpPortBox.ValueChanged += (_, _) =>
+		{
+			_mcpPort = (int)(_mcpPortBox?.Value ?? 5152);
+			MarkDirty();
+		};
+		panel.Children.Add(CreateRow("Port", _mcpPortBox));
+
+		panel.Children.Add(new TextBlock
+		{
+			Text = "Restart Performance Studio for MCP changes to take effect.",
+			FontSize = 12, Opacity = 0.75, TextWrapping = TextWrapping.Wrap
+		});
+
+		var copyButton = new Button
+		{
+			Content = "Copy MCP command",
+			Height = 32,
+			Padding = new Thickness(16, 0),
+			FontSize = 12,
+			Theme = (Avalonia.Styling.ControlTheme)this.FindResource("AppButton")!
+		};
+		copyButton.Click += CopyMcpCommand_Click;
+		_mcpCopyStatus = new TextBlock { FontSize = 12, VerticalAlignment = VerticalAlignment.Center };
+		panel.Children.Add(new StackPanel
+		{
+			Orientation = Orientation.Horizontal,
+			Spacing = 8,
+			Children = { copyButton, _mcpCopyStatus }
+		});
+
+		panel.Children.Add(CreateChapterHeader("Proxy"));
+
+		_proxySystemRadio = new RadioButton
+		{
+			GroupName = "ProxyMode",
+			Content = "Use system proxy (Windows credentials)",
+			FontSize = 13,
+			IsChecked = _proxyMode == ProxyMode.System
+		};
+		_proxyManualRadio = new RadioButton
+		{
+			GroupName = "ProxyMode",
+			Content = "Manual",
+			FontSize = 13,
+			IsChecked = _proxyMode == ProxyMode.Manual
+		};
+
+		/* Both radios raise IsCheckedChanged on every selection — one going false, one going
+		   true. Only the now-checked one drives the update, or the two events fight. */
+		void OnProxyModeChanged(object? sender, RoutedEventArgs _)
+		{
+			if (sender is not RadioButton { IsChecked: true }) return;
+			_proxyMode = _proxyManualRadio?.IsChecked == true ? ProxyMode.Manual : ProxyMode.System;
+			if (_proxyManualPanel != null)
+				_proxyManualPanel.IsVisible = _proxyMode == ProxyMode.Manual;
+			MarkDirty();
+		}
+		_proxySystemRadio.IsCheckedChanged += OnProxyModeChanged;
+		_proxyManualRadio.IsCheckedChanged += OnProxyModeChanged;
+
+		panel.Children.Add(new StackPanel
+		{
+			Orientation = Orientation.Horizontal,
+			Spacing = 16,
+			Children = { _proxySystemRadio, _proxyManualRadio }
+		});
+
+		var addressBox = CreateProxyInput(_proxyAddress, "http://proxy.example.com:8080");
+		addressBox.TextChanged += (_, _) => { _proxyAddress = addressBox.Text ?? ""; MarkDirty(); };
+
+		var usernameBox = CreateProxyInput(_proxyUsername, "DOMAIN\\user");
+		usernameBox.TextChanged += (_, _) => { _proxyUsername = usernameBox.Text ?? ""; MarkDirty(); };
+
+		_proxyPasswordBox = CreateProxyInput(_proxyTypedPassword,
+			_hasStoredProxyPassword ? "(saved — leave blank to keep)" : "");
+		_proxyPasswordBox.PasswordChar = '•';
+		_proxyPasswordBox.TextChanged += (_, _) =>
+		{
+			_proxyTypedPassword = _proxyPasswordBox?.Text ?? "";
+			MarkDirty();
+		};
+
+		_proxyManualPanel = new Grid
+		{
+			IsVisible = _proxyMode == ProxyMode.Manual,
+			ColumnDefinitions = new ColumnDefinitions("90,*"),
+			RowDefinitions = new RowDefinitions("Auto,Auto,Auto"),
+			RowSpacing = 6,
+			ColumnSpacing = 8,
+			MaxWidth = 460,
+			HorizontalAlignment = HorizontalAlignment.Left
+		};
+		AddProxyRow(_proxyManualPanel, 0, "Address", addressBox);
+		AddProxyRow(_proxyManualPanel, 1, "Username", usernameBox);
+		AddProxyRow(_proxyManualPanel, 2, "Password", _proxyPasswordBox);
+		panel.Children.Add(_proxyManualPanel);
+
+		return panel;
+	}
+
+	private static TextBox CreateProxyInput(string text, string watermark) => new()
+	{
+		Text = text,
+		Watermark = watermark,
+		FontSize = 13,
+		Height = 32,
+		Padding = new Thickness(6, 2)
+	};
+
+	private static void AddProxyRow(Grid grid, int row, string label, Control input)
+	{
+		var text = new TextBlock { Text = label, FontSize = 13, VerticalAlignment = VerticalAlignment.Center };
+		Grid.SetRow(text, row);
+		Grid.SetColumn(text, 0);
+		grid.Children.Add(text);
+
+		Grid.SetRow(input, row);
+		Grid.SetColumn(input, 1);
+		grid.Children.Add(input);
+	}
+
+	private async void CopyMcpCommand_Click(object? sender, RoutedEventArgs e)
+	{
+		var command = $"claude mcp add --transport streamable-http --scope user performance-studio http://localhost:{_mcpPort}/";
+		if (_mcpCopyStatus != null)
+		{
+			_mcpCopyStatus.Text = await ClipboardHelper.TrySetTextAsync(this, command)
+				? "Copied to clipboard."
+				: "Clipboard busy — try again.";
+		}
+	}
+
+	/// <summary>
+	/// Returns the section to a stock MCP server and a system proxy. Only the pending state is
+	/// reset — nothing is written, and nothing touches the stored password, until Save.
+	/// </summary>
+	private void ResetIntegrations()
+	{
+		EnsureIntegrationsLoaded();
+
+		var fresh = new Mcp.McpSettings();
+		_mcpEnabled = fresh.Enabled;
+		_mcpPort = fresh.Port;
+		_proxyMode = ProxyMode.System;
+		_proxyAddress = "";
+		_proxyUsername = "";
+		_proxyTypedPassword = "";
+	}
+
+	/// <summary>Writes MCP and proxy settings, but only when something in the section changed.</summary>
+	private void SaveIntegrations()
+	{
+		if (!_integrationsLoaded) return;
+
+		var current = (_mcpEnabled, _mcpPort, _proxyMode, _proxyAddress, _proxyUsername);
+		var typedNewPassword = _proxyTypedPassword.Length > 0;
+		if (current == _integrationsOriginal && !typedNewPassword)
+			return;
+
+		SettingsFile.Update(o =>
+		{
+			o["mcp_enabled"] = _mcpEnabled;
+			o["mcp_port"] = _mcpPort;
+		});
+
+		var proxy = new ProxySettings
+		{
+			Mode = _proxyMode,
+			Address = _proxyAddress,
+			Username = _proxyUsername,
+			Password = _proxyTypedPassword,
+			// An empty box plus an existing stored password means "keep what is there".
+			TouchCredential = typedNewPassword || !_hasStoredProxyPassword
+		};
+		proxy.Save();
+		if (proxy.TouchCredential)
+			_hasStoredProxyPassword = typedNewPassword;
+
+		_integrationsOriginal = current;
+		_proxyTypedPassword = "";
 	}
 
 	// ── Script Options Section ───────────────────────────────────────
@@ -594,9 +858,16 @@ internal partial class SettingsWindow : Window
 
 		_settings.MultiQsTopDbColors = _colorTextBoxes.Select(tb => tb.Text ?? "#555555").ToList();
 
-		// Read Query History settings
-		_settings.QueryHistoryDefaultMetric = GetComboTag(_historyMetricBox);
-		_settings.QueryHistoryMaxPlans = (int)(_historyMaxPlansBox?.Value ?? 10);
+		/* Read Query History settings — guarded the way Format Options below already is. These
+		   fields hold the controls from the last time the section was built, and the section is
+		   only built once the user visits it. Unguarded, saving from any other section read a
+		   null combo as "" and a null spinner as 10, silently wiping both stored values: open
+		   Settings, change a Query Store option, hit Save, and a configured max-plans of 50 came
+		   back as 10 with the default metric blanked. */
+		if (_historyMetricBox != null)
+			_settings.QueryHistoryDefaultMetric = GetComboTag(_historyMetricBox);
+		if (_historyMaxPlansBox != null)
+			_settings.QueryHistoryMaxPlans = (int)(_historyMaxPlansBox.Value ?? 10);
 
 		// Read Format Options
 		if (_formatRows.Count > 0)
@@ -629,6 +900,7 @@ internal partial class SettingsWindow : Window
 			TimeDisplayHelper.Current = tdm;
 
 		AppSettingsService.Save(_settings);
+		SaveIntegrations();
 		_isDirty = false;
 		SettingsSaved?.Invoke(_settings);
 		Close();
@@ -663,6 +935,9 @@ internal partial class SettingsWindow : Window
 			case 2: // Script Options
 				_settings.FormatOptions = new SqlFormatSettings();
 				break;
+			case 3: // Integrations
+				ResetIntegrations();
+				break;
 		}
 
 		_isDirty = true;
@@ -678,6 +953,10 @@ internal partial class SettingsWindow : Window
 			AccuracyRatioDivergenceLimit = _settings.AccuracyRatioDivergenceLimit
 		};
 		_settings = fresh;
+		// Integrations live outside AppSettings, so replacing it above misses them. A "Reset All"
+		// that quietly skipped a visible section would be a lie. Still only pending state — the
+		// stored proxy password survives until the user actually saves.
+		ResetIntegrations();
 		_isDirty = true;
 		ShowSection(SectionList.SelectedIndex);
 	}

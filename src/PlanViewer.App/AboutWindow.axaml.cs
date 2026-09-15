@@ -12,7 +12,6 @@ using System.Runtime.InteropServices;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
-using PlanViewer.App.Mcp;
 using PlanViewer.App.Services;
 using Velopack;
 
@@ -32,89 +31,11 @@ public partial class AboutWindow : Window
         if (version != null)
             VersionText.Text = $"Version {version.Major}.{version.Minor}.{version.Build}";
 
-        // Load current MCP settings
-        var mcp = McpSettings.Load();
-        McpEnabledCheckBox.IsChecked = mcp.Enabled;
-        McpPortInput.Text = mcp.Port.ToString();
-
-        // Save on change
-        McpEnabledCheckBox.IsCheckedChanged += (_, _) => SaveMcpSettings();
-        McpPortInput.LostFocus += (_, _) => SaveMcpSettings();
-
-        // Load proxy settings. The password is intentionally NOT round-tripped
-        // through the UI — TextBox.PasswordChar only masks the glyph, the cleartext
-        // still lives in the visual/accessibility tree. We surface "(saved — leave
-        // blank to keep)" via the watermark instead, and only update the credential
-        // when the user types a new value.
-        var proxy = ProxySettings.Load();
-        _hasStoredProxyPassword = !string.IsNullOrEmpty(proxy.Password);
-        ProxySystemRadio.IsChecked = proxy.Mode == ProxyMode.System;
-        ProxyManualRadio.IsChecked = proxy.Mode == ProxyMode.Manual;
-        ProxyAddressInput.Text = proxy.Address;
-        ProxyUsernameInput.Text = proxy.Username;
-        ProxyPasswordInput.Watermark = _hasStoredProxyPassword
-            ? "(saved — leave blank to keep)"
-            : "";
-        ProxyManualPanel.IsVisible = proxy.Mode == ProxyMode.Manual;
-
-        // Both radios fire IsCheckedChanged on every selection (one going false,
-        // one going true). Only the now-checked one should drive the save —
-        // otherwise the credential write races itself.
-        void OnProxyRadioChanged(object? sender, RoutedEventArgs _)
-        {
-            if (sender is RadioButton rb && rb.IsChecked == true)
-            {
-                ProxyManualPanel.IsVisible = ProxyManualRadio.IsChecked == true;
-                SaveProxySettings();
-            }
-        }
-        ProxySystemRadio.IsCheckedChanged += OnProxyRadioChanged;
-        ProxyManualRadio.IsCheckedChanged += OnProxyRadioChanged;
-        ProxyAddressInput.LostFocus += (_, _) => SaveProxySettings();
-        ProxyUsernameInput.LostFocus += (_, _) => SaveProxySettings();
-        ProxyPasswordInput.LostFocus += (_, _) => SaveProxySettings();
-    }
-
-    private bool _hasStoredProxyPassword;
-
-    private void SaveMcpSettings()
-    {
-        Services.SettingsFile.Update(o =>
-        {
-            o["mcp_enabled"] = McpEnabledCheckBox.IsChecked == true;
-            o["mcp_port"] = int.TryParse(McpPortInput.Text, out var p) && p >= 1024 && p <= 65535 ? p : 5152;
-        });
-    }
-
-    private void SaveProxySettings()
-    {
-        var typedPassword = ProxyPasswordInput.Text ?? "";
-        var settings = new ProxySettings
-        {
-            Mode = ProxyManualRadio.IsChecked == true ? ProxyMode.Manual : ProxyMode.System,
-            Address = ProxyAddressInput.Text ?? "",
-            Username = ProxyUsernameInput.Text ?? "",
-            Password = typedPassword
-        };
-        // Empty textbox + an existing stored password means "keep what's there".
-        // Save() signals "leave the credential alone" with TouchCredential=false.
-        settings.TouchCredential = !(typedPassword.Length == 0 && _hasStoredProxyPassword);
-        settings.Save();
-        if (settings.TouchCredential)
-            _hasStoredProxyPassword = !string.IsNullOrEmpty(typedPassword);
     }
 
     private void GitHubLink_Click(object? sender, PointerPressedEventArgs e) => OpenUrl(GitHubUrl);
     private void ReportIssueLink_Click(object? sender, PointerPressedEventArgs e) => OpenUrl(IssuesUrl);
     private void DarlingDataLink_Click(object? sender, PointerPressedEventArgs e) => OpenUrl(DarlingDataUrl);
-    private async void CopyMcpCommand_Click(object? sender, RoutedEventArgs e)
-    {
-        var port = int.TryParse(McpPortInput.Text, out var p) && p >= 1024 && p <= 65535 ? p : 5152;
-        var command = $"claude mcp add --transport streamable-http --scope user performance-studio http://localhost:{port}/";
-        McpCopyStatus.Text = await ClipboardHelper.TrySetTextAsync(this, command)
-            ? "Copied to clipboard!"
-            : "Clipboard busy - try again";
-    }
 
     private string? _updateUrl;
     private UpdateManager? _velopackMgr;

@@ -60,6 +60,7 @@
 					<ListBoxItem Content="Query Store" IsSelected="True"/>
 					<ListBoxItem Content="Query History"/>
 					<ListBoxItem Content="Script Options"/>
+					<ListBoxItem Content="Integrations"/>
 				</ListBox>
 			</Border>
 

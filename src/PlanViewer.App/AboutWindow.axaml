@@ -2,7 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="PlanViewer.App.AboutWindow"
         Title="About Performance Studio"
-        Width="480" Height="640"
+        Width="480" Height="400"
         CanResize="False"
         WindowStartupLocation="CenterOwner"
         Icon="avares://PlanViewer.App/EDD.ico"
@@ -65,66 +65,9 @@
                        Margin="0,4,0,0"/>
         </StackPanel>
 
-        <!-- MCP Settings -->
-        <StackPanel Grid.Row="4" Margin="0,0,0,12">
-            <TextBlock Text="Settings" FontWeight="SemiBold" FontSize="13"
-                       Foreground="{DynamicResource ForegroundBrush}" Margin="0,0,0,8"/>
-            <StackPanel Orientation="Horizontal" Spacing="12">
-                <CheckBox x:Name="McpEnabledCheckBox" Content="Enable MCP Server"
-                          FontSize="12" VerticalContentAlignment="Center"
-                          Foreground="{DynamicResource ForegroundBrush}"/>
-                <TextBlock Text="Port:" FontSize="12" VerticalAlignment="Center"
-                           Foreground="{DynamicResource ForegroundBrush}"/>
-                <TextBox x:Name="McpPortInput" Width="70" Height="28"
-                         Text="5152" FontSize="12" Padding="6,2"
-                         VerticalContentAlignment="Center"/>
-            </StackPanel>
-            <TextBlock Text="Restart the application after changing MCP settings."
-                       FontSize="11" Foreground="{DynamicResource ForegroundBrush}"
-                       Margin="0,4,0,0"/>
-            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
-                <Button x:Name="CopyMcpCommandButton" Content="Copy MCP Command"
-                        Click="CopyMcpCommand_Click" Padding="10,4" FontSize="12"/>
-                <TextBlock x:Name="McpCopyStatus" FontSize="11" VerticalAlignment="Center"
-                           Foreground="{DynamicResource ForegroundBrush}"/>
-            </StackPanel>
-
-            <!-- Proxy Settings -->
-            <TextBlock Text="Proxy" FontWeight="SemiBold" FontSize="12"
-                       Foreground="{DynamicResource ForegroundBrush}" Margin="0,16,0,4"/>
-            <StackPanel Orientation="Horizontal" Spacing="12">
-                <RadioButton x:Name="ProxySystemRadio" GroupName="ProxyMode"
-                             Content="Use system proxy (Windows credentials)"
-                             FontSize="12" IsChecked="True"
-                             Foreground="{DynamicResource ForegroundBrush}"/>
-                <RadioButton x:Name="ProxyManualRadio" GroupName="ProxyMode"
-                             Content="Manual"
-                             FontSize="12"
-                             Foreground="{DynamicResource ForegroundBrush}"/>
-            </StackPanel>
-            <Grid x:Name="ProxyManualPanel" IsVisible="False"
-                  ColumnDefinitions="90,*" RowDefinitions="Auto,Auto,Auto"
-                  Margin="0,8,0,0" RowSpacing="6" ColumnSpacing="8">
-                <TextBlock Grid.Row="0" Grid.Column="0" Text="Address:" FontSize="12"
-                           VerticalAlignment="Center"
-                           Foreground="{DynamicResource ForegroundBrush}"/>
-                <TextBox Grid.Row="0" Grid.Column="1" x:Name="ProxyAddressInput"
-                         Watermark="http://proxy.example.com:8080" FontSize="12"
-                         Padding="6,2" Height="28"/>
-                <TextBlock Grid.Row="1" Grid.Column="0" Text="Username:" FontSize="12"
-                           VerticalAlignment="Center"
-                           Foreground="{DynamicResource ForegroundBrush}"/>
-                <TextBox Grid.Row="1" Grid.Column="1" x:Name="ProxyUsernameInput"
-                         Watermark="DOMAIN\user" FontSize="12"
-                         Padding="6,2" Height="28"/>
-                <TextBlock Grid.Row="2" Grid.Column="0" Text="Password:" FontSize="12"
-                           VerticalAlignment="Center"
-                           Foreground="{DynamicResource ForegroundBrush}"/>
-                <TextBox Grid.Row="2" Grid.Column="1" x:Name="ProxyPasswordInput"
-                         PasswordChar="•" FontSize="12"
-                         Padding="6,2" Height="28"/>
-            </Grid>
-        </StackPanel>
+        <!-- MCP server and proxy configuration used to sit here. They are settings, not
+             information about the build, and nobody looks for a port number in an About box;
+             they now live under Settings > Integrations. -->
 
         <!-- Close -->
         <Button Grid.Row="5" Content="Close" Click="CloseButton_Click"
