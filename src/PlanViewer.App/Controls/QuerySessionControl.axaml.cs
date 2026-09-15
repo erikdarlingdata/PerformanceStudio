@@ -250,8 +250,10 @@ public partial class QuerySessionControl : UserControl
 
         /* The strip raises this for the seam's own writes as well as for a press on a header, and
            the press is the one arrival the seam does not already own: a selection that is not null
-           IS the document surface, however it got there. Everything else here follows the strip
-           rather than the surface, because a document-to-document switch changes neither. */
+           IS the document surface, however it got there. The two calls below follow the strip
+           rather than the surface on purpose — moving from one document to the next changes which
+           plan the toolbar is talking about, and what the status strip was talking about, without
+           changing the surface at all. */
         SubTabControl.SelectionChanged += (_, _) =>
         {
             if (SelectedDocument != null)

@@ -57,6 +57,13 @@ public partial class QuerySessionControl : UserControl
     /// <summary>
     /// Whether the editor, rather than the Overview or a document, is what the session is showing.
     /// </summary>
+    /// <remarks>
+    /// Without a caller at the moment, deliberately: it used to be the selection handler's
+    /// is-this-the-editor test, and arriving at the editor is now the thing that focuses it rather
+    /// than something asked about afterwards. Kept because it is the name for a question the
+    /// keyboard shortcuts are about to ask, and because the answer it gives — the surface, not an
+    /// index into a strip the editor is no longer in — is the whole point of the split.
+    /// </remarks>
     private bool IsEditorSelected => _surface == SessionSurface.Editor;
 
     /// <summary>
@@ -82,11 +89,22 @@ public partial class QuerySessionControl : UserControl
         SubTabControl.SetValue(selectionMode, SelectionMode.Single);
     }
 
-    /// <summary>Puts a new document at the end of the strip. It does not become the selected one.</summary>
+    /// <summary>
+    /// Puts a new document at the end of the strip. It does not select it, so every call site MUST
+    /// pair this with <see cref="SelectDocument"/>.
+    /// </summary>
     /// <remarks>
-    /// Deliberately: a deselectable strip does not select what is added to it while nothing is
-    /// selected, so every caller pairs this with <see cref="SelectDocument"/>. The pairing is what
-    /// puts the user on the document they asked for, not a leftover from when it was implicit.
+    /// <para>That pairing is a requirement, not a habit. It used to hold incidentally: the editor
+    /// sat in the strip and something was always selected, so an add that forgot to select left
+    /// the user on whatever they were already looking at — not what they asked for, but a real
+    /// thing on screen. Under a deselectable strip it holds structurally instead. Nothing
+    /// auto-selects, ever, including an add made while the strip has no selection at all.</para>
+    ///
+    /// <para>The cost of forgetting flipped with it. An unpaired add is now a silent no-op: the
+    /// header appears in the strip, the surface does not move, and nothing presents what was just
+    /// added. No exception, nothing on screen to say which half is missing, and a strip that looks
+    /// exactly as though it worked. This is where the author of the next add site will look, which
+    /// is why the requirement is written here rather than in the file's header.</para>
     /// </remarks>
     private void AddDocument(TabItem tab) => SubTabControl.Items.Add(tab);
 
