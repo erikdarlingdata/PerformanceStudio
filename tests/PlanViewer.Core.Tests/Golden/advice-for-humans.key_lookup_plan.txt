@@ -1,0 +1,22 @@
+SQL Server: 16.0.4222.2
+=== Summary ===
+Statements: 1
+Warnings: 1 (1 critical)
+Missing indexes: 0
+Actual stats: yes
+Warning types:
+  Key Lookup
+
+=== Statement 1: ===
+SELECT [u].* FROM [dbo].[Users] [u] WHERE [u].[Reputation]=942 AND [u].[DisplayName]=N'Eggs McLaren'
+
+Estimated cost: 0.34
+DOP: 1
+Runtime: 0ms elapsed, 0ms CPU
+Parameters:
+  @2 nvarchar(4000) = N'Eggs McLaren'
+  @1 smallint = (942)
+
+Operator warnings:
+  [Critical] Key Lookup (Clustered) on StackOverflow2013.dbo.Users (Node 4): Key Lookup — SQL Server found rows via a nonclustered index but had to go back to the clustered index for additional columns.Columns fetched: Users.AboutMe, Users.Age, Users.CreationDate, Users.DisplayName, Users.DownVotes, Users.EmailHash, Users.LastAccessDate, Users.Location, Users.UpVotes, Users.Views, Users.WebsiteUrl, Users.AccountIdResidual predicate (filtered 116 rows): [StackOverflow2013].[dbo].[Users].[DisplayName] as [u].[DisplayName]=N'Eggs McLaren'To eliminate the lookup, consider adding the needed columns as INCLUDE columns on the nonclustered index. This widens the index, so weigh the read benefit against write and storage overhead.
+
