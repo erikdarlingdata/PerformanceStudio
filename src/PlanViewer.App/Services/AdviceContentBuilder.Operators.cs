@@ -56,42 +56,8 @@ internal static partial class AdviceContentBuilder
                         if (string.IsNullOrEmpty(part))
                             continue;
 
-                        if (part.StartsWith("Predicate:"))
-                        {
-                            tb.Inlines.Add(new Run("\n" + part[..10])
-                                { Foreground = LabelBrush });
-                            tb.Inlines.Add(new Run(part[10..])
-                                { Foreground = CodeBrush });
-                        }
-                        else if (p == 0)
-                        {
-                            // First line: the main description
-                            tb.Inlines.Add(new Run("\n" + part)
-                                { Foreground = ValueBrush });
-                        }
-                        else if (part.StartsWith("\u2022 "))
-                        {
-                            // Bullet stats: bullet in muted, value in white
-                            tb.Inlines.Add(new Run("\n  \u2022 ")
-                                { Foreground = MutedBrush });
-                            tb.Inlines.Add(new Run(part[2..])
-                                { Foreground = ValueBrush });
-                        }
-                        else if (part.StartsWith("CREATE ", StringComparison.OrdinalIgnoreCase)
-                            || part.StartsWith("ON ", StringComparison.OrdinalIgnoreCase)
-                            || part.StartsWith("INCLUDE ", StringComparison.OrdinalIgnoreCase)
-                            || part.StartsWith("WHERE ", StringComparison.OrdinalIgnoreCase))
-                        {
-                            // SQL DDL lines (CREATE INDEX, ON, INCLUDE, WHERE)
-                            tb.Inlines.Add(new Run("\n" + part)
-                                { Foreground = CodeBrush });
-                        }
-                        else
-                        {
-                            // Other detail lines
-                            tb.Inlines.Add(new Run("\n" + part)
-                                { Foreground = MutedBrush });
-                        }
+                        // Every part follows the tag line, so each one opens a new line here.
+                        AppendMessagePart(tb.Inlines, part, isFirstPart: p == 0, prefix: "\n");
                     }
                 }
                 else
@@ -123,6 +89,49 @@ internal static partial class AdviceContentBuilder
             Margin = new Avalonia.Thickness(12, 4, 0, 4),
             Child = tb
         };
+    }
+
+    /// <summary>
+    /// Styles one line of a warning message: predicates and index DDL in code colour, bullet
+    /// stats indented under the description, everything else muted detail.
+    ///
+    /// <para>Shared by both views of a finding — the text renderer's warning block, where the
+    /// lines arrive unit-separated and every one of them needs a leading break, and the card's
+    /// finding row, where the message is its own block and the first line starts flush. That is
+    /// what <paramref name="prefix"/> is for; <paramref name="isFirstPart"/> marks the main
+    /// description, which stays in value colour whatever it happens to start with.</para>
+    /// </summary>
+    private static void AppendMessagePart(
+        InlineCollection inlines,
+        string part,
+        bool isFirstPart,
+        string prefix)
+    {
+        if (part.StartsWith("Predicate:"))
+        {
+            inlines.Add(new Run(prefix + part[..10]) { Foreground = LabelBrush });
+            inlines.Add(new Run(part[10..]) { Foreground = CodeBrush });
+        }
+        else if (isFirstPart)
+        {
+            inlines.Add(new Run(prefix + part) { Foreground = ValueBrush });
+        }
+        else if (part.StartsWith("• "))
+        {
+            inlines.Add(new Run(prefix + "  • ") { Foreground = MutedBrush });
+            inlines.Add(new Run(part[2..]) { Foreground = ValueBrush });
+        }
+        else if (part.StartsWith("CREATE ", StringComparison.OrdinalIgnoreCase)
+            || part.StartsWith("ON ", StringComparison.OrdinalIgnoreCase)
+            || part.StartsWith("INCLUDE ", StringComparison.OrdinalIgnoreCase)
+            || part.StartsWith("WHERE ", StringComparison.OrdinalIgnoreCase))
+        {
+            inlines.Add(new Run(prefix + part) { Foreground = CodeBrush });
+        }
+        else
+        {
+            inlines.Add(new Run(prefix + part) { Foreground = MutedBrush });
+        }
     }
 
     private static SelectableTextBlock CreateOperatorLine(string line)
@@ -262,7 +271,8 @@ internal static partial class AdviceContentBuilder
             {
                 Width = MaxBarWidth * (cpuPct.Value / 100.0),
                 Height = 4,
-                Background = AmberBarBrush,
+                // The same amber the percentage beside it is written in, rather than a copy of it.
+                Background = WarningBrush,
                 CornerRadius = new Avalonia.CornerRadius(2),
                 HorizontalAlignment = HorizontalAlignment.Left,
                 Margin = new Avalonia.Thickness(0, 0, 0, 4)
