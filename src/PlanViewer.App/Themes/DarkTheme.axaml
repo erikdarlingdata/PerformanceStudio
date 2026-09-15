@@ -191,6 +191,14 @@
         <Style Selector="^:focus-visible /template/ Border#PART_Border">
             <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
         </Style>
+
+        <!-- Same dimming as AppButton. This theme sets no BasedOn, so it replaces Fluent's
+             RadioButton theme outright and inherits none of its disabled treatment: without
+             this rule a disabled segment renders identical to an enabled one. No segment is
+             disabled today, which is exactly why the gap would otherwise ship unnoticed. -->
+        <Style Selector="^:disabled">
+            <Setter Property="Opacity" Value="0.4"/>
+        </Style>
     </ControlTheme>
 
     <!-- ===== 6. Time Range Slicer ============================================================ -->
