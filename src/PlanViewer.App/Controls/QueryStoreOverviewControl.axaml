@@ -281,7 +281,16 @@
             </Border>
         </Grid>
 
-        <!-- Row 3: one row of metric cards, switched between Total and Avg by the toggle above -->
-        <Grid x:Name="MetricsGrid" Grid.Row="3" Margin="10,0,10,10"/>
+        <!-- Row 3: one row of metric cards, switched between Total and Avg by the toggle above.
+
+             The scroller is for MultiQsTopDbCount, which settings clamp at 20: twenty-one bars is
+             more than a short window has room for, and a card clips its own content. The grid
+             inside stretches, so at the default of five this scrolls nothing and looks exactly as
+             it would without it. -->
+        <ScrollViewer Grid.Row="3" Margin="10,0,10,10"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled">
+            <Grid x:Name="MetricsGrid"/>
+        </ScrollViewer>
     </Grid>
 </UserControl>

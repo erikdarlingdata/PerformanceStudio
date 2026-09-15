@@ -319,13 +319,17 @@ public partial class QueryStoreOverviewControl : UserControl
     }
 
     /// <summary>
-    /// A count or a megabyte figure with enough decimals to stay a number. Thousands get separators
-    /// and no decimals; small averages keep one or two, because "0" is the wrong answer for a
-    /// database averaging 0.3 physical reads an execution.
+    /// A count or a megabyte figure with enough decimals to stay a number, and no more.
+    ///
+    /// <para>A whole number prints whole however small it is: these cards carry execution counts
+    /// and page counts, and "4.0 executions" is not a thing. Decimals are for the fractions only an
+    /// average produces, where they are the entire value — "0" is the wrong answer for a database
+    /// averaging 0.3 physical reads an execution, and so is "0.0".</para>
     /// </summary>
     private static string FormatMagnitude(double value)
     {
         if (value <= 0) return "0";
+        if (value == Math.Floor(value)) return value.ToString("N0");
         if (value < 0.01) return "<0.01";
         if (value < 1) return value.ToString("N2");
         if (value < 10) return value.ToString("N1");
