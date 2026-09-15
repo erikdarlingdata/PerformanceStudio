@@ -220,6 +220,16 @@ public class SessionViewLifecycleTests
     /// that has aged off the front of the data window maps both of its ends to the same place. A
     /// zero-width selection refreshes over an empty window with its two handles on top of each
     /// other. The floor is the same one the hand-entered range has always had.</para>
+    ///
+    /// <para><b>A remembered range can drift off either end, and only one of them is answered
+    /// here.</b> The floor raises the END off the start it collapsed onto, which rescues a range
+    /// that fell off the FRONT of the new window — the reachable case, because Query Store ages
+    /// data out of the back of its history and the window's far edge moves forward, never back. A
+    /// range that ends up past the END of the new window collapses at the other edge instead, where
+    /// raising the end has nowhere to go. That case is deliberately not asserted below: the fix for
+    /// it is not on this branch, and a test for a fix that has not landed is a test that fails.
+    /// <see cref="RestoredWidth"/> is the shape both cases share, so adding it is one more call
+    /// with the data placed the other side of the kept range, and one more assertion.</para>
     /// </remarks>
     [Fact]
     public void AReloadKeepsTheChosenRangeAndNeverCollapsesIt()
@@ -250,11 +260,13 @@ public class SessionViewLifecycleTests
 
                 /* Leave the session open long enough and the remembered range falls off the front
                    of the window: Query Store keeps aging data out, and the reload fetches from
-                   wherever it starts now. */
-                var later = Hours(epoch.AddHours(100), 48);
-                slicer.LoadData(later, "cpu", chosenStart, chosenEnd);
+                   wherever it starts now. Both of the kept range's ends are before the first
+                   bucket, so both clamp to the same place, and the floor is what keeps the
+                   selection a range. */
+                var droppedOffTheFront = RestoredWidth(
+                    slicer, Hours(epoch.AddHours(100), 48), chosenStart, chosenEnd);
 
-                Assert.True(slicer.SelectionEnd > slicer.SelectionStart,
+                Assert.True(droppedOffTheFront > TimeSpan.Zero,
                     $"a range off the front of the new window collapsed onto itself at " +
                     $"{slicer.SelectionStart}");
             }
@@ -368,6 +380,24 @@ public class SessionViewLifecycleTests
             TotalDuration = 200,
             TotalExecutions = 10,
         }).ToList();
+
+    /// <summary>
+    /// Reloads the slicer with a fresh window of data while asking it to keep a range the user
+    /// chose, and says how wide the restored selection came out.
+    /// </summary>
+    /// <remarks>
+    /// Written as a helper rather than inline because a remembered range can drift off either end
+    /// of the new data and the arrangement is identical for both: the only difference is whether
+    /// <paramref name="data"/> is placed after the kept range or before it. A caller adding the
+    /// other end asserts on the width this returns and needs nothing else. Zero is the failure —
+    /// two handles on top of each other, refreshing over an empty window.
+    /// </remarks>
+    private static TimeSpan RestoredWidth(TimeRangeSlicerControl slicer,
+        List<QueryStoreTimeSlice> data, DateTime keptStart, DateTime keptEnd)
+    {
+        slicer.LoadData(data, "cpu", keptStart, keptEnd);
+        return slicer.SelectionEnd!.Value - slicer.SelectionStart!.Value;
+    }
 
     /// <summary>
     /// The slicer stores its selection as a position within the data rather than a timestamp, so a
