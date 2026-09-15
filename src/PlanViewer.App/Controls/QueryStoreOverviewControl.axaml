@@ -2,6 +2,57 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="using:PlanViewer.App.Controls"
              x:Class="PlanViewer.App.Controls.QueryStoreOverviewControl">
+    <UserControl.Styles>
+        <!-- ── Query Store state card ────────────────────────────────────────────────────── -->
+        <!-- Green confirms, amber warns, red fails — the status triad, used as DarkTheme documents
+             it. READ_ONLY is amber rather than red on purpose: a read-only Query Store has stopped
+             capturing but its history is still readable, and on a readable secondary it is the
+             expected state. OFF and a state query that errored are the two that are actually
+             broken.
+
+             Classes rather than FindResource in the code-behind for the reason QuerySessionControl's
+             empty state gives: these rows are built before the control has been attached to
+             anything, and FindResource on an unattached control returns UnsetValue, not a brush. -->
+        <Style Selector="TextBlock.statesHeadline">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="Margin" Value="0,0,0,6"/>
+            <Setter Property="Foreground" Value="{DynamicResource ForegroundBrush}"/>
+        </Style>
+        <Style Selector="TextBlock.statesHeadline.healthy">
+            <Setter Property="Foreground" Value="{DynamicResource SuccessBrush}"/>
+        </Style>
+        <Style Selector="TextBlock.statesHeadline.warn">
+            <Setter Property="Foreground" Value="{DynamicResource WarningBrush}"/>
+        </Style>
+        <Style Selector="TextBlock.statesHeadline.bad">
+            <Setter Property="Foreground" Value="{DynamicResource ErrorBrush}"/>
+        </Style>
+
+        <Style Selector="TextBlock.stateName">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Foreground" Value="{DynamicResource ForegroundBrush}"/>
+            <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="TextBlock.stateValue">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="8,0,0,0"/>
+            <Setter Property="Foreground" Value="{DynamicResource ForegroundMutedBrush}"/>
+        </Style>
+        <Style Selector="TextBlock.stateValue.healthy">
+            <Setter Property="Foreground" Value="{DynamicResource SuccessBrush}"/>
+        </Style>
+        <Style Selector="TextBlock.stateValue.warn">
+            <Setter Property="Foreground" Value="{DynamicResource WarningBrush}"/>
+        </Style>
+        <Style Selector="TextBlock.stateValue.bad">
+            <Setter Property="Foreground" Value="{DynamicResource ErrorBrush}"/>
+        </Style>
+    </UserControl.Styles>
+
     <Grid x:Name="RootGrid" Background="{DynamicResource BackgroundBrush}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -18,27 +69,31 @@
                          Foreground="{DynamicResource AccentBrush}"/>
             <TextBlock x:Name="RefreshErrorBadge" Text="⚠ refresh failed"
                        FontSize="10" FontWeight="SemiBold"
-                       Foreground="#F2C94C"
+                       Foreground="{DynamicResource WarningBrush}"
                        HorizontalAlignment="Right" VerticalAlignment="Top"
                        Margin="0,2,10,0" IsVisible="False" Cursor="Hand"/>
         </Grid>
 
-        <!-- Row 1: Donut + TimeSlicer + WaitStats -->
+        <!-- Row 1: QS states + TimeSlicer + WaitStats -->
         <Grid Grid.Row="1" Margin="10">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="0.6*"/>
+                <ColumnDefinition Width="1*"/>
                 <ColumnDefinition Width="2*"/>
                 <ColumnDefinition Width="2*"/>
             </Grid.ColumnDefinitions>
 
-            <!-- Donut chart area -->
+            <!-- Query Store state, in words. The donut this replaced encoded seven databases as a
+                 ring and a "7/7" in the middle, which took a click on each arc to find out which
+                 database was which. The states fit on screen, so they are on screen. -->
             <Border Grid.Column="0" Background="{DynamicResource BackgroundLightBrush}"
                     CornerRadius="4" Margin="0,0,5,0" ClipToBounds="True">
-                <Grid RowDefinitions="Auto,*">
-                    <TextBlock Grid.Row="0" Text="QS States" FontSize="11" FontWeight="SemiBold"
-                               Foreground="{DynamicResource ForegroundBrush}"
-                               HorizontalAlignment="Center" Margin="0,4,0,0"/>
-                    <Canvas x:Name="DonutCanvas" Grid.Row="1"/>
+                <Grid RowDefinitions="Auto,*" Margin="8,6">
+                    <TextBlock x:Name="StatesHeadline" Grid.Row="0" Classes="statesHeadline"
+                               Text="Query Store state unknown"/>
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Disabled">
+                        <StackPanel x:Name="StatesList"/>
+                    </ScrollViewer>
                 </Grid>
             </Border>
 
@@ -56,7 +111,7 @@
                                    Foreground="{DynamicResource ForegroundBrush}"
                                    HorizontalAlignment="Center" Margin="0,4,0,0"/>
                         <TextBlock x:Name="WaitStatsWarning" Text="⚠" FontSize="12"
-                                   Foreground="#F2C94C"
+                                   Foreground="{DynamicResource WarningBrush}"
                                    HorizontalAlignment="Right" VerticalAlignment="Center"
                                    Margin="0,4,8,0" IsVisible="False" Cursor="Hand"/>
                     </Grid>

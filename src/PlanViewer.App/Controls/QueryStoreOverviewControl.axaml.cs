@@ -44,12 +44,6 @@ public partial class QueryStoreOverviewControl : UserControl
 
     private static readonly Color OthersColor = Color.Parse("#555555");
 
-    // Donut colors
-    private static readonly Color ReadWriteColor = Color.Parse("#2EAEF1");  // light blue
-    private static readonly Color ReadOnlyColor = Color.Parse("#1A5276");   // dark blue
-    private static readonly Color OffColor = Color.Parse("#666666");        // grey
-    private static readonly Color ErrorColor = Color.Parse("#E74C3C");      // red
-
     public class DrillDownEventArgs(string database, DateTime startUtc, DateTime endUtc) : EventArgs
     {
         public string Database { get; } = database;
@@ -81,11 +75,10 @@ public partial class QueryStoreOverviewControl : UserControl
 
         InitializeComponent();
 
-        this.SizeChanged += (_, _) =>
-        {
-            DrawDonut();
-            DrawWaitStatsChart();
-        };
+        /* Only the wait stats chart is drawn into a Canvas at absolute coordinates, so it is the
+           only thing left that has to be redrawn when the control resizes. The state card and the
+           metric cards are laid out by the panels they live in and reflow on their own. */
+        this.SizeChanged += (_, _) => DrawWaitStatsChart();
 
         OverviewTimeSlicer.RangeChanged += OnSlicerRangeChanged;
 
@@ -109,10 +102,10 @@ public partial class QueryStoreOverviewControl : UserControl
         try
         {
             // Phase 1: Get states
-            _states = await QueryStoreOverviewService.FetchAllStatesAsync(
+            var states = await QueryStoreOverviewService.FetchAllStatesAsync(
                 _masterConnectionString, _maxDop, ct);
 
-            await Dispatcher.UIThread.InvokeAsync(DrawDonut);
+            await Dispatcher.UIThread.InvokeAsync(() => ApplyStates(states));
 
             // Phase 2: Get time slices for active databases (cache the list)
             _activeDbs = _states
@@ -160,7 +153,7 @@ public partial class QueryStoreOverviewControl : UserControl
         await Dispatcher.UIThread.InvokeAsync(() => LoadingBar.IsIndeterminate = true);
         try
         {
-            _metrics = await QueryStoreOverviewService.FetchAllMetricsAsync(
+            var metrics = await QueryStoreOverviewService.FetchAllMetricsAsync(
                 _masterConnectionString, _activeDbs, _slicerStartUtc, _slicerEndUtc, _maxDop, ct);
 
             if (_supportsWaitStats)
@@ -180,7 +173,7 @@ public partial class QueryStoreOverviewControl : UserControl
 
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
-                DrawBarCards();
+                ApplyMetrics(metrics);
                 DrawWaitStatsChart();
             });
         }
@@ -188,6 +181,29 @@ public partial class QueryStoreOverviewControl : UserControl
         {
             await Dispatcher.UIThread.InvokeAsync(() => LoadingBar.IsIndeterminate = false);
         }
+    }
+
+    /// <summary>
+    /// Takes a fetched set of Query Store states and redraws the state card from it.
+    ///
+    /// <para>This and <see cref="ApplyMetrics"/> are the two seams between "we asked a server" and
+    /// "we drew something". The load path above calls them after each fetch; the tests call them
+    /// with hand-built rows, which is the only way to exercise the drawing without standing up a
+    /// SQL Server and inheriting its timeouts.</para>
+    /// </summary>
+    internal void ApplyStates(List<DatabaseQueryStoreState> states)
+    {
+        _states = states;
+        DrawStatesCard();
+    }
+
+    /// <summary>
+    /// Takes a fetched set of per-database metrics and redraws the metric cards.
+    /// </summary>
+    internal void ApplyMetrics(List<DatabaseMetrics> metrics)
+    {
+        _metrics = metrics;
+        DrawBarCards();
     }
 
     private void UpdateWaitStatsWarning(List<(string Database, string Error)> errors)
