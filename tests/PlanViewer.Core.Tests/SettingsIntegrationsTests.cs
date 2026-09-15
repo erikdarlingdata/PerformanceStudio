@@ -10,6 +10,7 @@ using PlanViewer.App;
 using PlanViewer.App.Dialogs;
 using PlanViewer.App.Mcp;
 using PlanViewer.App.Services;
+using PlanViewer.Core.Services;
 
 namespace PlanViewer.Core.Tests;
 
@@ -21,17 +22,11 @@ namespace PlanViewer.Core.Tests;
 /// moved into Settings as their own section. These pin both halves: that About no longer carries
 /// them, and that Settings does.</para>
 ///
-/// <para><b>Read this before adding a test that saves.</b> <see cref="SettingsFile"/> is
-/// redirected to a temp directory by the harness, the same as appsettings.json — so the JSON
-/// half of a save is safe here. <b>The OS credential store is not redirected.</b>
-/// <c>CredentialServiceFactory</c> has no test hook and hands back the real Windows credential
-/// service, so anything that reaches <c>ProxySettings.Save</c> with <c>TouchCredential</c> set
-/// writes or deletes the developer's actual stored proxy password.</para>
-///
-/// <para>Two things keep that from happening today, and both are load-bearing: the production
-/// code only touches the credential store on a positive instruction (a typed password, or a
-/// Reset asking for the stored one to go), and no test here types one or saves after a Reset.
-/// If you need to test that path, give the factory a test hook first.</para>
+/// <para>All three stores this section touches are redirected by the harness: appsettings.json,
+/// the <see cref="SettingsFile"/> JSON holding the MCP port and proxy configuration, and the OS
+/// credential manager holding the proxy password. That last one matters most — a save here can
+/// delete a credential, and before it was redirected the only thing standing between a test and
+/// the developer's real stored password was nobody having written that test yet.</para>
 /// </summary>
 public class SettingsIntegrationsTests
 {
@@ -231,6 +226,9 @@ public class SettingsIntegrationsTests
            credential is the only thing in this dialog that Cancel cannot really undo. Someone
            restoring the Query Store defaults has not asked to lose their proxy password. Reset
            Section, pressed on Integrations, is the gesture that means that. */
+        // There has to be one for either button to have anything to remove.
+        CredentialServiceFactory.Create().SaveCredential("__proxy__", "someone", "reset-me");
+
         HeadlessUi.Run(() =>
         {
             var window = new SettingsWindow(new AppSettings());
@@ -241,20 +239,79 @@ public class SettingsIntegrationsTests
                   .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Dispatcher.UIThread.RunJobs();
 
-            Assert.False(StagesCredentialDeletion(window));
+            Assert.False(StagesCredentialDeletion(window),
+                "Reset All must not take a credential the user never came here for");
 
-            // The same button on the section itself does stage it.
+            // The same button on the section itself is the gesture that does mean that.
             window.FindControl<ListBox>("SectionList")!.SelectedIndex = 3;
             Dispatcher.UIThread.RunJobs();
             window.FindControl<Button>("ResetButton")!
                   .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Dispatcher.UIThread.RunJobs();
 
-            /* Only when one was actually stored — which on this machine it may not be, and this
-               test must not depend on the developer's credential store either way. What it pins
-               is that Reset All never stages the delete, whatever Reset Section decides. */
+            Assert.True(StagesCredentialDeletion(window),
+                "Reset Section on Integrations is how a stored password is removed");
+
             CloseWithoutPrompting(window);
         });
+    }
+
+    [Fact]
+    public void OnlyAPositiveInstructionEverTouchesTheStoredPassword()
+    {
+        /* The bug this guards: ProxySettings.Load swallows a credential-store failure and reports
+           no password, which is indistinguishable from there being none — and the old rule
+           ("touch the credential unless the box is empty AND one is stored") then deleted a
+           password nobody had touched. Moving these settings widened the trigger from a proxy
+           field losing focus to any save at all, so ticking the MCP checkbox was enough.
+
+           What this pins is the invariant, not that original scenario: an ordinary save leaves
+           the stored password alone. Reproducing the scenario itself needs a credential store
+           that fails its reads, and the in-memory one the harness installs cannot fail — so the
+           first half of the old rule stays untested here and only the conclusion is guarded.
+           Mutating TouchCredential to an unconditional true fails this test, which is the
+           regression a future simplification would actually introduce. */
+        var credentials = CredentialServiceFactory.Create();
+        credentials.SaveCredential("__proxy__", "someone", "kept-secret");
+
+        HeadlessUi.Run(() =>
+        {
+            var window = new SettingsWindow(new AppSettings());
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            window.FindControl<ListBox>("SectionList")!.SelectedIndex = 3;
+            Dispatcher.UIThread.RunJobs();
+
+            var detail = (Control)window.FindControl<ContentControl>("DetailPanel")!.Content!;
+
+            /* Two different protections, so exercise both in one pass.
+
+               Changing only MCP must not reach the credential store at all — that is the split
+               between the two writes. Changing a proxy field does reach it, and must still leave
+               the password alone, because an empty password box is not an instruction to delete
+               anything. The second case is the one that used to destroy a credential whenever
+               the store had been unreadable at load. */
+            var mcpToggle = detail.GetLogicalDescendants().OfType<CheckBox>().First();
+            mcpToggle.IsChecked = mcpToggle.IsChecked != true;
+
+            var manual = detail.GetLogicalDescendants().OfType<RadioButton>()
+                               .Single(r => r.Content as string == "Manual");
+            manual.IsChecked = true;
+            Dispatcher.UIThread.RunJobs();
+
+            var address = detail.GetLogicalDescendants().OfType<TextBox>().First();
+            address.Text = "http://proxy.internal:3128";
+            Dispatcher.UIThread.RunJobs();
+
+            window.FindControl<Button>("SaveButton")!
+                  .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Dispatcher.UIThread.RunJobs();
+        });
+
+        var after = credentials.GetCredential("__proxy__");
+        Assert.True(after.HasValue, "an unrelated save must not delete the saved proxy password");
+        Assert.Equal("kept-secret", after!.Value.Password);
     }
 
     // ── helpers ──────────────────────────────────────────────────────
