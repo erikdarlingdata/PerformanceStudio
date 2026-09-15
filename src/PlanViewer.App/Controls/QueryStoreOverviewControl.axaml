@@ -22,44 +22,6 @@
             which no hover state has. A solid accent fill would settle it in one setter, and
             DarkTheme reserves that for nothing at all — hence an outline.
         -->
-        <ControlTheme x:Key="MetricModeSegment" TargetType="RadioButton">
-            <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="Foreground" Value="{DynamicResource ForegroundMutedBrush}"/>
-            <Setter Property="Padding" Value="12,2"/>
-            <Setter Property="FontSize" Value="11"/>
-            <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="Template">
-                <ControlTemplate>
-                    <!-- The focus ring is a transparent border that is always present, so lighting
-                         it up on focus cannot shift the label by a pixel. -->
-                    <Border x:Name="PART_Border"
-                            Background="{TemplateBinding Background}"
-                            BorderBrush="Transparent"
-                            BorderThickness="1"
-                            Padding="{TemplateBinding Padding}">
-                        <ContentPresenter Content="{TemplateBinding Content}"
-                                          Foreground="{TemplateBinding Foreground}"
-                                          HorizontalAlignment="Center"
-                                          VerticalAlignment="Center"/>
-                    </Border>
-                </ControlTemplate>
-            </Setter>
-
-            <Style Selector="^:pointerover /template/ Border#PART_Border">
-                <Setter Property="Background" Value="{DynamicResource SurfaceHoverBrush}"/>
-            </Style>
-            <Style Selector="^:checked /template/ Border#PART_Border">
-                <Setter Property="Background" Value="{DynamicResource AccentSoftBrush}"/>
-                <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
-            </Style>
-            <Style Selector="^:checked">
-                <Setter Property="Foreground" Value="{DynamicResource ForegroundBrush}"/>
-                <Setter Property="FontWeight" Value="SemiBold"/>
-            </Style>
-            <Style Selector="^:focus-visible /template/ Border#PART_Border">
-                <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
-            </Style>
-        </ControlTheme>
     </UserControl.Resources>
 
     <UserControl.Styles>
@@ -295,11 +257,11 @@
                     CornerRadius="4" ClipToBounds="True" VerticalAlignment="Center">
                 <StackPanel Orientation="Horizontal">
                     <RadioButton x:Name="TotalModeToggle"
-                                 Theme="{StaticResource MetricModeSegment}"
+                                 Theme="{StaticResource SegmentedButton}" Padding="12,2" FontSize="11"
                                  Content="Total" IsChecked="True"
                                  ToolTip.Tip="Show the summed value for the selected range"/>
                     <RadioButton x:Name="AvgModeToggle"
-                                 Theme="{StaticResource MetricModeSegment}"
+                                 Theme="{StaticResource SegmentedButton}" Padding="12,2" FontSize="11"
                                  Content="Avg"
                                  ToolTip.Tip="Show the per-execution average for the selected range"/>
                 </StackPanel>
