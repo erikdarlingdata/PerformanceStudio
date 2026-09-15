@@ -29,6 +29,13 @@ public partial class QuerySessionControl : UserControl
     private bool _latchingViewBar;
 
     /// <summary>
+    /// Bumped by every Overview load request; only the newest request may write the status strip.
+    /// A superseded load's cancellation is swallowed inside LoadAsync, so without this its
+    /// continuation would run normally and wipe the newer load's message.
+    /// </summary>
+    private int _overviewLoadGeneration;
+
+    /// <summary>
     /// Wires the view bar's segments up. Called once, from the constructor.
     /// </summary>
     private void SetupViewBar()
@@ -110,9 +117,19 @@ public partial class QuerySessionControl : UserControl
             OverviewHost.Content = _overviewView;
         }
 
-        /* Held locally because a reconnect during the load below throws the field away, and the
-           failure from the load that was already in flight still has to go somewhere. */
+        /* Held locally because a reconnect during the load below throws the field away; the
+           capture prevents a null dereference in the paths below, and a superseded load's
+           outcome is deliberately suppressed rather than surfaced (the fresh attempt reports
+           its own). */
         var overview = _overviewView;
+
+        /* The toolbar's QS Overview button can re-enter here while a load is in flight (the
+           segment cannot re-fire, the button always can). The newer call cancels the older
+           load's token, but a cancelled LoadAsync swallows the cancellation and returns
+           NORMALLY — so without this counter the superseded continuation would run and wipe
+           the newer load's "Loading..." off the strip while it is still true. Only the newest
+           call may touch the status strip; same pattern as the copy-button generation counter. */
+        var generation = ++_overviewLoadGeneration;
 
         SelectOverview();
 
@@ -123,17 +140,23 @@ public partial class QuerySessionControl : UserControl
         try
         {
             await overview.LoadAsync();
-            if (_surface == SessionSurface.Overview)
+            if (generation == _overviewLoadGeneration && _surface == SessionSurface.Overview)
                 ClearStatus();
         }
         catch (Exception ex)
         {
             /* A load now outlives the view it was started from — switching away is a hide, not a
-               detach, so nothing cancels it. Its outcome goes to the session's strip only while the
-               Overview is still what the user is looking at. Otherwise it goes to the control's own
-               badge, where a failed slicer refresh already reports itself, and is waiting there
-               when they come back rather than hanging over whatever they moved to. */
-            if (_surface == SessionSurface.Overview)
+               detach, so nothing cancels it. A SUPERSEDED load's failure is suppressed outright:
+               the newer attempt cleared the badge on its first line and will report its own
+               outcome, and resurfacing the older one would misreport the newer. A current load's
+               outcome goes to the session's strip only while the Overview is still what the user
+               is looking at; otherwise to the control's own badge, where a failed slicer refresh
+               already reports itself. */
+            if (generation != _overviewLoadGeneration)
+            {
+                // superseded: nothing to say
+            }
+            else if (_surface == SessionSurface.Overview)
                 SetStatusFromException(ex);
             else
                 overview.ShowRefreshError(ex);
