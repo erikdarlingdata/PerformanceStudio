@@ -244,7 +244,7 @@ public partial class QuerySessionControl : UserControl
         // Focus the editor when the Editor tab is selected; toggle plan-dependent buttons
         SubTabControl.SelectionChanged += (_, _) =>
         {
-            if (SubTabControl.SelectedIndex == 0)
+            if (IsEditorSelected)
                 FocusEditor();
             UpdatePlanTabButtonState();
 
@@ -301,17 +301,15 @@ public partial class QuerySessionControl : UserControl
     private (AnalysisResult? Analysis, PlanViewerControl? Viewer) GetCurrentAnalysisWithViewer()
     {
         // Find the currently selected plan tab's PlanViewerControl
-        if (SubTabControl.SelectedItem is TabItem tab && tab.Content is PlanViewerControl viewer
-            && viewer.CurrentPlan != null)
+        if (SelectedDocument is { Content: PlanViewerControl viewer } && viewer.CurrentPlan != null)
         {
             return (ResultMapper.Map(viewer.CurrentPlan, "query editor", _serverMetadata, viewer.QueryText), viewer);
         }
 
         // Fallback: find the most recent plan tab
-        for (int i = SubTabControl.Items.Count - 1; i >= 0; i--)
+        foreach (var planTab in DocumentTabs.Reverse())
         {
-            if (SubTabControl.Items[i] is TabItem planTab && planTab.Content is PlanViewerControl v
-                && v.CurrentPlan != null)
+            if (planTab.Content is PlanViewerControl v && v.CurrentPlan != null)
             {
                 /* Same session, same server: the fallback tab's advice gets the Server Context
                    section the selected-tab path above already had. */
@@ -369,10 +367,9 @@ public partial class QuerySessionControl : UserControl
 
     public IEnumerable<(string label, PlanViewerControl viewer)> GetPlanTabs()
     {
-        foreach (var item in SubTabControl.Items)
+        foreach (var tab in DocumentTabs)
         {
-            if (item is TabItem tab && tab.Content is PlanViewerControl viewer
-                && viewer.CurrentPlan != null)
+            if (tab.Content is PlanViewerControl viewer && viewer.CurrentPlan != null)
             {
                 yield return (GetTabLabel(tab), viewer);
             }
