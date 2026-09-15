@@ -129,34 +129,7 @@ public partial class QuerySessionControl : UserControl
         // Add loading tab and switch to it
         _planCounter++;
         var tabLabel = estimated ? $"Est Plan {_planCounter}" : $"Plan {_planCounter}";
-        var headerText = new TextBlock
-        {
-            Text = tabLabel,
-            VerticalAlignment = VerticalAlignment.Center,
-            FontSize = 12
-        };
-        var closeBtn = new Button
-        {
-            Content = "\u2715",
-            MinWidth = 22, MinHeight = 22, Width = 22, Height = 22,
-            Padding = new Avalonia.Thickness(0),
-            FontSize = 11,
-            Margin = new Avalonia.Thickness(6, 0, 0, 0),
-            Background = Brushes.Transparent,
-            BorderThickness = new Avalonia.Thickness(0),
-            Foreground = ForegroundToken,
-            VerticalAlignment = VerticalAlignment.Center,
-            HorizontalContentAlignment = HorizontalAlignment.Center,
-            VerticalContentAlignment = VerticalAlignment.Center
-        };
-        var header = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Children = { headerText, closeBtn }
-        };
-        var loadingTab = new TabItem { Header = header, Content = loadingContainer };
-        closeBtn.Tag = loadingTab;
-        closeBtn.Click += ClosePlanTab_Click;
+        var loadingTab = NewPlanTab(tabLabel, loadingContainer);
 
         AddDocument(loadingTab);
         SelectDocument(loadingTab);
@@ -385,34 +358,7 @@ public partial class QuerySessionControl : UserControl
 
         _planCounter++;
         var tabLabel = $"Plan {_planCounter}";
-        var headerText = new TextBlock
-        {
-            Text = tabLabel,
-            VerticalAlignment = VerticalAlignment.Center,
-            FontSize = 12
-        };
-        var closeBtn = new Button
-        {
-            Content = "\u2715",
-            MinWidth = 22, MinHeight = 22, Width = 22, Height = 22,
-            Padding = new Avalonia.Thickness(0),
-            FontSize = 11,
-            Margin = new Avalonia.Thickness(6, 0, 0, 0),
-            Background = Brushes.Transparent,
-            BorderThickness = new Avalonia.Thickness(0),
-            Foreground = ForegroundToken,
-            VerticalAlignment = VerticalAlignment.Center,
-            HorizontalContentAlignment = HorizontalAlignment.Center,
-            VerticalContentAlignment = VerticalAlignment.Center
-        };
-        var header = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Children = { headerText, closeBtn }
-        };
-        var loadingTab = new TabItem { Header = header, Content = loadingContainer };
-        closeBtn.Tag = loadingTab;
-        closeBtn.Click += ClosePlanTab_Click;
+        var loadingTab = NewPlanTab(tabLabel, loadingContainer);
 
         AddDocument(loadingTab);
         SelectDocument(loadingTab);

@@ -61,7 +61,27 @@ public partial class QuerySessionControl : UserControl
             return false;
         }
 
-        // Build tab header with close button and right-click rename
+        var tab = NewPlanTab(label, viewer);
+
+        AddDocument(tab);
+        SelectDocument(tab);
+        return true;
+    }
+
+    /// <summary>
+    /// The tab a plan document lives in: its label, its close button, and the right-click menu.
+    /// </summary>
+    /// <remarks>
+    /// Said once because three paths open plan documents - this one, and the two execute paths in
+    /// the execution partial - and only this one ever built the menu. A tab built without it has no
+    /// Rename, no Close Other Tabs and no Close All at all, and nothing says so: the header looks
+    /// identical either way, so the first anyone hears of it is a right-click that does nothing.
+    /// Executing a query is the commonest way to open a plan, which made the menu missing exactly
+    /// where it was most expected. Handing back a finished tab, rather than a header each caller
+    /// decorates, is what stops a fourth path forgetting again.
+    /// </remarks>
+    private TabItem NewPlanTab(string label, Control content)
+    {
         var headerText = new TextBlock
         {
             Text = label,
@@ -71,7 +91,7 @@ public partial class QuerySessionControl : UserControl
 
         var closeBtn = new Button
         {
-            Content = "\u2715",
+            Content = "✕",
             MinWidth = 22,
             MinHeight = 22,
             Width = 22,
@@ -91,18 +111,17 @@ public partial class QuerySessionControl : UserControl
         {
             Orientation = Orientation.Horizontal,
             /* Not decoration: a null-background panel hit-tests only its children's pixels, so a
-               right-click in the gap between the label's glyphs and the close button fell straight
-               through to the TabItem and the context menu below never opened. Transparent makes
-               the whole header rect a target, which is what CreateSubTab's header already does. */
+               right-click in the gap between the label's glyphs and the close button falls through
+               to the TabItem, which has no menu of its own. Transparent makes the whole header rect
+               a target, which is what CreateSubTab's header already does. */
             Background = Brushes.Transparent,
             Children = { headerText, closeBtn }
         };
 
-        var tab = new TabItem { Header = header, Content = viewer };
+        var tab = new TabItem { Header = header, Content = content };
         closeBtn.Tag = tab;
         closeBtn.Click += ClosePlanTab_Click;
 
-        // Right-click context menu
         var contextMenu = new ContextMenu
         {
             Items =
@@ -111,7 +130,7 @@ public partial class QuerySessionControl : UserControl
                 new Separator(),
                 /* Ctrl+F4, not the Ctrl+W this label used to refuse to show. Ctrl+W stays the
                    window's: its tunnel handler claims that keystroke whenever a top-level tab is
-                   selected, which is always, and closes the whole session — so a Ctrl+W label here
+                   selected, which is always, and closes the whole session - so a Ctrl+W label here
                    would have been a lie the user discovers by losing everything they had open.
                    F4 has no tunnel case, so it reaches the session's own handler, where it closes
                    exactly this document. The gesture is display-only in Avalonia: the binding that
@@ -132,9 +151,7 @@ public partial class QuerySessionControl : UserControl
 
         header.ContextMenu = contextMenu;
 
-        AddDocument(tab);
-        SelectDocument(tab);
-        return true;
+        return tab;
     }
 
     private void StartRename(StackPanel header, TextBlock headerText)

@@ -255,6 +255,14 @@ internal static class SessionHarness
             Dispatcher.UIThread.RunJobs();
     }
 
+    /// <summary>
+    /// Cancels whatever capture a test started, the way Escape does. The pretend server is a port
+    /// nothing listens on, but a refused connection is still one being attempted, and a capture a
+    /// test walks away from is one still running during the next.
+    /// </summary>
+    internal static void CancelExecution(QuerySessionControl session) =>
+        (GetField(session, "_executionCts") as CancellationTokenSource)?.Cancel();
+
     private static void SetField(object target, string name, object? value) =>
         FieldOf(target, name).SetValue(target, value);
 
