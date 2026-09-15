@@ -90,6 +90,11 @@ public partial class QuerySessionControl : UserControl
         var header = new StackPanel
         {
             Orientation = Orientation.Horizontal,
+            /* Not decoration: a null-background panel hit-tests only its children's pixels, so a
+               right-click in the gap between the label's glyphs and the close button fell straight
+               through to the TabItem and the context menu below never opened. Transparent makes
+               the whole header rect a target, which is what CreateSubTab's header already does. */
+            Background = Brushes.Transparent,
             Children = { headerText, closeBtn }
         };
 
