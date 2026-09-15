@@ -1,3 +1,4 @@
+using System;
 using System.Globalization;
 
 namespace PlanViewer.Core.Output;
@@ -51,6 +52,26 @@ public static class MetricFormatter
     /// with one decimal ("3.5s"), and anything longer splits into minutes and seconds
     /// ("20m 35s").
     /// </summary>
+    /// <summary>
+    /// The same ladder for a duration that can be finer than a millisecond.
+    /// </summary>
+    /// <remarks>
+    /// The ladder below starts at whole milliseconds, so an average CPU of 0.4ms — an ordinary
+    /// number on a healthy OLTP database — rounds to "0ms" and reports a query that ran as one that
+    /// did not. Query Store keeps microseconds, so its numbers arrive here as fractions and get two
+    /// extra rungs below 1ms; anything already counted in whole milliseconds climbs exactly the
+    /// rungs it always did, because that is what the overload below hands it.
+    /// </remarks>
+    public static string FormatDuration(double ms, IFormatProvider? provider = null)
+    {
+        provider ??= CultureInfo.CurrentCulture;
+
+        if (ms > 0 && ms < 1)
+            return ms < 0.01 ? "<0.01ms" : ms.ToString("0.##", provider) + "ms";
+
+        return FormatDuration((long)Math.Round(ms), provider);
+    }
+
     public static string FormatDuration(long ms, IFormatProvider? provider = null)
     {
         provider ??= CultureInfo.CurrentCulture;
