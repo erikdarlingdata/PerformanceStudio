@@ -400,6 +400,35 @@ public partial class MainWindow : Window
         EmptyOverlay.IsVisible = MainTabControl.Items.Count == 0;
     }
 
+    /// <summary>
+    /// Scrolls the single-row tab strip under a plain mouse wheel. Wheel up scrolls left, the
+    /// same direction the session toolbar's strip moves.
+    ///
+    /// <para>Only plain-wheel is new: dragging the rail, Shift+wheel and a trackpad's horizontal
+    /// swipe all worked the moment the strip got a ScrollViewer, and selecting a tab off-screen
+    /// (Ctrl+Tab included) brings it into view on its own. Avalonia maps a vertical wheel onto a
+    /// horizontal scroller only while Shift is held — ScrollContentPresenter.OnPointerWheelChanged
+    /// swaps the delta vector on that modifier alone — and nobody holds Shift to reach a tab.</para>
+    /// </summary>
+    private void TabStrip_PointerWheel(object? sender, PointerWheelEventArgs e)
+    {
+        if (sender is not ScrollViewer strip)
+            return;
+
+        var max = Math.Max(0, strip.Extent.Width - strip.Viewport.Width);
+        if (max <= 0)
+            return; // every tab is visible — leave the wheel alone
+
+        var delta = e.Delta.X != 0 ? e.Delta.X : e.Delta.Y;
+        if (delta == 0)
+            return;
+
+        strip.Offset = new Avalonia.Vector(
+            Math.Clamp(strip.Offset.X - (delta * 48), 0, max),
+            strip.Offset.Y);
+        e.Handled = true;
+    }
+
 
     // ── Unsaved query changes (#462) ──────────────────────────────────────
 

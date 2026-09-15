@@ -41,6 +41,13 @@ public partial class ConnectionDialog : Window
         UpdateConnectEnabled();
     }
 
+    /// <summary>
+    /// Status colours come from the theme so this dialog follows the design tokens; the
+    /// fallbacks keep it functional if a resource lookup ever misses.
+    /// </summary>
+    private Avalonia.Media.IBrush StatusBrush(string key, Avalonia.Media.IBrush fallback) =>
+        this.TryFindResource(key, out var value) && value is Avalonia.Media.IBrush brush ? brush : fallback;
+
     private void PopulateSavedServers()
     {
         _savedConnections = _connectionStore.Load();
@@ -177,7 +184,7 @@ public partial class ConnectionDialog : Window
         if (string.IsNullOrEmpty(serverName))
         {
             StatusText.Text = "Enter a server name";
-            StatusText.Foreground = Avalonia.Media.Brushes.OrangeRed;
+            StatusText.Foreground = StatusBrush("ErrorBrush", Avalonia.Media.Brushes.OrangeRed);
             return false;
         }
 
@@ -187,7 +194,7 @@ public partial class ConnectionDialog : Window
         var connectDatabase = string.IsNullOrEmpty(typedDatabase) ? "master" : typedDatabase;
 
         StatusText.Text = "Connecting...";
-        StatusText.Foreground = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.FromRgb(0xE4, 0xE6, 0xEB));
+        StatusText.Foreground = StatusBrush("ForegroundBrush", Avalonia.Media.Brushes.White);
         _connecting = true;
         TestButton.IsEnabled = false;
         UpdateConnectEnabled();
@@ -226,13 +233,13 @@ public partial class ConnectionDialog : Window
             SelectPreferredDatabase(databases, previouslySelected, typedDatabase);
 
             StatusText.Text = $"Connected ({databases.Count} databases)";
-            StatusText.Foreground = Avalonia.Media.Brushes.LimeGreen;
+            StatusText.Foreground = StatusBrush("SuccessBrush", Avalonia.Media.Brushes.LimeGreen);
             return true;
         }
         catch (Exception ex)
         {
             StatusText.Text = ex.Message;
-            StatusText.Foreground = Avalonia.Media.Brushes.OrangeRed;
+            StatusText.Foreground = StatusBrush("ErrorBrush", Avalonia.Media.Brushes.OrangeRed);
             DatabaseBox.IsEnabled = false;
             return false;
         }

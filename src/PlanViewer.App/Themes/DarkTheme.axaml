@@ -1,24 +1,99 @@
 <ResourceDictionary xmlns="https://github.com/avaloniaui"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
-    <SolidColorBrush x:Key="BackgroundBrush" Color="#1A1D23"/>
-    <SolidColorBrush x:Key="BackgroundDarkBrush" Color="#15171C"/>
-    <SolidColorBrush x:Key="BackgroundLightBrush" Color="#22252D"/>
-    <SolidColorBrush x:Key="ForegroundBrush" Color="#E4E6EB"/>
-    <SolidColorBrush x:Key="ForegroundMutedBrush" Color="#B0B6C0"/>
-    <SolidColorBrush x:Key="BorderBrush" Color="#3A3D45"/>
-    <SolidColorBrush x:Key="AccentBrush" Color="#2eaef1"/>
-    <!-- Failure text. The same muted red the plan viewer's load error already uses. -->
-    <SolidColorBrush x:Key="ErrorBrush" Color="#E06C75"/>
+    <!--
+        Performance Studio design tokens — the single source of truth for colour in this app.
 
-    <!-- Fluent theme accent override: TabItem selected underline, focus rings, etc. -->
+        Inline hex in a control is a DEFECT, not a shortcut. Foreground="#4FA3FF" in a .axaml, or
+        Brushes.LimeGreen in a code-behind, cannot be re-themed, drifts from the neighbour that
+        meant the same thing, and leaves the next reader no way to tell a deliberate one-off from
+        a copy-paste. Every colour the app paints should resolve to a key below.
+
+        Need a shade that is not here? Add it here first and reference it. Do not inline it "just
+        this once" — that is how the four insight hues and two different greens got loose.
+
+        Sections:
+          1. Surfaces and text
+          2. Accent, interaction and status
+          3. Insight panel accents
+          4. Fluent theme accent overrides
+          5. Control themes
+          6. Time Range Slicer
+          7. Wait Stats categories
+    -->
+
+    <!-- ===== 1. Surfaces and text ============================================================ -->
+
+    <!-- Default window/panel ground. -->
+    <SolidColorBrush x:Key="BackgroundBrush" Color="#1A1D23"/>
+    <!-- Recessed: gutters, chrome behind a surface, the slicer well. -->
+    <SolidColorBrush x:Key="BackgroundDarkBrush" Color="#15171C"/>
+    <!-- Raised: cards, toolbars, button rest state. -->
+    <SolidColorBrush x:Key="BackgroundLightBrush" Color="#22252D"/>
+    <!-- One step above BackgroundLightBrush. Hover fills only — never a resting surface. -->
+    <SolidColorBrush x:Key="SurfaceHoverBrush" Color="#2A2E38"/>
+
+    <SolidColorBrush x:Key="ForegroundBrush" Color="#E4E6EB"/>
+    <!-- Secondary text: labels, units, counts, anything subordinate to a value. -->
+    <SolidColorBrush x:Key="ForegroundMutedBrush" Color="#B0B6C0"/>
+
+    <SolidColorBrush x:Key="BorderBrush" Color="#3A3D45"/>
+
+    <!-- ===== 2. Accent, interaction and status =============================================== -->
+
+    <!-- Brand blue. Focus rings, selection, the one colour that means "this". -->
+    <SolidColorBrush x:Key="AccentBrush" Color="#2eaef1"/>
+    <!-- AccentBrush at 12% alpha (0x1F). Pressed and selected FILLS, where a solid accent would
+         shout. A full-strength accent background is reserved for nothing at all right now. -->
+    <SolidColorBrush x:Key="AccentSoftBrush" Color="#1F2EAEF1"/>
+
+    <!-- Status triad. Amber warns, green confirms, red fails. -->
+    <SolidColorBrush x:Key="WarningBrush" Color="#FFB347"/>
+    <!-- Reads "connected / ok" on the dark ground without the glare of LimeGreen. -->
+    <SolidColorBrush x:Key="SuccessBrush" Color="#58B368"/>
+    <!-- #E57373, the red 16 call sites already mean: AdviceContentBuilder's Critical, every
+         PlanWarningSeverity.Critical branch in the plan surface, the runtime-summary grant waits,
+         the session status strip, WaitStats "Lock". #E06C75 was a single-file outlier - one line
+         of PlanViewerControl.axaml - and this token briefly adopted it. Canonicalising on the
+         majority is what stops a SECOND error red getting invented when those call sites migrate.
+         SlicerValidationBrush in section 6 is an alias of this brush, so the slicer's validation
+         text and the app's Critical red are now one value rather than two that happened to match. -->
+    <SolidColorBrush x:Key="ErrorBrush" Color="#E57373"/>
+
+    <!-- ===== 3. Insight panel accents ======================================================== -->
+
+    <!-- One hue per insight section, so a reader learns the section by its colour. Distinct from
+         the status triad above: these classify, they do not judge. InsightIndexBrush deliberately
+         shares WarningBrush's amber — an index finding is the one insight that is also a warning. -->
+    <SolidColorBrush x:Key="InsightServerBrush" Color="#9B9BFF"/>
+    <SolidColorBrush x:Key="InsightIndexBrush"  Color="#FFB347"/>
+    <SolidColorBrush x:Key="InsightParamsBrush" Color="#7BCF7B"/>
+    <SolidColorBrush x:Key="InsightWaitsBrush"  Color="#4FA3FF"/>
+
+    <!-- ===== 4. Fluent theme accent overrides ================================================ -->
+
+    <!-- Fluent reads these by name for TabItem selected underline, focus rings, etc. Keep them in
+         step with AccentBrush above. -->
     <Color x:Key="SystemAccentColor">#2eaef1</Color>
     <Color x:Key="SystemAccentColorDark1">#2596d4</Color>
     <Color x:Key="SystemAccentColorDark2">#1f80b6</Color>
     <Color x:Key="SystemAccentColorLight1">#5bc0f4</Color>
     <Color x:Key="SystemAccentColorLight2">#88d1f7</Color>
 
-    <!-- Button style: brand blue on hover -->
+    <!-- ===== 5. Control themes =============================================================== -->
+
+    <!--
+        AppButton — the app's only button style, applied by ~40 call sites in XAML and by the
+        toolbars built in code-behind (FindResource("AppButton")).
+
+        States are deliberately bounded. The previous version filled the whole button with
+        AccentBrush on hover, which flashed cyan on every mouse pass and, worse, could strand a
+        button looking permanently "on": a button that lost the pointer while a view was opening
+        kept :pointerover, and a full accent fill reads as a toggled state even though no toggle
+        code exists anywhere. Hover is now a surface step plus an accent border, pressed is a 12%
+        accent wash, and focus is its own explicit visual. Nothing here paints a solid accent
+        background, so no combination of stuck pseudo-classes can invent a selected-looking button.
+    -->
     <ControlTheme x:Key="AppButton" TargetType="Button">
         <Setter Property="Background" Value="{DynamicResource BackgroundLightBrush}"/>
         <Setter Property="Foreground" Value="{DynamicResource ForegroundBrush}"/>
@@ -43,40 +118,68 @@
                 </Border>
             </ControlTemplate>
         </Setter>
+
+        <!-- Hover: lift the surface one step and light the border. Foreground stays put, so text
+             never has to re-contrast against a saturated fill. -->
         <Style Selector="^:pointerover /template/ Border#PART_Border">
-            <Setter Property="Background" Value="{DynamicResource AccentBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource SurfaceHoverBrush}"/>
             <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
         </Style>
-        <Style Selector="^:pointerover /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Foreground" Value="White"/>
-        </Style>
+
+        <!-- Pressed: a 12% accent wash. Enough to feel the click, not enough to look latched. -->
         <Style Selector="^:pressed /template/ Border#PART_Border">
-            <Setter Property="Background" Value="#2596d4"/>
-            <Setter Property="BorderBrush" Value="#2596d4"/>
+            <Setter Property="Background" Value="{DynamicResource AccentSoftBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
         </Style>
-        <Style Selector="^:pressed /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Foreground" Value="White"/>
+
+        <!-- Keyboard focus. This template replaces Fluent's, which takes its focus adorner with
+             it, so without this rule a tabbing user gets no ring at all. -->
+        <Style Selector="^:focus-visible /template/ Border#PART_Border">
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
         </Style>
+
         <Style Selector="^:disabled">
             <Setter Property="Opacity" Value="0.4"/>
         </Style>
     </ControlTheme>
 
-    <!-- Time Range Slicer theme resources -->
-    <SolidColorBrush x:Key="SlicerBackgroundBrush" Color="#15171C"/>
-    <SolidColorBrush x:Key="SlicerChartLineBrush" Color="#2EAEF1"/>
+    <!-- ===== 6. Time Range Slicer ============================================================ -->
+
+    <!--
+        The slicer names its own roles — "the handle colour", "the label colour" — and those names
+        are worth keeping. What was not worth keeping is that they held hardcoded COPIES of the core
+        tokens' hex, which made the slicer immune to the design system by construction: repaint
+        AccentBrush and the chart line and hover handle silently stayed behind.
+
+        Aliasing fixes that without touching a single consumer. Every key keeps its name and
+        resolves to exactly the colour it always did; the difference is that it now follows its core
+        token instead of shadowing it. Should a slicer role ever need to diverge, turn that one key
+        back into a literal — the other ten are unaffected.
+
+        StaticResource resolves backward only, so these have to stay below sections 1 and 2, where
+        every target is declared.
+    -->
+    <StaticResource x:Key="SlicerBackgroundBrush"  ResourceKey="BackgroundDarkBrush"/>
+    <StaticResource x:Key="SlicerChartLineBrush"   ResourceKey="AccentBrush"/>
+    <StaticResource x:Key="SlicerHandleBrush"      ResourceKey="ForegroundBrush"/>
+    <StaticResource x:Key="SlicerHandleHoverBrush" ResourceKey="AccentBrush"/>
+    <StaticResource x:Key="SlicerBorderBrush"      ResourceKey="BorderBrush"/>
+    <StaticResource x:Key="SlicerLabelBrush"       ResourceKey="ForegroundBrush"/>
+    <StaticResource x:Key="SlicerToggleBrush"      ResourceKey="ForegroundBrush"/>
+    <!-- Custom range validation text. Was a second copy of the Critical red; now it is that red. -->
+    <StaticResource x:Key="SlicerValidationBrush"  ResourceKey="ErrorBrush"/>
+
+    <!-- Deliberately NOT aliases. These three are translucency variants with no core token to
+         alias: an accent wash, a dimming scrim and a selection veil. They are genuinely the
+         slicer's own, so they stay literal. -->
     <SolidColorBrush x:Key="SlicerChartFillBrush" Color="#332EAEF1"/>
     <SolidColorBrush x:Key="SlicerOverlayBrush" Color="#99000000"/>
     <SolidColorBrush x:Key="SlicerSelectedBrush" Color="#22FFFFFF"/>
-    <SolidColorBrush x:Key="SlicerHandleBrush" Color="#E4E6EB"/>
-    <SolidColorBrush x:Key="SlicerHandleHoverBrush" Color="#2EAEF1"/>
-    <SolidColorBrush x:Key="SlicerBorderBrush" Color="#3A3D45"/>
-    <SolidColorBrush x:Key="SlicerLabelBrush" Color="#E4E6EB"/>
-    <SolidColorBrush x:Key="SlicerToggleBrush" Color="#E4E6EB"/>
-    <!-- Custom range validation text. Same red the advice pane uses for Critical. -->
-    <SolidColorBrush x:Key="SlicerValidationBrush" Color="#E57373"/>
 
-    <!-- Wait Stats category colors (fixed per category) -->
+    <!-- ===== 7. Wait Stats categories ======================================================== -->
+
+    <!-- Fixed per category: the same wait type must keep the same colour across every chart and
+         legend in the app, so these are identity, not palette. Do not reuse them elsewhere. -->
     <SolidColorBrush x:Key="WaitCategory.Unknown"            Color="#8E8E93"/>
     <SolidColorBrush x:Key="WaitCategory.CPU"                Color="#00bd23"/>
     <SolidColorBrush x:Key="WaitCategory.Worker Thread"      Color="#52E3B5"/>
@@ -103,4 +206,3 @@
     <SolidColorBrush x:Key="WaitCategory.Highlight"          Color="#FFFFFF"/>
 
 </ResourceDictionary>
- 

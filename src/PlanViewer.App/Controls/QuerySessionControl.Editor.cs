@@ -231,6 +231,25 @@ public partial class QuerySessionControl : UserControl
             ExecuteEstimated_Click(this, new RoutedEventArgs());
             e.Handled = true;
         }
+        /* Ctrl+Shift+F → Format.
+           The toolbar is a fixed row that scrolls now, and at laptop width Format is one of the
+           slots that starts off the right-hand end of it. Every other button in that half either
+           has a shortcut already or acts on a plan you have to click to first; Format acts on the
+           query you are typing, so reaching it by wheeling the toolbar is the wrong ask.
+
+           Ctrl+Shift+F and not the editors' Shift+Alt+F, which collides with the menu bar: an
+           Alt-modified key without Control is an access key as far as AccessKeyHandler is
+           concerned, and Alt+F is _File. It survives inside the editor only because this handler
+           marks it handled first, so the same keystroke with focus anywhere else in the window
+           (a tab header, a plan tab) would open the File menu instead of formatting. Ctrl
+           modifiers are skipped by that handler outright, and Ctrl+Shift+O is already this app's
+           spelling of Open Query, so the grammar matches. */
+        else if (e.Key == Key.F && e.KeyModifiers == (KeyModifiers.Control | KeyModifiers.Shift)
+                 && FormatButton.IsEnabled)
+        {
+            Format_Click(this, new RoutedEventArgs());
+            e.Handled = true;
+        }
         // Escape → Cancel running query
         else if (e.Key == Key.Escape && _executionCts != null && !_executionCts.IsCancellationRequested)
         {

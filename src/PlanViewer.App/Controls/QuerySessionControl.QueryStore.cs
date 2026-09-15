@@ -61,7 +61,7 @@ public partial class QuerySessionControl : UserControl
             Margin = new Avalonia.Thickness(2, 0, 0, 0),
             Background = Brushes.Transparent,
             BorderThickness = new Avalonia.Thickness(0),
-            Foreground = new SolidColorBrush(Color.FromRgb(0xE4, 0xE6, 0xEB)),
+            Foreground = ForegroundToken,
             VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
             HorizontalContentAlignment = HorizontalAlignment.Center,
             VerticalContentAlignment = VerticalAlignment.Center
@@ -316,7 +316,7 @@ public partial class QuerySessionControl : UserControl
             Margin = new Avalonia.Thickness(4, 0, 0, 0),
             Background = Brushes.Transparent,
             BorderThickness = new Avalonia.Thickness(0),
-            Foreground = new SolidColorBrush(Color.FromRgb(0xA0, 0xA0, 0xA0)),
+            Foreground = MutedToken,
             VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
             HorizontalContentAlignment = HorizontalAlignment.Center,
             VerticalContentAlignment = VerticalAlignment.Center

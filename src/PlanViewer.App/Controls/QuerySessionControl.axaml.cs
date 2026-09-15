@@ -118,6 +118,22 @@ public partial class QuerySessionControl : UserControl
         _connectionStore = connectionStore;
         InitializeComponent();
 
+        /* Icon adoption for the XAML-declared toolbar. Set here rather than in the XAML
+           because a bare PathIcon's stock theme overrides the inherited foreground;
+           AppIcons.MakeContent installs the corrected theme. The Actual/Estimated pair
+           stays text-only on purpose: they are the primary verbs of this toolbar and no
+           icon in the set says "estimated" — a lone play glyph on one of the pair would
+           read as the difference between them being run-vs-not, which it is not. */
+        ConnectButton.Content = Helpers.AppIcons.MakeContent(Helpers.AppIcons.Connect, "Connect");
+        HumanAdviceButton.Content = Helpers.AppIcons.MakeContent(Helpers.AppIcons.HumanAdvice, "Human Advice");
+        RobotAdviceButton.Content = Helpers.AppIcons.MakeContent(Helpers.AppIcons.RobotAdvice, "Robot Advice");
+        ComparePlansButton.Content = Helpers.AppIcons.MakeContent(Helpers.AppIcons.Compare, "Compare Plans");
+        QueryStoreButton.Content = Helpers.AppIcons.MakeContent(Helpers.AppIcons.QueryStore, "Query Store");
+        QueryStoreOverviewButton.Content = Helpers.AppIcons.MakeContent(Helpers.AppIcons.Overview, "QS Overview");
+        CopyReproButton.Content = Helpers.AppIcons.MakeContent(Helpers.AppIcons.CopyRepro, "Copy Repro");
+        GetActualPlanButton.Content = Helpers.AppIcons.MakeContent(Helpers.AppIcons.RunRepro, "Run Repro");
+        FormatButton.Content = Helpers.AppIcons.MakeContent(Helpers.AppIcons.Format, "Format");
+
         // Initialize editor with empty text so the document is ready
         QueryEditor.Text = "";
         ZoomBox.SelectedIndex = 2; // 100%
@@ -130,6 +146,17 @@ public partial class QuerySessionControl : UserControl
 
         // Ctrl+mousewheel for font zoom — use Tunnel so it fires before ScrollViewer consumes scroll-down
         QueryEditor.AddHandler(Avalonia.Input.InputElement.PointerWheelChangedEvent, OnEditorPointerWheel, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+
+        /* The toolbar is one non-wrapping row that scrolls when it is wider than the window, and
+           Avalonia only turns a vertical wheel into horizontal scrolling when Shift is held
+           (ScrollContentPresenter.OnPointerWheelChanged swaps the delta vector on Shift alone).
+           A toolbar you can only pan with a modifier held is a toolbar nobody pans, so a plain
+           wheel over it scrolls it. Tunnel, so the buttons underneath never eat the wheel first.
+
+           One deliberate consequence: while the toolbar overflows, this also swallows the wheel
+           over the database ComboBox, which would otherwise change the database under you. An
+           accidental scroll that silently moves your execution context is the worse of the two. */
+        ToolbarScroll.AddHandler(Avalonia.Input.InputElement.PointerWheelChangedEvent, OnToolbarWheel, Avalonia.Interactivity.RoutingStrategies.Tunnel);
 
         // Code completion
         QueryEditor.TextArea.TextEntering += OnTextEntering;
@@ -265,6 +292,50 @@ public partial class QuerySessionControl : UserControl
 
         return (null, null);
     }
+
+
+    /// <summary>
+    /// Pans the fixed toolbar row when it is wider than the window. Wheel up scrolls left, the
+    /// same direction the tab strip's handler moves, and a horizontal wheel (trackpad swipe)
+    /// wins over the vertical one when the device sends both.
+    /// </summary>
+    private void OnToolbarWheel(object? sender, PointerWheelEventArgs e)
+    {
+        var max = Math.Max(0, ToolbarScroll.Extent.Width - ToolbarScroll.Viewport.Width);
+        if (max <= 0)
+            return; // whole toolbar is visible — leave the wheel to whatever is under it
+
+        var delta = e.Delta.X != 0 ? e.Delta.X : e.Delta.Y;
+        if (delta == 0)
+            return;
+
+        ToolbarScroll.Offset = new Avalonia.Vector(
+            Math.Clamp(ToolbarScroll.Offset.X - (delta * 48), 0, max),
+            ToolbarScroll.Offset.Y);
+        e.Handled = true;
+    }
+
+    /* The colours the theme holds today, as literals, so a key missing from the dictionary renders
+       something sane rather than nothing. Three of them are exactly what the code used to construct
+       inline at each site; FallbackMuted is not, because the muted site was constructing #A0A0A0
+       and the theme's muted brush is #B0B6C0 -- taking the token means taking its colour. */
+    private static readonly IBrush FallbackForeground = new SolidColorBrush(Color.FromRgb(0xE4, 0xE6, 0xEB));
+    private static readonly IBrush FallbackBackground = new SolidColorBrush(Color.FromRgb(0x1A, 0x1D, 0x23));
+    private static readonly IBrush FallbackMuted = new SolidColorBrush(Color.FromRgb(0xB0, 0xB6, 0xC0));
+    private static readonly IBrush FallbackError = new SolidColorBrush(Color.FromRgb(0xE5, 0x73, 0x73));
+
+    /// <summary>
+    /// A theme brush by key, or <paramref name="fallback"/> when the key is not in the
+    /// dictionary — so a control still renders something sane if a token is missing.
+    /// </summary>
+    private static IBrush Token(IResourceHost host, string key, IBrush fallback) =>
+        host.TryFindResource(key, out var value) && value is IBrush brush ? brush : fallback;
+
+    private IBrush Token(string key, IBrush fallback) => Token(this, key, fallback);
+
+    private IBrush ForegroundToken => Token("ForegroundBrush", FallbackForeground);
+    private IBrush BackgroundToken => Token("BackgroundBrush", FallbackBackground);
+    private IBrush MutedToken => Token("ForegroundMutedBrush", FallbackMuted);
 
 
     public IEnumerable<(string label, PlanViewerControl viewer)> GetPlanTabs()

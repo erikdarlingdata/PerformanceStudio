@@ -81,7 +81,7 @@ public partial class QuerySessionControl : UserControl
             Margin = new Avalonia.Thickness(6, 0, 0, 0),
             Background = Brushes.Transparent,
             BorderThickness = new Avalonia.Thickness(0),
-            Foreground = new SolidColorBrush(Color.FromRgb(0xE4, 0xE6, 0xEB)),
+            Foreground = ForegroundToken,
             VerticalAlignment = VerticalAlignment.Center,
             HorizontalContentAlignment = HorizontalAlignment.Center,
             VerticalContentAlignment = VerticalAlignment.Center
@@ -408,8 +408,8 @@ public partial class QuerySessionControl : UserControl
             MinWidth = 380,
             MinHeight = 220,
             Icon = GetParentWindow().Icon,
-            Background = new SolidColorBrush(Color.Parse("#1A1D23")),
-            Foreground = new SolidColorBrush(Color.Parse("#E4E6EB")),
+            Background = BackgroundToken,
+            Foreground = ForegroundToken,
             Content = content,
             WindowStartupLocation = WindowStartupLocation.CenterOwner
         };

@@ -16,6 +16,7 @@ using Avalonia.Media;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using PlanViewer.App.Controls;
+using PlanViewer.App.Helpers;
 using PlanViewer.App.Mcp;
 using PlanViewer.App.Services;
 using PlanViewer.Core.Interfaces;
@@ -37,7 +38,7 @@ public partial class MainWindow : Window
     {
         var humanBtn = new Button
         {
-            Content = "\U0001f9d1 Human Advice",
+            Content = AppIcons.MakeContent(AppIcons.HumanAdvice, "Human Advice"),
             Height = 28,
             Padding = new Avalonia.Thickness(10, 0),
             FontSize = 12,
@@ -49,7 +50,7 @@ public partial class MainWindow : Window
 
         var robotBtn = new Button
         {
-            Content = "\U0001f916 Robot Advice",
+            Content = AppIcons.MakeContent(AppIcons.RobotAdvice, "Robot Advice"),
             Height = 28,
             Padding = new Avalonia.Thickness(10, 0),
             FontSize = 12,
@@ -96,7 +97,7 @@ public partial class MainWindow : Window
                to hold them in, and whether Compare is available is a fact about the whole
                window that changes long after the button was made. */
             Name = Helpers.ComparePlansButtonState.Name,
-            Content = "\u2194 Compare Plans",
+            Content = AppIcons.MakeContent(AppIcons.Compare, "Compare Plans"),
             Height = 28,
             Padding = new Avalonia.Thickness(10, 0),
             FontSize = 12,
@@ -122,9 +123,24 @@ public partial class MainWindow : Window
             Margin = new Avalonia.Thickness(4, 0)
         };
 
+        /* The label is held separately because the click handler below swaps the button's text for
+           confirmation and then swaps it back. It used to reassign Content wholesale, which with an
+           icon in there would throw the icon away with the old text. */
+        var copyReproLabel = new TextBlock
+        {
+            Text = "Copy Repro",
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
         var copyReproBtn = new Button
         {
-            Content = "\U0001f4cb Copy Repro",
+            Content = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = AppIcons.IconLabelGap,
+                VerticalAlignment = VerticalAlignment.Center,
+                Children = { AppIcons.MakeIcon(AppIcons.CopyRepro), copyReproLabel }
+            },
             Height = 28,
             Padding = new Avalonia.Thickness(10, 0),
             FontSize = 12,
@@ -145,11 +161,11 @@ public partial class MainWindow : Window
                 queryText, database, planXml,
                 isolationLevel: null, source: "Performance Studio");
 
-            copyReproBtn.Content = await ClipboardHelper.TrySetTextAsync(this, reproScript)
-                ? "\U0001f4cb Copied!"
-                : "\U0001f4cb Clipboard busy";
+            copyReproLabel.Text = await ClipboardHelper.TrySetTextAsync(this, reproScript)
+                ? "Copied!"
+                : "Clipboard busy";
             await Task.Delay(1500);
-            copyReproBtn.Content = "\U0001f4cb Copy Repro";
+            copyReproLabel.Text = "Copy Repro";
         };
 
         copyReproBtn.Click += async (_, _) => await copyRepro();
@@ -171,7 +187,7 @@ public partial class MainWindow : Window
 
         var getActualPlanBtn = new Button
         {
-            Content = "\u25b6 Run Repro",
+            Content = AppIcons.MakeContent(AppIcons.RunRepro, "Run Repro"),
             Height = 28,
             Padding = new Avalonia.Thickness(10, 0),
             FontSize = 12,
@@ -196,7 +212,7 @@ public partial class MainWindow : Window
 
         var queryStoreBtn = new Button
         {
-            Content = "\U0001f4ca Query Store",
+            Content = AppIcons.MakeContent(AppIcons.QueryStore, "Query Store"),
             Height = 28,
             Padding = new Avalonia.Thickness(10, 0),
             FontSize = 12,
@@ -471,7 +487,7 @@ public partial class MainWindow : Window
 
         var cancelBtn = new Button
         {
-            Content = "\u25A0 Cancel",
+            Content = AppIcons.MakeContent(AppIcons.Stop, "Cancel"),
             Height = 32,
             Width = 120,
             Padding = new Avalonia.Thickness(16, 0),
