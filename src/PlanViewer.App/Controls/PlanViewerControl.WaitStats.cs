@@ -180,24 +180,30 @@ public partial class PlanViewerControl : UserControl
     }
 
     /// <summary>
-    /// The theme token each wait category is drawn in.
-    ///
-    /// <para>I/O, Lock and Network map onto the semantic tokens that already mean the same thing
-    /// elsewhere (warning, error, ok). CPU takes the Wait Stats panel's own accent. Memory has no
-    /// semantic token of its own, so it borrows the one token left that stays distinct from the
-    /// other five. "Other" is the unclassified bucket and gets the neutral muted foreground, which
-    /// is what it always meant.</para>
+    /// The theme token each wait category is drawn in — the same identity palette the Query Store
+    /// charts use, so a wait type is one colour everywhere in the app.
     /// </summary>
+    /// <remarks>
+    /// <para>These used to be the status triad: Lock drawn in the error brush, Network in the
+    /// success brush, I/O in the warning brush. Two things wrong with that. It judged — a lock wait
+    /// is not an error and a network wait is not a success, and the wait palette's own rule is that
+    /// these classify rather than judge. And it coupled a wait category to a token that means
+    /// something else entirely, so repainting "error" would have quietly repainted "Lock".</para>
+    ///
+    /// <para>It also put red and green on two categories in a tool for DBAs, which is the one pair
+    /// a red-green colour deficiency cannot separate. The identity palette spaces its categories by
+    /// lightness within each hue family for exactly that reason.</para>
+    /// </remarks>
     private static string GetWaitCategoryBrushKey(string category)
     {
         return category switch
         {
-            "CPU" => "InsightWaitsBrush",
-            "I/O" => "WarningBrush",
-            "Lock" => "ErrorBrush",
-            "Memory" => "InsightServerBrush",
-            "Network" => "SuccessBrush",
-            _ => "ForegroundMutedBrush"
+            "CPU" => "WaitCategory.CPU",
+            "I/O" => "WaitCategory.Buffer IO",
+            "Lock" => "WaitCategory.Lock",
+            "Memory" => "WaitCategory.Memory",
+            "Network" => "WaitCategory.Network IO",
+            _ => "WaitCategory.Others"
         };
     }
 }

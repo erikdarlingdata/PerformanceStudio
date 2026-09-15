@@ -293,8 +293,8 @@ public partial class WaitStatsRibbonControl : UserControl
     private IBrush ResolveBrush(string category, bool isNamed)
     {
         if (!isNamed)
-            return TryFindBrush("WaitCategory.Others", new SolidColorBrush(Color.Parse("#555D66")));
-        return TryFindBrush($"WaitCategory.{category}", new SolidColorBrush(Color.Parse("#555D66")));
+            return TryFindBrush("WaitCategory.Others", new SolidColorBrush(Color.Parse("#676E73")));
+        return TryFindBrush($"WaitCategory.{category}", new SolidColorBrush(Color.Parse("#676E73")));
     }
 
     private IBrush TryFindBrush(string key, IBrush fallback)
