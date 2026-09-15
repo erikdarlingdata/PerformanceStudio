@@ -31,7 +31,7 @@ public partial class QuerySessionControl : UserControl
     /// </summary>
     private void RefreshEmptyState()
     {
-        var empty = QueryEditor.Text.Length == 0 && SubTabControl.Items.Count <= 1;
+        var empty = QueryEditor.Text.Length == 0 && !HasDocuments;
 
         if (empty)
         {
