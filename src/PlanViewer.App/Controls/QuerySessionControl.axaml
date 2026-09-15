@@ -16,45 +16,6 @@
             copy rather than a shared key because the shared theme file is not this change's to
             edit, and the two differ where it counts anyway: this one is height-pinned to the bar.
         -->
-        <ControlTheme x:Key="ViewBarSegment" TargetType="RadioButton">
-            <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="Foreground" Value="{DynamicResource ForegroundMutedBrush}"/>
-            <Setter Property="Padding" Value="12,0"/>
-            <Setter Property="Height" Value="26"/>
-            <Setter Property="FontSize" Value="12"/>
-            <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="Template">
-                <ControlTemplate>
-                    <!-- The focus ring is a transparent border that is always present, so lighting
-                         it up on focus cannot shift the label by a pixel. -->
-                    <Border x:Name="PART_Border"
-                            Background="{TemplateBinding Background}"
-                            BorderBrush="Transparent"
-                            BorderThickness="1"
-                            Padding="{TemplateBinding Padding}">
-                        <ContentPresenter Content="{TemplateBinding Content}"
-                                          Foreground="{TemplateBinding Foreground}"
-                                          HorizontalAlignment="Center"
-                                          VerticalAlignment="Center"/>
-                    </Border>
-                </ControlTemplate>
-            </Setter>
-
-            <Style Selector="^:pointerover /template/ Border#PART_Border">
-                <Setter Property="Background" Value="{DynamicResource SurfaceHoverBrush}"/>
-            </Style>
-            <Style Selector="^:checked /template/ Border#PART_Border">
-                <Setter Property="Background" Value="{DynamicResource AccentSoftBrush}"/>
-                <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
-            </Style>
-            <Style Selector="^:checked">
-                <Setter Property="Foreground" Value="{DynamicResource ForegroundBrush}"/>
-                <Setter Property="FontWeight" Value="SemiBold"/>
-            </Style>
-            <Style Selector="^:focus-visible /template/ Border#PART_Border">
-                <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
-            </Style>
-        </ControlTheme>
     </UserControl.Resources>
 
     <!-- Three rows: the toolbar, then the view bar and the document strip SHARING row 1, then the
@@ -248,11 +209,11 @@
                         CornerRadius="4" ClipToBounds="True" VerticalAlignment="Center">
                     <StackPanel Orientation="Horizontal">
                         <RadioButton x:Name="EditorViewSegment"
-                                     Theme="{StaticResource ViewBarSegment}"
+                                     Theme="{StaticResource SegmentedButton}" Padding="12,0" Height="26" FontSize="12"
                                      Content="Editor"
                                      ToolTip.Tip="The query editor"/>
                         <RadioButton x:Name="OverviewViewSegment"
-                                     Theme="{StaticResource ViewBarSegment}"
+                                     Theme="{StaticResource SegmentedButton}" Padding="12,0" Height="26" FontSize="12"
                                      Content="Overview"
                                      ToolTip.Tip="Query Stores across all databases"/>
                     </StackPanel>
