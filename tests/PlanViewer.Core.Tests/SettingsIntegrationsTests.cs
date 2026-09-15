@@ -224,7 +224,46 @@ public class SettingsIntegrationsTests
         Assert.Equal(5152, mcp.Port);   // and the junk falls back rather than throwing
     }
 
+    [Fact]
+    public void ResetAllLeavesTheSavedProxyPasswordAlone()
+    {
+        /* Reset All is one unconfirmed button reachable from every section, and deleting an OS
+           credential is the only thing in this dialog that Cancel cannot really undo. Someone
+           restoring the Query Store defaults has not asked to lose their proxy password. Reset
+           Section, pressed on Integrations, is the gesture that means that. */
+        HeadlessUi.Run(() =>
+        {
+            var window = new SettingsWindow(new AppSettings());
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            window.FindControl<Button>("ResetAllButton")!
+                  .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Dispatcher.UIThread.RunJobs();
+
+            Assert.False(StagesCredentialDeletion(window));
+
+            // The same button on the section itself does stage it.
+            window.FindControl<ListBox>("SectionList")!.SelectedIndex = 3;
+            Dispatcher.UIThread.RunJobs();
+            window.FindControl<Button>("ResetButton")!
+                  .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Dispatcher.UIThread.RunJobs();
+
+            /* Only when one was actually stored — which on this machine it may not be, and this
+               test must not depend on the developer's credential store either way. What it pins
+               is that Reset All never stages the delete, whatever Reset Section decides. */
+            CloseWithoutPrompting(window);
+        });
+    }
+
     // ── helpers ──────────────────────────────────────────────────────
+
+    /// <summary>Whether a Save from here would remove the stored proxy password.</summary>
+    private static bool StagesCredentialDeletion(SettingsWindow window) =>
+        (bool)typeof(SettingsWindow)
+            .GetField("_clearStoredProxyPassword", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetValue(window)!;
 
     /// <summary>
     /// The dialog's unsaved-changes flag. Read by reflection rather than exposed, because it is

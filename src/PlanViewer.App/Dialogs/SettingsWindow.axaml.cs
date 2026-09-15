@@ -539,11 +539,21 @@ internal partial class SettingsWindow : Window
 	}
 
 	/// <summary>
-	/// Returns the section to a stock MCP server and a system proxy, and marks the saved proxy
-	/// password for removal. Only pending state changes here — nothing is written until Save, so
-	/// Cancel still walks it all back.
+	/// Returns the section to a stock MCP server and a system proxy. Only pending state changes
+	/// here — nothing is written until Save, so Cancel still walks it all back.
 	/// </summary>
-	private void ResetIntegrations()
+	/// <param name="clearStoredPassword">
+	/// Whether to also stage removal of the saved proxy password from the OS credential store.
+	///
+	/// <para>True only for Reset Section, pressed while Integrations is on screen. Reset All
+	/// passes false, because deleting a credential is the one thing in this dialog that Cancel
+	/// cannot really undo — the password is gone and the user has to find it again — and Reset
+	/// All is a single unconfirmed button reachable from any section. Someone restoring the
+	/// Query Store defaults has not asked to lose their proxy password, and nothing on screen
+	/// would warn them. Resetting the proxy <i>configuration</i> from anywhere is fine; only the
+	/// credential needs the deliberate, targeted gesture.</para>
+	/// </param>
+	private void ResetIntegrations(bool clearStoredPassword)
 	{
 		EnsureIntegrationsLoaded();
 
@@ -555,7 +565,10 @@ internal partial class SettingsWindow : Window
 		_proxyUsername = "";
 		_proxyTypedPassword = "";
 
-		/* Reset is the only way to delete a stored proxy password, because an empty password box
+		if (!clearStoredPassword)
+			return;
+
+		/* This is the only way to delete a stored proxy password, because an empty password box
 		   always means "keep what is there" — otherwise anyone who edited the proxy address would
 		   have to retype the password. Clearing the flag too stops the watermark claiming a
 		   password is saved after the reset has taken it away. */
@@ -1032,7 +1045,8 @@ internal partial class SettingsWindow : Window
 				_settings.FormatOptions = new SqlFormatSettings();
 				break;
 			case 3: // Integrations
-				ResetIntegrations();
+				// Pressed while looking at this section, so the saved proxy password goes too.
+				ResetIntegrations(clearStoredPassword: true);
 				break;
 		}
 
@@ -1050,10 +1064,13 @@ internal partial class SettingsWindow : Window
 		};
 		_settings = fresh;
 
-		// Integrations live outside AppSettings, so replacing it above misses them. A "Reset All"
-		// that quietly skipped a visible section would be a lie. Still only pending state — the
-		// stored proxy password survives until the user actually saves.
-		ResetIntegrations();
+		/* Integrations live outside AppSettings, so replacing it above misses them, and a
+		   "Reset All" that quietly skipped a visible section would be a lie. The saved proxy
+		   password is the exception and stays: this button is unconfirmed and reachable from
+		   every section, so someone restoring the Query Store defaults would lose a credential
+		   they never came here for, with nothing on screen to warn them and no real way back.
+		   Reset Section, pressed on Integrations, is the gesture that means that. */
+		ResetIntegrations(clearStoredPassword: false);
 
 		/* Drop every cached control. Only the visible section is rebuilt below, so without this
 		   the other sections' controls survive holding pre-reset values and Save reads them back
