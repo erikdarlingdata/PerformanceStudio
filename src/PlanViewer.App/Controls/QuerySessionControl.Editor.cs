@@ -211,7 +211,7 @@ public partial class QuerySessionControl : UserControl
         }
 
         QueryEditor.Text = queryText;
-        SubTabControl.SelectedIndex = 0; // Switch to the editor tab
+        SelectEditor();
         QueryEditor.Focus();
     }
 
