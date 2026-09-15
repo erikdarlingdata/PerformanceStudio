@@ -113,13 +113,22 @@ internal static class AdviceWindowHelper
             }
         }, RoutingStrategies.Tunnel);
 
+        /* The generation counter stops a second click's "Copied!" being wiped by the first
+           click's 1.5s timer - mirrored from ComparisonWindow, which fixed the race this
+           handler originally shipped with. */
+        var copyGeneration = 0;
         copyBtn.Click += async (_, _) =>
         {
+            var generation = ++copyGeneration;
+
             copyBtn.Content = await ClipboardHelper.TrySetTextAsync(window, content)
                 ? "Copied!"
                 : "Clipboard busy - try again";
+
             await Task.Delay(1500);
-            copyBtn.Content = "Copy to Clipboard";
+
+            if (generation == copyGeneration)
+                copyBtn.Content = "Copy to Clipboard";
         };
 
         closeBtn.Click += (_, _) => window.Close();
