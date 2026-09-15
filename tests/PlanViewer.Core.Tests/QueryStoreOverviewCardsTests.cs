@@ -159,6 +159,67 @@ public class QueryStoreOverviewCardsTests
     }
 
     /// <summary>
+    /// The defect this whole card was rebuilt for, measured after a real layout pass.
+    ///
+    /// <para>The pills that used to be here were proportioned against the CARD and drawn with
+    /// nothing behind them, so there was no visible zero and no visible full scale and a bar could
+    /// not be read at all: half the card's width meant "half of the largest" or "half of nothing"
+    /// with no way to tell. What has to be true now is that one card is one linear scale anchored
+    /// at zero — the longest bar fills its track, half the value fills half of it, and no value
+    /// fills none of it.</para>
+    /// </summary>
+    [Fact]
+    public void BarLengthIsThatBarsShareOfTheCardsLargestValue()
+    {
+        HeadlessUi.Run(() =>
+        {
+            var control = NewOverview();
+            var window = Show(control);
+
+            control.ApplyMetrics(
+            [
+                NewMetrics("full", cpu: 1000, executions: 1, writes: 0),
+                NewMetrics("half", cpu: 500, executions: 1, writes: 0),
+                NewMetrics("none", cpu: 0, executions: 1, writes: 0),
+            ]);
+
+            // The cards were rebuilt after the last layout pass, so they have not been arranged yet.
+            window.UpdateLayout();
+
+            var fractions = Card(control, metricIndex: 0)
+                .GetLogicalDescendants().OfType<Border>()
+                .Where(b => b.Classes.Contains("barTrack"))
+                .Select(track => (Track: track.Bounds.Width, Fill: FillOf(track).Bounds.Width))
+                .ToList();
+
+            Assert.Equal(3, fractions.Count);
+            Assert.All(fractions, f => Assert.True(f.Track > 20,
+                $"the track measured {f.Track}px, which is too narrow for the shares below to mean anything"));
+
+            AssertShareOfTrack(fractions[0], 1.0);
+            AssertShareOfTrack(fractions[1], 0.5);
+            Assert.Equal(0.0, fractions[2].Fill);
+        });
+    }
+
+    /// <summary>
+    /// Within a pixel, because the two star columns that proportion a bar are laid out on whole
+    /// pixels: half of a 75px track is 37.5px and is arranged at 38, which is 50.7% and is correct.
+    /// A tolerance in decimal places of the RATIO would make this test a function of how wide the
+    /// window in the harness happens to be.
+    /// </summary>
+    private static void AssertShareOfTrack((double Track, double Fill) bar, double share)
+    {
+        var expected = bar.Track * share;
+        Assert.True(Math.Abs(bar.Fill - expected) <= 1.0,
+            $"a bar that should have covered {share:P0} of its {bar.Track}px track — {expected}px — " +
+            $"measured {bar.Fill}px");
+    }
+
+    private static Border FillOf(Border track) =>
+        track.GetLogicalDescendants().OfType<Border>().First(b => b.Classes.Contains("barFill"));
+
+    /// <summary>
     /// The ordering rule on its own, including the two things the rendering tests cannot show
     /// cheaply: that Others sorts on its value like any other row rather than being pinned to the
     /// bottom, and that a tie breaks on the name so a redraw of unchanged data cannot reshuffle a
@@ -272,11 +333,13 @@ public class QueryStoreOverviewCardsTests
     /// Puts the control in a window and lays it out, so its styles are applied and the two toggle
     /// segments are in a visual tree where they can group each other.
     /// </summary>
-    private static void Show(Control control)
+    private static Window Show(Control control)
     {
         var window = new Window { Content = control, Width = 1400, Height = 800 };
         window.Show();
         window.UpdateLayout();
+
+        return window;
     }
 
     private static Grid MetricsGrid(QueryStoreOverviewControl control) =>
