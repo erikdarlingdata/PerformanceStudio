@@ -125,10 +125,15 @@
 
         <!-- The track is the shared reference every bar in a card is read against: full width, one
              linear scale anchored at zero. Without it a short bar and a long bar in two different
-             cards look like the same measurement. It also doubles as the row's hit target, which is
-             why it carries a background rather than an outline. -->
+             cards look like the same measurement.
+
+             BackgroundDarkBrush, the token for a recess, rather than BorderBrush: a bar has to read
+             against this, and the muted grey the Others aggregate is drawn in is close enough to
+             BorderBrush that the one row most likely to be long was the one hardest to see. A well
+             the card is cut into works for every colour in the palette; a line the same weight as
+             the bars works for none of them. -->
         <Style Selector="Border.barTrack">
-            <Setter Property="Background" Value="{DynamicResource BorderBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource BackgroundDarkBrush}"/>
             <Setter Property="CornerRadius" Value="2"/>
             <Setter Property="Height" Value="9"/>
             <Setter Property="ClipToBounds" Value="True"/>
