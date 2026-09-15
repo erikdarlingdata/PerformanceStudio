@@ -390,57 +390,73 @@
                     </LayoutTransformControl>
                 </ScrollViewer>
 
-                <!-- Minimap toggle button (top-left, always visible) -->
-                <Button x:Name="MinimapToggleButton" Content="minimap"
+                <!-- Minimap toggle (bottom-right, always visible). Both this and the panel sit in
+                     the bottom-right corner: a plan renders left to right from its root, so the
+                     top-left is the part a reader most wants unobstructed. The 18px inset clears
+                     the overlay scrollbar rails, which expand to 14px on hover.
+
+                     The icon is set in code-behind rather than here — see the toolbar buttons for
+                     why PathIcon needs AppIcons' corrected theme to inherit the button's
+                     foreground. -->
+                <Button x:Name="MinimapToggleButton"
                         Click="MinimapToggle_Click"
-                        HorizontalAlignment="Left" VerticalAlignment="Top"
-                        Margin="4,4,0,0" Padding="4,1" FontSize="9"
-                        Height="18" MinWidth="0" MinHeight="0"
-                        Opacity="0.8" ZIndex="10"
+                        HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                        Margin="0,0,18,18" Padding="0"
+                        Width="28" Height="28" MinWidth="0" MinHeight="0"
+                        ZIndex="10"
                         Theme="{StaticResource AppButton}"
                         ToolTip.Tip="Show/hide minimap"/>
 
-                <!-- Minimap panel -->
+                <!-- Minimap panel. Opens above the toggle that summons it, so the control and the
+                     thing it controls stay together and neither covers the other. -->
                 <Border x:Name="MinimapPanel" IsVisible="False"
-                        HorizontalAlignment="Left" VerticalAlignment="Top"
-                        Margin="4,26,0,0" ZIndex="10"
-                        Width="400" Height="400"
+                        HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                        Margin="0,0,18,50" ZIndex="10"
+                        Width="220" Height="220"
                         Background="{DynamicResource BackgroundBrush}"
-                        BorderBrush="{DynamicResource BorderBrush}" BorderThickness="5"
+                        BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
                         CornerRadius="4" ClipToBounds="True">
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
-                        <!-- Minimap header with close button -->
+                        <!-- Minimap header: resize grip, title, close button.
+
+                             The grip lives in the header rather than over the map, and that is not
+                             cosmetic. The panel is pinned bottom-right, so the corner you drag is
+                             the top-left one — which is also exactly where PlanLayoutEngine puts a
+                             plan's root operator. A grip floating over the canvas there covers
+                             click-to-center and double-click-to-zoom on the root, and on any plan
+                             big enough to scale below ~0.074 it swallows the root's whole rect.
+                             The header is the same corner and owns no plan content. -->
                         <DockPanel Grid.Row="0" Background="{DynamicResource BackgroundBrush}">
+                            <Border x:Name="MinimapResizeGrip" DockPanel.Dock="Left"
+                                    Width="16" Height="18"
+                                    Background="Transparent"
+                                    Cursor="TopLeftCorner"
+                                    ToolTip.Tip="Drag to resize">
+                                <Canvas Width="10" Height="10" VerticalAlignment="Center"
+                                        HorizontalAlignment="Center">
+                                    <Line StartPoint="0,4" EndPoint="4,0"
+                                          Stroke="{DynamicResource ForegroundBrush}" StrokeThickness="1" Opacity="0.5"/>
+                                    <Line StartPoint="0,7" EndPoint="7,0"
+                                          Stroke="{DynamicResource ForegroundBrush}" StrokeThickness="1" Opacity="0.5"/>
+                                    <Line StartPoint="0,10" EndPoint="10,0"
+                                          Stroke="{DynamicResource ForegroundBrush}" StrokeThickness="1" Opacity="0.5"/>
+                                </Canvas>
+                            </Border>
                             <Button DockPanel.Dock="Right" Content="&#x2715;" Click="MinimapClose_Click"
                                     Width="18" Height="18" Padding="0" FontSize="10"
                                     VerticalAlignment="Center" Margin="0,0,2,0"
                                     Theme="{StaticResource AppButton}" ToolTip.Tip="Close minimap"/>
                             <TextBlock Text="Minimap" FontSize="10" VerticalAlignment="Center"
-                                       Margin="4,1,0,1"
+                                       Margin="2,1,0,1"
                                        Foreground="{DynamicResource ForegroundBrush}"/>
                         </DockPanel>
                         <!-- Minimap canvas -->
                         <Canvas x:Name="MinimapCanvas" Grid.Row="1" ClipToBounds="True"
                                 Background="{DynamicResource BackgroundBrush}"/>
-                        <!-- Resize grip (bottom-right corner) -->
-                        <Border x:Name="MinimapResizeGrip" Grid.Row="1"
-                                Width="14" Height="14"
-                                HorizontalAlignment="Right" VerticalAlignment="Bottom"
-                                Background="Transparent"
-                                Cursor="BottomRightCorner">
-                            <Canvas Width="10" Height="10" Margin="1,1,3,3">
-                                <Line StartPoint="6,10" EndPoint="10,6"
-                                      Stroke="{DynamicResource ForegroundBrush}" StrokeThickness="1" Opacity="0.5"/>
-                                <Line StartPoint="3,10" EndPoint="10,3"
-                                      Stroke="{DynamicResource ForegroundBrush}" StrokeThickness="1" Opacity="0.5"/>
-                                <Line StartPoint="0,10" EndPoint="10,0"
-                                      Stroke="{DynamicResource ForegroundBrush}" StrokeThickness="1" Opacity="0.5"/>
-                            </Canvas>
-                        </Border>
                     </Grid>
                 </Border>
             </Grid>

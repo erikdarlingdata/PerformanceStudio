@@ -119,10 +119,14 @@ public partial class PlanViewerControl : UserControl
     private double _panStartOffsetX;
     private double _panStartOffsetY;
 
-    // Minimap state
-    private static double _minimapWidth = 400;
-    private static double _minimapHeight = 400;
-    private const double MinimapMinSize = 200;
+    /* Minimap state. The default is a corner overlay, not a window: at the old 400x400 it
+       covered roughly a quarter of the canvas on a laptop and read as something you had to
+       dismiss to carry on working, which defeats a navigation aid. Resize still reaches 500
+       for anyone who wants the old size, and the chosen size is static so it survives being
+       reopened on another plan. */
+    private static double _minimapWidth = 220;
+    private static double _minimapHeight = 220;
+    private const double MinimapMinSize = 160;
     private const double MinimapMaxSize = 500;
     private bool _minimapDragging;
     private Border? _minimapViewportBox;
@@ -173,6 +177,10 @@ public partial class PlanViewerControl : UserControl
         StatementsButton.Content = AppIcons.MakeContent(AppIcons.Statements, "Statements");
         PlanToolbarOverflowButton.Content = AppIcons.MakeIcon(AppIcons.More);
 
+        /* The minimap toggle used to be the literal word "minimap" at 9px, which read as a label
+           rather than a control. AppIcons.Minimap was drawn for this button and left unwired. */
+        MinimapToggleButton.Content = AppIcons.MakeIcon(AppIcons.Minimap);
+
         /* Same contract as the session toolbar's overflow, in the order these leave the row:
            Statements first, then Save. Zoom, Fit and the zoom readout stay — they are what this
            toolbar is for, and Fit in particular is the recovery from a zoom that went wrong.
@@ -219,15 +227,22 @@ public partial class PlanViewerControl : UserControl
         Helpers.DataGridBehaviors.AttachCopyGuard(StatementsGrid,
             item => item is StatementRow row ? RunnableStatementText(row.Statement) : null);
 
-        // Wire minimap resize grip (defined in AXAML, not in canvas)
+        /* Wire minimap resize grip (defined in AXAML, not in canvas).
+
+           PointerCaptureLost matters as much as PointerReleased. Capture can go away without a
+           release — alt-tab mid-drag, a touch cancel, another control taking it — and the "am I
+           dragging?" flag is the only thing the move handlers check. Left set, a later plain
+           hover over the grip resizes the panel against a start point from minutes ago. */
         MinimapResizeGrip.PointerPressed += MinimapResizeGrip_PointerPressed;
         MinimapResizeGrip.PointerMoved += MinimapResizeGrip_PointerMoved;
         MinimapResizeGrip.PointerReleased += MinimapResizeGrip_PointerReleased;
+        MinimapResizeGrip.PointerCaptureLost += (_, _) => _minimapResizing = false;
 
         // Wire minimap canvas interaction handlers once
         MinimapCanvas.PointerPressed += MinimapCanvas_PointerPressed;
         MinimapCanvas.PointerMoved += MinimapCanvas_PointerMoved;
         MinimapCanvas.PointerReleased += MinimapCanvas_PointerReleased;
+        MinimapCanvas.PointerCaptureLost += (_, _) => _minimapDragging = false;
     }
 
     /// <summary>
