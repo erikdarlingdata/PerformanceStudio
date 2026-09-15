@@ -42,11 +42,11 @@ public class TabStripLayoutTests
 
                 var tabs = window.FindControl<TabControl>("MainTabControl")!;
 
-                /* Height before overflow, to compare against height after it. The strip shows its
-                   rail at all times for this: the app runs its scrollbars non-overlay, so an Auto
-                   rail would appear the moment a tab tipped the strip into overflow and take its
-                   own height out of the window, shoving everything below it down -- the same shift
-                   the session toolbar refuses, arriving by a different door. */
+                /* Height before overflow, to compare against height after it. Under the app's
+                   overlay scrollbars an Auto rail spans the content instead of taking a row of
+                   its own, so constant height is exactly what this asserts -- if the scrollbars
+                   ever go back to non-overlay, an Auto rail would grow the strip at the overflow
+                   boundary and this test is what says so. */
                 var strip = window.GetVisualDescendants().OfType<ScrollViewer>()
                     .First(sv => sv.Name == "TabStripScroll");
                 var heightBeforeOverflow = strip.Bounds.Height;

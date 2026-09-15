@@ -58,16 +58,15 @@
                      untouched: it lives in TabItem's own template (PART_SelectedPipe), not here.
 
                      The rail stays on this one, unlike the session toolbar's: dragging it is the
-                     affordance that says there are more tabs off-screen. Visible rather than Auto,
-                     though, and that is not a preference. App.axaml turns AllowAutoHide off
-                     app-wide, and Fluent only spans the content presenter under the scrollbars
-                     when auto-hide is ON, so with it off a rail occupies its own grid row: on Auto
-                     the strip would grow by the rail's height at the exact moment a tab tipped it
-                     into overflow, and shrink back when one closed, shoving the toolbar, the
-                     sub-tab row and the editor down and up with it. That is the shift the session
-                     toolbar refuses for itself, and it would be no better here. Constant height at
-                     every tab count is worth the rail always showing. (If scrollbars ever go back
-                     to overlay auto-hide, Auto becomes the better setting.) -->
+                     affordance that says there are more tabs off-screen. Auto, not Visible, and
+                     that follows from App.axaml running scrollbars as overlay auto-hide: overlay
+                     bars span the content presenter rather than taking a grid row, so Auto cannot
+                     shift the strip's height at overflow — while Visible would paint the idle
+                     thumb permanently across the bottom of the tab headers, right through the
+                     selected-tab underline, and (with nothing to scroll) as a full-width bar even
+                     when every tab fits. (This was Visible when the app ran non-overlay bars,
+                     where Auto really did grow the strip by a rail-row at the overflow boundary;
+                     the overlay change inverted the trade.) -->
                 <TabControl.Template>
                     <ControlTemplate TargetType="TabControl">
                         <Border Background="{TemplateBinding Background}"
@@ -88,7 +87,7 @@
                                      dead with no error to say so. -->
                                 <ScrollViewer Name="TabStripScroll" DockPanel.Dock="Top"
                                               PointerWheelChanged="TabStrip_PointerWheel"
-                                              HorizontalScrollBarVisibility="Visible"
+                                              HorizontalScrollBarVisibility="Auto"
                                               VerticalScrollBarVisibility="Disabled">
                                     <ItemsPresenter Name="PART_ItemsPresenter"
                                                     ItemsPanel="{TemplateBinding ItemsPanel}"/>

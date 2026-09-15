@@ -23,6 +23,9 @@ public partial class PlanViewerControl : UserControl
         if (waits.Count == 0)
         {
             WaitStatsHeader.Text = "Wait Stats";
+            // The populated branch hangs the previous statement's totals on this tooltip;
+            // without clearing it, an empty statement still answers hover with stale numbers.
+            ToolTip.SetTip(WaitStatsHeader, null);
             WaitStatsEmpty.Text = isActualPlan
                 ? "No wait stats recorded"
                 : "No wait stats (estimated plan)";

@@ -164,8 +164,8 @@ public static class AppIcons
     /// <c>TextControlForeground</c>. A theme setter beats an inherited value, so a plain PathIcon
     /// does <i>not</i> pick up the foreground of the button it sits in — it would stay the Fluent
     /// white while the label beside it is #E4E6EB, and it would not go white with the label on
-    /// hover. Leaving Foreground unset here lets ordinary inheritance do its job, which is what
-    /// the AppButton hover style (it sets Foreground on the ContentPresenter) needs.</para>
+    /// hover. Leaving Foreground unset here lets ordinary inheritance do its job, so the icon
+    /// always matches the label beside it whatever state the button is in.</para>
     ///
     /// <para><b>Weight.</b> The stock template fits the icon's <i>ink</i> to the control, so each
     /// icon gets its own scale factor — the boxy ones (copy, grid, save) would render about 17%
@@ -204,7 +204,7 @@ public static class AppIcons
     /// <summary>
     /// Wraps one of the geometries above in the control that goes beside a button's label.
     /// Deliberately no Foreground: it inherits whatever the button's content presenter has,
-    /// including the white that AppButton's hover state sets.
+    /// so icon and label always agree, in every button state.
     /// </summary>
     public static Control MakeIcon(StreamGeometry geometry) =>
         new PathIcon

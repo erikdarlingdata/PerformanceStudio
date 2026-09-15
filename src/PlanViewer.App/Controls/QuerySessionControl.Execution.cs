@@ -273,8 +273,8 @@ public partial class QuerySessionControl : UserControl
 
         statusLabel.Text = message;
         /* Static, so it resolves off the label rather than off the session; the label is already
-           in the tree by the time a failure lands on it. ErrorBrush is not in the theme yet, and
-           until it is this falls back to the red the site used to construct here. */
+           in the tree by the time a failure lands on it. ErrorBrush lives in the theme now; the
+           fallback only matters if a lookup ever misses. */
         statusLabel.Foreground = Token(statusLabel, "ErrorBrush", FallbackError);
 
         progressBar.IsVisible = false;

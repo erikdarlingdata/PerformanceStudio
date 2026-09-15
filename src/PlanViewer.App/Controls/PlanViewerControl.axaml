@@ -117,7 +117,7 @@
                          toolbar above it and genuinely needs them. -->
                     <StackPanel x:Name="PlanConnectionControls" Orientation="Horizontal" Spacing="4">
                         <Button x:Name="PlanConnectButton" Content="Connect" Click="PlanConnect_Click"
-                                Height="28" Padding="8,0" FontSize="12"
+                                Height="28" Width="118" Padding="8,0" FontSize="12"
                                 Theme="{StaticResource AppButton}"
                                 ToolTip.Tip="Connect to a SQL Server for schema lookups"/>
                         <TextBlock x:Name="PlanServerLabel" Text=""

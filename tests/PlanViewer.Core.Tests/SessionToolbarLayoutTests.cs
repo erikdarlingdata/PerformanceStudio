@@ -52,7 +52,9 @@ public class SessionToolbarLayoutTests
                 var subTabsY = subTabs.Bounds.Y;
                 var positions = slots.Select(b => b.Bounds.X).ToList();
 
-                // exactly what connecting does to the two slots whose content changes
+                // the same shape of change connecting makes to the two width-pinned slots
+                // (real code swaps in icon+label content via AppIcons.MakeContent; a plain
+                // string is a same-or-narrower stand-in, and the pin is what this asserts)
                 connect.Content = "Reconnect";
                 server.Text = "sql2022.contoso.example.com (Read-only)";
                 window.UpdateLayout();
@@ -92,11 +94,9 @@ public class SessionToolbarLayoutTests
     /// pins the mechanism rather than the colours: the keys the session asks for are keys it can
     /// find, from where it sits in the tree.
     ///
-    /// <para>Two keys are deliberately not in the list, and they are the two this control asks for
-    /// that the theme does not hold yet: SuccessBrush, which arrives with the design-system pass,
-    /// and ErrorBrush, which nothing has claimed. Both calls are written to keep their literal
-    /// until the key exists, so both start working the day it does and neither can render nothing
-    /// in the meantime. Add them here once they land.</para>
+    /// <para>SuccessBrush and ErrorBrush are in the list now that the design-system pass landed
+    /// them; they are the two keys whose FindResource fallbacks would mask a silent lookup
+    /// failure most convincingly, which is exactly what this test exists to catch.</para>
     /// </summary>
     [Fact]
     public void TheThemeKeysTheSessionAsksForResolve()
@@ -113,7 +113,7 @@ public class SessionToolbarLayoutTests
                 var session = Session(window);
 
                 foreach (var key in new[] { "ForegroundBrush", "BackgroundBrush", "ForegroundMutedBrush",
-                    "BackgroundDarkBrush", "BorderBrush", "AppButton" })
+                    "BackgroundDarkBrush", "BorderBrush", "SuccessBrush", "ErrorBrush", "AppButton" })
                 {
                     Assert.True(session.TryFindResource(key, out var value) && value is not null,
                         $"the session cannot resolve {key}");
