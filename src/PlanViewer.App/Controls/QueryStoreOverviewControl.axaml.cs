@@ -1,14 +1,9 @@
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Controls.Primitives;
-using Avalonia.Controls.Shapes;
-using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Threading;
@@ -75,6 +70,13 @@ public partial class QueryStoreOverviewControl : UserControl
             .ToArray();
         if (_palette.Length == 0)
             _palette = AppSettingsService.DefaultTopDbColors.Select(hex => Color.Parse(hex)).ToArray();
+
+        /* Settings clamp MultiQsTopDbCount at 20 and ship eight colours. Asking for twelve used to
+           paint databases nine through twelve in the same grey as the Others aggregate, in the
+           legend AND in all seven cards — which breaks the one promise the shared legend makes,
+           that a colour identifies a database everywhere. A database this palette cannot name
+           belongs in Others, where the grey means what it says. */
+        _topN = Math.Min(_topN, _palette.Length);
 
         _supportsWaitStats = supportsWaitStats;
         _slicerEndUtc = DateTime.UtcNow;

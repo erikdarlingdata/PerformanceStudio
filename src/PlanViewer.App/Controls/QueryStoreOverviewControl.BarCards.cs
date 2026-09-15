@@ -65,6 +65,12 @@ public partial class QueryStoreOverviewControl : UserControl
     /// <summary>The aggregate row every database outside the top N is folded into.</summary>
     internal const string OthersLabel = "Others";
 
+    /// <summary>
+    /// The one card that is a count of executions rather than a measurement per execution, so it is
+    /// the one the Total/Avg switch leaves alone.
+    /// </summary>
+    private const int ExecutionsMetricIndex = 2;
+
     /// <summary>One bar: a database (or the Others aggregate) and what it measured.</summary>
     internal readonly record struct OverviewBarRow(string Database, double Value, bool IsOthers);
 
@@ -113,6 +119,15 @@ public partial class QueryStoreOverviewControl : UserControl
     /// sums to zero for this particular metric. Dropping it on the cards where it happens to be
     /// zero would give neighbouring cards different row counts, and the whole point of drawing
     /// seven cards side by side is that they can be compared row for row.</para>
+    ///
+    /// <para><b>In Avg mode Others is re-averaged, not added up.</b> The average of forty databases
+    /// is not the sum of their forty averages — adding rates together produces a number that is not
+    /// a rate at all. Forty quiet databases each averaging 10ms would report an Others bar of 400ms,
+    /// outrank every real database on the card, become the scale everything else is measured
+    /// against, and squash the real bars to slivers. So the tail keeps its totals and its execution
+    /// count and divides at the end, exactly as <see cref="DatabaseMetrics"/> derives its own
+    /// averages. Executions is the exception in both directions: it has no per-execution average, so
+    /// it stays a plain sum whichever mode is showing.</para>
     /// </summary>
     internal static List<OverviewBarRow> BuildBarRows(
         IReadOnlyList<DatabaseMetrics> metrics,
@@ -121,25 +136,33 @@ public partial class QueryStoreOverviewControl : UserControl
         bool showAverages)
     {
         var rows = new List<OverviewBarRow>();
-        double othersValue = 0;
+        double othersTotal = 0;
+        long othersExecutions = 0;
         var anyOthers = false;
 
         foreach (var m in metrics)
         {
-            var value = GetMetricValue(m, metricIndex, showAverages);
             if (topDbs.Contains(m.DatabaseName))
             {
-                rows.Add(new OverviewBarRow(m.DatabaseName, value, IsOthers: false));
+                rows.Add(new OverviewBarRow(
+                    m.DatabaseName, GetMetricValue(m, metricIndex, showAverages), IsOthers: false));
             }
             else
             {
-                othersValue += value;
+                othersTotal += GetMetricValue(m, metricIndex, showAverages: false);
+                othersExecutions += m.TotalExecutions;
                 anyOthers = true;
             }
         }
 
         if (anyOthers)
+        {
+            var othersValue = showAverages && metricIndex != ExecutionsMetricIndex
+                ? (othersExecutions > 0 ? othersTotal / othersExecutions : 0)
+                : othersTotal;
+
             rows.Add(new OverviewBarRow(OthersLabel, othersValue, IsOthers: true));
+        }
 
         return rows
             .OrderByDescending(r => r.Value)
@@ -172,11 +195,18 @@ public partial class QueryStoreOverviewControl : UserControl
 
         var label = new TextBlock { Text = database, Classes = { "legendLabel" } };
 
-        var entry = new StackPanel
+        /* Transparent, not null: Avalonia hit-tests what a control actually drew, so a bare panel
+           answers the pointer only where its children's glyphs are and the tooltip would go dead in
+           the strip above and below a 9px swatch. */
+        var entry = new Border
         {
-            Orientation = Orientation.Horizontal,
-            Margin = new Thickness(0, 0, 14, 0),
-            Children = { swatch, label }
+            Background = Brushes.Transparent,
+            Margin = new Thickness(0, 0, 14, 2),
+            Child = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Children = { swatch, label }
+            }
         };
 
         ToolTip.SetTip(entry, database);
@@ -208,40 +238,43 @@ public partial class QueryStoreOverviewControl : UserControl
             return new Border { Classes = { "metricCard" }, Child = content };
         }
 
-        /* One grid for all the bars rather than one per row, so the name column and the value
-           column line up down the card. Both are Auto, which lets a card full of short names give
-           the tracks the width instead; the name's own MinWidth/MaxWidth (in the styles) keeps
-           that from collapsing to nothing or eating the card. */
-        var bars = new Grid
-        {
-            ColumnDefinitions = new ColumnDefinitions("Auto,*,Auto")
-        };
-
         // Every bar in a card is measured against the same zero-anchored scale — the card's own
         // largest value. That is the encoding the old pills claimed to have and did not.
         var scaleMax = rows.Max(r => r.Value);
         if (scaleMax <= 0) scaleMax = 1;
 
-        for (var i = 0; i < rows.Count; i++)
-        {
-            bars.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
-            AddBarRow(bars, i, rows[i], scaleMax, spec.Unit);
-        }
+        foreach (var row in rows)
+            content.Children.Add(BuildBarRow(row, scaleMax, spec.Unit));
 
-        content.Children.Add(bars);
         return new Border { Classes = { "metricCard" }, Child = content };
     }
 
-    private void AddBarRow(Grid bars, int rowIndex, OverviewBarRow row, double scaleMax, MetricUnit unit)
+    /// <summary>
+    /// One bar: its name and its value on a line together, and the bar itself on the full width of
+    /// the card underneath them.
+    ///
+    /// <para><b>Why the label is above the bar rather than beside it.</b> Beside it was the first
+    /// shape this took, and measured at MainWindow's default 1280 it does not work: seven cards
+    /// share the row, which leaves each one about 156px of content, and a name column and a value
+    /// column — both Auto, both winning their width against a star-sized track — took 70px and 60px
+    /// of it. The bar got fourteen pixels. A fourteen-pixel bar encodes nothing, which is the exact
+    /// complaint this card was rebuilt to answer, so the labels moved to their own line and the bar
+    /// took the whole width. It costs a line of height per row and buys an order of magnitude of
+    /// the only thing on the card that is a picture.</para>
+    /// </summary>
+    private Border BuildBarRow(OverviewBarRow row, double scaleMax, MetricUnit unit)
     {
         var name = new TextBlock { Text = row.Database, Classes = { "barName" } };
-        ToolTip.SetTip(name, row.Database);
-        Grid.SetRow(name, rowIndex);
         Grid.SetColumn(name, 0);
-        bars.Children.Add(name);
 
-        var color = row.IsOthers ? OthersColor : _dbColorMap.GetValueOrDefault(row.Database, OthersColor);
-        var formatted = FormatMetric(row.Value, unit);
+        var value = new TextBlock { Text = FormatMetric(row.Value, unit), Classes = { "barValue" } };
+        Grid.SetColumn(value, 1);
+
+        var labels = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+            Children = { name, value }
+        };
 
         /* The fill is proportioned by two star columns rather than a measured width, because the
            card is star-sized itself and has no width to measure until it is arranged. Clamped
@@ -256,6 +289,7 @@ public partial class QueryStoreOverviewControl : UserControl
             }
         };
 
+        var color = row.IsOthers ? OthersColor : _dbColorMap.GetValueOrDefault(row.Database, OthersColor);
         var fill = new Border
         {
             Classes = { "barFill" },
@@ -265,12 +299,23 @@ public partial class QueryStoreOverviewControl : UserControl
         proportion.Children.Add(fill);
 
         var track = new Border { Classes = { "barTrack" }, Child = proportion };
-        ToolTip.SetTip(track, $"{row.Database}: {formatted}");
-        ToolTip.SetShowDelay(track, 200);
 
-        /* Drill-down hangs off the full-width track, not off the coloured fill it used to hang
-           off: on the database that measured one percent of the leader, the fill is a sliver and
-           the right-click target was a sliver with it. */
+        /* Transparent, not null: Avalonia hit-tests what a control drew, so a container with no
+           background answers the pointer only over its children's glyphs. The tooltip carries the
+           unabbreviated figure, so stepping a big count up to "1.2B" in the label never costs the
+           reader the number itself, and the full database name survives an ellipsized one. */
+        var container = new Border
+        {
+            Background = Brushes.Transparent,
+            Child = new StackPanel { Children = { labels, track } }
+        };
+
+        ToolTip.SetTip(container, $"{row.Database}: {FormatMetricExact(row.Value, unit)}");
+        ToolTip.SetShowDelay(container, 200);
+
+        /* Drill-down hangs off the whole row, not off the coloured fill it used to hang off: on the
+           database that measured one percent of the leader, the fill is a sliver and the
+           right-click target was a sliver with it. */
         if (!row.IsOthers)
         {
             var database = row.Database;
@@ -279,28 +324,62 @@ public partial class QueryStoreOverviewControl : UserControl
             item.Click += (_, _) => DrillDownRequested?.Invoke(
                 this, new DrillDownEventArgs(database, _slicerStartUtc, _slicerEndUtc));
             menu.Items.Add(item);
-            track.ContextMenu = menu;
+            container.ContextMenu = menu;
         }
 
-        Grid.SetRow(track, rowIndex);
-        Grid.SetColumn(track, 1);
-        bars.Children.Add(track);
-
-        var value = new TextBlock { Text = formatted, Classes = { "barValue" } };
-        Grid.SetRow(value, rowIndex);
-        Grid.SetColumn(value, 2);
-        bars.Children.Add(value);
+        return container;
     }
 
     /// <summary>
-    /// A bar's value label, in the units the service handed over.
+    /// A bar's value label, in the units the service handed over, and capped in WIDTH as well as
+    /// scaled in value.
+    ///
+    /// <para>The label shares its row with the bar, and the bar is what the card is for. A 30-day
+    /// Total Reads is routinely eleven or twelve digits, and "123,456,789,012" spends about 72px of
+    /// a card that has roughly 160 to give at the app's default 1280-wide window — with a long
+    /// database name on the other side that leaves the bar almost nothing. Above a hundred thousand
+    /// the label steps up a unit instead, which bounds it at six characters, and the exact figure
+    /// moves to the tooltip where it costs no width at all. Below that nothing changes: small
+    /// numbers stay exactly what they are.</para>
     /// </summary>
     internal static string FormatMetric(double value, MetricUnit unit) => unit switch
+    {
+        MetricUnit.Milliseconds => FormatMilliseconds(value),
+        MetricUnit.Megabytes => FormatMegabytes(value),
+        _ => FormatCount(value)
+    };
+
+    /// <summary>
+    /// The same value with nothing abbreviated away, for the tooltip. Durations are already on a
+    /// scaled ladder that loses nothing a reader wants, so they come through unchanged.
+    /// </summary>
+    internal static string FormatMetricExact(double value, MetricUnit unit) => unit switch
     {
         MetricUnit.Milliseconds => FormatMilliseconds(value),
         MetricUnit.Megabytes => FormatMagnitude(value) + " MB",
         _ => FormatMagnitude(value)
     };
+
+    private static string FormatCount(double value)
+    {
+        if (value < 100_000) return FormatMagnitude(value);
+        if (value < 1_000_000) return (value / 1_000).ToString("N0") + "K";
+        if (value < 1_000_000_000) return (value / 1_000_000).ToString("0.#") + "M";
+        if (value < 1_000_000_000_000) return (value / 1_000_000_000).ToString("0.#") + "B";
+        return (value / 1_000_000_000_000).ToString("0.#") + "T";
+    }
+
+    /// <summary>
+    /// Megabytes, because that is what the service's <c>* 8.0 / 1024.0</c> of a page count produces.
+    /// A busy instance's Total Memory over a month runs to millions of them, so this climbs to GB
+    /// and TB rather than printing seven digits of megabyte.
+    /// </summary>
+    private static string FormatMegabytes(double mb)
+    {
+        if (mb < 1024) return FormatMagnitude(mb) + " MB";
+        if (mb < 1024 * 1024) return (mb / 1024).ToString("0.#") + " GB";
+        return (mb / (1024.0 * 1024.0)).ToString("0.#") + " TB";
+    }
 
     /// <summary>
     /// <see cref="MetricFormatter.FormatDuration"/> for anything a millisecond or longer, so these

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Avalonia.Controls;
@@ -17,8 +18,9 @@ namespace PlanViewer.Core.Tests;
 /// <para>What these pin is the part of that which is invisible in a screenshot and easy to get
 /// subtly wrong: that the switch re-reads EVERY card rather than relabelling them, that the bars
 /// in a card are ordered by the quantity they draw (and re-ordered when the switch changes what
-/// that quantity is), that a metric with no activity says so instead of drawing empty tracks, and
-/// that the legend is drawn once above the cards rather than once inside each.</para>
+/// that quantity is), that a bar's length really is its share of the card's largest value, that a
+/// metric with no activity says so instead of drawing empty tracks, and that the legend is drawn
+/// once above the cards rather than once inside each.</para>
 ///
 /// <para>The control is driven through ApplyStates/ApplyMetrics, the same seams its fetch path
 /// uses. Manufacturing the data is the point: a test that reached a real Query Store would inherit
@@ -56,11 +58,8 @@ public class QueryStoreOverviewCardsTests
     [Fact]
     public void TheTotalAvgSwitchRedrawsEveryCardRatherThanRelabellingIt()
     {
-        HeadlessUi.Run(() =>
+        RunWithOverview((control, _) =>
         {
-            var control = NewOverview();
-            Show(control);
-
             control.ApplyMetrics(SampleMetrics());
 
             Assert.Equal(
@@ -94,10 +93,8 @@ public class QueryStoreOverviewCardsTests
     [Fact]
     public void TheExecutionsCardReadsTheSameInBothModes()
     {
-        HeadlessUi.Run(() =>
+        RunWithOverview((control, _) =>
         {
-            var control = NewOverview();
-            Show(control);
             control.ApplyMetrics(SampleMetrics());
 
             var totalNames = BarNames(control, metricIndex: 2);
@@ -114,11 +111,8 @@ public class QueryStoreOverviewCardsTests
     [Fact]
     public void ACardWithNoActivityGoesQuietInsteadOfDrawingEmptyTracks()
     {
-        HeadlessUi.Run(() =>
+        RunWithOverview((control, _) =>
         {
-            var control = NewOverview();
-            Show(control);
-
             // Every database wrote nothing, so Total Writes (card 4) has nothing to draw.
             control.ApplyMetrics(SampleMetrics(writes: 0));
 
@@ -132,21 +126,40 @@ public class QueryStoreOverviewCardsTests
             var cpu = Card(control, metricIndex: 0);
             Assert.DoesNotContain("empty", Header(cpu).Classes);
             Assert.Empty(TextByClass(cpu, "cardEmpty"));
-            Assert.Equal(4, cpu.GetLogicalDescendants().OfType<Border>()
-                .Count(b => b.Classes.Contains("barTrack")));
+            Assert.Equal(4, Tracks(cpu).Count);
+        });
+    }
+
+    /// <summary>
+    /// The track's Background is load-bearing twice over: it is the visible zero-to-full reference a
+    /// bar is read against, and because Avalonia hit-tests what a control actually drew, it is also
+    /// what makes the whole row answer the pointer. Delete that one setter from the styles and the
+    /// bar tooltip and the drill-down menu both go dead on everything but the coloured fill —
+    /// without a single other assertion in this file noticing.
+    /// </summary>
+    [Fact]
+    public void TheTrackIsActuallyPaintedAndNotJustClassed()
+    {
+        RunWithOverview((control, _) =>
+        {
+            control.ApplyMetrics(SampleMetrics());
+
+            Assert.All(Tracks(Card(control, metricIndex: 0)), track =>
+            {
+                Assert.NotNull(track.Background);
+                Assert.NotNull(FillOf(track).Background);
+            });
         });
     }
 
     [Fact]
     public void TheLegendIsDrawnOnceAboveTheCardsAndNotInsideThem()
     {
-        HeadlessUi.Run(() =>
+        RunWithOverview((control, _) =>
         {
-            var control = NewOverview();
-            Show(control);
             control.ApplyMetrics(SampleMetrics());
 
-            var legend = control.FindControl<StackPanel>("DatabaseLegend")!;
+            var legend = control.FindControl<WrapPanel>("DatabaseLegend")!;
             Assert.Equal(
                 ["alpha", "bravo", "charlie", "Others"],
                 legend.GetLogicalDescendants().OfType<TextBlock>()
@@ -171,11 +184,8 @@ public class QueryStoreOverviewCardsTests
     [Fact]
     public void BarLengthIsThatBarsShareOfTheCardsLargestValue()
     {
-        HeadlessUi.Run(() =>
+        RunWithOverview((control, window) =>
         {
-            var control = NewOverview();
-            var window = Show(control);
-
             control.ApplyMetrics(
             [
                 NewMetrics("full", cpu: 1000, executions: 1, writes: 0),
@@ -186,38 +196,59 @@ public class QueryStoreOverviewCardsTests
             // The cards were rebuilt after the last layout pass, so they have not been arranged yet.
             window.UpdateLayout();
 
-            var fractions = Card(control, metricIndex: 0)
-                .GetLogicalDescendants().OfType<Border>()
-                .Where(b => b.Classes.Contains("barTrack"))
+            var bars = Tracks(Card(control, metricIndex: 0))
                 .Select(track => (Track: track.Bounds.Width, Fill: FillOf(track).Bounds.Width))
                 .ToList();
 
-            Assert.Equal(3, fractions.Count);
-            Assert.All(fractions, f => Assert.True(f.Track > 20,
-                $"the track measured {f.Track}px, which is too narrow for the shares below to mean anything"));
+            Assert.Equal(3, bars.Count);
+            Assert.All(bars, b => Assert.True(b.Track > 20,
+                $"the track measured {b.Track}px, which is too narrow for the shares below to mean anything"));
 
-            AssertShareOfTrack(fractions[0], 1.0);
-            AssertShareOfTrack(fractions[1], 0.5);
-            Assert.Equal(0.0, fractions[2].Fill);
+            AssertShareOfTrack(bars[0], 1.0);
+            AssertShareOfTrack(bars[1], 0.5);
+            Assert.Equal(0.0, bars[2].Fill);
         });
     }
 
     /// <summary>
-    /// Within a pixel, because the two star columns that proportion a bar are laid out on whole
-    /// pixels: half of a 75px track is 37.5px and is arranged at 38, which is 50.7% and is correct.
-    /// A tolerance in decimal places of the RATIO would make this test a function of how wide the
-    /// window in the harness happens to be.
+    /// The width budget, at the width the app actually opens at, in the case that breaks it.
+    ///
+    /// <para>Seven cards share the row, and the name and value columns are both Auto, so they win
+    /// their width against the star-sized track rather than yielding it. A long database name
+    /// beside a twelve-digit read count starved the bar to about four pixels at MainWindow's
+    /// default 1280 — the bar being, again, the entire point of the card. The name is capped and
+    /// big counts step up a unit; this is what says both still hold.</para>
     /// </summary>
-    private static void AssertShareOfTrack((double Track, double Fill) bar, double share)
+    [Fact]
+    public void TheBarSurvivesALongNameBesideABigNumberAtTheDefaultWindowWidth()
     {
-        var expected = bar.Track * share;
-        Assert.True(Math.Abs(bar.Fill - expected) <= 1.0,
-            $"a bar that should have covered {share:P0} of its {bar.Track}px track — {expected}px — " +
-            $"measured {bar.Fill}px");
-    }
+        RunWithOverview((control, window) =>
+        {
+            control.ApplyMetrics(
+            [
+                NewMetrics("StackOverflow2013", cpu: 41_152_263_004, executions: 9_000_000, writes: 1),
+                NewMetrics("StackOverflow2010", cpu: 20_000_000_000, executions: 4_000_000, writes: 1),
+            ]);
+            window.UpdateLayout();
 
-    private static Border FillOf(Border track) =>
-        track.GetLogicalDescendants().OfType<Border>().First(b => b.Classes.Contains("barFill"));
+            // Card 3 is Total Reads, the widest number on the dashboard.
+            var reads = Card(control, metricIndex: 3);
+            Assert.Equal(["123.5B", "60B"], TextByClass(reads, "barValue"));
+
+            /* The bar has the card's whole content width because the labels are on their own line
+               above it. When they shared a line with it, this measured 14px — and 4px before the
+               value label learned to step up a unit. */
+            var track = Tracks(reads)[0].Bounds.Width;
+            var value = reads.GetLogicalDescendants().OfType<TextBlock>()
+                .First(t => t.Classes.Contains("barValue")).Bounds.Width;
+            Assert.True(track >= 100,
+                $"the bar track measured {track}px at a {window.Width}px window " +
+                $"(card {reads.Bounds.Width}, value label {value}) — it was 14px when the labels " +
+                "shared the bar's line, and 4px before that");
+        },
+        // MainWindow defaults to 1280 and the control sits inside tab chrome, so this is generous.
+        windowWidth: 1280);
+    }
 
     /// <summary>
     /// The ordering rule on its own, including the two things the rendering tests cannot show
@@ -250,14 +281,107 @@ public class QueryStoreOverviewCardsTests
         Assert.Equal(["alpha", "zulu"], tied.Select(r => r.Database).ToList());
     }
 
+    /// <summary>
+    /// Others in Avg mode has to be re-averaged over the tail's executions, not added up out of the
+    /// tail's averages. Adding rates together produces a number that is not a rate: the tail here
+    /// averages 2.5ms, and summing its two averages would claim 10ms — four times too high, enough
+    /// to outrank the real database on the card, become the scale every other bar is drawn against,
+    /// and squash them all to slivers.
+    /// </summary>
     [Fact]
-    public void TheStateCardNamesEveryDatabaseAndWhatItsQueryStoreIsDoing()
+    public void OthersInAvgModeIsTheTailsAverageAndNotTheSumOfItsAverages()
+    {
+        List<DatabaseMetrics> metrics =
+        [
+            NewMetrics("kept", cpu: 1000, executions: 10, writes: 0),   // averages 100
+            NewMetrics("tail-slow", cpu: 700, executions: 300, writes: 0),
+            NewMetrics("tail-fast", cpu: 300, executions: 100, writes: 0),
+        ];
+
+        var rows = QueryStoreOverviewControl.BuildBarRows(
+            metrics, ["kept"], metricIndex: 0, showAverages: true);
+
+        var others = rows.Single(r => r.IsOthers);
+        Assert.Equal(2.5, others.Value, 6);          // (700 + 300) / (300 + 100)
+        Assert.Equal(["kept", "Others"], rows.Select(r => r.Database).ToList());
+
+        /* Executions has no per-execution average, so its Others row stays a plain sum in Avg mode
+           — the one metric this re-averaging must not touch. */
+        var executions = QueryStoreOverviewControl.BuildBarRows(
+            metrics, ["kept"], metricIndex: 2, showAverages: true);
+
+        Assert.Equal(400, executions.Single(r => r.IsOthers).Value);
+    }
+
+    [Fact]
+    public void BigCountsStepUpAUnitInTheLabelAndKeepTheirDigitsInTheTooltip()
+    {
+        Assert.Equal("99,999", QueryStoreOverviewControl.FormatMetric(
+            99_999, QueryStoreOverviewControl.MetricUnit.Count));
+        Assert.Equal("500K", QueryStoreOverviewControl.FormatMetric(
+            500_000, QueryStoreOverviewControl.MetricUnit.Count));
+        Assert.Equal("1.2B", QueryStoreOverviewControl.FormatMetric(
+            1_230_000_000, QueryStoreOverviewControl.MetricUnit.Count));
+
+        Assert.Equal("123,456,789,012", QueryStoreOverviewControl.FormatMetricExact(
+            123_456_789_012, QueryStoreOverviewControl.MetricUnit.Count));
+
+        // Megabytes climb their own ladder rather than printing seven digits of megabyte.
+        Assert.Equal("512 MB", QueryStoreOverviewControl.FormatMetric(
+            512, QueryStoreOverviewControl.MetricUnit.Megabytes));
+        Assert.Equal("2 GB", QueryStoreOverviewControl.FormatMetric(
+            2048, QueryStoreOverviewControl.MetricUnit.Megabytes));
+    }
+
+    /// <summary>
+    /// The sub-tab host builds a brand new overview on every QS Overview click, so two can be open
+    /// at once. A process-wide RadioButton GroupName would let one pane's toggle clear the other
+    /// pane's, leaving it with NEITHER segment checked while its cards still read Total.
+    /// </summary>
+    [Fact]
+    public void TwoOverviewsOnScreenDoNotShareOneToggle()
     {
         HeadlessUi.Run(() =>
         {
-            var control = NewOverview();
-            Show(control);
+            var first = NewOverview();
+            var second = NewOverview();
 
+            var window = new Window
+            {
+                Content = new StackPanel { Children = { first, second } },
+                Width = 1400,
+                Height = 900
+            };
+            window.Show();
+            window.UpdateLayout();
+
+            try
+            {
+                first.ApplyMetrics(SampleMetrics());
+                second.ApplyMetrics(SampleMetrics());
+
+                first.FindControl<RadioButton>("AvgModeToggle")!.IsChecked = true;
+                window.UpdateLayout();
+
+                Assert.Equal("Avg CPU", CardHeaders(first)[0]);
+
+                Assert.True(second.FindControl<RadioButton>("TotalModeToggle")!.IsChecked,
+                    "the second overview's Total segment was cleared by the first overview's " +
+                    "toggle, which leaves it showing Total with nothing latched");
+                Assert.Equal("Total CPU", CardHeaders(second)[0]);
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+    }
+
+    [Fact]
+    public void TheStateCardNamesEveryDatabaseAndWhatItsQueryStoreIsDoing()
+    {
+        RunWithOverview((control, _) =>
+        {
             control.ApplyStates(
             [
                 NewState("zulu", QueryStoreState.ReadWrite),
@@ -299,11 +423,8 @@ public class QueryStoreOverviewCardsTests
     [Fact]
     public void TheHeadlineDropsItsPreviousVerdictWhenTheStatesChange()
     {
-        HeadlessUi.Run(() =>
+        RunWithOverview((control, _) =>
         {
-            var control = NewOverview();
-            Show(control);
-
             control.ApplyStates([NewState("broken", QueryStoreState.Off)]);
             var headline = control.FindControl<TextBlock>("StatesHeadline")!;
             Assert.Contains("bad", headline.Classes);
@@ -330,17 +451,55 @@ public class QueryStoreOverviewCardsTests
             new NoCredentials(), topN: 3);
 
     /// <summary>
-    /// Puts the control in a window and lays it out, so its styles are applied and the two toggle
-    /// segments are in a visual tree where they can group each other.
+    /// One overview in one window, laid out so its styles are applied and its toggle segments are
+    /// in a visual tree where they can group each other, and closed afterwards.
+    ///
+    /// <para>The close is not housekeeping. A window left open relies on HeadlessUi draining the
+    /// dispatcher queue to keep the shared session alive — the #474 fix — and a test has no
+    /// business leaning on another test's safety net.</para>
     /// </summary>
-    private static Window Show(Control control)
+    private static void RunWithOverview(
+        Action<QueryStoreOverviewControl, Window> body, double windowWidth = 1400)
     {
-        var window = new Window { Content = control, Width = 1400, Height = 800 };
-        window.Show();
-        window.UpdateLayout();
+        HeadlessUi.Run(() =>
+        {
+            var control = NewOverview();
+            var window = new Window { Content = control, Width = windowWidth, Height = 800 };
+            window.Show();
+            window.UpdateLayout();
 
-        return window;
+            try
+            {
+                body(control, window);
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
     }
+
+    /// <summary>
+    /// Within a pixel, because the two star columns that proportion a bar are laid out on whole
+    /// pixels: half of a 75px track is 37.5px and is arranged at 38, which is 50.7% and is correct.
+    /// A tolerance in decimal places of the RATIO would make this test a function of how wide the
+    /// window in the harness happens to be.
+    /// </summary>
+    private static void AssertShareOfTrack((double Track, double Fill) bar, double share)
+    {
+        var expected = bar.Track * share;
+        Assert.True(Math.Abs(bar.Fill - expected) <= 1.0,
+            $"a bar that should have covered {share:P0} of its {bar.Track}px track — {expected}px — " +
+            $"measured {bar.Fill}px");
+    }
+
+    private static List<Border> Tracks(Border card) =>
+        card.GetLogicalDescendants().OfType<Border>()
+            .Where(b => b.Classes.Contains("barTrack"))
+            .ToList();
+
+    private static Border FillOf(Border track) =>
+        track.GetLogicalDescendants().OfType<Border>().First(b => b.Classes.Contains("barFill"));
 
     private static Grid MetricsGrid(QueryStoreOverviewControl control) =>
         control.FindControl<Grid>("MetricsGrid")!;

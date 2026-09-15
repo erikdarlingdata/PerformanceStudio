@@ -14,7 +14,13 @@
             arrows, IsChecked) that would otherwise have to be hand-written on Borders.
 
             Order matters below: :checked is declared after :pointerover so hovering the selected
-            segment does not wash its accent fill away.
+            segment does not wash its accent fill away. That ordering is necessary and was not
+            sufficient — AccentSoftBrush is a 12% wash that composites to a LOWER luminance than the
+            opaque SurfaceHoverBrush, so on fill alone hovering the unselected segment lit it up
+            more than the selected one on a control whose entire job is showing which is latched.
+            The checked state carries an accent outline and a heavier weight on top of its fill,
+            which no hover state has. A solid accent fill would settle it in one setter, and
+            DarkTheme reserves that for nothing at all — hence an outline.
         -->
         <ControlTheme x:Key="MetricModeSegment" TargetType="RadioButton">
             <Setter Property="Background" Value="Transparent"/>
@@ -44,9 +50,11 @@
             </Style>
             <Style Selector="^:checked /template/ Border#PART_Border">
                 <Setter Property="Background" Value="{DynamicResource AccentSoftBrush}"/>
+                <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
             </Style>
             <Style Selector="^:checked">
                 <Setter Property="Foreground" Value="{DynamicResource ForegroundBrush}"/>
+                <Setter Property="FontWeight" Value="SemiBold"/>
             </Style>
             <Style Selector="^:focus-visible /template/ Border#PART_Border">
                 <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
@@ -91,30 +99,28 @@
             <Setter Property="TextWrapping" Value="Wrap"/>
         </Style>
 
-        <!-- One bar row: name, track, value. The name is subordinate to the number, so it takes the
-             muted ink and the value keeps the full foreground.
+        <!-- One bar row is two lines: the name and the value sharing a line, and the bar itself on
+             the full width of the card underneath them. The name is subordinate to the number, so
+             it takes the muted ink and the value keeps the full foreground.
 
-             The 72px cap is the budget, not a guess. Seven cards across a 1536-logical window
-             leaves each card about 194px of content; a name allowed to grow to the width of
-             "StackOverflow2013" spends 88 of them and leaves the bar — the actual encoding — barely
-             fifty pixels to work in. The column is Auto, so a card full of short names still hands
-             that width to the tracks, and the shared legend below carries every full name against
-             its colour, which is what makes a clipped name here recoverable at a glance. -->
+             Beside the bar was the first shape this took, and measured at MainWindow's default
+             1280 it does not work. Seven cards share the row, which leaves each about 156px of
+             content, and a name column and a value column — both Auto, both winning their width
+             against a star-sized track — took 70px and 60px of it. The bar got fourteen pixels,
+             which encodes nothing, which is the complaint this card exists to answer. The name
+             column is star-sized now and ellipsizes against whatever the value leaves it. -->
         <Style Selector="TextBlock.barName">
             <Setter Property="FontSize" Value="10"/>
             <Setter Property="Foreground" Value="{DynamicResource ForegroundMutedBrush}"/>
             <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
-            <Setter Property="VerticalAlignment" Value="Center"/>
-            <Setter Property="MinWidth" Value="40"/>
-            <Setter Property="MaxWidth" Value="72"/>
-            <Setter Property="Margin" Value="0,2,6,2"/>
+            <Setter Property="VerticalAlignment" Value="Bottom"/>
+            <Setter Property="Margin" Value="0,0,6,0"/>
         </Style>
         <Style Selector="TextBlock.barValue">
             <Setter Property="FontSize" Value="10"/>
             <Setter Property="Foreground" Value="{DynamicResource ForegroundBrush}"/>
-            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="VerticalAlignment" Value="Bottom"/>
             <Setter Property="HorizontalAlignment" Value="Right"/>
-            <Setter Property="Margin" Value="6,2,0,2"/>
         </Style>
 
         <!-- The track is the shared reference every bar in a card is read against: full width, one
@@ -124,10 +130,9 @@
         <Style Selector="Border.barTrack">
             <Setter Property="Background" Value="{DynamicResource BorderBrush}"/>
             <Setter Property="CornerRadius" Value="2"/>
-            <Setter Property="Height" Value="13"/>
+            <Setter Property="Height" Value="9"/>
             <Setter Property="ClipToBounds" Value="True"/>
-            <Setter Property="VerticalAlignment" Value="Center"/>
-            <Setter Property="Margin" Value="0,2"/>
+            <Setter Property="Margin" Value="0,1,0,6"/>
         </Style>
         <Style Selector="Border.barFill">
             <Setter Property="CornerRadius" Value="2"/>
@@ -267,20 +272,28 @@
 
         <!-- Row 2: the legend every card shares, and the Total/Avg switch for all of them -->
         <Grid Grid.Row="2" Margin="10,0,10,6" ColumnDefinitions="*,Auto">
-            <ScrollViewer Grid.Column="0" HorizontalScrollBarVisibility="Hidden"
-                          VerticalScrollBarVisibility="Disabled" VerticalAlignment="Center">
-                <StackPanel x:Name="DatabaseLegend" Orientation="Horizontal"/>
-            </ScrollViewer>
+            <!-- Wraps rather than scrolls. At the top of MultiQsTopDbCount this is 21 entries, and
+                 a horizontal scroller with its rail hidden would leave the overflow reachable only
+                 by a mouse wheel nothing on screen suggests using. The row is Auto-height, so a
+                 second line costs the cards a line and hides nothing. -->
+            <WrapPanel x:Name="DatabaseLegend" Grid.Column="0" Orientation="Horizontal"
+                       VerticalAlignment="Center"/>
 
+            <!-- No GroupName. Avalonia groups an ungrouped RadioButton by its PARENT, which is this
+                 StackPanel and is therefore per instance; a named group is process-wide across
+                 every RadioButton sharing a visual root. Two of these controls open at once — the
+                 sub-tab host builds a fresh one on every QS Overview click — and a named group
+                 would let the toggle in one pane clear the toggle in the other, leaving it with
+                 NEITHER segment checked while its cards still showed Total. -->
             <Border Grid.Column="1" Margin="8,0,0,0"
                     BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
                     CornerRadius="4" ClipToBounds="True" VerticalAlignment="Center">
                 <StackPanel Orientation="Horizontal">
-                    <RadioButton x:Name="TotalModeToggle" GroupName="QsOverviewMetricMode"
+                    <RadioButton x:Name="TotalModeToggle"
                                  Theme="{StaticResource MetricModeSegment}"
                                  Content="Total" IsChecked="True"
                                  ToolTip.Tip="Show the summed value for the selected range"/>
-                    <RadioButton x:Name="AvgModeToggle" GroupName="QsOverviewMetricMode"
+                    <RadioButton x:Name="AvgModeToggle"
                                  Theme="{StaticResource MetricModeSegment}"
                                  Content="Avg"
                                  ToolTip.Tip="Show the per-execution average for the selected range"/>
