@@ -104,10 +104,19 @@ public partial class QuerySessionControl : UserControl
             {
                 new MenuItem { Header = "Rename Tab", Tag = new object[] { header, headerText } },
                 new Separator(),
-                /* No Ctrl+W gesture label here: the window-level tunnel handler owns Ctrl+W
-                   and closes the TOP-LEVEL tab, so advertising it on a sub-tab's Close would be
-                   a lie the user discovers by losing their whole session. */
-                new MenuItem { Header = "Close", Tag = tab },
+                /* Ctrl+F4, not the Ctrl+W this label used to refuse to show. Ctrl+W stays the
+                   window's: its tunnel handler claims that keystroke whenever a top-level tab is
+                   selected, which is always, and closes the whole session — so a Ctrl+W label here
+                   would have been a lie the user discovers by losing everything they had open.
+                   F4 has no tunnel case, so it reaches the session's own handler, where it closes
+                   exactly this document. The gesture is display-only in Avalonia: the binding that
+                   makes it true lives in OnKeyDown, and the two only ever change together. */
+                new MenuItem
+                {
+                    Header = "Close",
+                    Tag = tab,
+                    InputGesture = new KeyGesture(Key.F4, KeyModifiers.Control)
+                },
                 new MenuItem { Header = "Close Other Tabs", Tag = tab },
                 new MenuItem { Header = "Close All Tabs" }
             }
@@ -163,14 +172,29 @@ public partial class QuerySessionControl : UserControl
         textBox.LostFocus += (_, _) => CommitRename();
     }
 
+    /// <summary>
+    /// Closes one document: lets go of whatever it was holding, then takes it out of the strip.
+    /// </summary>
+    /// <remarks>
+    /// Said once because there are four doors onto it — the header's ✕, the context menu's Close,
+    /// its two bulk siblings, and Ctrl+F4 — and the release half is the half that goes missing.
+    /// A plan viewer holds an MCP session registration that nothing else unregisters, so a close
+    /// that only removes the tab leaks it, invisibly and for the life of the process. The sub-tab
+    /// kinds built by <see cref="CreateSubTab"/> release themselves instead, on detach, which is
+    /// what removing them from the strip causes.
+    /// </remarks>
+    private void CloseDocument(TabItem tab)
+    {
+        if (tab.Content is PlanViewerControl viewer)
+            viewer.Clear();
+
+        RemoveDocument(tab);
+    }
+
     private void ClosePlanTab_Click(object? sender, RoutedEventArgs e)
     {
         if (sender is Button btn && btn.Tag is TabItem tab)
-        {
-            if (tab.Content is PlanViewerControl viewer)
-                viewer.Clear();
-            RemoveDocument(tab);
-        }
+            CloseDocument(tab);
     }
 
     private void PlanTabContextMenu_Click(object? sender, RoutedEventArgs e)
@@ -186,11 +210,7 @@ public partial class QuerySessionControl : UserControl
 
             case "Close":
                 if (item.Tag is TabItem tab)
-                {
-                    if (tab.Content is PlanViewerControl closeViewer)
-                        closeViewer.Clear();
-                    RemoveDocument(tab);
-                }
+                    CloseDocument(tab);
                 break;
 
             case "Close Other Tabs":
@@ -201,11 +221,7 @@ public partial class QuerySessionControl : UserControl
                         .Where(t => t != keepTab && t.Content is PlanViewerControl)
                         .ToList();
                     foreach (var t in others)
-                    {
-                        if (t.Content is PlanViewerControl otherViewer)
-                            otherViewer.Clear();
-                        RemoveDocument(t);
-                    }
+                        CloseDocument(t);
                     SelectDocument(keepTab);
                 }
                 break;
@@ -215,11 +231,7 @@ public partial class QuerySessionControl : UserControl
                     .Where(t => t.Content is PlanViewerControl)
                     .ToList();
                 foreach (var t in planTabs)
-                {
-                    if (t.Content is PlanViewerControl allViewer)
-                        allViewer.Clear();
-                    RemoveDocument(t);
-                }
+                    CloseDocument(t);
                 SelectEditor();
                 break;
         }

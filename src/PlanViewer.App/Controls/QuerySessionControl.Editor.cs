@@ -256,6 +256,26 @@ public partial class QuerySessionControl : UserControl
             _executionCts.Cancel();
             e.Handled = true;
         }
+        /* Ctrl+F4 → close the document being looked at.
+           Ctrl+W, the shortcut most apps spell this with, is taken: the window's tunnel handler
+           claims it whenever a top-level tab is selected, which is always, and closes that whole
+           tab. A tunneled Handled never reaches this bubbling handler, so binding Ctrl+W here
+           would do nothing at all — and that is the good outcome, because the alternative is a
+           keystroke that sometimes closes a plan and sometimes closes the session it lives in.
+           F4 is free: the only F4 in the app is the menu's Alt+F4, and the window's tunnel has no
+           case for it, so the keystroke arrives here intact.
+
+           On a view there is nothing selected to close and this does nothing — deliberately
+           including not falling through to the top-level tab, which is what Ctrl+W would have
+           done and is the surprise this binding exists to avoid. */
+        else if (e.Key == Key.F4 && e.KeyModifiers == KeyModifiers.Control)
+        {
+            if (SelectedDocument is { } document)
+            {
+                CloseDocument(document);
+                e.Handled = true;
+            }
+        }
     }
 
     private void OnEditorPointerWheel(object? sender, PointerWheelEventArgs e)
