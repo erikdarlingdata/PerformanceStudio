@@ -104,7 +104,10 @@ public partial class QuerySessionControl : UserControl
             {
                 new MenuItem { Header = "Rename Tab", Tag = new object[] { header, headerText } },
                 new Separator(),
-                new MenuItem { Header = "Close", Tag = tab, InputGesture = new KeyGesture(Key.W, KeyModifiers.Control) },
+                /* No Ctrl+W gesture label here: the window-level tunnel handler owns Ctrl+W
+                   and closes the TOP-LEVEL tab, so advertising it on a sub-tab's Close would be
+                   a lie the user discovers by losing their whole session. */
+                new MenuItem { Header = "Close", Tag = tab },
                 new MenuItem { Header = "Close Other Tabs", Tag = tab },
                 new MenuItem { Header = "Close All Tabs" }
             }
