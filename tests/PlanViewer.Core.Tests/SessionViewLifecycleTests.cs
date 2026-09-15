@@ -221,15 +221,14 @@ public class SessionViewLifecycleTests
     /// zero-width selection refreshes over an empty window with its two handles on top of each
     /// other. The floor is the same one the hand-entered range has always had.</para>
     ///
-    /// <para><b>A remembered range can drift off either end, and only one of them is answered
-    /// here.</b> The floor raises the END off the start it collapsed onto, which rescues a range
-    /// that fell off the FRONT of the new window — the reachable case, because Query Store ages
-    /// data out of the back of its history and the window's far edge moves forward, never back. A
-    /// range that ends up past the END of the new window collapses at the other edge instead, where
-    /// raising the end has nowhere to go. That case is deliberately not asserted below: the fix for
-    /// it is not on this branch, and a test for a fix that has not landed is a test that fails.
-    /// <see cref="RestoredWidth"/> is the shape both cases share, so adding it is one more call
-    /// with the data placed the other side of the kept range, and one more assertion.</para>
+    /// <para><b>A remembered range can drift off either end, and both are answered here.</b> Off
+    /// the FRONT — the case normal aging produces, because Query Store ages data out of the back
+    /// of its history and the window's far edge moves forward — both ends clamp to 0 and the
+    /// floor raises the end off the start. Past the END — which aging never produces but a
+    /// server-side Query Store purge or reset between reselects does — both ends clamp to 1.0,
+    /// raising the end has nowhere to go, and the floor pulls the START back instead.
+    /// <see cref="RestoredWidth"/> is the shape both cases share: same call, data placed the
+    /// other side of the kept range.</para>
     /// </remarks>
     [Fact]
     public void AReloadKeepsTheChosenRangeAndNeverCollapsesIt()
@@ -269,6 +268,16 @@ public class SessionViewLifecycleTests
                 Assert.True(droppedOffTheFront > TimeSpan.Zero,
                     $"a range off the front of the new window collapsed onto itself at " +
                     $"{slicer.SelectionStart}");
+
+                /* The other edge: a purge or reset hands the reload a window that ends before the
+                   remembered range begins. Both ends clamp to the slicer's far end, where pushing
+                   the end out can do nothing — this asserts the floor pulls the start back. */
+                var pushedPastTheEnd = RestoredWidth(
+                    slicer, Hours(epoch.AddHours(-100), 48), chosenStart, chosenEnd);
+
+                Assert.True(pushedPastTheEnd > TimeSpan.Zero,
+                    $"a range past the end of the new window collapsed onto itself at " +
+                    $"{slicer.SelectionEnd}");
             }
             finally
             {
