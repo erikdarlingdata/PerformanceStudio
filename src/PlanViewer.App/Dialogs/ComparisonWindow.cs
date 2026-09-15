@@ -1,7 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using PlanViewer.App.Services;
@@ -17,9 +20,9 @@ namespace PlanViewer.App.Dialogs;
 /// identically to "1,386% slower", and wait statistics as two stacked lists a reader had to
 /// cross-reference by eye. The data was already a diff. Nothing on screen said so.</para>
 ///
-/// <para><b>Where the numbers come from.</b> <see cref="ComparisonFormatter.Build"/>, the same call
-/// the text report renders from — so this window cannot invent a percentage the report disagrees
-/// with, and Copy report hands back exactly the bytes <c>compare_plans</c> returns over MCP.
+/// <para><b>Where the numbers come from.</b> <see cref="ComparisonFormatter.Build"/>, the same
+/// structure the text report renders from — so this window cannot invent a percentage the report
+/// disagrees with, and Copy report hands back the report for exactly the comparison on screen.
 /// Nothing here decides whether a change is good: every colour follows
 /// <see cref="ComparisonDirection"/>, which is settled per metric in Core.</para>
 ///
@@ -40,25 +43,43 @@ public static class ComparisonWindow
         var result = ComparisonFormatter.Build(planA, planB, labelA, labelB);
         var theme = new Palette(owner);
 
-        var body = new StackPanel { Spacing = 10 };
+        var body = new StackPanel { Spacing = 12 };
+
+        if (result.Statements.Count == 0)
+        {
+            // What the report says in the same situation. A window that answers Compare with a
+            // header and an empty expanse is the same defect as a button that answers with nothing.
+            body.Children.Add(new TextBlock
+            {
+                Text = "No statements to compare.",
+                FontSize = 12,
+                Foreground = theme.Brush("ForegroundMutedBrush")
+            });
+        }
+
         foreach (var statement in result.Statements)
             body.Children.Add(BuildStatementCard(statement, theme));
 
         var scroller = new ScrollViewer
         {
             Content = body,
-            Padding = new Avalonia.Thickness(0, 10, 10, 0),
+            Padding = new Avalonia.Thickness(0, 10, 0, 0),
             HorizontalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Disabled,
             VerticalScrollBarVisibility = Avalonia.Controls.Primitives.ScrollBarVisibility.Auto
         };
+
+        // Ctrl+Wheel font scaling, which the advice window this replaced had. Losing it would be a
+        // regression for anyone who had been zooming the comparison report.
+        var scale = new ScaleTransform(1, 1);
+        var zoomHost = new LayoutTransformControl { LayoutTransform = scale, Child = scroller };
 
         var buttonTheme = (Avalonia.Styling.ControlTheme)owner.FindResource("AppButton")!;
 
         var copyButton = new Button
         {
-            Content = "Copy report",
+            Content = CopyCaption,
             Height = 32,
-            MinWidth = 110,
+            MinWidth = 88,
             Padding = new Avalonia.Thickness(16, 0),
             FontSize = 12,
             HorizontalContentAlignment = HorizontalAlignment.Center,
@@ -70,7 +91,7 @@ public static class ComparisonWindow
         {
             Content = "Close",
             Height = 32,
-            MinWidth = 80,
+            MinWidth = 88,
             Padding = new Avalonia.Thickness(16, 0),
             FontSize = 12,
             Margin = new Avalonia.Thickness(8, 0, 0, 0),
@@ -83,17 +104,17 @@ public static class ComparisonWindow
         {
             Orientation = Orientation.Horizontal,
             HorizontalAlignment = HorizontalAlignment.Right,
-            Margin = new Avalonia.Thickness(0, 10, 0, 0),
+            Margin = new Avalonia.Thickness(0, 8, 0, 0),
             Children = { copyButton, closeButton }
         };
 
-        var panel = new DockPanel { Margin = new Avalonia.Thickness(14) };
+        var panel = new DockPanel { Margin = new Avalonia.Thickness(12) };
         var header = BuildHeader(result, theme);
         DockPanel.SetDock(header, Dock.Top);
         DockPanel.SetDock(buttonRow, Dock.Bottom);
         panel.Children.Add(header);
         panel.Children.Add(buttonRow);
-        panel.Children.Add(scroller);
+        panel.Children.Add(zoomHost);
 
         var window = new Window
         {
@@ -110,16 +131,36 @@ public static class ComparisonWindow
             WindowStartupLocation = WindowStartupLocation.CenterOwner
         };
 
+        var zoom = 1.0;
+        window.AddHandler(InputElement.PointerWheelChangedEvent, (_, args) =>
+        {
+            if (!args.KeyModifiers.HasFlag(KeyModifiers.Control)) return;
+
+            args.Handled = true;
+            zoom = Math.Clamp(zoom + (args.Delta.Y > 0 ? 0.1 : -0.1), 0.5, 3.0);
+            scale.ScaleX = zoom;
+            scale.ScaleY = zoom;
+        }, RoutingStrategies.Tunnel);
+
+        /* Rendered from the result already in hand rather than re-comparing the two plans: the
+           bytes handed to the clipboard then describe what is on the screen by construction, and a
+           click does not re-run the comparison on the UI thread.
+
+           The generation counter is what stops a second click's "Copied!" being wiped by the first
+           click's 1.5s timer, which is a real race in the peer this was modelled on. */
+        var copyGeneration = 0;
         copyButton.Click += async (_, _) =>
         {
-            /* Rendered on demand rather than up front. Nobody has copied anything yet when the
-               window opens, and the report is the one thing here that costs a string builder. */
-            var report = ComparisonFormatter.Compare(planA, planB, labelA, labelB);
-            copyButton.Content = await ClipboardHelper.TrySetTextAsync(window, report)
+            var generation = ++copyGeneration;
+
+            copyButton.Content = await ClipboardHelper.TrySetTextAsync(window, ComparisonFormatter.Compare(result))
                 ? "Copied!"
                 : "Clipboard busy - try again";
+
             await Task.Delay(1500);
-            copyButton.Content = "Copy report";
+
+            if (generation == copyGeneration)
+                copyButton.Content = CopyCaption;
         };
 
         closeButton.Click += (_, _) => window.Close();
@@ -127,33 +168,35 @@ public static class ComparisonWindow
         window.Show(owner);
     }
 
+    private const string CopyCaption = "Copy report";
+
     // --- Header --------------------------------------------------------------------------------
 
+    /// <summary>
+    /// What A and B are, then the answer. In that order because the verdict speaks of Plan A and
+    /// Plan B and would otherwise name two things the reader has not been introduced to.
+    ///
+    /// <para>There is no "Plan Comparison" heading: the title bar already says it, and a 16px
+    /// restatement of something the reader has read would be the largest thing on a window whose
+    /// job is to deliver one sentence.</para>
+    /// </summary>
     private static Control BuildHeader(ComparisonResult result, Palette theme)
     {
-        var stack = new StackPanel { Spacing = 4 };
+        var stack = new StackPanel();
 
-        stack.Children.Add(new TextBlock
-        {
-            Text = "Plan Comparison",
-            FontSize = 16,
-            FontWeight = FontWeight.SemiBold,
-            Foreground = theme.Brush("ForegroundBrush")
-        });
-
-        stack.Children.Add(PlanIdentity("A", result.LabelA, theme));
-        stack.Children.Add(PlanIdentity("B", result.LabelB, theme));
+        stack.Children.Add(PlanIdentity("A", result.LabelA, theme, bottomGap: 4));
+        stack.Children.Add(PlanIdentity("B", result.LabelB, theme, bottomGap: 0));
 
         if (result.Verdict != null)
         {
             stack.Children.Add(new TextBlock
             {
                 Text = result.Verdict.Text,
-                FontSize = 13,
+                FontSize = 15,
                 FontWeight = FontWeight.SemiBold,
-                Margin = new Avalonia.Thickness(0, 6, 0, 0),
+                Margin = new Avalonia.Thickness(0, 12, 0, 0),
                 TextWrapping = TextWrapping.Wrap,
-                Foreground = theme.DirectionBrush(result.Verdict.Direction)
+                Foreground = theme.DirectionTextBrush(result.Verdict.Direction)
             });
         }
 
@@ -165,7 +208,7 @@ public static class ComparisonWindow
                 FontSize = 12,
                 FontStyle = FontStyle.Italic,
                 TextWrapping = TextWrapping.Wrap,
-                Margin = new Avalonia.Thickness(0, 4, 0, 0),
+                Margin = new Avalonia.Thickness(0, 8, 0, 0),
                 Foreground = theme.Brush("WarningBrush")
             });
         }
@@ -174,7 +217,7 @@ public static class ComparisonWindow
         {
             Height = 1,
             Background = theme.Brush("BorderBrush"),
-            Margin = new Avalonia.Thickness(0, 10, 0, 0)
+            Margin = new Avalonia.Thickness(0, 12, 0, 0)
         });
 
         return stack;
@@ -182,29 +225,33 @@ public static class ComparisonWindow
 
     /// <summary>
     /// "A" or "B" in a boxed letter, then the tab label it stands for — so every "Plan A" column
-    /// header below has one place to resolve to.
+    /// header below has one place to resolve to. The letter carries full foreground weight because
+    /// it is the key, not a caption for one.
     /// </summary>
-    private static Control PlanIdentity(string letter, string label, Palette theme) =>
+    private static Control PlanIdentity(string letter, string label, Palette theme, double bottomGap) =>
         new StackPanel
         {
             Orientation = Orientation.Horizontal,
             Spacing = 8,
+            Margin = new Avalonia.Thickness(0, 0, 0, bottomGap),
             Children =
             {
                 new Border
                 {
-                    BorderBrush = theme.Brush("BorderBrush"),
+                    BorderBrush = theme.Brush("ForegroundMutedBrush"),
                     BorderThickness = new Avalonia.Thickness(1),
-                    CornerRadius = new Avalonia.CornerRadius(3),
+                    CornerRadius = new Avalonia.CornerRadius(4),
                     Width = 20,
                     Padding = new Avalonia.Thickness(0, 1),
+                    VerticalAlignment = VerticalAlignment.Center,
                     Child = new TextBlock
                     {
                         Text = letter,
                         FontSize = 11,
                         FontWeight = FontWeight.SemiBold,
                         HorizontalAlignment = HorizontalAlignment.Center,
-                        Foreground = theme.Brush("ForegroundMutedBrush")
+                        VerticalAlignment = VerticalAlignment.Center,
+                        Foreground = theme.Brush("ForegroundBrush")
                     }
                 },
                 new SelectableTextBlock
@@ -254,9 +301,9 @@ public static class ComparisonWindow
 
         stack.Children.Add(new SelectableTextBlock
         {
-            Text = statement.StatementText,
+            Text = CollapseWhitespace(statement.StatementText),
             FontFamily = MonoFont,
-            FontSize = 11,
+            FontSize = 12,
             TextWrapping = TextWrapping.Wrap,
             Foreground = theme.Brush("ForegroundMutedBrush"),
             Background = Brushes.Transparent
@@ -266,20 +313,27 @@ public static class ComparisonWindow
         {
             // Worst regression first: the reason a comparison gets opened is almost always the row
             // that got worse, and report order buries it under whatever happens to be printed first.
-            stack.Children.Add(BuildRows(
-                "Metric",
-                ComparisonOrdering.WorstFirst(statement.Metrics),
-                metric => (metric.Label, metric.DisplayA, metric.DisplayB, metric.DeltaLabel, metric.Direction),
-                theme));
+            var sections = new List<(string Header, IReadOnlyList<DiffRow> Rows)>
+            {
+                ("Metric", ComparisonOrdering.WorstFirst(statement.Metrics)
+                    .Select(metric => new DiffRow(
+                        metric.Label, metric.DisplayA, metric.DisplayB,
+                        DeltaChipText(metric.DeltaLabel, metric.Direction, metric.DeltaPercent),
+                        metric.Direction))
+                    .ToList())
+            };
 
             if (statement.Waits.Count > 0)
             {
-                stack.Children.Add(BuildRows(
-                    "Wait type",
-                    statement.Waits,
-                    wait => (wait.WaitType, wait.DisplayA, wait.DisplayB, wait.DeltaLabel, wait.Direction),
-                    theme));
+                sections.Add(("Wait type", statement.Waits
+                    .Select(wait => new DiffRow(
+                        wait.WaitType, wait.DisplayA, wait.DisplayB,
+                        DeltaChipText(wait.DeltaLabel, wait.Direction, wait.DeltaPercent),
+                        wait.Direction))
+                    .ToList()));
             }
+
+            stack.Children.Add(BuildTable(sections, theme));
         }
         else
         {
@@ -297,13 +351,23 @@ public static class ComparisonWindow
             Background = theme.Brush("BackgroundLightBrush"),
             CornerRadius = new Avalonia.CornerRadius(4),
             Padding = new Avalonia.Thickness(12),
-            // Left edge only: the card's whole verdict in three pixels, readable before any of the
-            // numbers are.
-            BorderThickness = new Avalonia.Thickness(3, 0, 0, 0),
+            /* Heavy on the left, hairline everywhere else. The left edge is the card's verdict,
+               readable before any of the numbers are; the hairline is what makes the card a card at
+               all, because BackgroundLightBrush against the window ground is a 1.1:1 step and an
+               unchanged statement would otherwise be loose text on a page. */
+            BorderThickness = new Avalonia.Thickness(3, 1, 1, 1),
             BorderBrush = theme.DirectionBrush(statement.NetDirection),
             Child = stack
         };
     }
+
+    /// <summary>
+    /// The statement text arrives flattened to one line, which turns the original SQL's indentation
+    /// into runs of a dozen spaces mid-sentence. The report prints it that way and keeps doing so;
+    /// on a card it just makes the query hard to read.
+    /// </summary>
+    private static string CollapseWhitespace(string text) =>
+        string.Join(' ', text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
 
     private static string NetSummary(ComparisonStatement statement) =>
         statement.NetDirection switch
@@ -313,72 +377,94 @@ public static class ComparisonWindow
             _ => $"unchanged on {statement.NetBasis}"
         };
 
-    // --- The four-column table both sections use -----------------------------------------------
+    // --- The four-column table -----------------------------------------------------------------
+
+    /// <summary>One line of a card, whatever it is a line about.</summary>
+    private readonly record struct DiffRow(
+        string Name, string A, string B, string? Delta, ComparisonDirection Direction);
 
     /// <summary>
-    /// Name, Plan A, Plan B, change chip. Metrics and waits are the same shape, so they are the
-    /// same table — a second copy would be free to drift in padding, alignment and colour from the
-    /// one directly above it.
+    /// Name, Plan A, Plan B, change chip.
+    ///
+    /// <para><b>One grid, not one per section.</b> Metrics and waits started as two grids, each
+    /// sizing its own name column, and RESERVED_MEMORY_ALLOCATION_EXT in the lower one put its
+    /// numbers 120px right of the numbers directly above them — two tables in one card that did not
+    /// line up. A shared-size scope is the textbook fix and did not take here; one grid with a
+    /// header row per section makes the question impossible to get wrong instead.</para>
+    ///
+    /// <para><b>Why the name column is the elastic one.</b> Everything else has a floor it must
+    /// keep: the value columns need room for a fifteen-character cost, and the chip is the whole
+    /// point of the row. At the window's 620px minimum something has to give, and a wait type
+    /// ellipsised at 90px is a far smaller loss than a clipped delta — horizontal scrolling is off,
+    /// so an overrun would not even be reachable.</para>
     /// </summary>
-    private static Control BuildRows<T>(
-        string nameHeader,
-        IReadOnlyList<T> rows,
-        Func<T, (string Name, string A, string B, string? Delta, ComparisonDirection Direction)> read,
-        Palette theme)
+    private static Control BuildTable(
+        IReadOnlyList<(string Header, IReadOnlyList<DiffRow> Rows)> sections, Palette theme)
     {
         var grid = new Grid
         {
             Margin = new Avalonia.Thickness(0, 4, 0, 0),
             ColumnDefinitions =
             [
-                new ColumnDefinition(GridLength.Auto),
-                new ColumnDefinition(new GridLength(110)),
-                new ColumnDefinition(new GridLength(110)),
-                new ColumnDefinition(GridLength.Star)
+                // Capped so a wide window does not strand the numbers half a screen from their names.
+                new ColumnDefinition(GridLength.Star) { MinWidth = 90, MaxWidth = 280 },
+                // Auto with a floor rather than fixed: a long value pushes the column instead of
+                // spilling leftward over the name, which is what a fixed width would let it do.
+                new ColumnDefinition(GridLength.Auto) { MinWidth = 110 },
+                new ColumnDefinition(GridLength.Auto) { MinWidth = 110 },
+                new ColumnDefinition(GridLength.Auto)
             ]
         };
 
-        AddRow(grid, theme,
-            Header(nameHeader, theme),
-            Header("Plan A", theme, alignRight: true),
-            Header("Plan B", theme, alignRight: true),
-            Header("Change", theme));
-
-        foreach (var row in rows)
+        foreach (var (header, rows) in sections)
         {
-            var (name, a, b, delta, direction) = read(row);
+            // Section headers after the first get real air above them; the first sits under the
+            // SQL, which the card's own spacing has already separated.
+            var leading = grid.RowDefinitions.Count == 0 ? 0 : 16;
 
-            AddRow(grid, theme,
-                new TextBlock
-                {
-                    Text = name,
-                    FontSize = 12,
-                    Margin = new Avalonia.Thickness(0, 0, 16, 0),
-                    VerticalAlignment = VerticalAlignment.Center,
-                    Foreground = theme.Brush("ForegroundMutedBrush")
-                },
-                Value(a, theme),
-                Value(b, theme),
-                delta == null
-                    ? new TextBlock { Text = "" }
-                    : Chip(delta, direction, theme));
+            AddRow(grid, leading, 6,
+                Header(header, theme),
+                Header("Plan A", theme, alignRight: true),
+                Header("Plan B", theme, alignRight: true),
+                Header("Change", theme));
+
+            foreach (var row in rows)
+            {
+                AddRow(grid, 0, 3,
+                    new TextBlock
+                    {
+                        Text = row.Name,
+                        FontSize = 12,
+                        TextTrimming = TextTrimming.CharacterEllipsis,
+                        Margin = new Avalonia.Thickness(0, 0, 16, 0),
+                        VerticalAlignment = VerticalAlignment.Center,
+                        Foreground = theme.Brush("ForegroundMutedBrush")
+                    },
+                    Value(row.A, theme),
+                    Value(row.B, theme),
+                    // No cell at all rather than an empty TextBlock: Grid children may be sparse,
+                    // and a blank text block still measures a line box of whatever size it
+                    // inherited, which shows up as an irregular row pitch in a column of numbers.
+                    row.Delta == null ? null : Chip(row.Delta, row.Direction, theme));
+            }
         }
 
         return grid;
     }
 
-    private static void AddRow(Grid grid, Palette theme, params Control[] cells)
+    private static void AddRow(Grid grid, double leading, double trailing, params Control?[] cells)
     {
         var index = grid.RowDefinitions.Count;
         grid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
 
         for (int column = 0; column < cells.Length; column++)
         {
-            cells[column].Margin = new Avalonia.Thickness(
-                cells[column].Margin.Left, index == 0 ? 0 : 3, cells[column].Margin.Right, 3);
-            Grid.SetRow(cells[column], index);
-            Grid.SetColumn(cells[column], column);
-            grid.Children.Add(cells[column]);
+            if (cells[column] is not { } cell) continue;
+
+            cell.Margin = new Avalonia.Thickness(cell.Margin.Left, leading, cell.Margin.Right, trailing);
+            Grid.SetRow(cell, index);
+            Grid.SetColumn(cell, column);
+            grid.Children.Add(cell);
         }
     }
 
@@ -386,7 +472,7 @@ public static class ComparisonWindow
         new TextBlock
         {
             Text = text,
-            FontSize = 10,
+            FontSize = 11,
             FontWeight = FontWeight.SemiBold,
             HorizontalAlignment = alignRight ? HorizontalAlignment.Right : HorizontalAlignment.Left,
             Margin = new Avalonia.Thickness(0, 0, alignRight ? 12 : 16, 0),
@@ -415,19 +501,19 @@ public static class ComparisonWindow
     /// red block per regressed row would make a card with four regressions unreadable, and the
     /// theme has no soft variant of the status colours to fill with — inventing one here is exactly
     /// the drift the token file forbids.
+    ///
+    /// <para>Edge and text are one brush, so a neutral pill is drawn in the muted foreground rather
+    /// than in BorderBrush: a line colour at 1.4:1 on the card surface is a pill nobody can see,
+    /// which leaves the text looking like a stray phrase with odd padding beside properly outlined
+    /// neighbours.</para>
     /// </summary>
     private static Control Chip(string text, ComparisonDirection direction, Palette theme)
     {
-        var edge = direction switch
-        {
-            ComparisonDirection.Better => theme.Brush("SuccessBrush"),
-            ComparisonDirection.Worse => theme.Brush("ErrorBrush"),
-            _ => theme.Brush("BorderBrush")
-        };
+        var ink = theme.DirectionTextBrush(direction);
 
         return new Border
         {
-            BorderBrush = edge,
+            BorderBrush = ink,
             BorderThickness = new Avalonia.Thickness(1),
             CornerRadius = new Avalonia.CornerRadius(9),
             Padding = new Avalonia.Thickness(8, 1),
@@ -438,12 +524,25 @@ public static class ComparisonWindow
                 Text = text,
                 FontSize = 11,
                 FontWeight = FontWeight.SemiBold,
-                Foreground = direction == ComparisonDirection.Neutral
-                    ? theme.Brush("ForegroundMutedBrush")
-                    : edge
+                Foreground = ink
             }
         };
     }
+
+    /// <summary>
+    /// What the chip says. Normally the report's own wording, so the window and the copied text
+    /// cannot disagree — with one exception.
+    ///
+    /// <para>A metric that did not move at all reads "0.0% costlier" in the report, because
+    /// equality falls through to the worse branch of a two-way choice. Those bytes are frozen and
+    /// stay frozen. Reprinting the word on a chip would be repeating a mistake the model has
+    /// already contradicted — the direction here is Neutral — so an unchanged metric says what the
+    /// report's own count rows say about an unchanged count: no change.</para>
+    /// </summary>
+    private static string? DeltaChipText(string? deltaLabel, ComparisonDirection direction, double? deltaPercent) =>
+        deltaLabel != null && direction == ComparisonDirection.Neutral && deltaPercent == 0
+            ? "no change"
+            : deltaLabel;
 
     private static readonly FontFamily MonoFont = new("Consolas, Menlo, monospace");
 
@@ -452,7 +551,9 @@ public static class ComparisonWindow
     ///
     /// <para>Resolved from the owner rather than from the new window because the new one is not in
     /// any tree yet and would miss the application dictionary. The fallbacks match DarkTheme.axaml
-    /// byte for byte and exist only so a missing key renders something sane instead of nothing.</para>
+    /// byte for byte and exist only so a missing key renders something sane instead of nothing —
+    /// the same shape as PlanViewerControl's FindBrushResource and AdviceContentBuilder's
+    /// FromTheme, which is the house pattern for a brush resolved in code.</para>
     /// </summary>
     private sealed class Palette(Window owner)
     {
@@ -473,12 +574,24 @@ public static class ComparisonWindow
         /// <summary>
         /// Green for an improvement, red for a regression, and the ordinary border colour for no
         /// verdict — never a third status colour, and never a colour for "we did not decide".
+        ///
+        /// <para>Edges and outlines only. BorderBrush is a line colour: at #3A3D45 on a #22252D
+        /// card it is all but invisible as TEXT, which is what <see cref="DirectionTextBrush"/> is
+        /// for.</para>
         /// </summary>
         public IBrush DirectionBrush(ComparisonDirection direction) => direction switch
         {
             ComparisonDirection.Better => Brush("SuccessBrush"),
             ComparisonDirection.Worse => Brush("ErrorBrush"),
             _ => Brush("BorderBrush")
+        };
+
+        /// <summary>The same three states, for anything a reader has to actually read.</summary>
+        public IBrush DirectionTextBrush(ComparisonDirection direction) => direction switch
+        {
+            ComparisonDirection.Better => Brush("SuccessBrush"),
+            ComparisonDirection.Worse => Brush("ErrorBrush"),
+            _ => Brush("ForegroundMutedBrush")
         };
 
         private static IBrush Fallback(string key) => key switch

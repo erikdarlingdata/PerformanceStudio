@@ -23,10 +23,18 @@ public static class ComparisonFormatter
     /// </summary>
     public static string Compare(
         AnalysisResult planA, AnalysisResult planB,
-        string labelA, string labelB)
+        string labelA, string labelB) =>
+        Compare(Build(planA, planB, labelA, labelB));
+
+    /// <summary>
+    /// The text report for a comparison that has already been built — for a caller holding the
+    /// structure, so copying the report cannot re-derive it and cannot hand back bytes describing
+    /// anything other than what is on screen.
+    /// </summary>
+    public static string Compare(ComparisonResult result)
     {
         using var writer = new StringWriter();
-        WriteReport(Build(planA, planB, labelA, labelB), writer);
+        WriteReport(result, writer);
         return writer.ToString();
     }
 

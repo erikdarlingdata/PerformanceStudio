@@ -359,6 +359,20 @@ public class ComparisonModelTests
     }
 
     [Fact]
+    public void RenderingAnAlreadyBuiltComparisonGivesTheSameBytes()
+    {
+        /* The overload the window's Copy report uses. If it could ever differ from the four-argument
+           call, the button would hand somebody a report for a comparison other than the one they
+           are looking at — and the MCP tool and the clipboard would drift apart. */
+        var planA = Plan(Statement(hash: "0xAA", cost: 12, elapsedMs: 900, warnings: 2, waits: [("CXPACKET", 40)]));
+        var planB = Plan(Statement(hash: "0xAA", cost: 3, elapsedMs: 120, warnings: 1));
+
+        Assert.Equal(
+            ComparisonFormatter.Compare(planA, planB, "before", "after"),
+            ComparisonFormatter.Compare(ComparisonFormatter.Build(planA, planB, "before", "after")));
+    }
+
+    [Fact]
     public void TwoPlansWithNoStatementsStillRenderTheirReport()
     {
         // The one text branch the fixture baseline cannot reach: no committed plan is empty.

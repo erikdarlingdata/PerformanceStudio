@@ -26,10 +26,13 @@ namespace PlanViewer.Core.Tests;
 /// </summary>
 public class ComparisonWindowTests
 {
-    /// <summary>Mixed on purpose: some metrics improve across this pair and others regress, so one
-    /// comparison exercises every chip colour.</summary>
-    private const string PlanA = "mismatched_data_type_plan.sqlplan";
-    private const string PlanB = "missing-join-predicate.sqlplan";
+    /// <summary>
+    /// Mixed on purpose, so one comparison exercises every chip colour: reads and CPU improve,
+    /// runtime and the memory grant regress, and the row estimate moves a long way without earning
+    /// a verdict either way.
+    /// </summary>
+    private const string PlanA = "slow-multi-seek.sqlplan";
+    private const string PlanB = "spill_plan.sqlplan";
 
     [Fact]
     public void EveryDeltaIsAChipInTheColourItsDirectionEarned()
@@ -44,12 +47,15 @@ public class ComparisonWindowTests
 
                 var chips = ChipsByText(comparison);
 
+                /* The unchanged rows are excluded because the window deliberately relabels them —
+                   see APlanComparedAgainstItselfSaysNoChangeRatherThanCostlier, which is where that
+                   substitution is pinned. Everything else must appear verbatim. */
                 var deltas = model.Statements
                     .SelectMany(statement => statement.Metrics
-                        .Where(metric => metric.DeltaLabel != null)
+                        .Where(metric => metric.DeltaLabel != null && metric.DeltaPercent != 0)
                         .Select(metric => (metric.DeltaLabel!, metric.Direction))
                         .Concat(statement.Waits
-                            .Where(wait => wait.DeltaLabel != null)
+                            .Where(wait => wait.DeltaLabel != null && wait.DeltaPercent != 0)
                             .Select(wait => (wait.DeltaLabel!, wait.Direction))))
                     .ToList();
 
@@ -59,7 +65,7 @@ public class ComparisonWindowTests
                 {
                     Assert.True(chips.TryGetValue(label, out var chip),
                         $"the window shows no chip for '{label}', which the comparison says changed");
-                    Assert.Equal(Token(owner, direction), chip.BorderBrush);
+                    Assert.Equal(ChipToken(owner, direction), chip.BorderBrush);
                 }
 
                 /* And the pair really does exercise all three, so a future fixture swap that made
@@ -89,13 +95,69 @@ public class ComparisonWindowTests
             {
                 owner = Open(PlanA, PlanA, out var comparison);
 
-                var neutral = Token(owner, ComparisonDirection.Neutral);
                 var chips = ChipsByText(comparison);
-
                 Assert.NotEmpty(chips);
-                Assert.All(chips, chip => Assert.Equal(neutral, chip.Value.BorderBrush));
+                Assert.All(chips, chip => Assert.Equal(
+                    ChipToken(owner, ComparisonDirection.Neutral), chip.Value.BorderBrush));
 
-                Assert.All(StatementCards(comparison), card => Assert.Equal(neutral, card.BorderBrush));
+                Assert.All(StatementCards(comparison), card => Assert.Equal(
+                    CardToken(owner, ComparisonDirection.Neutral), card.BorderBrush));
+            }
+            finally
+            {
+                PutAway(owner);
+            }
+        });
+    }
+
+    [Fact]
+    public void APlanComparedAgainstItselfSaysNoChangeRatherThanCostlier()
+    {
+        /* The one place the window deliberately does not reprint the report's wording. The report
+           says "(0.0% costlier)" for a metric that did not move and keeps saying it; putting that
+           word on a chip would be repeating a claim the model itself calls Neutral. */
+        HeadlessUi.Run(() =>
+        {
+            MainWindow? owner = null;
+            try
+            {
+                owner = Open(PlanA, PlanA, out var comparison);
+
+                var texts = AllText(comparison);
+
+                Assert.Contains("no change", texts);
+                Assert.DoesNotContain(texts, text => text.Contains("costlier"));
+
+                // And the report itself has not budged.
+                Assert.Contains("0.0% costlier",
+                    ComparisonFormatter.Compare(Analyze(PlanA), Analyze(PlanA), PlanA, PlanA));
+            }
+            finally
+            {
+                PutAway(owner);
+            }
+        });
+    }
+
+    [Fact]
+    public void TwoPlansWithNothingToCompareSaySoRatherThanShowingAnEmptyWindow()
+    {
+        HeadlessUi.Run(() =>
+        {
+            MainWindow? owner = null;
+            try
+            {
+                var empty = new AnalysisResult { PlanSource = "test" };
+
+                owner = new MainWindow();
+                owner.Show();
+                ComparisonWindow.Show(owner, empty, empty, "before", "after");
+                Dispatcher.UIThread.RunJobs();
+
+                var comparison = Assert.Single(owner.OwnedWindows);
+
+                Assert.Empty(StatementCards(comparison));
+                Assert.Contains("No statements to compare.", AllText(comparison));
             }
             finally
             {
@@ -119,7 +181,7 @@ public class ComparisonWindowTests
 
                 Assert.Equal(model.Statements.Count, cards.Count);
                 Assert.Equal(
-                    model.Statements.Select(statement => Token(owner, statement.NetDirection)),
+                    model.Statements.Select(statement => CardToken(owner, statement.NetDirection)),
                     cards.Select(card => card.BorderBrush));
             }
             finally
@@ -224,11 +286,11 @@ public class ComparisonWindowTests
             .GroupBy(border => ((TextBlock)border.Child!).Text ?? "")
             .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
 
-    /// <summary>The statement cards: the only borders with an edge on the left and nowhere else.</summary>
+    /// <summary>The statement cards: the only borders with a heavy left edge and a hairline elsewhere.</summary>
     private static List<Border> StatementCards(Window comparison) =>
         Descendants(comparison)
             .OfType<Border>()
-            .Where(border => border.BorderThickness is { Left: 3, Top: 0, Right: 0, Bottom: 0 })
+            .Where(border => border.BorderThickness is { Left: 3, Top: 1, Right: 1, Bottom: 1 })
             .ToList();
 
     private static List<string> AllText(Window comparison) =>
@@ -258,12 +320,23 @@ public class ComparisonWindowTests
     private static IEnumerable<Control> Descendants(Window comparison) =>
         comparison.GetLogicalDescendants().OfType<Control>();
 
-    private static IBrush Token(Window owner, ComparisonDirection direction) =>
+    /// <summary>
+    /// The chip's outline, which is also its text: muted rather than BorderBrush for Neutral,
+    /// because a line colour at 1.4:1 on the card surface is a pill nobody can see.
+    /// </summary>
+    private static IBrush ChipToken(Window owner, ComparisonDirection direction) =>
+        Token(owner, direction, neutral: "ForegroundMutedBrush");
+
+    /// <summary>The card's accent edge, where BorderBrush is the right "no verdict".</summary>
+    private static IBrush CardToken(Window owner, ComparisonDirection direction) =>
+        Token(owner, direction, neutral: "BorderBrush");
+
+    private static IBrush Token(Window owner, ComparisonDirection direction, string neutral) =>
         (IBrush)owner.FindResource(direction switch
         {
             ComparisonDirection.Better => "SuccessBrush",
             ComparisonDirection.Worse => "ErrorBrush",
-            _ => "BorderBrush"
+            _ => neutral
         })!;
 
     private static AnalysisResult Analyze(string planFile) =>
