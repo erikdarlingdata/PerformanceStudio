@@ -344,7 +344,7 @@ public partial class QueryStoreOverviewControl : UserControl
     /// </summary>
     internal static string FormatMetric(double value, MetricUnit unit) => unit switch
     {
-        MetricUnit.Milliseconds => FormatMilliseconds(value),
+        MetricUnit.Milliseconds => MetricFormatter.FormatDuration(value),
         MetricUnit.Megabytes => FormatMegabytes(value),
         _ => FormatCount(value)
     };
@@ -355,7 +355,7 @@ public partial class QueryStoreOverviewControl : UserControl
     /// </summary>
     internal static string FormatMetricExact(double value, MetricUnit unit) => unit switch
     {
-        MetricUnit.Milliseconds => FormatMilliseconds(value),
+        MetricUnit.Milliseconds => MetricFormatter.FormatDuration(value),
         MetricUnit.Megabytes => FormatMagnitude(value) + " MB",
         _ => FormatMagnitude(value)
     };
@@ -379,22 +379,6 @@ public partial class QueryStoreOverviewControl : UserControl
         if (mb < 1024) return FormatMagnitude(mb) + " MB";
         if (mb < 1024 * 1024) return (mb / 1024).ToString("0.#") + " GB";
         return (mb / (1024.0 * 1024.0)).ToString("0.#") + " TB";
-    }
-
-    /// <summary>
-    /// <see cref="MetricFormatter.FormatDuration"/> for anything a millisecond or longer, so these
-    /// labels climb the same ms → s → m ladder as the statements grid.
-    ///
-    /// <para>Below a millisecond it has to do its own thing: that ladder starts at whole
-    /// milliseconds, and an average CPU of 0.4ms — an ordinary number on a healthy OLTP database —
-    /// would round to "0ms" and report a query that ran as a query that did not.</para>
-    /// </summary>
-    private static string FormatMilliseconds(double ms)
-    {
-        if (ms <= 0) return "0ms";
-        if (ms < 0.01) return "<0.01ms";
-        if (ms < 1) return ms.ToString("0.##") + "ms";
-        return MetricFormatter.FormatDuration((long)Math.Round(ms));
     }
 
     /// <summary>

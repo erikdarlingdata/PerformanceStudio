@@ -112,4 +112,39 @@ public class MetricFormatterTests
         Assert.Equal("59.9s", MetricFormatter.FormatDuration(59_900, Invariant));
         Assert.Equal("1m 0s", MetricFormatter.FormatDuration(60_000, Invariant));
     }
+
+    [Theory]
+    // Below a millisecond, where the whole-ms ladder would report a query that ran as one
+    // that did not. Two rungs: the number itself, then a floor for the vanishingly small.
+    [InlineData(0.4, "0.4ms")]
+    [InlineData(0.42, "0.42ms")]
+    [InlineData(0.425, "0.43ms")]
+    [InlineData(0.01, "0.01ms")]
+    [InlineData(0.009, "<0.01ms")]
+    [InlineData(0.0000001, "<0.01ms")]
+    // Zero is zero, and a duration is never negative - but if one ever arrives it reads as 0ms
+    // rather than as a fraction with a minus sign.
+    [InlineData(0.0, "0ms")]
+    [InlineData(-0.4, "0ms")]
+    // At a millisecond and above it is the same ladder, reached by rounding rather than truncating.
+    [InlineData(1.0, "1ms")]
+    [InlineData(1.6, "2ms")]
+    [InlineData(999.4, "999ms")]
+    [InlineData(1000.0, "1.0s")]
+    public void FormatDuration_HasTwoMoreRungsBelowAMillisecond(double ms, string expected)
+    {
+        Assert.Equal(expected, MetricFormatter.FormatDuration(ms, Invariant));
+    }
+
+    [Fact]
+    public void FormatDuration_AgreesWithItselfWhicheverOverloadIsCalled()
+    {
+        /* The Query Store Overview kept its own copy of the sub-millisecond rungs because this
+           helper had none. It delegates now, so the two must not drift: a whole number of
+           milliseconds reads the same whether it arrives as a long or as a double. */
+        foreach (var ms in new long[] { 0, 1, 7, 999, 1000, 59_900, 60_000, 1_235_000 })
+            Assert.Equal(
+                MetricFormatter.FormatDuration(ms, Invariant),
+                MetricFormatter.FormatDuration((double)ms, Invariant));
+    }
 }
