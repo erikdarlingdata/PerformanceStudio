@@ -5,9 +5,11 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
+using Avalonia.VisualTree;
 using PlanViewer.App;
 using PlanViewer.App.Controls;
 using PlanViewer.App.Helpers;
+using PlanViewer.Core.Models;
 
 namespace PlanViewer.Core.Tests;
 
@@ -317,6 +319,92 @@ public class ToolbarOverflowTests
     }
 
     /// <summary>
+    /// The menu, actually open. Everything else here reads the flyout's Items collection, which
+    /// would be just as happy with entries that render as blank rows: AppIcons deliberately leaves
+    /// its icons' Foreground unset so they inherit from whatever presenter they land in, and a
+    /// MenuItem's icon presenter is not a toolbar button's content presenter. This opens the thing
+    /// and looks at what came out.
+    /// </summary>
+    [Fact]
+    public void TheOpenMenuRendersItsEntriesWithTheirIcons()
+    {
+        HeadlessUi.Run(() =>
+        {
+            var window = new MainWindow { Width = 2200, Height = 800 };
+            try
+            {
+                window.Show();
+                window.NewQuery_Click(window, new RoutedEventArgs());
+
+                var session = SessionToolbarLayoutTests.Session(window);
+                Settle(window, session.Overflow);
+
+                var scroll = session.FindControl<ScrollViewer>("ToolbarScroll")!;
+                var chevron = session.FindControl<Button>("ToolbarOverflowButton")!;
+
+                SetViewport(window, scroll, session.Overflow, 1520);
+                Assert.True(chevron.IsVisible);
+
+                try
+                {
+                    session.Overflow.Menu.ShowAt(chevron);
+                    Dispatcher.UIThread.RunJobs();
+                    window.UpdateLayout();
+
+                    var entry = session.Overflow.Menu.Items.OfType<MenuItem>()
+                        .First(i => (string?)i.Header == "Format");
+
+                    // The entry reached the tree and was given room by the menu's own layout.
+                    Assert.True(entry.Bounds.Width > 0 && entry.Bounds.Height > 0,
+                        $"the entry was not laid out: {entry.Bounds}");
+
+                    /* The icon is the half that could silently come out blank: it takes the ambient
+                       foreground rather than setting one, so a presenter that supplies none would
+                       paint nothing and the row would read as an unlabelled gap. */
+                    var icon = (PathIcon)entry.Icon!;
+                    Assert.True(icon.Bounds.Width > 0 && icon.Bounds.Height > 0,
+                        $"the entry's icon was not laid out: {icon.Bounds}");
+
+                    var painted = icon.GetVisualDescendants().OfType<Avalonia.Controls.Shapes.Path>().Single();
+                    Assert.NotNull(painted.Fill);
+                    Assert.Same(AppIcons.Format, painted.Data);
+
+                    /* A disabled entry's icon is dimmed by hand, because Fluent's disabled MenuItem
+                       dims the header presenter and leaves the icon at full brightness — a lit icon
+                       beside greyed text. That hand-dimming is only correct while the theme really
+                       is leaving it alone: if a future Fluent applied its own opacity somewhere
+                       between the MenuItem and the icon, the two would multiply and the entry would
+                       fade to nearly nothing. This is the assertion that would say so. */
+                    var disabled = session.Overflow.Menu.Items.OfType<MenuItem>()
+                        .First(i => (string?)i.Header == "Copy Repro");
+                    Assert.False(disabled.IsEnabled, "Copy Repro has no plan to copy yet");
+
+                    var disabledIcon = (Control)disabled.Icon!;
+                    Assert.Equal(0.4, disabledIcon.Opacity);
+
+                    for (var parent = disabledIcon.GetVisualParent();
+                         parent is not null && !ReferenceEquals(parent, disabled);
+                         parent = parent.GetVisualParent())
+                    {
+                        Assert.True(parent.Opacity == 1.0,
+                            $"{parent.GetType().Name} already dims the icon to {parent.Opacity} — " +
+                            "hand-dimming it as well would multiply the two");
+                    }
+                }
+                finally
+                {
+                    session.Overflow.Menu.Hide();
+                    Dispatcher.UIThread.RunJobs();
+                }
+            }
+            finally
+            {
+                ChromeTestCleanup.PutAway(window);
+            }
+        });
+    }
+
+    /// <summary>
     /// A command that has gone into the menu keeps refusing while the button refuses, and starts
     /// accepting the moment the button does. Offering a disabled command as an enabled menu entry
     /// is the failure this rules out, and offering it as a permanently greyed one is the other.
@@ -581,4 +669,89 @@ public class ToolbarOverflowTests
         });
     }
 
+    /// <summary>
+    /// The shape the app actually runs in: a session toolbar with a plan sub-tab's toolbar under
+    /// it, two live overflows in one window. LayoutUpdated is raised for every layout pass in the
+    /// window, so each overflow hears the passes the OTHER one's visibility writes provoke. What is
+    /// pinned is that neither reconsiders because of the other.
+    ///
+    /// <para>The session strip's own width is genuinely its business — the status message is docked
+    /// into that row and takes its 240px cap straight out of the buttons' space, which is the
+    /// design, so the session overflow moving when a message appears is correct. The plan toolbar
+    /// one row down is the one that must not care, and it is the one asserted on here: it sits in
+    /// the sub-tab content, its width has nothing to do with the strip above it, and a revision
+    /// from it would mean this class is reacting to layout that is not about it.</para>
+    /// </summary>
+    [Fact]
+    public void OneOverflowsChurnDoesNotReachTheOtherInTheSameWindow()
+    {
+        HeadlessUi.Run(() =>
+        {
+            var window = new MainWindow { Width = 2200, Height = 900 };
+            try
+            {
+                window.Show();
+                window.NewQuery_Click(window, new RoutedEventArgs());
+                var session = SessionToolbarLayoutTests.Session(window);
+
+                var path = Path.Combine("Plans", "exec_stored_procedure_plan.sqlplan");
+                var xml = File.ReadAllText(path).Replace("encoding=\"utf-16\"", "encoding=\"utf-8\"");
+                session.OnQueryStorePlansSelected(null, new List<QueryStorePlan>
+                {
+                    new() { QueryId = 1, PlanId = 1, QueryText = "select 1;", PlanXml = xml }
+                });
+
+                var viewer = session.GetPlanTabs().Single().viewer;
+                var scroll = session.FindControl<ScrollViewer>("ToolbarScroll")!;
+                var status = session.FindControl<TextBlock>("StatusText")!;
+
+                /* Opening the plan leaves a message in the strip, and the strip is docked into this
+                   row: a 1520px viewport measured with a message in it is a different baseline from
+                   one measured without, and the message goes away on its own a few seconds later.
+                   Clear it first so the width this test names is the one it keeps coming back to. */
+                status.Text = "";
+                SetViewport(window, scroll, session.Overflow, 1520);
+                Settle(window, session.Overflow, viewer.Overflow);
+
+                // The session's tail is in its menu; the hosted plan toolbar has dropped its
+                // duplicated connection controls and comfortably fits, so its row is intact.
+                Assert.NotEmpty(MenuHeaders(session.Overflow));
+                Assert.Empty(MenuHeaders(viewer.Overflow));
+
+                var settled = (session.Overflow.Revisions, viewer.Overflow.Revisions);
+
+                // Idle passes move neither — the same standstill both settle to on their own.
+                for (var pass = 0; pass < 20; pass++)
+                    window.UpdateLayout();
+
+                Assert.Equal(settled, (session.Overflow.Revisions, viewer.Overflow.Revisions));
+
+                /* Now churn the session strip properly: a status message takes its cap out of the
+                   row, which is expected to cost the session another command or two. The plan
+                   toolbar must not notice, and its buttons must all still be on its row. */
+                var planRevisions = viewer.Overflow.Revisions;
+                var save = viewer.FindControl<Button>("SavePlanButton")!;
+                var saveX = save.Bounds.X;
+
+                status.Text = "a status message long enough to take its whole 240px cap out of the row";
+                Settle(window, session.Overflow, viewer.Overflow);
+
+                Assert.Equal(planRevisions, viewer.Overflow.Revisions);
+                Assert.Empty(MenuHeaders(viewer.Overflow));
+                Assert.Equal(saveX, save.Bounds.X);
+
+                // ...and taking the message away gives the session back what it cost, without the
+                // plan toolbar having moved at any point in between.
+                status.Text = "";
+                Settle(window, session.Overflow, viewer.Overflow);
+
+                Assert.Equal(planRevisions, viewer.Overflow.Revisions);
+                Assert.Equal(new[] { "Format", "Run Repro", "Copy Repro" }, MenuHeaders(session.Overflow));
+            }
+            finally
+            {
+                ChromeTestCleanup.PutAway(window);
+            }
+        });
+    }
 }

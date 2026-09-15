@@ -39,14 +39,19 @@
                      visible affordance for the commands that did. Declared after StatusText so it
                      docks inboard of the status message, immediately after the row it belongs to,
                      and hidden until the menu actually holds something. -->
+                <!-- Margin differs from the plan toolbar's chevron on purpose: this row's
+                     buttons carry 0,2,4,2 margins from the StackPanel style, the plan row's do
+                     not, and 4,2,0,2 here is what lands both chevrons at the same 32px slot. -->
                 <Button x:Name="ToolbarOverflowButton" DockPanel.Dock="Right"
                         IsVisible="False" Width="28" Height="28" Padding="0" Margin="4,2,0,2"
                         Theme="{StaticResource AppButton}"
+                        AutomationProperties.Name="More commands"
                         ToolTip.Tip="More commands"/>
-                <!-- Scrollbar suppressed on purpose: a rail under a 28px button row is noise,
-                     and at the app's non-overlay scrollbar setting it would add its own height
-                     to the strip the moment overflow started — reintroducing the row shift this
-                     layout exists to kill. The wheel scrolls it instead (see OnToolbarWheel). -->
+                <!-- Scrollbar suppressed on purpose: even as a slim overlay, a rail under a
+                     28px button row is noise, and the chevron menu is the affordance for what
+                     left the row. The scroll itself survives only as the safety net below the
+                     width where even the never-collapse slots overflow; the wheel drives it
+                     (see OnToolbarWheel). -->
                 <ScrollViewer x:Name="ToolbarScroll"
                               HorizontalScrollBarVisibility="Hidden"
                               VerticalScrollBarVisibility="Disabled">

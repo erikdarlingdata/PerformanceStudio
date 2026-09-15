@@ -99,6 +99,11 @@ public sealed class ToolbarOverflow
     /// <summary>Guards against re-entering a pass from a layout the pass itself provoked.</summary>
     private bool _refreshing;
 
+    /// <summary>Set when the collapsed set changed while the menu was open. Rebuilding a live menu
+    /// detaches its items and drops keyboard focus mid-navigation, so the rebuild waits for
+    /// <see cref="MenuFlyout.Closed"/> instead.</summary>
+    private bool _menuSyncDeferred;
+
     private ToolbarOverflow(ScrollViewer host, Panel panel, Button chevron, MenuFlyout menu, IReadOnlyList<Item> items)
     {
         _host = host;
@@ -146,6 +151,13 @@ public sealed class ToolbarOverflow
 
         var overflow = new ToolbarOverflow(host, panel, chevron, menu, items);
         chevron.Flyout = menu;
+        menu.Closed += (_, _) =>
+        {
+            if (!overflow._menuSyncDeferred)
+                return;
+            overflow._menuSyncDeferred = false;
+            overflow.SyncMenu();
+        };
 
         foreach (var candidate in overflow._candidates)
             candidate.Button.PropertyChanged += overflow.OnCandidatePropertyChanged;
@@ -237,9 +249,15 @@ public sealed class ToolbarOverflow
             required += candidate.Width;
         }
 
-        if (_candidates.Count(c => c.Collapsed) != before)
-            Revisions++;
+        /* The collapsed set is always a contiguous prefix of the offered candidates (the
+           normalization above plus take-from-the-front / restore-from-the-back keep it one), so an
+           unchanged count means an unchanged set. LayoutUpdated delivers EVERY pass in the window
+           - each editor keystroke, each canvas redraw - and this is where the overwhelmingly
+           common nothing-changed pass gets out before allocating anything in SyncMenu. */
+        if (_candidates.Count(c => c.Collapsed) == before)
+            return;
 
+        Revisions++;
         SyncMenu();
     }
 
@@ -315,8 +333,10 @@ public sealed class ToolbarOverflow
         candidate.OwnerVisible = available;
 
         /* Applied here rather than left to the next layout pass, so a button the app has just
-           withdrawn is gone at once and one it has just offered never gets a frame on a row with no
-           room for it. The pass that follows decides whether it has a slot to come back to. */
+           withdrawn is gone at once. One it has just offered reappears at once too - possibly for
+           a single clipped frame on a row with no room, since its Collapsed flag was normalized
+           away while it was unavailable; the pass that follows collapses it properly if the room
+           is not there. */
         ApplyVisibility(candidate);
         SyncMenu();
     }
@@ -341,8 +361,27 @@ public sealed class ToolbarOverflow
         {
             // The menu entry is the same command by another door; it cannot be offered while the
             // button it stands for is refusing, in either direction.
-            proxy.IsEnabled = candidate.Button.IsEnabled;
+            SyncProxyEnabled(proxy, candidate.Button.IsEnabled);
         }
+        else if (e.Property == ToolTip.TipProperty && candidate.Proxy is { } tipProxy)
+        {
+            // Tooltips move too: ComparePlansButtonState swaps the button's tip with its enabled
+            // state, and a menu entry frozen on the old one would explain the wrong door.
+            ToolTip.SetTip(tipProxy, ToolTip.GetTip(candidate.Button));
+        }
+    }
+
+    /// <summary>
+    /// Mirrors enabled-state onto a proxy AND its icon's opacity. Fluent's disabled MenuItem dims
+    /// only the header presenter; the icon keeps the full-brightness foreground it inherits, so a
+    /// disabled entry would read as a lit icon beside greyed text. 0.4 matches AppButton's own
+    /// disabled opacity, so the command dims the same way through either door.
+    /// </summary>
+    private static void SyncProxyEnabled(MenuItem proxy, bool enabled)
+    {
+        proxy.IsEnabled = enabled;
+        if (proxy.Icon is Control icon)
+            icon.Opacity = enabled ? 1.0 : 0.4;
     }
 
     /// <summary>
@@ -357,11 +396,28 @@ public sealed class ToolbarOverflow
             .Select(ProxyFor)
             .ToList();
 
+        /* An emptied menu closes rather than lingers: hiding the chevron does not close an open
+           flyout, so a resize that restores every command (Win+Up, snap, DPI change) would
+           otherwise leave an empty popup floating over the row, anchored to a button that is no
+           longer there. Hide() raises Closed synchronously, which lets the rebuild below proceed
+           in the same pass. */
+        if (wanted.Count == 0 && Menu.IsOpen)
+            Menu.Hide();
+
         if (!Menu.Items.SequenceEqual(wanted))
         {
-            Menu.Items.Clear();
-            foreach (var item in wanted)
-                Menu.Items.Add(item);
+            if (Menu.IsOpen)
+            {
+                // Clear() on a live menu detaches its items and drops keyboard focus out from
+                // under whoever is arrowing through it; the rebuild waits for Closed.
+                _menuSyncDeferred = true;
+            }
+            else
+            {
+                Menu.Items.Clear();
+                foreach (var item in wanted)
+                    Menu.Items.Add(item);
+            }
         }
 
         _chevron.IsVisible = wanted.Count > 0;
@@ -375,10 +431,10 @@ public sealed class ToolbarOverflow
         var proxy = new MenuItem
         {
             Header = candidate.Label,
-            Icon = AppIcons.MakeIcon(candidate.Icon),
-            IsEnabled = candidate.Button.IsEnabled
+            Icon = AppIcons.MakeIcon(candidate.Icon)
         };
 
+        SyncProxyEnabled(proxy, candidate.Button.IsEnabled);
         ToolTip.SetTip(proxy, ToolTip.GetTip(candidate.Button));
 
         /* Raising the button's own Click is what keeps the two doors onto a command from ever
