@@ -1,3 +1,5 @@
+using System;
+using System.IO;
 using System.Linq;
 using System.Reflection;
 using Avalonia.Controls;
@@ -6,6 +8,7 @@ using Avalonia.LogicalTree;
 using Avalonia.Threading;
 using PlanViewer.App;
 using PlanViewer.App.Dialogs;
+using PlanViewer.App.Mcp;
 using PlanViewer.App.Services;
 
 namespace PlanViewer.Core.Tests;
@@ -183,6 +186,42 @@ public class SettingsIntegrationsTests
 
             about.Close();
         });
+    }
+
+    [Fact]
+    public void McpSettingsReadThroughTheSameFileIntegrationsWritesTo()
+    {
+        /* The redirect is only worth having if both directions honour it. McpSettings.Load used
+           to rebuild the real ~/.planview path itself, so under test it read the developer's own
+           file while every write went to the temp one — a split-brain that is worse than either
+           half alone, and invisible until a value disagrees with itself. Writing through
+           SettingsFile and reading it back proves the two now agree on where the file is. */
+        SettingsFile.Update(o =>
+        {
+            o["mcp_enabled"] = true;
+            o["mcp_port"] = 5999;
+        });
+
+        var mcp = McpSettings.Load();
+
+        Assert.True(mcp.Enabled);
+        Assert.Equal(5999, mcp.Port);
+        Assert.StartsWith(Path.GetTempPath(), SettingsFile.Path, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void AMalformedMcpKeyCostsOnlyItself()
+    {
+        SettingsFile.Update(o =>
+        {
+            o["mcp_enabled"] = true;
+            o["mcp_port"] = "not a port";
+        });
+
+        var mcp = McpSettings.Load();
+
+        Assert.True(mcp.Enabled);       // survives its neighbour being junk
+        Assert.Equal(5152, mcp.Port);   // and the junk falls back rather than throwing
     }
 
     // ── helpers ──────────────────────────────────────────────────────
