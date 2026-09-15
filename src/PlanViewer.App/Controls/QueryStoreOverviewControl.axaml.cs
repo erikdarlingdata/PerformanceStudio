@@ -44,6 +44,13 @@ public partial class QueryStoreOverviewControl : UserControl
 
     private static readonly Color OthersColor = Color.Parse("#555555");
 
+    /// <summary>
+    /// Which half of every metric card is on show. The dashboard used to render both: a Total row
+    /// of seven cards and an Avg row of the same seven underneath it, fourteen near-identical
+    /// stacks of pills. They are one row now, and this is the switch.
+    /// </summary>
+    private bool _showAverages;
+
     public class DrillDownEventArgs(string database, DateTime startUtc, DateTime endUtc) : EventArgs
     {
         public string Database { get; } = database;
@@ -81,6 +88,9 @@ public partial class QueryStoreOverviewControl : UserControl
         this.SizeChanged += (_, _) => DrawWaitStatsChart();
 
         OverviewTimeSlicer.RangeChanged += OnSlicerRangeChanged;
+
+        TotalModeToggle.IsCheckedChanged += OnMetricModeChanged;
+        AvgModeToggle.IsCheckedChanged += OnMetricModeChanged;
 
         this.DetachedFromVisualTree += (_, _) =>
         {
@@ -198,11 +208,24 @@ public partial class QueryStoreOverviewControl : UserControl
     }
 
     /// <summary>
-    /// Takes a fetched set of per-database metrics and redraws the metric cards.
+    /// Takes a fetched set of per-database metrics and redraws the legend and the metric cards.
     /// </summary>
     internal void ApplyMetrics(List<DatabaseMetrics> metrics)
     {
         _metrics = metrics;
+        DrawBarCards();
+    }
+
+    /// <summary>
+    /// Both segments raise this — one as it clears, one as it sets — so the guard is what keeps a
+    /// single click from rebuilding seven cards twice.
+    /// </summary>
+    private void OnMetricModeChanged(object? sender, RoutedEventArgs e)
+    {
+        var showAverages = AvgModeToggle.IsChecked == true;
+        if (showAverages == _showAverages) return;
+
+        _showAverages = showAverages;
         DrawBarCards();
     }
 
