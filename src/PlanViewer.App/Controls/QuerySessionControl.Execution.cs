@@ -158,8 +158,8 @@ public partial class QuerySessionControl : UserControl
         closeBtn.Tag = loadingTab;
         closeBtn.Click += ClosePlanTab_Click;
 
-        SubTabControl.Items.Add(loadingTab);
-        SubTabControl.SelectedItem = loadingTab;
+        AddDocument(loadingTab);
+        SelectDocument(loadingTab);
         loadingContainer.Focus();
 
         try
@@ -208,7 +208,7 @@ public partial class QuerySessionControl : UserControl
                answer to that. Saying so as well used to be harmless and is no longer even
                visible: removing the selected tab moves the selection, and a selection change
                now empties the strip. */
-            SubTabControl.Items.Remove(loadingTab);
+            RemoveDocument(loadingTab);
         }
         catch (SqlException ex)
         {
@@ -404,8 +404,8 @@ public partial class QuerySessionControl : UserControl
         closeBtn.Tag = loadingTab;
         closeBtn.Click += ClosePlanTab_Click;
 
-        SubTabControl.Items.Add(loadingTab);
-        SubTabControl.SelectedItem = loadingTab;
+        AddDocument(loadingTab);
+        SelectDocument(loadingTab);
         loadingContainer.Focus();
 
         try
@@ -435,7 +435,7 @@ public partial class QuerySessionControl : UserControl
         {
             // Same as the capture path above: the cancel was the user's own, and the tab going
             // away says so. See that catch for why the message is gone.
-            SubTabControl.Items.Remove(loadingTab);
+            RemoveDocument(loadingTab);
         }
         catch (SqlException ex)
         {
