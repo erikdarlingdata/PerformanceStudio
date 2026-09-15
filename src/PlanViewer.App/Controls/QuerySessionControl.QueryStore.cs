@@ -34,15 +34,14 @@ public partial class QuerySessionControl : UserControl
 {
     private bool HasQueryStoreTab()
     {
-        return SubTabControl.Items.OfType<TabItem>()
-            .Any(t => t.Content is QueryStoreGridControl);
+        return DocumentTabs.Any(t => t.Content is QueryStoreGridControl);
     }
 
     public void TriggerQueryStore() => QueryStore_Click(null, new RoutedEventArgs());
 
     /// <summary>
     /// Creates a sub-tab with a standard header (label + optional extra buttons + close button).
-    /// Returns the TabItem. The close button removes the tab from SubTabControl.
+    /// Returns the TabItem. The close button removes the tab from the document strip.
     /// </summary>
     private TabItem CreateSubTab(string label, Control content, Action<TabItem>? onClose = null, params Button[] extraButtons)
     {
@@ -85,7 +84,7 @@ public partial class QuerySessionControl : UserControl
             if (s is Button btn && btn.Tag is TabItem t)
             {
                 onClose?.Invoke(t);
-                SubTabControl.Items.Remove(t);
+                RemoveDocument(t);
             }
         };
 
@@ -121,8 +120,8 @@ public partial class QuerySessionControl : UserControl
         };
 
         var tab = CreateSubTab("QS Overview", overview);
-        SubTabControl.Items.Add(tab);
-        SubTabControl.SelectedItem = tab;
+        AddDocument(tab);
+        SelectDocument(tab);
 
         /* After the tab is selected, not before: selecting a sub-tab clears the strip, so a
            "loading" message set ahead of the switch would be wiped by its own tab arriving. */
@@ -190,8 +189,8 @@ public partial class QuerySessionControl : UserControl
                 tb.Text = $"Query Store — {db}";
         };
 
-        SubTabControl.Items.Add(tab);
-        SubTabControl.SelectedItem = tab;
+        AddDocument(tab);
+        SelectDocument(tab);
     }
 
     private async void QueryStore_Click(object? sender, RoutedEventArgs e)
@@ -260,8 +259,8 @@ public partial class QuerySessionControl : UserControl
                 tb.Text = $"Query Store — {db}";
         };
 
-        SubTabControl.Items.Add(tab);
-        SubTabControl.SelectedItem = tab;
+        AddDocument(tab);
+        SelectDocument(tab);
     }
 
     /// <summary>
@@ -335,8 +334,8 @@ public partial class QuerySessionControl : UserControl
                 DetachHistorySubTabToWindow(t);
         };
 
-        SubTabControl.Items.Add(tab);
-        SubTabControl.SelectedItem = tab;
+        AddDocument(tab);
+        SelectDocument(tab);
     }
 
     private void OnHistoryPlanLoadRequested(object? sender, HistoryPlanLoadEventArgs e)
@@ -358,7 +357,7 @@ public partial class QuerySessionControl : UserControl
         var tabLabel = GetSubTabHeaderText(tab)?.Text ?? "History";
 
         // Remove from sub-tabs
-        SubTabControl.Items.Remove(tab);
+        RemoveDocument(tab);
         tab.Content = null;
 
         var mainWindow = Avalonia.Controls.TopLevel.GetTopLevel(this) as Window;
