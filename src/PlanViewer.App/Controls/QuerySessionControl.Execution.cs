@@ -198,8 +198,6 @@ public partial class QuerySessionControl : UserControl
             // Replace loading content with the plan viewer
             SetStatus($"{planType} plan captured ({sw.Elapsed.TotalSeconds:F1}s)");
             ShowCapturedPlan(loadingTab, planXml, tabLabel, queryText);
-            HumanAdviceButton.IsEnabled = true;
-            RobotAdviceButton.IsEnabled = true;
         }
         catch (OperationCanceledException)
         {
@@ -251,10 +249,12 @@ public partial class QuerySessionControl : UserControl
 
         /* The content swap above changes no selection, so SelectionChanged never fires and the
            button row never hears that a plan arrived: Copy Repro and Run Repro stayed dead after
-           every execute until the user clicked away and back. (The lines that manually enable the
-           two Advice buttons in the execute path papered over half of this without the other
-           half.) Refreshing here covers both execute paths; on a view surface the refresh reads a
-           null SelectedDocument and correctly keeps everything disabled. */
+           every execute until the user clicked away and back. This call is the ONLY correct
+           answer — manual IsEnabled writes at the call sites used to paper over half of it, and
+           because they ran unconditionally AFTER this refresh they re-lit Advice on a view
+           surface, where pressing it opened advice for a document the user was not looking at.
+           On a view the refresh reads a null SelectedDocument and keeps everything disabled;
+           that is the Q2 gate and nothing may write these buttons around it. */
         UpdatePlanTabButtonState();
     }
 

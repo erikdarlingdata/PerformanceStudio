@@ -265,8 +265,10 @@ public partial class QuerySessionControl : UserControl
         else
             SetErrorStatus($"Loaded {loaded} of {plans.Count} Query Store plans. {string.Join(" ", failures)}");
 
-        HumanAdviceButton.IsEnabled = true;
-        RobotAdviceButton.IsEnabled = true;
+        /* No manual button enables here: every successful AddPlanTab above selected its tab,
+           whose SelectionChanged already ran UpdatePlanTabButtonState — and when EVERY plan in
+           the batch failed, nothing was added or selected and the buttons must stay disabled.
+           An unconditional enable at this spot lit Advice with no document at all. */
     }
 
     /// <summary>
