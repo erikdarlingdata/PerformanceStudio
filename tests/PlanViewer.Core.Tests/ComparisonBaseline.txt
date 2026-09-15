@@ -1065,7 +1065,7 @@ Note: Plan B is an estimated plan. Runtime metrics only available for the actual
 --- Statement 1 ---
 SELECT [u].* FROM [dbo].[Users] [u] WHERE [u].[DisplayName]=case when getdate()<'20270101' then N'Jon Skeet' else 'Fluffy Jim' end
 
-  Estimated cost:     66.6425 -> 0.0066  (100.0% cheaper)
+  Estimated cost:     66.6425 -> 0.0066  (99.9% cheaper)
   Estimated rows:     7 -> 2  (71.4% fewer)
   Runtime:            80ms -> N/A
   CPU time:           629ms -> N/A
@@ -1479,11 +1479,11 @@ Plan B: key_lookup_plan.sqlplan
 --- Statement 1 ---
 SELECT       u.Id,       MaxScore = MAX(p.Score)  FROM dbo.Users AS u  JOIN dbo.Posts AS p    ON u.Id = p.OwnerUserId    OR u.Id = p.LastEditorUserId  WHERE p.PostTypeId IN (1, 2)  GROUP BY       u.Id  HAVING      MAX(p.Score) >= 5000  ORDER BY      MaxScore DESC
 
-  Estimated cost:     3,030.74 -> 0.341  (100.0% cheaper)
+  Estimated cost:     3,030.74 -> 0.341  (99.9% cheaper)
   Estimated rows:     135 -> 1  (99.3% fewer)
   Runtime:            33.0s -> 0ms  (eliminated)
   CPU time:           3m 48s -> 0ms  (eliminated)
-  Logical reads:      93,307,943 -> 322  (100.0% fewer)
+  Logical reads:      93,307,943 -> 322  (99.9% fewer)
   Physical reads:     107,624 -> 0  (eliminated)
   Memory grant:       451.8 MB -> 0.0 MB  (eliminated)
   DOP:                8 -> 1
@@ -1537,7 +1537,7 @@ Plan B: leading_wildcard_like_plan.sqlplan
 SELECT p.Id, b.Id     FROM dbo.Posts AS p     CROSS APPLY (         SELECT TOP (1) b.Id         FROM dbo.Badges AS b         WHERE b.UserId = p.OwnerUserId         ORDER BY b.Date DESC     ) AS b     WHERE p.PostTypeId = 1     OPTION (MAXDOP 1)
 
   Estimated cost:     17,697.2 -> 66.8966  (99.6% cheaper)
-  Estimated rows:     6,022,820 -> 103  (100.0% fewer)
+  Estimated rows:     6,022,820 -> 103  (99.9% fewer)
   Runtime:            44.1s -> 225ms  (99.5% faster)
   CPU time:           41.8s -> 1.8s  (95.8% faster)
   Logical reads:      59,739,832 -> 89,696  (99.8% fewer)
@@ -1668,11 +1668,11 @@ Plan B: mismatched_data_type_plan.sqlplan
 SELECT      u.DisplayName,      p.Score      , p.Title      , p.Tags      , p.Body  FROM dbo.Users AS u  LEFT JOIN  (      SELECT          p.*,          n = ROW_NUMBER() OVER              (                  PARTITION BY                      p.OwnerUserId                  ORDER BY                      p.Score DESC              )      FROM dbo.Posts AS p      WHERE p.PostTypeId = 2      AND   p.Score > 0  ) AS p    ON  p.OwnerUserId = u.Id    AND p.n = 1  WHERE u.Reputation >= 20000  ORDER BY     ...
 
   Estimated cost:     16,976.5 -> 98.8142  (99.4% cheaper)
-  Estimated rows:     482,677 -> 1  (100.0% fewer)
+  Estimated rows:     482,677 -> 1  (99.9% fewer)
   Runtime:            26.8s -> 4.7s  (82.6% faster)
   CPU time:           1m 16s -> 4.7s  (93.9% faster)
   Logical reads:      4,229,245 -> 51,219  (98.8% fewer)
-  Memory grant:       10,597.0 MB -> 3.0 MB  (100.0% less)
+  Memory grant:       10,597.0 MB -> 3.0 MB  (99.9% less)
   DOP:                8 -> 1
   Warnings:           13 -> 1  (12 resolved)
   Missing indexes:    1 -> 0  (1 resolved)
@@ -1702,10 +1702,10 @@ Plan B: missing-join-predicate.sqlplan
 --- Statement 1 ---
 SELECT      c = COUNT_BIG(*)  FROM dbo.Votes AS v  WHERE v.CreationDate >= @date  OPTION(RECOMPILE)
 
-  Estimated cost:     98.8142 -> 0.0238  (100.0% cheaper)
+  Estimated cost:     98.8142 -> 0.0238  (99.9% cheaper)
   Estimated rows:     1 -> 1  (0.0% more)
-  Runtime:            4.7s -> 2ms  (100.0% faster)
-  CPU time:           4.7s -> 2ms  (100.0% faster)
+  Runtime:            4.7s -> 2ms  (99.9% faster)
+  CPU time:           4.7s -> 2ms  (99.9% faster)
   Logical reads:      51,219 -> 786  (98.5% fewer)
   Memory grant:       3.0 MB -> 0.0 MB  (eliminated)
   DOP:                1 -> 1
@@ -1801,7 +1801,7 @@ Note: Plan B is an estimated plan. Runtime metrics only available for the actual
 --- Statement 1 ---
 SELECT COUNT(*) FROM dbo.Posts WHERE YEAR(CreationDate) = 2013
 
-  Estimated cost:     3,097.52 -> 1  (100.0% cheaper)
+  Estimated cost:     3,097.52 -> 1  (99.9% cheaper)
   Estimated rows:     1 -> 1,000  (9,999% more)
   Runtime:            725ms -> N/A
   CPU time:           5.8s -> N/A
@@ -1861,8 +1861,8 @@ Plan B: parallel_row_over_batch_plan.sqlplan
 --- Statement 1 ---
 SELECT   p.*      FROM     dbo.Posts AS p      JOIN     dbo.Votes AS v          ON p.Id = v.PostId      LEFT JOIN #t ON 1 = 0      WHERE    p.PostTypeId = 2      AND      p.CreationDate >= '20131225'      ORDER BY p.Id   OPTION(HASH JOIN)
 
-  Estimated cost:     6,729.7 -> 1  (100.0% cheaper)
-  Estimated rows:     2,982,900 -> 1  (100.0% fewer)
+  Estimated cost:     6,729.7 -> 1  (99.9% cheaper)
+  Estimated rows:     2,982,900 -> 1  (99.9% fewer)
   Runtime:            9.4s -> 1.0s  (89.4% faster)
   CPU time:           28.6s -> 60ms  (99.8% faster)
   Logical reads:      4,947,424 -> 0  (eliminated)
@@ -2071,7 +2071,7 @@ SELECT      flat_date =          DATEFROMPARTS          (              DATEPART(
   Runtime:            17.1s -> 20.0s  (16.6% slower)
   CPU time:           17.1s -> 2m 31s  (784% slower)
   Logical reads:      41,340,356 -> 133,228,207  (222% more)
-  Memory grant:       929.4 MB -> 0.1 MB  (100.0% less)
+  Memory grant:       929.4 MB -> 0.1 MB  (99.9% less)
   DOP:                8 -> 8
   Warnings:           4 -> 2  (2 resolved)
 
@@ -2131,11 +2131,11 @@ Plan B: table_variable_plan.sqlplan
 --- Statement 1 ---
 SELECT      u.DisplayName,      p.Score      , p.Title      , p.Tags      , p.Body  FROM dbo.Users AS u  LEFT JOIN  (      SELECT          p.*,          n = ROW_NUMBER() OVER              (                  PARTITION BY                      p.OwnerUserId                  ORDER BY                      p.Score DESC              )      FROM dbo.Posts AS p      WHERE p.PostTypeId = 2      AND   p.Score > 0  ) AS p    ON  p.OwnerUserId = u.Id    AND p.n = 1  WHERE u.Reputation >= 20000  ORDER BY     ...
 
-  Estimated cost:     16,976.5 -> 0.0033  (100.0% cheaper)
-  Estimated rows:     482,677 -> 3  (100.0% fewer)
+  Estimated cost:     16,976.5 -> 0.0033  (99.9% cheaper)
+  Estimated rows:     482,677 -> 3  (99.9% fewer)
   Runtime:            26.8s -> 0ms  (eliminated)
   CPU time:           1m 16s -> 0ms  (eliminated)
-  Logical reads:      4,229,245 -> 2  (100.0% fewer)
+  Logical reads:      4,229,245 -> 2  (99.9% fewer)
   Memory grant:       10,597.0 MB -> 0.0 MB  (eliminated)
   DOP:                8 -> 1
   Warnings:           12 -> 1  (11 resolved)
@@ -2188,8 +2188,8 @@ SELECT TOP (1)      p.Id  FROM dbo.Posts AS p  WHERE NOT EXISTS  (      SELECT  
   Estimated cost:     4.8408 -> 0.0033  (99.9% cheaper)
   Estimated rows:     1 -> 10  (900% more)
   Runtime:            5.1s -> 17.1s  (234% slower)
-  CPU time:           5.1s -> 1ms  (100.0% faster)
-  Logical reads:      88,341 -> 1  (100.0% fewer)
+  CPU time:           5.1s -> 1ms  (99.9% faster)
+  Logical reads:      88,341 -> 1  (99.9% fewer)
   DOP:                1 -> 1
   Warnings:           1 -> 0  (1 resolved)
   Missing indexes:    1 -> 0  (1 resolved)
