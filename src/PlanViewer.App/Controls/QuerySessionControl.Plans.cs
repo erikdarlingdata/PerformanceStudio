@@ -429,9 +429,8 @@ public partial class QuerySessionControl : UserControl
             var analysisA = ResultMapper.Map(viewerA.CurrentPlan!, "query editor", _serverMetadata, viewerA.QueryText);
             var analysisB = ResultMapper.Map(viewerB.CurrentPlan!, "query editor", _serverMetadata, viewerB.QueryText);
 
-            var comparison = ComparisonFormatter.Compare(analysisA, analysisB, labelA, labelB);
             dialog.Close();
-            ShowAdviceWindow("Plan Comparison", comparison);
+            ComparisonWindow.Show(GetParentWindow(), analysisA, analysisB, labelA, labelB);
         };
 
         cancelBtn.Click += (_, _) => dialog.Close();
