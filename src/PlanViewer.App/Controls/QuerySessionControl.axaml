@@ -3,7 +3,7 @@
              xmlns:ae="using:AvaloniaEdit"
              x:Class="PlanViewer.App.Controls.QuerySessionControl"
              Background="{DynamicResource BackgroundBrush}">
-    <Grid RowDefinitions="Auto,*">
+    <Grid RowDefinitions="Auto,Auto,*">
         <!-- Toolbar.
 
              One fixed row of slots, in an order that never changes with connection state:
@@ -153,9 +153,67 @@
             </DockPanel>
         </Border>
 
-        <!-- Sub-TabControl: Editor + Plan tabs -->
-        <TabControl Grid.Row="1" x:Name="SubTabControl"
-                    Background="{DynamicResource BackgroundBrush}" Padding="0">
+        <!-- The document strip: headers only.
+
+             It is still a TabControl, still called SubTabControl, and still stores a document's
+             content on its TabItem — the whole restructure is one retemplate. What changes is where
+             that content is PRESENTED: PART_SelectedContentHost is deliberately omitted below, and
+             DocumentHost in row 2 presents SelectedContent instead. A TabItem's own template renders
+             only its Header, so dropping the TabControl's content presenter leaves exactly the strip.
+
+             Do not "fix a blank-looking region" by putting PART_SelectedContentHost back: two
+             presenters then contend for one visual parent, the stock one wins, and the session's own
+             host goes silently blank. The omission is the design.
+
+             MinHeight pins the row: an ItemsPresenter holding no documents measures zero, and this
+             strip shares its row with the view bar, so without a floor an empty session's strip would
+             collapse and take the row's top edge with it. A minimum cannot stop a strip GROWING,
+             which is why the template below also makes it non-wrapping — see the toolbar's note. -->
+        <TabControl Grid.Row="1" x:Name="SubTabControl" MinHeight="28"
+                    Background="{DynamicResource BackgroundBrush}">
+            <!-- Single-child chain, not the stock Border > DockPanel > [presenter, presenter].
+                 With the content presenter gone the DockPanel has one child, and LastChildFill
+                 (true by default) then stretches the strip over the whole region, ignoring its Dock.
+
+                 Same scrolling story as the window's own tab strip (MainWindow.axaml:70-109), and for
+                 the same reason: the stock items panel is a WrapPanel, and documents accumulating
+                 into a second and third row would push the surface below down a row at a time. A
+                 horizontal panel on its own is the lost fight that file documents — it puts the
+                 overflow out of reach instead of on another row — so the panel swap and the
+                 ScrollViewer are one change, never half of one.
+
+                 DocumentStripScroll lives in this template's namescope, so FindControl from the
+                 session returns null for it; the wheel handler reaches it through sender. Auto rather
+                 than Visible because the app runs overlay scrollbars, where an Auto rail spans the
+                 content instead of taking a row of the strip's height. Turn vertical scrolling on
+                 here, or set IsScrollChainingEnabled=False, and the plain-wheel pan dies with no
+                 error to say so. -->
+            <TabControl.Template>
+                <ControlTemplate TargetType="TabControl">
+                    <Border Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="{TemplateBinding CornerRadius}">
+                        <ScrollViewer Name="DocumentStripScroll"
+                                      PointerWheelChanged="DocumentStrip_PointerWheel"
+                                      HorizontalScrollBarVisibility="Auto"
+                                      VerticalScrollBarVisibility="Disabled">
+                            <ItemsPresenter Name="PART_ItemsPresenter"
+                                            ItemsPanel="{TemplateBinding ItemsPanel}"/>
+                        </ScrollViewer>
+                    </Border>
+                </ControlTemplate>
+            </TabControl.Template>
+            <!-- Plain StackPanel, and it must stay one. A VirtualizingStackPanel would realise only
+                 the headers on screen, and both ContainerFromIndex and the live container
+                 subscription behind SelectedContent need a realised container — virtualise this and
+                 a plan landing in a document scrolled out of view stops reaching the host, silently,
+                 for that document only. -->
+            <TabControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <StackPanel Orientation="Horizontal"/>
+                </ItemsPanelTemplate>
+            </TabControl.ItemsPanel>
             <!-- Editor tab (always present) -->
             <TabItem>
                 <TabItem.Header>
@@ -280,5 +338,27 @@
                 </Grid>
             </TabItem>
         </TabControl>
+
+        <!-- Row 2: the surface region.
+
+             DocumentHost is the one and only writer of what a document shows, and SelectedContent is
+             the one and only thing that writes it. That matters more than it looks: a plan arrives by
+             having its tab's Content swapped from the progress spinner in place, which changes no
+             selection at all — an assignment driven by selection or by the view bar would miss it and
+             leave the spinner up forever, passing every test that counts tabs. SelectedContent covers
+             it, because the TabControl keeps a live subscription to the selected container's Content.
+             The #-anchor binds the named control directly rather than through a DataContext, and
+             SelectedContent is a getter-only direct property, so nothing can write back up the wire.
+
+             Padding, the two content alignments and ContentTemplate go inert on a TabControl once its
+             content part is gone; they belong here instead. Nothing sets ContentTemplate on the strip
+             today, so the host deliberately binds no template — a future need binds
+             SelectedContentTemplate, never ContentTemplate.
+
+             Tab order is by tree position and this sits after the strip, which is the same order the
+             stock in-template presenter gave; no TabIndex is set because setting one is what would
+             change it. -->
+        <ContentControl Grid.Row="2" x:Name="DocumentHost"
+                        Content="{Binding #SubTabControl.SelectedContent}"/>
     </Grid>
 </UserControl>

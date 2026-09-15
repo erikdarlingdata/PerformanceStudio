@@ -342,6 +342,36 @@ public partial class QuerySessionControl : UserControl
         e.Handled = true;
     }
 
+    /// <summary>
+    /// Pans the document strip when it holds more documents than the row is wide. Wheel up scrolls
+    /// left, the same direction the toolbar above it and the window's own tab strip both move.
+    /// </summary>
+    /// <remarks>
+    /// The ScrollViewer is inside the strip's template, so it has its own namescope and
+    /// <c>FindControl</c> from here returns null for it — <paramref name="sender"/> is the handle.
+    /// The handler is reachable at all only because ScrollContentPresenter leaves a wheel unhandled
+    /// when it moved no offset, which is why the template keeps vertical scrolling Disabled and
+    /// never touches IsScrollChainingEnabled.
+    /// </remarks>
+    private void DocumentStrip_PointerWheel(object? sender, PointerWheelEventArgs e)
+    {
+        if (sender is not ScrollViewer strip)
+            return;
+
+        var max = Math.Max(0, strip.Extent.Width - strip.Viewport.Width);
+        if (max <= 0)
+            return; // every document header is visible — leave the wheel alone
+
+        var delta = e.Delta.X != 0 ? e.Delta.X : e.Delta.Y;
+        if (delta == 0)
+            return;
+
+        strip.Offset = new Avalonia.Vector(
+            Math.Clamp(strip.Offset.X - (delta * 48), 0, max),
+            strip.Offset.Y);
+        e.Handled = true;
+    }
+
     /* The colours the theme holds today, as literals, so a key missing from the dictionary renders
        something sane rather than nothing. Three of them are exactly what the code used to construct
        inline at each site; FallbackMuted is not, because the muted site was constructing #A0A0A0
