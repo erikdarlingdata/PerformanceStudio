@@ -92,14 +92,21 @@
         </Style>
 
         <!-- One bar row: name, track, value. The name is subordinate to the number, so it takes the
-             muted ink and the value keeps the full foreground. -->
+             muted ink and the value keeps the full foreground.
+
+             The 72px cap is the budget, not a guess. Seven cards across a 1536-logical window
+             leaves each card about 194px of content; a name allowed to grow to the width of
+             "StackOverflow2013" spends 88 of them and leaves the bar — the actual encoding — barely
+             fifty pixels to work in. The column is Auto, so a card full of short names still hands
+             that width to the tracks, and the shared legend below carries every full name against
+             its colour, which is what makes a clipped name here recoverable at a glance. -->
         <Style Selector="TextBlock.barName">
             <Setter Property="FontSize" Value="10"/>
             <Setter Property="Foreground" Value="{DynamicResource ForegroundMutedBrush}"/>
             <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
-            <Setter Property="MinWidth" Value="42"/>
-            <Setter Property="MaxWidth" Value="88"/>
+            <Setter Property="MinWidth" Value="40"/>
+            <Setter Property="MaxWidth" Value="72"/>
             <Setter Property="Margin" Value="0,2,6,2"/>
         </Style>
         <Style Selector="TextBlock.barValue">

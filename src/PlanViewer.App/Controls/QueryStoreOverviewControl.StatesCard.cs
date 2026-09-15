@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+using System;
 using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
@@ -71,7 +71,7 @@ public partial class QueryStoreOverviewControl : UserControl
 
         foreach (var db in _states
                      .OrderBy(s => StateRank(s.State))
-                     .ThenBy(s => s.DatabaseName, System.StringComparer.OrdinalIgnoreCase))
+                     .ThenBy(s => s.DatabaseName, StringComparer.OrdinalIgnoreCase))
         {
             StatesList.Children.Add(BuildStateRow(db));
         }
