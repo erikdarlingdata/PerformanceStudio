@@ -30,7 +30,6 @@ public partial class AboutWindow : Window
         var version = Assembly.GetExecutingAssembly().GetName().Version;
         if (version != null)
             VersionText.Text = $"Version {version.Major}.{version.Minor}.{version.Build}";
-
     }
 
     private void GitHubLink_Click(object? sender, PointerPressedEventArgs e) => OpenUrl(GitHubUrl);

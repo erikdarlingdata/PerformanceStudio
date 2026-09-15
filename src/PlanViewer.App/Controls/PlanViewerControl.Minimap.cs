@@ -482,6 +482,15 @@ public partial class PlanViewerControl : UserControl
     private void MinimapResizeGrip_PointerMoved(object? sender, PointerEventArgs e)
     {
         if (!_minimapResizing) return;
+
+        // Belt to PointerCaptureLost's braces: if the button is no longer down, the drag is over
+        // however it ended. Without this a stale flag turns an ordinary hover into a resize.
+        if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+        {
+            _minimapResizing = false;
+            return;
+        }
+
         var current = e.GetPosition(this);
         // Dragging toward the top-left — away from the pinned corner — is what grows the panel,
         // so the deltas subtract.

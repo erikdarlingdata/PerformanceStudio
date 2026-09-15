@@ -227,15 +227,22 @@ public partial class PlanViewerControl : UserControl
         Helpers.DataGridBehaviors.AttachCopyGuard(StatementsGrid,
             item => item is StatementRow row ? RunnableStatementText(row.Statement) : null);
 
-        // Wire minimap resize grip (defined in AXAML, not in canvas)
+        /* Wire minimap resize grip (defined in AXAML, not in canvas).
+
+           PointerCaptureLost matters as much as PointerReleased. Capture can go away without a
+           release — alt-tab mid-drag, a touch cancel, another control taking it — and the "am I
+           dragging?" flag is the only thing the move handlers check. Left set, a later plain
+           hover over the grip resizes the panel against a start point from minutes ago. */
         MinimapResizeGrip.PointerPressed += MinimapResizeGrip_PointerPressed;
         MinimapResizeGrip.PointerMoved += MinimapResizeGrip_PointerMoved;
         MinimapResizeGrip.PointerReleased += MinimapResizeGrip_PointerReleased;
+        MinimapResizeGrip.PointerCaptureLost += (_, _) => _minimapResizing = false;
 
         // Wire minimap canvas interaction handlers once
         MinimapCanvas.PointerPressed += MinimapCanvas_PointerPressed;
         MinimapCanvas.PointerMoved += MinimapCanvas_PointerMoved;
         MinimapCanvas.PointerReleased += MinimapCanvas_PointerReleased;
+        MinimapCanvas.PointerCaptureLost += (_, _) => _minimapDragging = false;
     }
 
     /// <summary>
