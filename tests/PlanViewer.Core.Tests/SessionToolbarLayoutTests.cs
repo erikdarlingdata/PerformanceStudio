@@ -18,33 +18,48 @@ namespace PlanViewer.Core.Tests;
 /// move anything. The row stays one row, every slot stays at the same X, and the sub-tab row below
 /// does not shift — with the widest plausible server name in the label, which is the input that
 /// used to cause it.</para>
+///
+/// <para>Both widths matter now that the row has an overflow menu. At a width that fits the whole
+/// row, this is the original contract. At a width that does not, connecting must ALSO not change
+/// which commands are on the row: the collapse decision is made from the row's own natural width,
+/// and if any of that were a function of the connection text, connecting would push a command into
+/// the menu — the same bug as before, wearing a chevron.</para>
 /// </summary>
 public class SessionToolbarLayoutTests
 {
+    /// <summary>The slots, in the order the XAML lays them out.</summary>
+    private static readonly string[] SlotNames =
+    {
+        "ExecuteButton", "ExecuteEstButton", "HumanAdviceButton", "RobotAdviceButton",
+        "ComparePlansButton", "QueryStoreButton", "QueryStoreOverviewButton", "CopyReproButton",
+        "GetActualPlanButton", "FormatButton"
+    };
+
     [Fact]
     public void ConnectingMovesNothingInTheToolbarOrTheSubTabRowBelowIt()
     {
         HeadlessUi.Run(() =>
         {
-            var window = new MainWindow { Width = 1280, Height = 800 };
+            /* Wide enough for the whole row (natural 1910px in this harness's font metrics), because
+               the first half of this test is about every slot HAVING a geometry to hold still. */
+            var window = new MainWindow { Width = 2200, Height = 800 };
             try
             {
                 window.Show();
                 window.NewQuery_Click(window, new RoutedEventArgs());
-                window.UpdateLayout();
 
                 var session = Session(window);
-                var scroll = session.FindControl<ScrollViewer>("ToolbarScroll")!;
+                ToolbarOverflowTests.Settle(window, session.Overflow);
+
                 var subTabs = session.FindControl<TabControl>("SubTabControl")!;
                 var status = session.FindControl<TextBlock>("StatusText")!;
                 var connect = session.FindControl<Button>("ConnectButton")!;
                 var server = session.FindControl<TextBlock>("ServerLabel")!;
+                var chevron = session.FindControl<Button>("ToolbarOverflowButton")!;
 
-                var slots = new[] { "ExecuteButton", "ExecuteEstButton", "HumanAdviceButton",
-                    "RobotAdviceButton", "ComparePlansButton", "QueryStoreButton",
-                    "QueryStoreOverviewButton", "CopyReproButton", "GetActualPlanButton", "FormatButton" }
-                    .Select(name => session.FindControl<Button>(name)!)
-                    .ToList();
+                var slots = SlotNames.Select(name => session.FindControl<Button>(name)!).ToList();
+
+                Assert.False(chevron.IsVisible, "the whole row fits at 2200 — nothing to overflow");
 
                 // one row: a return to wrapping would put the later slots on a second Y
                 Assert.All(slots, b => Assert.Equal(connect.Bounds.Y, b.Bounds.Y));
@@ -57,27 +72,39 @@ public class SessionToolbarLayoutTests
                 // string is a same-or-narrower stand-in, and the pin is what this asserts)
                 connect.Content = "Reconnect";
                 server.Text = "sql2022.contoso.example.com (Read-only)";
-                window.UpdateLayout();
+                ToolbarOverflowTests.Settle(window, session.Overflow);
 
                 Assert.All(slots, b => Assert.Equal(connect.Bounds.Y, b.Bounds.Y));
                 Assert.Equal(positions, slots.Select(b => b.Bounds.X));
                 Assert.Equal(subTabsY, subTabs.Bounds.Y);
+                Assert.False(chevron.IsVisible);
 
                 // a long status trims rather than shoving the toolbar sideways
                 status.Text = new string('x', 400);
-                window.UpdateLayout();
+                ToolbarOverflowTests.Settle(window, session.Overflow);
 
                 Assert.True(status.Bounds.Width <= 240, $"status took {status.Bounds.Width}px");
                 Assert.Equal(positions, slots.Select(b => b.Bounds.X));
                 Assert.Equal(subTabsY, subTabs.Bounds.Y);
 
-                // and when the row is wider than the window it scrolls instead of wrapping
-                Assert.True(scroll.Extent.Width > scroll.Viewport.Width,
-                    $"at 1280 the row should overflow: extent {scroll.Extent.Width} viewport {scroll.Viewport.Width}");
+                /* Second half: the same contract at a width the row does not fit. What is on the
+                   row must be decided by the row, not by what the connection is called. */
+                status.Text = "";
+                window.Width = 1576;
+                ToolbarOverflowTests.Settle(window, session.Overflow);
 
-                scroll.Offset = new Avalonia.Vector(40, 0);
-                window.UpdateLayout();
-                Assert.Equal(40, scroll.Offset.X);
+                Assert.True(chevron.IsVisible, "at 1576 the tail should have moved into the menu");
+                var collapsed = ToolbarOverflowTests.MenuHeaders(session.Overflow);
+                var inline = slots.Where(b => b.IsVisible).ToList();
+                var inlinePositions = inline.Select(b => b.Bounds.X).ToList();
+
+                connect.Content = "Connect";
+                server.Text = "Not connected";
+                ToolbarOverflowTests.Settle(window, session.Overflow);
+
+                Assert.Equal(collapsed, ToolbarOverflowTests.MenuHeaders(session.Overflow));
+                Assert.Equal(inline, slots.Where(b => b.IsVisible).ToList());
+                Assert.Equal(inlinePositions, inline.Select(b => b.Bounds.X));
                 Assert.Equal(subTabsY, subTabs.Bounds.Y);
             }
             finally
@@ -103,14 +130,18 @@ public class SessionToolbarLayoutTests
     {
         HeadlessUi.Run(() =>
         {
-            var window = new MainWindow();
+            /* Explicitly wide, unlike the default 1280, because the divider half of this test needs
+               all six dividers ON the row to have a width to measure: the overflow takes a group's
+               leading divider with it when the last of that group leaves, so at 1280 four of the six
+               are legitimately zero-width and this would be testing the wrong thing. */
+            var window = new MainWindow { Width = 2200, Height = 800 };
             try
             {
                 window.Show();
                 window.NewQuery_Click(window, new RoutedEventArgs());
-                window.UpdateLayout();
 
                 var session = Session(window);
+                ToolbarOverflowTests.Settle(window, session.Overflow);
 
                 foreach (var key in new[] { "ForegroundBrush", "BackgroundBrush", "ForegroundMutedBrush",
                     "BackgroundDarkBrush", "BorderBrush", "SuccessBrush", "ErrorBrush", "AppButton" })
@@ -140,7 +171,7 @@ public class SessionToolbarLayoutTests
         });
     }
 
-    private static QuerySessionControl Session(MainWindow window) =>
+    internal static QuerySessionControl Session(MainWindow window) =>
         window.FindControl<TabControl>("MainTabControl")!.Items
             .OfType<TabItem>().Select(t => t.Content).OfType<QuerySessionControl>().Last();
 }

@@ -155,6 +155,12 @@ public partial class PlanViewerControl : UserControl
         e.Handled = true;
     }
 
+    /// <summary>
+    /// The toolbar's overflow: which trailing commands have moved into the chevron menu because
+    /// the row is wider than the window, and the menu they moved into.
+    /// </summary>
+    public ToolbarOverflow Overflow { get; }
+
     public PlanViewerControl()
     {
         InitializeComponent();
@@ -165,6 +171,24 @@ public partial class PlanViewerControl : UserControl
         PlanConnectButton.Content = AppIcons.MakeContent(AppIcons.Connect, "Connect");
         SavePlanButton.Content = AppIcons.MakeContent(AppIcons.Save, "Save .sqlplan");
         StatementsButton.Content = AppIcons.MakeContent(AppIcons.Statements, "Statements");
+        PlanToolbarOverflowButton.Content = AppIcons.MakeIcon(AppIcons.More);
+
+        /* Same contract as the session toolbar's overflow, in the order these leave the row:
+           Statements first, then Save. Zoom, Fit and the zoom readout stay — they are what this
+           toolbar is for, and Fit in particular is the recovery from a zoom that went wrong.
+
+           Statements is the interesting one: its visibility already belongs to the plan (a plan
+           with no statement list has no button), so the overflow observes that intent rather than
+           overwriting it — see ToolbarOverflow. Its divider is registered with it for the same
+           reason the session toolbar's group dividers are, and moves with it either way. */
+        var collapsible = new List<ToolbarOverflow.Item>
+        {
+            new(StatementsButton, AppIcons.Statements, "Statements", StatementsButtonSeparator),
+            new(SavePlanButton, AppIcons.Save, "Save .sqlplan", SavePlanSeparator)
+        };
+
+        Overflow = ToolbarOverflow.Attach(
+            PlanToolbarScroll, PlanToolbarOverflowButton, new MenuFlyout(), collapsible);
 
         // Same wheel contract as the session toolbar's scrolling row (see OnPlanToolbarWheel).
         PlanToolbarScroll.AddHandler(PointerWheelChangedEvent, OnPlanToolbarWheel, Avalonia.Interactivity.RoutingStrategies.Tunnel);
@@ -500,8 +524,8 @@ public partial class PlanViewerControl : UserControl
         InsightsPanel.IsVisible = false;
         CostText.Text = "";
         CloseStatementsPanel();
-        StatementsButton.IsVisible = false;
-        StatementsButtonSeparator.IsVisible = false;
+        // Button and divider both belong to the overflow — see ShowStatementsPanel.
+        Overflow.SetAvailable(StatementsButton, false);
         ClosePropertiesPanel();
         CloseMinimapPanel();
     }

@@ -339,8 +339,12 @@ public partial class PlanViewerControl : UserControl
         _statementsSplitterColumn.Width = new GridLength(5);
         StatementsSplitter.IsVisible = true;
         StatementsPanel.IsVisible = true;
-        StatementsButton.IsVisible = true;
-        StatementsButtonSeparator.IsVisible = true;
+        /* Neither the button's IsVisible nor its divider is set here. Both belong to
+           ToolbarOverflow, which owns the other half of that decision — whether the toolbar has
+           room for the button at all — and which cannot see a write that lands on a control it has
+           already hidden. Saying it this way is what keeps "Statements" out of the chevron menu for
+           a plan that has none, and keeps the divider from being stranded on the row alone. */
+        Overflow.SetAvailable(StatementsButton, true);
     }
 
     private void CloseStatementsPanel()
