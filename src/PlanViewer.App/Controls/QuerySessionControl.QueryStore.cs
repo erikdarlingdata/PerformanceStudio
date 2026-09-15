@@ -99,43 +99,15 @@ public partial class QuerySessionControl : UserControl
         return null;
     }
 
+    /// <summary>
+    /// The toolbar's way in to the Overview. It is a view rather than a document now, so this and
+    /// the view bar's Overview segment are the same gesture and share one implementation — two
+    /// entry points that could disagree about what "open the Overview" means is exactly the bug
+    /// nobody finds.
+    /// </summary>
     private async void QueryStoreOverview_Click(object? sender, RoutedEventArgs e)
     {
-        if (_serverConnection == null || _connectionString == null)
-        {
-            await ShowConnectionDialogAsync();
-            if (_serverConnection == null || _connectionString == null)
-                return;
-        }
-
-        var supportsWaitStats = _serverMetadata?.SupportsQueryStoreWaitStats ?? false;
-        var overview = new QueryStoreOverviewControl(_serverConnection, _credentialService,
-            supportsWaitStats: supportsWaitStats);
-        overview.DrillDownRequested += async (_, args) =>
-        {
-            // Open a single-database Query Store tab directly (no connection dialog)
-            _selectedDatabase = args.Database;
-            _connectionString = _serverConnection!.GetConnectionString(_credentialService, args.Database);
-            await OpenQueryStoreForDatabaseAsync(args.Database, args.StartUtc, args.EndUtc);
-        };
-
-        var tab = CreateSubTab("QS Overview", overview);
-        AddDocument(tab);
-        SelectDocument(tab);
-
-        /* After the tab is selected, not before: selecting a sub-tab clears the strip, so a
-           "loading" message set ahead of the switch would be wiped by its own tab arriving. */
-        SetStatus("Loading Query Store Overview...");
-
-        try
-        {
-            await overview.LoadAsync();
-            ClearStatus();
-        }
-        catch (Exception ex)
-        {
-            SetStatusFromException(ex);
-        }
+        await ShowOverviewAsync();
     }
 
     private async Task OpenQueryStoreForDatabaseAsync(string database, DateTime? initialStartUtc = null, DateTime? initialEndUtc = null)

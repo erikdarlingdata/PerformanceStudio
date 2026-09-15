@@ -206,8 +206,10 @@ public partial class QuerySessionControl : UserControl
             /* Nothing in the strip. The user cancelled this themselves — Escape, the Cancel
                button, or by starting the next query — and the spinner tab vanishing is the
                answer to that. Saying so as well used to be harmless and is no longer even
-               visible: removing the selected tab moves the selection, and a selection change
-               now empties the strip. */
+               visible: removing the selected tab clears the selection, and a selection change
+               empties the strip. (It used to MOVE the selection to a neighbour. A deselectable
+               strip clears it instead and RemoveDocument picks the neighbour afterwards — a
+               different mechanism, and the same thing this relies on either way.) */
             RemoveDocument(loadingTab);
         }
         catch (SqlException ex)

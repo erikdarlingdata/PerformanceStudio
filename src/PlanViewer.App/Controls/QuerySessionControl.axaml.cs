@@ -170,6 +170,13 @@ public partial class QuerySessionControl : UserControl
         SetupSyntaxHighlighting();
         SetupEditorContextMenu();
 
+        /* Before anything can leave the document surface, the strip has to be able to show no
+           selection at all; and the view bar has to be latched to the surface the session starts
+           on, which is the editor. */
+        MakeStripDeselectable();
+        SetupViewBar();
+        ApplySurface();
+
         // Keybindings: F5/Ctrl+E for Execute, Ctrl+L for Estimated Plan
         KeyDown += OnKeyDown;
 
@@ -241,14 +248,18 @@ public partial class QuerySessionControl : UserControl
             RefreshEmptyState();
         });
 
-        // Focus the editor when the Editor tab is selected; toggle plan-dependent buttons
+        /* The strip raises this for the seam's own writes as well as for a press on a header, and
+           the press is the one arrival the seam does not already own: a selection that is not null
+           IS the document surface, however it got there. Everything else here follows the strip
+           rather than the surface, because a document-to-document switch changes neither. */
         SubTabControl.SelectionChanged += (_, _) =>
         {
-            if (IsEditorSelected)
-                FocusEditor();
+            if (SelectedDocument != null)
+                SetSurface(SessionSurface.Documents);
+
             UpdatePlanTabButtonState();
 
-            /* The strip sits above the sub-tabs and says nothing about which one it is talking
+            /* The strip sits above the surfaces and says nothing about which one it is talking
                about, so a message that outlives its view reads as a complaint about the view the
                user moved to. Whatever it was saying was about the view they just left. */
             ClearStatus();

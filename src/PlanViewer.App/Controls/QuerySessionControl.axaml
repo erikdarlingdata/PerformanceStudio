@@ -3,7 +3,69 @@
              xmlns:ae="using:AvaloniaEdit"
              x:Class="PlanViewer.App.Controls.QuerySessionControl"
              Background="{DynamicResource BackgroundBrush}">
-    <Grid RowDefinitions="Auto,Auto,*">
+    <UserControl.Resources>
+        <!--
+            The view bar's Editor/Overview segments, drawn as one pill.
+
+            Same construction and the same reasoning as QueryStoreOverviewControl's
+            MetricModeSegment, which that file's comment sets out at length: AppButton refuses a
+            latched look by design, a RadioButton already owns mutual exclusion and keyboard
+            arrows, :checked is declared after :pointerover so hovering the selected segment does
+            not wash its accent away, and the checked state carries an outline and a heavier weight
+            because AccentSoftBrush alone composites DARKER than the opaque hover fill. It is a
+            copy rather than a shared key because the shared theme file is not this change's to
+            edit, and the two differ where it counts anyway: this one is height-pinned to the bar.
+        -->
+        <ControlTheme x:Key="ViewBarSegment" TargetType="RadioButton">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{DynamicResource ForegroundMutedBrush}"/>
+            <Setter Property="Padding" Value="12,0"/>
+            <Setter Property="Height" Value="26"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <!-- The focus ring is a transparent border that is always present, so lighting
+                         it up on focus cannot shift the label by a pixel. -->
+                    <Border x:Name="PART_Border"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="Transparent"
+                            BorderThickness="1"
+                            Padding="{TemplateBinding Padding}">
+                        <ContentPresenter Content="{TemplateBinding Content}"
+                                          Foreground="{TemplateBinding Foreground}"
+                                          HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"/>
+                    </Border>
+                </ControlTemplate>
+            </Setter>
+
+            <Style Selector="^:pointerover /template/ Border#PART_Border">
+                <Setter Property="Background" Value="{DynamicResource SurfaceHoverBrush}"/>
+            </Style>
+            <Style Selector="^:checked /template/ Border#PART_Border">
+                <Setter Property="Background" Value="{DynamicResource AccentSoftBrush}"/>
+                <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+            </Style>
+            <Style Selector="^:checked">
+                <Setter Property="Foreground" Value="{DynamicResource ForegroundBrush}"/>
+                <Setter Property="FontWeight" Value="SemiBold"/>
+            </Style>
+            <Style Selector="^:focus-visible /template/ Border#PART_Border">
+                <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+            </Style>
+        </ControlTheme>
+    </UserControl.Resources>
+
+    <!-- Three rows: the toolbar, then the view bar and the document strip SHARING row 1, then the
+         surface. The bar and the strip share a row on purpose — they are one band, and giving each
+         its own would add a band of chrome above every query for nothing.
+
+         Two columns, and the toolbar and the surface span both, so that the strip stays a direct
+         child of this grid: its Bounds.Y is what the toolbar-layout tests measure as "the row below
+         the toolbar has not moved", and nesting it one level deeper would make that Y a constant 0
+         and the assertion vacuous. -->
+    <Grid RowDefinitions="Auto,Auto,*" ColumnDefinitions="Auto,*">
         <!-- Toolbar.
 
              One fixed row of slots, in an order that never changes with connection state:
@@ -21,7 +83,8 @@
              overflow cannot add a rail's height either. That is what nails the sub-tab row
              down, not a MinHeight: a minimum cannot stop a strip growing, which is the
              direction that would move it. -->
-        <Border Grid.Row="0" Background="{DynamicResource BackgroundDarkBrush}" Padding="8,6"
+        <Border Grid.Row="0" Grid.ColumnSpan="2"
+                Background="{DynamicResource BackgroundDarkBrush}" Padding="8,6"
                 BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
             <DockPanel>
                 <!-- Docked right, so it holds the row's right edge and gives up space first:
@@ -153,6 +216,63 @@
             </DockPanel>
         </Border>
 
+        <!-- The view bar.
+
+             The strip beside it holds documents — things the session opened and can close. The
+             views are neither: the editor is permanent and the Overview is a live look at the
+             server. Mixing all three in one strip is the finding this change answers, so the two
+             views get their own control and leave the strip to documents.
+
+             It takes the toolbar's three-part rule verbatim, for the reason that row's comment
+             gives: every child a fixed height, the row cannot wrap, and there is no scrollbar. Its
+             overflow story is that it CANNOT overflow — two segments and the zoom picker are
+             nowhere near any width this window can be dragged to. So the bar gets no chevron and
+             no ScrollViewer: three rows, three deliberate answers, and none of them borrowed.
+
+             26px segments inside a 1px pill is the 28 the strip beside it is pinned to.
+
+             The zoom picker moved here from the editor tab's header, which is where it used to
+             live and which no longer exists. The toolbar row was the alternative and its own
+             contract forbids it: that row is fixed, already overflows at laptop width, and a
+             control that acts on the query you are typing does not belong behind a chevron.
+
+             No GroupName, for the reason QueryStoreOverviewControl's toggles give: Avalonia groups
+             an ungrouped RadioButton by its PARENT, which is per instance, while a named group is
+             process-wide across every session sharing a visual root — one session's Editor segment
+             would clear another's. Neither is checked in XAML either: the surface machine latches
+             them at construction, through the guard that keeps a latch from reading as a click. -->
+        <Border Grid.Row="1" Grid.Column="0" Background="{DynamicResource BackgroundBrush}"
+                Padding="8,0,10,0">
+            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                <Border BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                        CornerRadius="4" ClipToBounds="True" VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal">
+                        <RadioButton x:Name="EditorViewSegment"
+                                     Theme="{StaticResource ViewBarSegment}"
+                                     Content="Editor"
+                                     ToolTip.Tip="The query editor"/>
+                        <RadioButton x:Name="OverviewViewSegment"
+                                     Theme="{StaticResource ViewBarSegment}"
+                                     Content="Overview"
+                                     ToolTip.Tip="Query Stores across all databases"/>
+                    </StackPanel>
+                </Border>
+                <ComboBox x:Name="ZoomBox" Width="72" Height="22" FontSize="11"
+                          VerticalAlignment="Center"
+                          SelectionChanged="Zoom_SelectionChanged"
+                          ToolTip.Tip="Editor font size (Ctrl+mousewheel)">
+                    <ComboBoxItem Content="50%" Tag="7"/>
+                    <ComboBoxItem Content="75%" Tag="10"/>
+                    <ComboBoxItem Content="100%" Tag="13" IsSelected="True"/>
+                    <ComboBoxItem Content="125%" Tag="16"/>
+                    <ComboBoxItem Content="150%" Tag="20"/>
+                    <ComboBoxItem Content="200%" Tag="26"/>
+                    <ComboBoxItem Content="300%" Tag="39"/>
+                    <ComboBoxItem Content="400%" Tag="52"/>
+                </ComboBox>
+            </StackPanel>
+        </Border>
+
         <!-- The document strip: headers only.
 
              It is still a TabControl, still called SubTabControl, and still stores a document's
@@ -165,11 +285,21 @@
              presenters then contend for one visual parent, the stock one wins, and the session's own
              host goes silently blank. The omission is the design.
 
-             MinHeight pins the row: an ItemsPresenter holding no documents measures zero, and this
-             strip shares its row with the view bar, so without a floor an empty session's strip would
-             collapse and take the row's top edge with it. A minimum cannot stop a strip GROWING,
-             which is why the template below also makes it non-wrapping — see the toolbar's note. -->
-        <TabControl Grid.Row="1" x:Name="SubTabControl" MinHeight="28"
+             MinHeight is the floor under an EMPTY one, and 50 is measured rather than chosen: a
+             document header is 48 (the theme's minimum for a tab header, which is well above what
+             a 12px label and a 22px close button need) and the scroller around it measures two
+             more. That is also the height this band has always had, because the editor used to be
+             one of these headers — so the chrome above a query is unchanged.
+
+             Without the floor an empty strip measures nothing, the row falls to the view bar's own
+             height, and the surface below jumps down the moment the first document opens. It is
+             also what lets an empty strip render as nothing at all: same background as the page, no
+             separator, no items, just the height held open beside the bar.
+
+             A floor cannot stop a strip GROWING, which is the other direction that would move the
+             surface; that is the template's job, and why the panel swap below is non-wrapping. Same
+             argument the toolbar's comment makes about its own row. -->
+        <TabControl Grid.Row="1" Grid.Column="1" x:Name="SubTabControl" MinHeight="50"
                     Background="{DynamicResource BackgroundBrush}">
             <!-- Single-child chain, not the stock Border > DockPanel > [presenter, presenter].
                  With the content presenter gone the DockPanel has one child, and LastChildFill
@@ -214,151 +344,141 @@
                     <StackPanel Orientation="Horizontal"/>
                 </ItemsPanelTemplate>
             </TabControl.ItemsPanel>
-            <!-- Editor tab (always present) -->
-            <TabItem>
-                <TabItem.Header>
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                        <!-- FontSize is not decoration here: without it this header inherits the
-                             Fluent TabItem default (~24px) while every sibling sub-tab header is
-                             built in code at 12 (see CreateSubTab and AddPlanTab), and the strip
-                             reads as two different controls stuck together. -->
-                        <TextBlock Text="Query Editor" VerticalAlignment="Center" FontSize="12"/>
-                        <ComboBox x:Name="ZoomBox" Width="72" Height="22" FontSize="11"
-                                  VerticalAlignment="Center"
-                                  SelectionChanged="Zoom_SelectionChanged"
-                                  ToolTip.Tip="Editor font size (Ctrl+mousewheel)">
-                            <ComboBoxItem Content="50%" Tag="7"/>
-                            <ComboBoxItem Content="75%" Tag="10"/>
-                            <ComboBoxItem Content="100%" Tag="13" IsSelected="True"/>
-                            <ComboBoxItem Content="125%" Tag="16"/>
-                            <ComboBoxItem Content="150%" Tag="20"/>
-                            <ComboBoxItem Content="200%" Tag="26"/>
-                            <ComboBoxItem Content="300%" Tag="39"/>
-                            <ComboBoxItem Content="400%" Tag="52"/>
-                        </ComboBox>
-                    </StackPanel>
-                </TabItem.Header>
-                <Grid>
-                    <ae:TextEditor x:Name="QueryEditor"
-                                   FontFamily="Consolas, Menlo, monospace"
-                                   FontSize="13"
-                                   ShowLineNumbers="True"
-                                   Background="{DynamicResource BackgroundBrush}"
-                                   Foreground="{DynamicResource ForegroundBrush}"
-                                   HorizontalScrollBarVisibility="Auto"
-                                   VerticalScrollBarVisibility="Auto"
-                                   HorizontalAlignment="Stretch"
-                                   VerticalAlignment="Stretch"
-                                   Padding="4"/>
-
-                    <!-- Empty state. Over the editor only while this session is completely
-                         empty — nothing typed and no sub-tab but this one — so a new Query tab
-                         offers its primary actions instead of a blank wall. It never traps
-                         typing: the editor keeps focus underneath, a click on the background
-                         hands focus back to it, and the overlay leaves the moment there is any
-                         text or any other sub-tab (RefreshEmptyState). -->
-                    <Border x:Name="EmptyStateOverlay"
-                            Background="{DynamicResource BackgroundBrush}"
-                            IsVisible="False"
-                            PointerPressed="EmptyStateBackground_PointerPressed">
-                        <Border.Styles>
-                            <Style Selector="Border.action">
-                                <Setter Property="CornerRadius" Value="4"/>
-                                <Setter Property="Padding" Value="10,7"/>
-                                <Setter Property="Cursor" Value="Hand"/>
-                            </Style>
-                            <Style Selector="Border.action TextBlock.label">
-                                <Setter Property="FontSize" Value="13"/>
-                                <Setter Property="Foreground" Value="{DynamicResource ForegroundBrush}"/>
-                                <Setter Property="VerticalAlignment" Value="Center"/>
-                            </Style>
-                            <!-- gesture is a keyboard shortcut, path is a recent plan's folder:
-                                 same quiet treatment, kept apart so each can be found on its own. -->
-                            <Style Selector="Border.action TextBlock.gesture, Border.action TextBlock.path">
-                                <Setter Property="FontSize" Value="11"/>
-                                <Setter Property="Foreground" Value="{DynamicResource ForegroundMutedBrush}"/>
-                                <Setter Property="VerticalAlignment" Value="Center"/>
-                            </Style>
-                            <!-- Hover shows in the text rather than behind it, because each row
-                                 sets its own Background (below) and a local value outranks a
-                                 style setter — a :pointerover background here would never win. -->
-                            <Style Selector="Border.action:pointerover TextBlock.label">
-                                <Setter Property="Foreground" Value="{DynamicResource AccentBrush}"/>
-                            </Style>
-                            <Style Selector="Border.action:pointerover TextBlock.gesture, Border.action:pointerover TextBlock.path">
-                                <Setter Property="Foreground" Value="{DynamicResource AccentBrush}"/>
-                            </Style>
-                        </Border.Styles>
-
-                        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"
-                                    Width="340">
-                            <TextBlock Text="Get started" FontSize="14"
-                                       Foreground="{DynamicResource ForegroundMutedBrush}"
-                                       HorizontalAlignment="Center"
-                                       Margin="0,0,0,10"/>
-
-                            <!-- Background="Transparent" on every row is load-bearing, not
-                                 cosmetic: a control with a null background hit-tests only what it
-                                 draws, so a row would answer a click on its glyphs and ignore the
-                                 gaps between the words.
-
-                                 Hidden when this session has no window to ask (a detached
-                                 session): both of these are File menu actions. -->
-                            <StackPanel x:Name="EmptyStateFileActions">
-                                <Border Classes="action" Background="Transparent"
-                                        PointerPressed="EmptyStateOpenPlan_PointerPressed">
-                                    <Grid ColumnDefinitions="*,Auto">
-                                        <TextBlock Grid.Column="0" Classes="label" Text="Open a plan&#x2026;"/>
-                                        <TextBlock Grid.Column="1" Classes="gesture" Text="Ctrl+O"/>
-                                    </Grid>
-                                </Border>
-                                <Border Classes="action" Background="Transparent"
-                                        PointerPressed="EmptyStatePastePlan_PointerPressed">
-                                    <Grid ColumnDefinitions="*,Auto">
-                                        <TextBlock Grid.Column="0" Classes="label" Text="Paste plan XML"/>
-                                        <TextBlock Grid.Column="1" Classes="gesture" Text="Ctrl+V"/>
-                                    </Grid>
-                                </Border>
-                            </StackPanel>
-
-                            <Border Classes="action" Background="Transparent"
-                                    PointerPressed="EmptyStateConnect_PointerPressed">
-                                <TextBlock Classes="label" Text="Connect to a server"/>
-                            </Border>
-
-                            <StackPanel x:Name="EmptyStateRecentSection" IsVisible="False"
-                                        Margin="0,14,0,0">
-                                <TextBlock Text="Recent plans" FontSize="11"
-                                           Foreground="{DynamicResource ForegroundMutedBrush}"
-                                           Margin="10,0,0,4"/>
-                                <StackPanel x:Name="EmptyStateRecentPlans"/>
-                            </StackPanel>
-                        </StackPanel>
-                    </Border>
-                </Grid>
-            </TabItem>
         </TabControl>
 
-        <!-- Row 2: the surface region.
+        <!-- Row 2: the surface region. Exactly one of the three below is visible at a time, and the
+             switch is a synchronous IsVisible flip — never a Content swap on a view, which would
+             throw away the editor's undo history and the Overview's loaded data every time the user
+             looked at something else.
 
-             DocumentHost is the one and only writer of what a document shows, and SelectedContent is
-             the one and only thing that writes it. That matters more than it looks: a plan arrives by
-             having its tab's Content swapped from the progress spinner in place, which changes no
-             selection at all — an assignment driven by selection or by the view bar would miss it and
-             leave the spinner up forever, passing every test that counts tabs. SelectedContent covers
-             it, because the TabControl keeps a live subscription to the selected container's Content.
-             The #-anchor binds the named control directly rather than through a DataContext, and
-             SelectedContent is a getter-only direct property, so nothing can write back up the wire.
+             The editor's grid MOVED here from the tab it used to be; it did not move to a file of
+             its own. A new .axaml would be a new namescope, and the tests that reach for
+             EmptyStateOverlay by name from the session would stop finding it. -->
+        <Grid Grid.Row="2" Grid.ColumnSpan="2">
+            <Grid x:Name="EditorView">
+                <ae:TextEditor x:Name="QueryEditor"
+                               FontFamily="Consolas, Menlo, monospace"
+                               FontSize="13"
+                               ShowLineNumbers="True"
+                               Background="{DynamicResource BackgroundBrush}"
+                               Foreground="{DynamicResource ForegroundBrush}"
+                               HorizontalScrollBarVisibility="Auto"
+                               VerticalScrollBarVisibility="Auto"
+                               HorizontalAlignment="Stretch"
+                               VerticalAlignment="Stretch"
+                               Padding="4"/>
 
-             Padding, the two content alignments and ContentTemplate go inert on a TabControl once its
-             content part is gone; they belong here instead. Nothing sets ContentTemplate on the strip
-             today, so the host deliberately binds no template — a future need binds
-             SelectedContentTemplate, never ContentTemplate.
+                <!-- Empty state. Over the editor only while this session is completely
+                     empty — nothing typed and no document open — so a new Query tab
+                     offers its primary actions instead of a blank wall. It never traps
+                     typing: the editor keeps focus underneath, a click on the background
+                     hands focus back to it, and the overlay leaves the moment there is any
+                     text or any document (RefreshEmptyState). -->
+                <Border x:Name="EmptyStateOverlay"
+                        Background="{DynamicResource BackgroundBrush}"
+                        IsVisible="False"
+                        PointerPressed="EmptyStateBackground_PointerPressed">
+                    <Border.Styles>
+                        <Style Selector="Border.action">
+                            <Setter Property="CornerRadius" Value="4"/>
+                            <Setter Property="Padding" Value="10,7"/>
+                            <Setter Property="Cursor" Value="Hand"/>
+                        </Style>
+                        <Style Selector="Border.action TextBlock.label">
+                            <Setter Property="FontSize" Value="13"/>
+                            <Setter Property="Foreground" Value="{DynamicResource ForegroundBrush}"/>
+                            <Setter Property="VerticalAlignment" Value="Center"/>
+                        </Style>
+                        <!-- gesture is a keyboard shortcut, path is a recent plan's folder:
+                             same quiet treatment, kept apart so each can be found on its own. -->
+                        <Style Selector="Border.action TextBlock.gesture, Border.action TextBlock.path">
+                            <Setter Property="FontSize" Value="11"/>
+                            <Setter Property="Foreground" Value="{DynamicResource ForegroundMutedBrush}"/>
+                            <Setter Property="VerticalAlignment" Value="Center"/>
+                        </Style>
+                        <!-- Hover shows in the text rather than behind it, because each row
+                             sets its own Background (below) and a local value outranks a
+                             style setter — a :pointerover background here would never win. -->
+                        <Style Selector="Border.action:pointerover TextBlock.label">
+                            <Setter Property="Foreground" Value="{DynamicResource AccentBrush}"/>
+                        </Style>
+                        <Style Selector="Border.action:pointerover TextBlock.gesture, Border.action:pointerover TextBlock.path">
+                            <Setter Property="Foreground" Value="{DynamicResource AccentBrush}"/>
+                        </Style>
+                    </Border.Styles>
 
-             Tab order is by tree position and this sits after the strip, which is the same order the
-             stock in-template presenter gave; no TabIndex is set because setting one is what would
-             change it. -->
-        <ContentControl Grid.Row="2" x:Name="DocumentHost"
-                        Content="{Binding #SubTabControl.SelectedContent}"/>
+                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"
+                                Width="340">
+                        <TextBlock Text="Get started" FontSize="14"
+                                   Foreground="{DynamicResource ForegroundMutedBrush}"
+                                   HorizontalAlignment="Center"
+                                   Margin="0,0,0,10"/>
+
+                        <!-- Background="Transparent" on every row is load-bearing, not
+                             cosmetic: a control with a null background hit-tests only what it
+                             draws, so a row would answer a click on its glyphs and ignore the
+                             gaps between the words.
+
+                             Hidden when this session has no window to ask (a detached
+                             session): both of these are File menu actions. -->
+                        <StackPanel x:Name="EmptyStateFileActions">
+                            <Border Classes="action" Background="Transparent"
+                                    PointerPressed="EmptyStateOpenPlan_PointerPressed">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Grid.Column="0" Classes="label" Text="Open a plan&#x2026;"/>
+                                    <TextBlock Grid.Column="1" Classes="gesture" Text="Ctrl+O"/>
+                                </Grid>
+                            </Border>
+                            <Border Classes="action" Background="Transparent"
+                                    PointerPressed="EmptyStatePastePlan_PointerPressed">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Grid.Column="0" Classes="label" Text="Paste plan XML"/>
+                                    <TextBlock Grid.Column="1" Classes="gesture" Text="Ctrl+V"/>
+                                </Grid>
+                            </Border>
+                        </StackPanel>
+
+                        <Border Classes="action" Background="Transparent"
+                                PointerPressed="EmptyStateConnect_PointerPressed">
+                            <TextBlock Classes="label" Text="Connect to a server"/>
+                        </Border>
+
+                        <StackPanel x:Name="EmptyStateRecentSection" IsVisible="False"
+                                    Margin="0,14,0,0">
+                            <TextBlock Text="Recent plans" FontSize="11"
+                                       Foreground="{DynamicResource ForegroundMutedBrush}"
+                                       Margin="10,0,0,4"/>
+                            <StackPanel x:Name="EmptyStateRecentPlans"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <!-- Built on first use and kept, so switching away and back does not throw the fetched
+                 data away; emptied and rebuilt when the session connects somewhere else, because an
+                 Overview holds the old server's answers. -->
+            <ContentControl x:Name="OverviewHost" IsVisible="False"/>
+
+            <!-- DocumentHost is the one and only writer of what a document shows, and SelectedContent
+                 is the one and only thing that writes it. That matters more than it looks: a plan
+                 arrives by having its tab's Content swapped from the progress spinner in place, which
+                 changes no selection at all — an assignment driven by selection or by the view bar
+                 would miss it and leave the spinner up forever, passing every test that counts tabs.
+                 SelectedContent covers it, because the TabControl keeps a live subscription to the
+                 selected container's Content. The #-anchor binds the named control directly rather
+                 than through a DataContext, and SelectedContent is a getter-only direct property, so
+                 nothing can write back up the wire.
+
+                 Padding, the two content alignments and ContentTemplate go inert on a TabControl once
+                 its content part is gone; they belong here instead. Nothing sets ContentTemplate on
+                 the strip today, so the host deliberately binds no template — a future need binds
+                 SelectedContentTemplate, never ContentTemplate.
+
+                 Tab order is by tree position and this sits after the strip, which is the same order
+                 the stock in-template presenter gave; no TabIndex is set because setting one is what
+                 would change it. -->
+            <ContentControl x:Name="DocumentHost" IsVisible="False"
+                            Content="{Binding #SubTabControl.SelectedContent}"/>
+        </Grid>
     </Grid>
 </UserControl>

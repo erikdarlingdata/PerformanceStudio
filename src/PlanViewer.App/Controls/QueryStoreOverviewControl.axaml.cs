@@ -281,7 +281,16 @@ public partial class QueryStoreOverviewControl : UserControl
         }
     }
 
-    private void ShowRefreshError(Exception ex)
+    /// <summary>
+    /// Puts a failure on the control's own badge rather than on a status strip somewhere above it.
+    /// </summary>
+    /// <remarks>
+    /// Internal because the session needs it too: a load started from the Overview keeps running
+    /// after the user has looked at something else, and its failure belongs here — beside the data
+    /// it is about, waiting for them to come back — rather than on a strip that is now describing a
+    /// completely different view.
+    /// </remarks>
+    internal void ShowRefreshError(Exception ex)
     {
         ToolTip.SetTip(RefreshErrorBadge, $"Last refresh failed:\n{ex.Message}");
         ToolTip.SetShowDelay(RefreshErrorBadge, 200);
