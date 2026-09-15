@@ -636,8 +636,19 @@ public static class ComparisonFormatter
     /// <summary>
     /// Percentages keep one decimal until they reach three digits, where the decimal is noise —
     /// "1,386% slower" rather than "1,386.4% slower".
+    ///
+    /// <para>A value below 100 never prints as 100. One decimal rounds anything from 99.95 up to
+    /// "100.0", and "100% faster" reads as "took no time at all" — which a plan that went from
+    /// 2,400ms to 1ms did not do. That last tenth is the difference between a near-total win and a
+    /// claim the numbers do not support, so it rounds down to 99.9 instead of up to a falsehood.</para>
     /// </summary>
-    private static string FormatPercent(double pct) => pct >= 100 ? $"{pct:N0}" : $"{pct:N1}";
+    private static string FormatPercent(double pct)
+    {
+        if (pct >= 100) return $"{pct:N0}";
+
+        var rounded = Math.Round(pct, 1, MidpointRounding.AwayFromZero);
+        return rounded >= 100 ? $"{99.9:N1}" : $"{rounded:N1}";
+    }
 
     private static (long logicalReads, long physicalReads) SumTreeIO(OperatorResult? root)
     {
