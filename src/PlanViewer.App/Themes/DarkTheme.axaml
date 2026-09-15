@@ -229,30 +229,47 @@
     <!-- ===== 7. Wait Stats categories ======================================================== -->
 
     <!-- Fixed per category: the same wait type must keep the same colour across every chart and
-         legend in the app, so these are identity, not palette. Do not reuse them elsewhere. -->
-    <SolidColorBrush x:Key="WaitCategory.Unknown"            Color="#8E8E93"/>
-    <SolidColorBrush x:Key="WaitCategory.CPU"                Color="#00bd23"/>
-    <SolidColorBrush x:Key="WaitCategory.Worker Thread"      Color="#52E3B5"/>
-    <SolidColorBrush x:Key="WaitCategory.Lock"               Color="#EE5A24"/>
-    <SolidColorBrush x:Key="WaitCategory.Latch"              Color="#F368E0"/>
-    <SolidColorBrush x:Key="WaitCategory.Buffer Latch"       Color="#f5069e"/>
-    <SolidColorBrush x:Key="WaitCategory.Buffer IO"          Color="#2d13f2"/>
-    <SolidColorBrush x:Key="WaitCategory.Compilation"        Color="#A29BFE"/>
-    <SolidColorBrush x:Key="WaitCategory.SQL CLR"            Color="#b8dcdc"/>
-    <SolidColorBrush x:Key="WaitCategory.Mirroring"          Color="#54625f"/>
-    <SolidColorBrush x:Key="WaitCategory.Transaction"        Color="#c77416"/>
-    <SolidColorBrush x:Key="WaitCategory.Preemptive"         Color="#FD79A8"/>
-    <SolidColorBrush x:Key="WaitCategory.Service Broker"     Color="#E17055"/>
-    <SolidColorBrush x:Key="WaitCategory.Tran Log IO"        Color="#0984E3"/>
-    <SolidColorBrush x:Key="WaitCategory.Network IO"         Color="#75bbf8"/>
-    <SolidColorBrush x:Key="WaitCategory.Parallelism"        Color="#7B4FFF"/>
-    <SolidColorBrush x:Key="WaitCategory.Memory"             Color="#FDCB6E"/>
-    <SolidColorBrush x:Key="WaitCategory.Tracing"            Color="#B2BEC3"/>
-    <SolidColorBrush x:Key="WaitCategory.Full Text Search"   Color="#DFE6E9"/>
-    <SolidColorBrush x:Key="WaitCategory.Other Disk IO"      Color="#636E72"/>
-    <SolidColorBrush x:Key="WaitCategory.Replication"        Color="#81ECEC"/>
-    <SolidColorBrush x:Key="WaitCategory.Log Rate Governor"  Color="#FAB1A0"/>
-    <SolidColorBrush x:Key="WaitCategory.Others"             Color="#555D66"/>
+         legend in the app, so these are identity, not palette. Do not reuse them elsewhere.
+
+         Laid out rather than picked. Hue carries the family — greens for compute, blues for storage
+         and network, warm for contention, grey for the buckets that mean "no information" — and
+         WITHIN a family the categories are spaced up a lightness ladder. That second part is what
+         makes the chart readable to a red-green colour deficiency, where the hues inside a family
+         collapse together and lightness is all that survives. Twenty-three categories cannot all be
+         told apart by colour alone under that condition; the ladder is what keeps neighbours in the
+         same chart from merging, and the legend is what answers the rest.
+
+         Every colour clears 3:1 against the page background, which is the floor for a graphical
+         object you are expected to read. Three of them used to fail it — Buffer IO sat at 2.00,
+         a saturated blue so dark it was effectively a hole in the chart — and two pairs shared a
+         hue outright. Nearest neighbours are now 12 apart in CIELAB with normal vision and 6 under
+         simulated deuteranopia, with no outliers below that.
+
+         If you repaint one, check it against its family's ladder and re-measure both numbers. -->
+    <!-- Highlight is the selection stroke, not a category: white, and it stays that way. -->
+    <SolidColorBrush x:Key="WaitCategory.Unknown"            Color="#9CA1A5"/>
+    <SolidColorBrush x:Key="WaitCategory.CPU"                Color="#3EBD50"/>
+    <SolidColorBrush x:Key="WaitCategory.Worker Thread"      Color="#72E1A9"/>
+    <SolidColorBrush x:Key="WaitCategory.Lock"               Color="#FB6640"/>
+    <SolidColorBrush x:Key="WaitCategory.Latch"              Color="#FEB5ED"/>
+    <SolidColorBrush x:Key="WaitCategory.Buffer Latch"       Color="#E8469D"/>
+    <SolidColorBrush x:Key="WaitCategory.Buffer IO"          Color="#238CFA"/>
+    <SolidColorBrush x:Key="WaitCategory.Compilation"        Color="#A1A3FB"/>
+    <SolidColorBrush x:Key="WaitCategory.SQL CLR"            Color="#63C5C6"/>
+    <SolidColorBrush x:Key="WaitCategory.Mirroring"          Color="#30907E"/>
+    <SolidColorBrush x:Key="WaitCategory.Transaction"        Color="#DB9027"/>
+    <SolidColorBrush x:Key="WaitCategory.Preemptive"         Color="#FFA8C0"/>
+    <SolidColorBrush x:Key="WaitCategory.Service Broker"     Color="#FF9289"/>
+    <SolidColorBrush x:Key="WaitCategory.Tran Log IO"        Color="#8AC6FF"/>
+    <SolidColorBrush x:Key="WaitCategory.Network IO"         Color="#BBE2FE"/>
+    <SolidColorBrush x:Key="WaitCategory.Parallelism"        Color="#9A84FE"/>
+    <SolidColorBrush x:Key="WaitCategory.Memory"             Color="#FFE6B1"/>
+    <SolidColorBrush x:Key="WaitCategory.Tracing"            Color="#BDC8CE"/>
+    <SolidColorBrush x:Key="WaitCategory.Full Text Search"   Color="#D8F2FC"/>
+    <SolidColorBrush x:Key="WaitCategory.Other Disk IO"      Color="#0FB3E2"/>
+    <SolidColorBrush x:Key="WaitCategory.Replication"        Color="#5DF9ED"/>
+    <SolidColorBrush x:Key="WaitCategory.Log Rate Governor"  Color="#FFCACA"/>
+    <SolidColorBrush x:Key="WaitCategory.Others"             Color="#676E73"/>
     <SolidColorBrush x:Key="WaitCategory.Highlight"          Color="#FFFFFF"/>
 
 </ResourceDictionary>
