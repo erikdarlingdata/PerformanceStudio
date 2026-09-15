@@ -77,6 +77,12 @@ public partial class QuerySessionControl : UserControl
 
             ExecuteButton.IsEnabled = true;
             ExecuteEstButton.IsEnabled = true;
+
+            /* Here, at the end, rather than beside the connection string at the top of this block:
+               _serverMetadata is not the new server's until FetchServerMetadataAsync above has
+               returned, and an Overview rebuilt inside that window would ask the OLD server what it
+               supports and hold that answer for the rest of the session. */
+            InvalidateOverviewView();
         }
     }
 

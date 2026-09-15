@@ -170,6 +170,13 @@ public partial class QuerySessionControl : UserControl
         SetupSyntaxHighlighting();
         SetupEditorContextMenu();
 
+        /* Before anything can leave the document surface, the strip has to be able to show no
+           selection at all; and the view bar has to be latched to the surface the session starts
+           on, which is the editor. */
+        MakeStripDeselectable();
+        SetupViewBar();
+        ApplySurface();
+
         // Keybindings: F5/Ctrl+E for Execute, Ctrl+L for Estimated Plan
         KeyDown += OnKeyDown;
 
@@ -241,14 +248,20 @@ public partial class QuerySessionControl : UserControl
             RefreshEmptyState();
         });
 
-        // Focus the editor when the Editor tab is selected; toggle plan-dependent buttons
+        /* The strip raises this for the seam's own writes as well as for a press on a header, and
+           the press is the one arrival the seam does not already own: a selection that is not null
+           IS the document surface, however it got there. The two calls below follow the strip
+           rather than the surface on purpose — moving from one document to the next changes which
+           plan the toolbar is talking about, and what the status strip was talking about, without
+           changing the surface at all. */
         SubTabControl.SelectionChanged += (_, _) =>
         {
-            if (SubTabControl.SelectedIndex == 0)
-                FocusEditor();
+            if (SelectedDocument != null)
+                SetSurface(SessionSurface.Documents);
+
             UpdatePlanTabButtonState();
 
-            /* The strip sits above the sub-tabs and says nothing about which one it is talking
+            /* The strip sits above the surfaces and says nothing about which one it is talking
                about, so a message that outlives its view reads as a complaint about the view the
                user moved to. Whatever it was saying was about the view they just left. */
             ClearStatus();
@@ -301,17 +314,15 @@ public partial class QuerySessionControl : UserControl
     private (AnalysisResult? Analysis, PlanViewerControl? Viewer) GetCurrentAnalysisWithViewer()
     {
         // Find the currently selected plan tab's PlanViewerControl
-        if (SubTabControl.SelectedItem is TabItem tab && tab.Content is PlanViewerControl viewer
-            && viewer.CurrentPlan != null)
+        if (SelectedDocument is { Content: PlanViewerControl viewer } && viewer.CurrentPlan != null)
         {
             return (ResultMapper.Map(viewer.CurrentPlan, "query editor", _serverMetadata, viewer.QueryText), viewer);
         }
 
         // Fallback: find the most recent plan tab
-        for (int i = SubTabControl.Items.Count - 1; i >= 0; i--)
+        foreach (var planTab in DocumentTabs.Reverse())
         {
-            if (SubTabControl.Items[i] is TabItem planTab && planTab.Content is PlanViewerControl v
-                && v.CurrentPlan != null)
+            if (planTab.Content is PlanViewerControl v && v.CurrentPlan != null)
             {
                 /* Same session, same server: the fallback tab's advice gets the Server Context
                    section the selected-tab path above already had. */
@@ -344,6 +355,36 @@ public partial class QuerySessionControl : UserControl
         e.Handled = true;
     }
 
+    /// <summary>
+    /// Pans the document strip when it holds more documents than the row is wide. Wheel up scrolls
+    /// left, the same direction the toolbar above it and the window's own tab strip both move.
+    /// </summary>
+    /// <remarks>
+    /// The ScrollViewer is inside the strip's template, so it has its own namescope and
+    /// <c>FindControl</c> from here returns null for it — <paramref name="sender"/> is the handle.
+    /// The handler is reachable at all only because ScrollContentPresenter leaves a wheel unhandled
+    /// when it moved no offset, which is why the template keeps vertical scrolling Disabled and
+    /// never touches IsScrollChainingEnabled.
+    /// </remarks>
+    private void DocumentStrip_PointerWheel(object? sender, PointerWheelEventArgs e)
+    {
+        if (sender is not ScrollViewer strip)
+            return;
+
+        var max = Math.Max(0, strip.Extent.Width - strip.Viewport.Width);
+        if (max <= 0)
+            return; // every document header is visible — leave the wheel alone
+
+        var delta = e.Delta.X != 0 ? e.Delta.X : e.Delta.Y;
+        if (delta == 0)
+            return;
+
+        strip.Offset = new Avalonia.Vector(
+            Math.Clamp(strip.Offset.X - (delta * 48), 0, max),
+            strip.Offset.Y);
+        e.Handled = true;
+    }
+
     /* The colours the theme holds today, as literals, so a key missing from the dictionary renders
        something sane rather than nothing. Three of them are exactly what the code used to construct
        inline at each site; FallbackMuted is not, because the muted site was constructing #A0A0A0
@@ -369,10 +410,9 @@ public partial class QuerySessionControl : UserControl
 
     public IEnumerable<(string label, PlanViewerControl viewer)> GetPlanTabs()
     {
-        foreach (var item in SubTabControl.Items)
+        foreach (var tab in DocumentTabs)
         {
-            if (item is TabItem tab && tab.Content is PlanViewerControl viewer
-                && viewer.CurrentPlan != null)
+            if (tab.Content is PlanViewerControl viewer && viewer.CurrentPlan != null)
             {
                 yield return (GetTabLabel(tab), viewer);
             }

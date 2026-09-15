@@ -61,7 +61,27 @@ public partial class QuerySessionControl : UserControl
             return false;
         }
 
-        // Build tab header with close button and right-click rename
+        var tab = NewPlanTab(label, viewer);
+
+        AddDocument(tab);
+        SelectDocument(tab);
+        return true;
+    }
+
+    /// <summary>
+    /// The tab a plan document lives in: its label, its close button, and the right-click menu.
+    /// </summary>
+    /// <remarks>
+    /// Said once because three paths open plan documents - this one, and the two execute paths in
+    /// the execution partial - and only this one ever built the menu. A tab built without it has no
+    /// Rename, no Close Other Tabs and no Close All at all, and nothing says so: the header looks
+    /// identical either way, so the first anyone hears of it is a right-click that does nothing.
+    /// Executing a query is the commonest way to open a plan, which made the menu missing exactly
+    /// where it was most expected. Handing back a finished tab, rather than a header each caller
+    /// decorates, is what stops a fourth path forgetting again.
+    /// </remarks>
+    private TabItem NewPlanTab(string label, Control content)
+    {
         var headerText = new TextBlock
         {
             Text = label,
@@ -71,7 +91,7 @@ public partial class QuerySessionControl : UserControl
 
         var closeBtn = new Button
         {
-            Content = "\u2715",
+            Content = "✕",
             MinWidth = 22,
             MinHeight = 22,
             Width = 22,
@@ -90,24 +110,37 @@ public partial class QuerySessionControl : UserControl
         var header = new StackPanel
         {
             Orientation = Orientation.Horizontal,
+            /* Not decoration: a null-background panel hit-tests only its children's pixels, so a
+               right-click in the gap between the label's glyphs and the close button falls through
+               to the TabItem, which has no menu of its own. Transparent makes the whole header rect
+               a target, which is what CreateSubTab's header already does. */
+            Background = Brushes.Transparent,
             Children = { headerText, closeBtn }
         };
 
-        var tab = new TabItem { Header = header, Content = viewer };
+        var tab = new TabItem { Header = header, Content = content };
         closeBtn.Tag = tab;
         closeBtn.Click += ClosePlanTab_Click;
 
-        // Right-click context menu
         var contextMenu = new ContextMenu
         {
             Items =
             {
                 new MenuItem { Header = "Rename Tab", Tag = new object[] { header, headerText } },
                 new Separator(),
-                /* No Ctrl+W gesture label here: the window-level tunnel handler owns Ctrl+W
-                   and closes the TOP-LEVEL tab, so advertising it on a sub-tab's Close would be
-                   a lie the user discovers by losing their whole session. */
-                new MenuItem { Header = "Close", Tag = tab },
+                /* Ctrl+F4, not the Ctrl+W this label used to refuse to show. Ctrl+W stays the
+                   window's: its tunnel handler claims that keystroke whenever a top-level tab is
+                   selected, which is always, and closes the whole session - so a Ctrl+W label here
+                   would have been a lie the user discovers by losing everything they had open.
+                   F4 has no tunnel case, so it reaches the session's own handler, where it closes
+                   exactly this document. The gesture is display-only in Avalonia: the binding that
+                   makes it true lives in OnKeyDown, and the two only ever change together. */
+                new MenuItem
+                {
+                    Header = "Close",
+                    Tag = tab,
+                    InputGesture = new KeyGesture(Key.F4, KeyModifiers.Control)
+                },
                 new MenuItem { Header = "Close Other Tabs", Tag = tab },
                 new MenuItem { Header = "Close All Tabs" }
             }
@@ -118,9 +151,7 @@ public partial class QuerySessionControl : UserControl
 
         header.ContextMenu = contextMenu;
 
-        SubTabControl.Items.Add(tab);
-        SubTabControl.SelectedItem = tab;
-        return true;
+        return tab;
     }
 
     private void StartRename(StackPanel header, TextBlock headerText)
@@ -163,14 +194,29 @@ public partial class QuerySessionControl : UserControl
         textBox.LostFocus += (_, _) => CommitRename();
     }
 
+    /// <summary>
+    /// Closes one document: lets go of whatever it was holding, then takes it out of the strip.
+    /// </summary>
+    /// <remarks>
+    /// Said once because there are four doors onto it — the header's ✕, the context menu's Close,
+    /// its two bulk siblings, and Ctrl+F4 — and the release half is the half that goes missing.
+    /// A plan viewer holds an MCP session registration that nothing else unregisters, so a close
+    /// that only removes the tab leaks it, invisibly and for the life of the process. The sub-tab
+    /// kinds built by <see cref="CreateSubTab"/> release themselves instead, on detach, which is
+    /// what removing them from the strip causes.
+    /// </remarks>
+    private void CloseDocument(TabItem tab)
+    {
+        if (tab.Content is PlanViewerControl viewer)
+            viewer.Clear();
+
+        RemoveDocument(tab);
+    }
+
     private void ClosePlanTab_Click(object? sender, RoutedEventArgs e)
     {
         if (sender is Button btn && btn.Tag is TabItem tab)
-        {
-            if (tab.Content is PlanViewerControl viewer)
-                viewer.Clear();
-            SubTabControl.Items.Remove(tab);
-        }
+            CloseDocument(tab);
     }
 
     private void PlanTabContextMenu_Click(object? sender, RoutedEventArgs e)
@@ -186,43 +232,29 @@ public partial class QuerySessionControl : UserControl
 
             case "Close":
                 if (item.Tag is TabItem tab)
-                {
-                    if (tab.Content is PlanViewerControl closeViewer)
-                        closeViewer.Clear();
-                    SubTabControl.Items.Remove(tab);
-                }
+                    CloseDocument(tab);
                 break;
 
             case "Close Other Tabs":
                 if (item.Tag is TabItem keepTab)
                 {
-                    // Keep the Editor tab (index 0) and the selected tab
-                    var others = SubTabControl.Items.Cast<object>()
-                        .OfType<TabItem>()
+                    // Keep the selected tab; the editor is not this menu's to close
+                    var others = DocumentTabs
                         .Where(t => t != keepTab && t.Content is PlanViewerControl)
                         .ToList();
                     foreach (var t in others)
-                    {
-                        if (t.Content is PlanViewerControl otherViewer)
-                            otherViewer.Clear();
-                        SubTabControl.Items.Remove(t);
-                    }
-                    SubTabControl.SelectedItem = keepTab;
+                        CloseDocument(t);
+                    SelectDocument(keepTab);
                 }
                 break;
 
             case "Close All Tabs":
-                var planTabs = SubTabControl.Items.Cast<object>()
-                    .OfType<TabItem>()
+                var planTabs = DocumentTabs
                     .Where(t => t.Content is PlanViewerControl)
                     .ToList();
                 foreach (var t in planTabs)
-                {
-                    if (t.Content is PlanViewerControl allViewer)
-                        allViewer.Clear();
-                    SubTabControl.Items.Remove(t);
-                }
-                SubTabControl.SelectedIndex = 0; // back to Editor
+                    CloseDocument(t);
+                SelectEditor();
                 break;
         }
     }
@@ -267,9 +299,9 @@ public partial class QuerySessionControl : UserControl
     private int CountOwnPlans()
     {
         int planCount = 0;
-        foreach (var item in SubTabControl.Items)
+        foreach (var t in DocumentTabs)
         {
-            if (item is TabItem t && t.Content is PlanViewerControl v && v.CurrentPlan != null)
+            if (t.Content is PlanViewerControl v && v.CurrentPlan != null)
                 planCount++;
         }
         return planCount;
@@ -444,8 +476,7 @@ public partial class QuerySessionControl : UserControl
     /// </summary>
     private PlanViewerControl? GetSelectedPlanViewer()
     {
-        if (SubTabControl.SelectedItem is TabItem tab && tab.Content is PlanViewerControl viewer
-            && viewer.CurrentPlan != null)
+        if (SelectedDocument is { Content: PlanViewerControl viewer } && viewer.CurrentPlan != null)
         {
             return viewer;
         }

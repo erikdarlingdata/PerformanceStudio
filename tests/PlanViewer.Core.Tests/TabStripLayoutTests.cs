@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
@@ -6,7 +9,9 @@ using Avalonia.Media;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using PlanViewer.App;
+using PlanViewer.App.Controls;
 using PlanViewer.App.Services;
+using PlanViewer.Core.Models;
 
 namespace PlanViewer.Core.Tests;
 
@@ -74,7 +79,26 @@ public class TabStripLayoutTests
                     Assert.Equal(TextTrimming.CharacterEllipsis, label.TextTrimming);
                 }
 
-                // the cap must not leak down into a session's own sub-tab strip
+                /* The cap must not leak down into a session's own sub-tab strip. That strip holds
+                   documents only — the editor is a view beside it, not a tab in it — so a session
+                   that has opened nothing has no header to measure, and one has to be opened
+                   through the app's own path for the assertion to be about anything. */
+                var session = window.MainTabControl.Items.OfType<TabItem>()
+                    .Select(t => t.Content).OfType<QuerySessionControl>().Last();
+                session.OnQueryStorePlansSelected(null, new List<QueryStorePlan>
+                {
+                    new()
+                    {
+                        QueryId = 1,
+                        PlanId = 1,
+                        QueryText = "select 1;",
+                        PlanXml = File.ReadAllText(
+                                Path.Combine(AppContext.BaseDirectory, "Plans", "row_goal_plan.sqlplan"))
+                            .Replace("encoding=\"utf-16\"", "encoding=\"utf-8\"")
+                    }
+                });
+                window.UpdateLayout();
+
                 var sub = window.GetVisualDescendants().OfType<TabControl>()
                     .First(t => t.Name == "SubTabControl");
                 var subLabel = sub.Items.OfType<TabItem>().Select(t => t.Header).OfType<StackPanel>()

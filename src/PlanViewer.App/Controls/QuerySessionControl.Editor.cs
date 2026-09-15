@@ -211,7 +211,7 @@ public partial class QuerySessionControl : UserControl
         }
 
         QueryEditor.Text = queryText;
-        SubTabControl.SelectedIndex = 0; // Switch to the editor tab
+        SelectEditor();
         QueryEditor.Focus();
     }
 
@@ -254,6 +254,53 @@ public partial class QuerySessionControl : UserControl
         else if (e.Key == Key.Escape && _executionCts != null && !_executionCts.IsCancellationRequested)
         {
             _executionCts.Cancel();
+            e.Handled = true;
+        }
+        /* Ctrl+F4 → close the document being looked at.
+           Ctrl+W, the shortcut most apps spell this with, is taken: the window's tunnel handler
+           claims it whenever a top-level tab is selected, which is always, and closes that whole
+           tab. A tunneled Handled never reaches this bubbling handler, so binding Ctrl+W here
+           would do nothing at all — and that is the good outcome, because the alternative is a
+           keystroke that sometimes closes a plan and sometimes closes the session it lives in.
+           F4 is free: the only F4 in the app is the menu's Alt+F4, and the window's tunnel has no
+           case for it, so the keystroke arrives here intact.
+
+           On a view there is nothing selected to close and this does nothing — deliberately
+           including not falling through to the top-level tab, which is what Ctrl+W would have
+           done and is the surprise this binding exists to avoid. */
+        else if (e.Key == Key.F4 && e.KeyModifiers == KeyModifiers.Control)
+        {
+            if (SelectedDocument is { } document)
+            {
+                CloseDocument(document);
+                e.Handled = true;
+            }
+        }
+        /* Ctrl+1 → the editor view, the keyboard's half of the view bar beside the strip.
+
+           Already being there is not nothing to do. The surface machine moves the caret into the
+           editor when it ARRIVES at it, and a request to go somewhere it already is moves nothing
+           — so with focus out on a toolbar button or a tab header, the shortcut would latch a
+           segment that was already latched and leave the caret where it was. Asking for the
+           editor has to mean the same thing both times. */
+        else if (e.Key == Key.D1 && e.KeyModifiers == KeyModifiers.Control)
+        {
+            if (IsEditorSelected)
+                FocusEditor();
+            else
+                SelectEditor();
+
+            e.Handled = true;
+        }
+        /* Ctrl+2 → the Overview view, through the segment's own implementation rather than a
+           second copy of it. That is what keeps the never-connected case honest: asking for the
+           Overview without a server offers the connection dialog and, if it is cancelled, leaves
+           the user where they were — parity the keyboard would lose the moment it grew its own
+           idea of what opening the Overview means. Fired and not awaited, the way the window's
+           own key handler starts its async commands. */
+        else if (e.Key == Key.D2 && e.KeyModifiers == KeyModifiers.Control)
+        {
+            _ = ShowOverviewAsync();
             e.Handled = true;
         }
     }

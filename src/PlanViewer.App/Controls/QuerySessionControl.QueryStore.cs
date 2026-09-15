@@ -34,15 +34,14 @@ public partial class QuerySessionControl : UserControl
 {
     private bool HasQueryStoreTab()
     {
-        return SubTabControl.Items.OfType<TabItem>()
-            .Any(t => t.Content is QueryStoreGridControl);
+        return DocumentTabs.Any(t => t.Content is QueryStoreGridControl);
     }
 
     public void TriggerQueryStore() => QueryStore_Click(null, new RoutedEventArgs());
 
     /// <summary>
     /// Creates a sub-tab with a standard header (label + optional extra buttons + close button).
-    /// Returns the TabItem. The close button removes the tab from SubTabControl.
+    /// Returns the TabItem. The close button removes the tab from the document strip.
     /// </summary>
     private TabItem CreateSubTab(string label, Control content, Action<TabItem>? onClose = null, params Button[] extraButtons)
     {
@@ -85,7 +84,7 @@ public partial class QuerySessionControl : UserControl
             if (s is Button btn && btn.Tag is TabItem t)
             {
                 onClose?.Invoke(t);
-                SubTabControl.Items.Remove(t);
+                RemoveDocument(t);
             }
         };
 
@@ -100,43 +99,15 @@ public partial class QuerySessionControl : UserControl
         return null;
     }
 
+    /// <summary>
+    /// The toolbar's way in to the Overview. It is a view rather than a document now, so this and
+    /// the view bar's Overview segment are the same gesture and share one implementation — two
+    /// entry points that could disagree about what "open the Overview" means is exactly the bug
+    /// nobody finds.
+    /// </summary>
     private async void QueryStoreOverview_Click(object? sender, RoutedEventArgs e)
     {
-        if (_serverConnection == null || _connectionString == null)
-        {
-            await ShowConnectionDialogAsync();
-            if (_serverConnection == null || _connectionString == null)
-                return;
-        }
-
-        var supportsWaitStats = _serverMetadata?.SupportsQueryStoreWaitStats ?? false;
-        var overview = new QueryStoreOverviewControl(_serverConnection, _credentialService,
-            supportsWaitStats: supportsWaitStats);
-        overview.DrillDownRequested += async (_, args) =>
-        {
-            // Open a single-database Query Store tab directly (no connection dialog)
-            _selectedDatabase = args.Database;
-            _connectionString = _serverConnection!.GetConnectionString(_credentialService, args.Database);
-            await OpenQueryStoreForDatabaseAsync(args.Database, args.StartUtc, args.EndUtc);
-        };
-
-        var tab = CreateSubTab("QS Overview", overview);
-        SubTabControl.Items.Add(tab);
-        SubTabControl.SelectedItem = tab;
-
-        /* After the tab is selected, not before: selecting a sub-tab clears the strip, so a
-           "loading" message set ahead of the switch would be wiped by its own tab arriving. */
-        SetStatus("Loading Query Store Overview...");
-
-        try
-        {
-            await overview.LoadAsync();
-            ClearStatus();
-        }
-        catch (Exception ex)
-        {
-            SetStatusFromException(ex);
-        }
+        await ShowOverviewAsync();
     }
 
     private async Task OpenQueryStoreForDatabaseAsync(string database, DateTime? initialStartUtc = null, DateTime? initialEndUtc = null)
@@ -190,8 +161,8 @@ public partial class QuerySessionControl : UserControl
                 tb.Text = $"Query Store — {db}";
         };
 
-        SubTabControl.Items.Add(tab);
-        SubTabControl.SelectedItem = tab;
+        AddDocument(tab);
+        SelectDocument(tab);
     }
 
     private async void QueryStore_Click(object? sender, RoutedEventArgs e)
@@ -260,8 +231,8 @@ public partial class QuerySessionControl : UserControl
                 tb.Text = $"Query Store — {db}";
         };
 
-        SubTabControl.Items.Add(tab);
-        SubTabControl.SelectedItem = tab;
+        AddDocument(tab);
+        SelectDocument(tab);
     }
 
     /// <summary>
@@ -294,8 +265,10 @@ public partial class QuerySessionControl : UserControl
         else
             SetErrorStatus($"Loaded {loaded} of {plans.Count} Query Store plans. {string.Join(" ", failures)}");
 
-        HumanAdviceButton.IsEnabled = true;
-        RobotAdviceButton.IsEnabled = true;
+        /* No manual button enables here: every successful AddPlanTab above selected its tab,
+           whose SelectionChanged already ran UpdatePlanTabButtonState — and when EVERY plan in
+           the batch failed, nothing was added or selected and the buttons must stay disabled.
+           An unconditional enable at this spot lit Advice with no document at all. */
     }
 
     /// <summary>
@@ -335,8 +308,8 @@ public partial class QuerySessionControl : UserControl
                 DetachHistorySubTabToWindow(t);
         };
 
-        SubTabControl.Items.Add(tab);
-        SubTabControl.SelectedItem = tab;
+        AddDocument(tab);
+        SelectDocument(tab);
     }
 
     private void OnHistoryPlanLoadRequested(object? sender, HistoryPlanLoadEventArgs e)
@@ -358,7 +331,7 @@ public partial class QuerySessionControl : UserControl
         var tabLabel = GetSubTabHeaderText(tab)?.Text ?? "History";
 
         // Remove from sub-tabs
-        SubTabControl.Items.Remove(tab);
+        RemoveDocument(tab);
         tab.Content = null;
 
         var mainWindow = Avalonia.Controls.TopLevel.GetTopLevel(this) as Window;

@@ -100,22 +100,38 @@ public partial class QueryStoreOverviewControl : UserControl
         TotalModeToggle.IsCheckedChanged += OnMetricModeChanged;
         AvgModeToggle.IsCheckedChanged += OnMetricModeChanged;
 
+        /* Cancel, never dispose — see OnSlicerRangeChanged for why. A redock, or a session closing
+           while a refresh is in flight, would otherwise dispose a token that refresh still holds,
+           and ObjectDisposedException is not what its caller is catching. */
         this.DetachedFromVisualTree += (_, _) =>
         {
             _cts?.Cancel();
-            _cts?.Dispose();
             _cts = null;
         };
     }
 
+    /// <summary>
+    /// Whether a load has ever got as far as putting data on the slicer.
+    /// </summary>
+    /// <remarks>
+    /// Until it has there is no range the user chose for the next load to preserve — including
+    /// after a load that failed, which is why a failure retries as a first load rather than
+    /// restoring a window nobody picked.
+    /// </remarks>
+    private bool _loaded;
+
     public async Task LoadAsync()
     {
         _cts?.Cancel();
-        _cts?.Dispose();
         _cts = new CancellationTokenSource();
         var ct = _cts.Token;
 
-        await Dispatcher.UIThread.InvokeAsync(() => LoadingBar.IsIndeterminate = true);
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            LoadingBar.IsIndeterminate = true;
+            // A badge left over from the last attempt is not about this one.
+            ClearRefreshError();
+        });
 
         try
         {
@@ -152,11 +168,33 @@ public partial class QueryStoreOverviewControl : UserControl
                 .OrderBy(x => x.IntervalStartUtc)
                 .ToList();
 
+            /* Captured before LoadData, because LoadData resets the selection and raises
+               RangeChanged — and these two fields are what that handler writes.
+
+               Asking for this view always reloads it, which is the only way it ever refreshes: it
+               has no timer. So a reload has to keep the range the user dragged to, or coming back
+               to the view would quietly throw their window away and show the default again.
+               LoadData clamps whatever it is handed into the data it just fetched, so a range that
+               has since scrolled off the end comes back as the nearest one that exists. */
+            var previousStart = _loaded ? (DateTime?)_slicerStartUtc : null;
+            var previousEnd = _loaded ? (DateTime?)_slicerEndUtc : null;
+
             await Dispatcher.UIThread.InvokeAsync(() =>
-                OverviewTimeSlicer.LoadData(consolidated, "cpu"));
+            {
+                OverviewTimeSlicer.LoadData(consolidated, "cpu", previousStart, previousEnd);
+                _loaded = true;
+            });
 
             // Phase 3: Metrics and wait stats for selected time range
             await RefreshMetricsAndWaitStatsAsync(ct);
+        }
+        catch (OperationCanceledException)
+        {
+            /* Not a failure, and not worth a word. The caller puts this control's outcome on the
+               session's status strip, where "A task was canceled." says nothing about which task —
+               and the thing that cancelled it is a later load already in flight, which will report
+               for itself. Loading the slicer is one of the cancellers: it raises RangeChanged,
+               whose handler takes the token over to run the same last phase. */
         }
         finally
         {
@@ -265,6 +303,9 @@ public partial class QueryStoreOverviewControl : UserControl
 
         // Don't dispose the previous CTS — the in-flight refresh still holds its token.
         // Cancel signals the previous run; GC reclaims the source after both runs unwind.
+        // This is the control's rule, not this site's: LoadAsync and the detach handler cancel
+        // the same way, because a create-once view means any of the three can be the one that
+        // pulls the source out from under a run that is still using it.
         _cts?.Cancel();
         var newCts = new CancellationTokenSource();
         _cts = newCts;
@@ -281,7 +322,16 @@ public partial class QueryStoreOverviewControl : UserControl
         }
     }
 
-    private void ShowRefreshError(Exception ex)
+    /// <summary>
+    /// Puts a failure on the control's own badge rather than on a status strip somewhere above it.
+    /// </summary>
+    /// <remarks>
+    /// Internal because the session needs it too: a load started from the Overview keeps running
+    /// after the user has looked at something else, and its failure belongs here — beside the data
+    /// it is about, waiting for them to come back — rather than on a strip that is now describing a
+    /// completely different view.
+    /// </remarks>
+    internal void ShowRefreshError(Exception ex)
     {
         ToolTip.SetTip(RefreshErrorBadge, $"Last refresh failed:\n{ex.Message}");
         ToolTip.SetShowDelay(RefreshErrorBadge, 200);

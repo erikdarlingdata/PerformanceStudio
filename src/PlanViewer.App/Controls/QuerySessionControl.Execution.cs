@@ -129,37 +129,10 @@ public partial class QuerySessionControl : UserControl
         // Add loading tab and switch to it
         _planCounter++;
         var tabLabel = estimated ? $"Est Plan {_planCounter}" : $"Plan {_planCounter}";
-        var headerText = new TextBlock
-        {
-            Text = tabLabel,
-            VerticalAlignment = VerticalAlignment.Center,
-            FontSize = 12
-        };
-        var closeBtn = new Button
-        {
-            Content = "\u2715",
-            MinWidth = 22, MinHeight = 22, Width = 22, Height = 22,
-            Padding = new Avalonia.Thickness(0),
-            FontSize = 11,
-            Margin = new Avalonia.Thickness(6, 0, 0, 0),
-            Background = Brushes.Transparent,
-            BorderThickness = new Avalonia.Thickness(0),
-            Foreground = ForegroundToken,
-            VerticalAlignment = VerticalAlignment.Center,
-            HorizontalContentAlignment = HorizontalAlignment.Center,
-            VerticalContentAlignment = VerticalAlignment.Center
-        };
-        var header = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Children = { headerText, closeBtn }
-        };
-        var loadingTab = new TabItem { Header = header, Content = loadingContainer };
-        closeBtn.Tag = loadingTab;
-        closeBtn.Click += ClosePlanTab_Click;
+        var loadingTab = NewPlanTab(tabLabel, loadingContainer);
 
-        SubTabControl.Items.Add(loadingTab);
-        SubTabControl.SelectedItem = loadingTab;
+        AddDocument(loadingTab);
+        SelectDocument(loadingTab);
         loadingContainer.Focus();
 
         try
@@ -198,17 +171,17 @@ public partial class QuerySessionControl : UserControl
             // Replace loading content with the plan viewer
             SetStatus($"{planType} plan captured ({sw.Elapsed.TotalSeconds:F1}s)");
             ShowCapturedPlan(loadingTab, planXml, tabLabel, queryText);
-            HumanAdviceButton.IsEnabled = true;
-            RobotAdviceButton.IsEnabled = true;
         }
         catch (OperationCanceledException)
         {
             /* Nothing in the strip. The user cancelled this themselves — Escape, the Cancel
                button, or by starting the next query — and the spinner tab vanishing is the
                answer to that. Saying so as well used to be harmless and is no longer even
-               visible: removing the selected tab moves the selection, and a selection change
-               now empties the strip. */
-            SubTabControl.Items.Remove(loadingTab);
+               visible: removing the selected tab clears the selection, and a selection change
+               empties the strip. (It used to MOVE the selection to a neighbour. A deselectable
+               strip clears it instead and RemoveDocument picks the neighbour afterwards — a
+               different mechanism, and the same thing this relies on either way.) */
+            RemoveDocument(loadingTab);
         }
         catch (SqlException ex)
         {
@@ -246,6 +219,16 @@ public partial class QuerySessionControl : UserControl
         viewer.OpenInEditorRequested += OnOpenInEditorRequested;
         viewer.LoadPlan(planXml, tabLabel, queryText);
         planTab.Content = viewer;
+
+        /* The content swap above changes no selection, so SelectionChanged never fires and the
+           button row never hears that a plan arrived: Copy Repro and Run Repro stayed dead after
+           every execute until the user clicked away and back. This call is the ONLY correct
+           answer — manual IsEnabled writes at the call sites used to paper over half of it, and
+           because they ran unconditionally AFTER this refresh they re-lit Advice on a view
+           surface, where pressing it opened advice for a document the user was not looking at.
+           On a view the refresh reads a null SelectedDocument and keeps everything disabled;
+           that is the Q2 gate and nothing may write these buttons around it. */
+        UpdatePlanTabButtonState();
     }
 
     /// <summary>
@@ -375,37 +358,10 @@ public partial class QuerySessionControl : UserControl
 
         _planCounter++;
         var tabLabel = $"Plan {_planCounter}";
-        var headerText = new TextBlock
-        {
-            Text = tabLabel,
-            VerticalAlignment = VerticalAlignment.Center,
-            FontSize = 12
-        };
-        var closeBtn = new Button
-        {
-            Content = "\u2715",
-            MinWidth = 22, MinHeight = 22, Width = 22, Height = 22,
-            Padding = new Avalonia.Thickness(0),
-            FontSize = 11,
-            Margin = new Avalonia.Thickness(6, 0, 0, 0),
-            Background = Brushes.Transparent,
-            BorderThickness = new Avalonia.Thickness(0),
-            Foreground = ForegroundToken,
-            VerticalAlignment = VerticalAlignment.Center,
-            HorizontalContentAlignment = HorizontalAlignment.Center,
-            VerticalContentAlignment = VerticalAlignment.Center
-        };
-        var header = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Children = { headerText, closeBtn }
-        };
-        var loadingTab = new TabItem { Header = header, Content = loadingContainer };
-        closeBtn.Tag = loadingTab;
-        closeBtn.Click += ClosePlanTab_Click;
+        var loadingTab = NewPlanTab(tabLabel, loadingContainer);
 
-        SubTabControl.Items.Add(loadingTab);
-        SubTabControl.SelectedItem = loadingTab;
+        AddDocument(loadingTab);
+        SelectDocument(loadingTab);
         loadingContainer.Focus();
 
         try
@@ -435,7 +391,7 @@ public partial class QuerySessionControl : UserControl
         {
             // Same as the capture path above: the cancel was the user's own, and the tab going
             // away says so. See that catch for why the message is gone.
-            SubTabControl.Items.Remove(loadingTab);
+            RemoveDocument(loadingTab);
         }
         catch (SqlException ex)
         {
