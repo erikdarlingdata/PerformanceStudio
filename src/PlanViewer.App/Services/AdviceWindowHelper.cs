@@ -90,8 +90,12 @@ internal static class AdviceWindowHelper
             MinWidth = 400,
             MinHeight = 300,
             Icon = owner.Icon,
-            Background = new SolidColorBrush(Color.Parse("#1A1D23")),
-            Foreground = new SolidColorBrush(Color.Parse("#E4E6EB")),
+            /* Resolved from the owner so the window follows the design tokens; the literals are
+               the tokens' own values, kept only as lookup-miss insurance. */
+            Background = owner.TryFindResource("BackgroundBrush", out var bg) && bg is IBrush b
+                ? b : new SolidColorBrush(Color.Parse("#1A1D23")),
+            Foreground = owner.TryFindResource("ForegroundBrush", out var fg) && fg is IBrush f
+                ? f : new SolidColorBrush(Color.Parse("#E4E6EB")),
             Content = panel
         };
 
@@ -109,13 +113,22 @@ internal static class AdviceWindowHelper
             }
         }, RoutingStrategies.Tunnel);
 
+        /* The generation counter stops a second click's "Copied!" being wiped by the first
+           click's 1.5s timer - mirrored from ComparisonWindow, which fixed the race this
+           handler originally shipped with. */
+        var copyGeneration = 0;
         copyBtn.Click += async (_, _) =>
         {
+            var generation = ++copyGeneration;
+
             copyBtn.Content = await ClipboardHelper.TrySetTextAsync(window, content)
                 ? "Copied!"
                 : "Clipboard busy - try again";
+
             await Task.Delay(1500);
-            copyBtn.Content = "Copy to Clipboard";
+
+            if (generation == copyGeneration)
+                copyBtn.Content = "Copy to Clipboard";
         };
 
         closeBtn.Click += (_, _) => window.Close();

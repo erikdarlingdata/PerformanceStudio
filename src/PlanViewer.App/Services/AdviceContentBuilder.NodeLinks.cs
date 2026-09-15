@@ -8,6 +8,7 @@ using Avalonia.Controls.Documents;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
+using Avalonia.LogicalTree;
 using Avalonia.Media;
 using PlanViewer.Core.Models;
 using PlanViewer.Core.Output;
@@ -18,64 +19,28 @@ namespace PlanViewer.App.Services;
 internal static partial class AdviceContentBuilder
 {
     /// <summary>
-    /// Walks all children recursively and replaces "Node N" text with clickable inline links.
+    /// Replaces "Node N" text anywhere in the pane with clickable inline links.
+    ///
+    /// <para>Over the logical tree, for the same reason <see cref="MakeTextBlocksHitTestable"/> is:
+    /// a switch over container shapes only reaches the shapes someone remembered, and a card's
+    /// header or a Border wrapping an Expander is invisible to it. Materialised first, because the
+    /// plain-text branch rewrites the block it is standing on.</para>
     /// </summary>
     private static void MakeNodeRefsClickable(Panel panel, Action<int> onNodeClick)
     {
-        for (int i = 0; i < panel.Children.Count; i++)
+        foreach (var stb in panel.GetLogicalDescendants().OfType<SelectableTextBlock>().ToList())
         {
-            var child = panel.Children[i];
-
-            // Recurse into containers
-            if (child is Panel innerPanel)
-            {
-                MakeNodeRefsClickable(innerPanel, onNodeClick);
-                continue;
-            }
-            if (child is Border border)
-            {
-                if (border.Child is Panel borderPanel)
-                {
-                    MakeNodeRefsClickable(borderPanel, onNodeClick);
-                    continue;
-                }
-                if (border.Child is SelectableTextBlock borderStb)
-                {
-                    if (borderStb.Inlines?.Count > 0)
-                        ProcessInlines(borderStb, onNodeClick);
-                    else if (!string.IsNullOrEmpty(borderStb.Text) && NodeRefRegex.IsMatch(borderStb.Text))
-                    {
-                        var bText = borderStb.Text;
-                        var bFg = borderStb.Foreground;
-                        borderStb.Text = null;
-                        AddRunsWithNodeLinks(borderStb.Inlines!, bText, bFg, onNodeClick);
-                        WireNodeClickHandler(borderStb, onNodeClick);
-                    }
-                    continue;
-                }
-            }
-            if (child is Expander expander && expander.Content is Panel expanderPanel)
-            {
-                MakeNodeRefsClickable(expanderPanel, onNodeClick);
-                continue;
-            }
-
-            // Process SelectableTextBlock with Inlines
-            if (child is SelectableTextBlock stb && stb.Inlines?.Count > 0)
+            if (stb.Inlines?.Count > 0)
             {
                 ProcessInlines(stb, onNodeClick);
-                continue;
             }
-
-            // Process SelectableTextBlock with plain Text
-            if (child is SelectableTextBlock stbPlain && stbPlain.Inlines?.Count == 0
-                && !string.IsNullOrEmpty(stbPlain.Text) && NodeRefRegex.IsMatch(stbPlain.Text))
+            else if (!string.IsNullOrEmpty(stb.Text) && NodeRefRegex.IsMatch(stb.Text))
             {
-                var text = stbPlain.Text;
-                var fg = stbPlain.Foreground;
-                stbPlain.Text = null;
-                AddRunsWithNodeLinks(stbPlain.Inlines!, text, fg, onNodeClick);
-                WireNodeClickHandler(stbPlain, onNodeClick);
+                var text = stb.Text;
+                var fg = stb.Foreground;
+                stb.Text = null;
+                AddRunsWithNodeLinks(stb.Inlines!, text, fg, onNodeClick);
+                WireNodeClickHandler(stb, onNodeClick);
             }
         }
     }

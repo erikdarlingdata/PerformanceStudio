@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Avalonia.Controls;
 using Avalonia.Controls.Documents;
+using Avalonia.LogicalTree;
 using Avalonia.Media;
 
 namespace PlanViewer.App.Services;
@@ -23,30 +24,17 @@ internal static partial class AdviceContentBuilder
     ///
     /// <para>Run over the finished panel rather than set at each construction site, so a block added
     /// next month is covered without anyone remembering why.</para>
+    ///
+    /// <para>Over the logical tree rather than a switch over the container shapes this file happens
+    /// to build. That switch knew about a Border around a panel and an Expander around one, but not
+    /// a Border around an Expander or an Expander's header — both of which the card view builds, and
+    /// neither of which would have announced itself as missing. Every container is a logical parent,
+    /// so asking the tree costs nothing and cannot develop blind spots.</para>
     /// </summary>
     private static void MakeTextBlocksHitTestable(Panel panel)
     {
-        foreach (var child in panel.Children)
-        {
-            switch (child)
-            {
-                case SelectableTextBlock stb:
-                    stb.Background ??= Brushes.Transparent;
-                    break;
-                case Panel inner:
-                    MakeTextBlocksHitTestable(inner);
-                    break;
-                case Border { Child: Panel borderPanel }:
-                    MakeTextBlocksHitTestable(borderPanel);
-                    break;
-                case Border { Child: SelectableTextBlock borderStb }:
-                    borderStb.Background ??= Brushes.Transparent;
-                    break;
-                case Expander { Content: Panel expanderPanel }:
-                    MakeTextBlocksHitTestable(expanderPanel);
-                    break;
-            }
-        }
+        foreach (var stb in panel.GetLogicalDescendants().OfType<SelectableTextBlock>())
+            stb.Background ??= Brushes.Transparent;
     }
 
     /// <summary>

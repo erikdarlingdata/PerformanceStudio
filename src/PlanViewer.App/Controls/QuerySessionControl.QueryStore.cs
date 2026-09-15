@@ -9,6 +9,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Xml.Linq;
 using Avalonia.Controls;
+using Avalonia.LogicalTree;
 using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
@@ -371,8 +372,14 @@ public partial class QuerySessionControl : UserControl
             backgroundBrush: (Avalonia.Media.IBrush?)this.FindResource("BackgroundBrush"),
             onRedock: c =>
             {
-                if (mainWindow is not MainWindow mw || !mw.IsShuttingDown)
-                    AddHistorySubTab(tabLabel, (QueryStoreHistoryControl)c);
+                /* Shutdown is decided at REDOCK time through the logical tree. The visual
+                   answer captured at detach goes stale, is a plain Window for a detached
+                   session, and is null for an unrealized background tab - and a redock during
+                   shutdown rebuilds a sub-tab inside a session that is being torn down. Null
+                   here (a detached session) means no MainWindow shutdown applies; proceed. */
+                if (this.FindLogicalAncestorOfType<MainWindow>() is { IsShuttingDown: true })
+                    return;
+                AddHistorySubTab(tabLabel, (QueryStoreHistoryControl)c);
             },
             onClosing: c =>
             {

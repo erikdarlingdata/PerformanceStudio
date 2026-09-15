@@ -2,11 +2,215 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="using:PlanViewer.App.Controls"
              x:Class="PlanViewer.App.Controls.QueryStoreOverviewControl">
+    <UserControl.Resources>
+        <!--
+            The Total/Avg segmented control. Two RadioButtons sharing a group, drawn as one pill.
+
+            It is a ControlTheme rather than a pair of AppButtons on purpose. AppButton has no
+            selected state by design — its comment in DarkTheme.axaml explains that a full accent
+            fill is reserved for nothing, precisely so no stuck pseudo-class can make a plain button
+            look latched. A two-state toggle needs exactly the latched look AppButton refuses to
+            have, and a RadioButton already owns the selection semantics (mutual exclusion, keyboard
+            arrows, IsChecked) that would otherwise have to be hand-written on Borders.
+
+            Order matters below: :checked is declared after :pointerover so hovering the selected
+            segment does not wash its accent fill away. That ordering is necessary and was not
+            sufficient — AccentSoftBrush is a 12% wash that composites to a LOWER luminance than the
+            opaque SurfaceHoverBrush, so on fill alone hovering the unselected segment lit it up
+            more than the selected one on a control whose entire job is showing which is latched.
+            The checked state carries an accent outline and a heavier weight on top of its fill,
+            which no hover state has. A solid accent fill would settle it in one setter, and
+            DarkTheme reserves that for nothing at all — hence an outline.
+        -->
+        <ControlTheme x:Key="MetricModeSegment" TargetType="RadioButton">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{DynamicResource ForegroundMutedBrush}"/>
+            <Setter Property="Padding" Value="12,2"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <!-- The focus ring is a transparent border that is always present, so lighting
+                         it up on focus cannot shift the label by a pixel. -->
+                    <Border x:Name="PART_Border"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="Transparent"
+                            BorderThickness="1"
+                            Padding="{TemplateBinding Padding}">
+                        <ContentPresenter Content="{TemplateBinding Content}"
+                                          Foreground="{TemplateBinding Foreground}"
+                                          HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"/>
+                    </Border>
+                </ControlTemplate>
+            </Setter>
+
+            <Style Selector="^:pointerover /template/ Border#PART_Border">
+                <Setter Property="Background" Value="{DynamicResource SurfaceHoverBrush}"/>
+            </Style>
+            <Style Selector="^:checked /template/ Border#PART_Border">
+                <Setter Property="Background" Value="{DynamicResource AccentSoftBrush}"/>
+                <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+            </Style>
+            <Style Selector="^:checked">
+                <Setter Property="Foreground" Value="{DynamicResource ForegroundBrush}"/>
+                <Setter Property="FontWeight" Value="SemiBold"/>
+            </Style>
+            <Style Selector="^:focus-visible /template/ Border#PART_Border">
+                <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+            </Style>
+        </ControlTheme>
+    </UserControl.Resources>
+
+    <UserControl.Styles>
+        <!--
+            Every colour the metric cards, the legend and the state list paint comes from these
+            rules, reached by class name from the code that builds them. The one exception is a
+            bar's fill, which is the user's own per-database colour out of MultiQsTopDbColors.
+
+            Classes rather than FindResource in the code-behind for the reason QuerySessionControl's
+            empty state gives: these children are built before the control has been attached to
+            anything, and FindResource on an unattached control returns UnsetValue, not a brush.
+        -->
+
+        <!-- ── Metric cards ──────────────────────────────────────────────────────────────── -->
+        <Style Selector="Border.metricCard">
+            <Setter Property="Background" Value="{DynamicResource BackgroundLightBrush}"/>
+            <Setter Property="CornerRadius" Value="4"/>
+            <Setter Property="Padding" Value="8,6"/>
+            <Setter Property="ClipToBounds" Value="True"/>
+        </Style>
+
+        <!-- A card with nothing to show goes quiet the way the Plan Insights cards do: the header
+             drops to the muted foreground rather than shouting a metric name over empty tracks. -->
+        <Style Selector="TextBlock.cardHeader">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="{DynamicResource ForegroundBrush}"/>
+            <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+            <Setter Property="Margin" Value="0,0,0,6"/>
+        </Style>
+        <Style Selector="TextBlock.cardHeader.empty">
+            <Setter Property="Foreground" Value="{DynamicResource ForegroundMutedBrush}"/>
+        </Style>
+        <Style Selector="TextBlock.cardEmpty">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Foreground" Value="{DynamicResource ForegroundMutedBrush}"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+        </Style>
+
+        <!-- One bar row is two lines: the name and the value sharing a line, and the bar itself on
+             the full width of the card underneath them. The name is subordinate to the number, so
+             it takes the muted ink and the value keeps the full foreground.
+
+             Beside the bar was the first shape this took, and measured at MainWindow's default
+             1280 it does not work. Seven cards share the row, which leaves each about 156px of
+             content, and a name column and a value column — both Auto, both winning their width
+             against a star-sized track — took 70px and 60px of it. The bar got fourteen pixels,
+             which encodes nothing, which is the complaint this card exists to answer. The name
+             column is star-sized now and ellipsizes against whatever the value leaves it. -->
+        <Style Selector="TextBlock.barName">
+            <Setter Property="FontSize" Value="10"/>
+            <Setter Property="Foreground" Value="{DynamicResource ForegroundMutedBrush}"/>
+            <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+            <Setter Property="VerticalAlignment" Value="Bottom"/>
+            <Setter Property="Margin" Value="0,0,6,0"/>
+        </Style>
+        <Style Selector="TextBlock.barValue">
+            <Setter Property="FontSize" Value="10"/>
+            <Setter Property="Foreground" Value="{DynamicResource ForegroundBrush}"/>
+            <Setter Property="VerticalAlignment" Value="Bottom"/>
+            <Setter Property="HorizontalAlignment" Value="Right"/>
+        </Style>
+
+        <!-- The track is the shared reference every bar in a card is read against: full width, one
+             linear scale anchored at zero. Without it a short bar and a long bar in two different
+             cards look like the same measurement.
+
+             BackgroundDarkBrush, the token for a recess, rather than BorderBrush: a bar has to read
+             against this, and the muted grey the Others aggregate is drawn in is close enough to
+             BorderBrush that the one row most likely to be long was the one hardest to see. A well
+             the card is cut into works for every colour in the palette; a line the same weight as
+             the bars works for none of them. -->
+        <Style Selector="Border.barTrack">
+            <Setter Property="Background" Value="{DynamicResource BackgroundDarkBrush}"/>
+            <Setter Property="CornerRadius" Value="2"/>
+            <Setter Property="Height" Value="9"/>
+            <Setter Property="ClipToBounds" Value="True"/>
+            <Setter Property="Margin" Value="0,1,0,6"/>
+        </Style>
+        <Style Selector="Border.barFill">
+            <Setter Property="CornerRadius" Value="2"/>
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+        </Style>
+
+        <!-- ── Shared legend ─────────────────────────────────────────────────────────────── -->
+        <Style Selector="Border.legendSwatch">
+            <Setter Property="Width" Value="9"/>
+            <Setter Property="Height" Value="9"/>
+            <Setter Property="CornerRadius" Value="2"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="0,0,5,0"/>
+        </Style>
+        <Style Selector="TextBlock.legendLabel">
+            <Setter Property="FontSize" Value="10"/>
+            <Setter Property="Foreground" Value="{DynamicResource ForegroundMutedBrush}"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+            <Setter Property="MaxWidth" Value="160"/>
+        </Style>
+
+        <!-- ── Query Store state card ────────────────────────────────────────────────────── -->
+        <!-- Green confirms, amber warns, red fails — the status triad, used as DarkTheme documents
+             it. READ_ONLY is amber rather than red on purpose: a read-only Query Store has stopped
+             capturing but its history is still readable, and on a readable secondary it is the
+             expected state. OFF and a state query that errored are the two that are actually
+             broken. -->
+        <Style Selector="TextBlock.statesHeadline">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="Margin" Value="0,0,0,6"/>
+            <Setter Property="Foreground" Value="{DynamicResource ForegroundBrush}"/>
+        </Style>
+        <Style Selector="TextBlock.statesHeadline.healthy">
+            <Setter Property="Foreground" Value="{DynamicResource SuccessBrush}"/>
+        </Style>
+        <Style Selector="TextBlock.statesHeadline.warn">
+            <Setter Property="Foreground" Value="{DynamicResource WarningBrush}"/>
+        </Style>
+        <Style Selector="TextBlock.statesHeadline.bad">
+            <Setter Property="Foreground" Value="{DynamicResource ErrorBrush}"/>
+        </Style>
+
+        <Style Selector="TextBlock.stateName">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Foreground" Value="{DynamicResource ForegroundBrush}"/>
+            <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <Style Selector="TextBlock.stateValue">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="8,0,0,0"/>
+            <Setter Property="Foreground" Value="{DynamicResource ForegroundMutedBrush}"/>
+        </Style>
+        <Style Selector="TextBlock.stateValue.healthy">
+            <Setter Property="Foreground" Value="{DynamicResource SuccessBrush}"/>
+        </Style>
+        <Style Selector="TextBlock.stateValue.warn">
+            <Setter Property="Foreground" Value="{DynamicResource WarningBrush}"/>
+        </Style>
+        <Style Selector="TextBlock.stateValue.bad">
+            <Setter Property="Foreground" Value="{DynamicResource ErrorBrush}"/>
+        </Style>
+    </UserControl.Styles>
+
     <Grid x:Name="RootGrid" Background="{DynamicResource BackgroundBrush}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="1*"/>
-            <RowDefinition Height="2*"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="2*"/>
         </Grid.RowDefinitions>
 
@@ -18,27 +222,31 @@
                          Foreground="{DynamicResource AccentBrush}"/>
             <TextBlock x:Name="RefreshErrorBadge" Text="⚠ refresh failed"
                        FontSize="10" FontWeight="SemiBold"
-                       Foreground="#F2C94C"
+                       Foreground="{DynamicResource WarningBrush}"
                        HorizontalAlignment="Right" VerticalAlignment="Top"
                        Margin="0,2,10,0" IsVisible="False" Cursor="Hand"/>
         </Grid>
 
-        <!-- Row 1: Donut + TimeSlicer + WaitStats -->
+        <!-- Row 1: QS states + TimeSlicer + WaitStats -->
         <Grid Grid.Row="1" Margin="10">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="0.6*"/>
+                <ColumnDefinition Width="1*"/>
                 <ColumnDefinition Width="2*"/>
                 <ColumnDefinition Width="2*"/>
             </Grid.ColumnDefinitions>
 
-            <!-- Donut chart area -->
+            <!-- Query Store state, in words. The donut this replaced encoded seven databases as a
+                 ring and a "7/7" in the middle, which took a click on each arc to find out which
+                 database was which. The states fit on screen, so they are on screen. -->
             <Border Grid.Column="0" Background="{DynamicResource BackgroundLightBrush}"
                     CornerRadius="4" Margin="0,0,5,0" ClipToBounds="True">
-                <Grid RowDefinitions="Auto,*">
-                    <TextBlock Grid.Row="0" Text="QS States" FontSize="11" FontWeight="SemiBold"
-                               Foreground="{DynamicResource ForegroundBrush}"
-                               HorizontalAlignment="Center" Margin="0,4,0,0"/>
-                    <Canvas x:Name="DonutCanvas" Grid.Row="1"/>
+                <Grid RowDefinitions="Auto,*" Margin="8,6">
+                    <TextBlock x:Name="StatesHeadline" Grid.Row="0" Classes="statesHeadline"
+                               Text="Query Store state unknown"/>
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Disabled">
+                        <StackPanel x:Name="StatesList"/>
+                    </ScrollViewer>
                 </Grid>
             </Border>
 
@@ -56,7 +264,7 @@
                                    Foreground="{DynamicResource ForegroundBrush}"
                                    HorizontalAlignment="Center" Margin="0,4,0,0"/>
                         <TextBlock x:Name="WaitStatsWarning" Text="⚠" FontSize="12"
-                                   Foreground="#F2C94C"
+                                   Foreground="{DynamicResource WarningBrush}"
                                    HorizontalAlignment="Right" VerticalAlignment="Center"
                                    Margin="0,4,8,0" IsVisible="False" Cursor="Hand"/>
                     </Grid>
@@ -67,10 +275,47 @@
             </Border>
         </Grid>
 
-        <!-- Row 1: Total metrics bar cards -->
-        <Grid x:Name="TotalMetricsGrid" Grid.Row="2" Margin="10"/>
+        <!-- Row 2: the legend every card shares, and the Total/Avg switch for all of them -->
+        <Grid Grid.Row="2" Margin="10,0,10,6" ColumnDefinitions="*,Auto">
+            <!-- Wraps rather than scrolls. At the top of MultiQsTopDbCount this is 21 entries, and
+                 a horizontal scroller with its rail hidden would leave the overflow reachable only
+                 by a mouse wheel nothing on screen suggests using. The row is Auto-height, so a
+                 second line costs the cards a line and hides nothing. -->
+            <WrapPanel x:Name="DatabaseLegend" Grid.Column="0" Orientation="Horizontal"
+                       VerticalAlignment="Center"/>
 
-        <!-- Row 2: Avg metrics bar cards -->
-        <Grid x:Name="AvgMetricsGrid" Grid.Row="3" Margin="10"/>
+            <!-- No GroupName. Avalonia groups an ungrouped RadioButton by its PARENT, which is this
+                 StackPanel and is therefore per instance; a named group is process-wide across
+                 every RadioButton sharing a visual root. Two of these controls open at once — the
+                 sub-tab host builds a fresh one on every QS Overview click — and a named group
+                 would let the toggle in one pane clear the toggle in the other, leaving it with
+                 NEITHER segment checked while its cards still showed Total. -->
+            <Border Grid.Column="1" Margin="8,0,0,0"
+                    BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1"
+                    CornerRadius="4" ClipToBounds="True" VerticalAlignment="Center">
+                <StackPanel Orientation="Horizontal">
+                    <RadioButton x:Name="TotalModeToggle"
+                                 Theme="{StaticResource MetricModeSegment}"
+                                 Content="Total" IsChecked="True"
+                                 ToolTip.Tip="Show the summed value for the selected range"/>
+                    <RadioButton x:Name="AvgModeToggle"
+                                 Theme="{StaticResource MetricModeSegment}"
+                                 Content="Avg"
+                                 ToolTip.Tip="Show the per-execution average for the selected range"/>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- Row 3: one row of metric cards, switched between Total and Avg by the toggle above.
+
+             The scroller is for MultiQsTopDbCount, which settings clamp at 20: twenty-one bars is
+             more than a short window has room for, and a card clips its own content. The grid
+             inside stretches, so at the default of five this scrolls nothing and looks exactly as
+             it would without it. -->
+        <ScrollViewer Grid.Row="3" Margin="10,0,10,10"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled">
+            <Grid x:Name="MetricsGrid"/>
+        </ScrollViewer>
     </Grid>
 </UserControl>

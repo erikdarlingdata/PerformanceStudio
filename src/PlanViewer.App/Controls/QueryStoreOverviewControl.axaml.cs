@@ -1,14 +1,9 @@
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Controls.Primitives;
-using Avalonia.Controls.Shapes;
-using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Threading;
@@ -42,13 +37,20 @@ public partial class QueryStoreOverviewControl : UserControl
     // Color palette for databases — loaded from user settings
     private readonly Color[] _palette;
 
-    private static readonly Color OthersColor = Color.Parse("#555555");
+    /* Resolved from the theme token; the literal is the token's own value as lookup-miss
+       insurance - the same pattern AdviceContentBuilder uses for its status brushes. */
+    private static readonly Color OthersColor =
+        Avalonia.Application.Current?.TryGetResource("QsOthersColor", null, out var othersColor) == true
+            && othersColor is Color qsOthers
+            ? qsOthers
+            : Color.Parse("#555555");
 
-    // Donut colors
-    private static readonly Color ReadWriteColor = Color.Parse("#2EAEF1");  // light blue
-    private static readonly Color ReadOnlyColor = Color.Parse("#1A5276");   // dark blue
-    private static readonly Color OffColor = Color.Parse("#666666");        // grey
-    private static readonly Color ErrorColor = Color.Parse("#E74C3C");      // red
+    /// <summary>
+    /// Which half of every metric card is on show. The dashboard used to render both: a Total row
+    /// of seven cards and an Avg row of the same seven underneath it, fourteen near-identical
+    /// stacks of pills. They are one row now, and this is the switch.
+    /// </summary>
+    private bool _showAverages;
 
     public class DrillDownEventArgs(string database, DateTime startUtc, DateTime endUtc) : EventArgs
     {
@@ -75,19 +77,28 @@ public partial class QueryStoreOverviewControl : UserControl
         if (_palette.Length == 0)
             _palette = AppSettingsService.DefaultTopDbColors.Select(hex => Color.Parse(hex)).ToArray();
 
+        /* Settings clamp MultiQsTopDbCount at 20 and ship eight colours. Asking for twelve used to
+           paint databases nine through twelve in the same grey as the Others aggregate, in the
+           legend AND in all seven cards — which breaks the one promise the shared legend makes,
+           that a colour identifies a database everywhere. A database this palette cannot name
+           belongs in Others, where the grey means what it says. */
+        _topN = Math.Min(_topN, _palette.Length);
+
         _supportsWaitStats = supportsWaitStats;
         _slicerEndUtc = DateTime.UtcNow;
         _slicerStartUtc = _slicerEndUtc.AddHours(-24);
 
         InitializeComponent();
 
-        this.SizeChanged += (_, _) =>
-        {
-            DrawDonut();
-            DrawWaitStatsChart();
-        };
+        /* Only the wait stats chart is drawn into a Canvas at absolute coordinates, so it is the
+           only thing left that has to be redrawn when the control resizes. The state card and the
+           metric cards are laid out by the panels they live in and reflow on their own. */
+        this.SizeChanged += (_, _) => DrawWaitStatsChart();
 
         OverviewTimeSlicer.RangeChanged += OnSlicerRangeChanged;
+
+        TotalModeToggle.IsCheckedChanged += OnMetricModeChanged;
+        AvgModeToggle.IsCheckedChanged += OnMetricModeChanged;
 
         this.DetachedFromVisualTree += (_, _) =>
         {
@@ -109,10 +120,10 @@ public partial class QueryStoreOverviewControl : UserControl
         try
         {
             // Phase 1: Get states
-            _states = await QueryStoreOverviewService.FetchAllStatesAsync(
+            var states = await QueryStoreOverviewService.FetchAllStatesAsync(
                 _masterConnectionString, _maxDop, ct);
 
-            await Dispatcher.UIThread.InvokeAsync(DrawDonut);
+            await Dispatcher.UIThread.InvokeAsync(() => ApplyStates(states));
 
             // Phase 2: Get time slices for active databases (cache the list)
             _activeDbs = _states
@@ -160,7 +171,7 @@ public partial class QueryStoreOverviewControl : UserControl
         await Dispatcher.UIThread.InvokeAsync(() => LoadingBar.IsIndeterminate = true);
         try
         {
-            _metrics = await QueryStoreOverviewService.FetchAllMetricsAsync(
+            var metrics = await QueryStoreOverviewService.FetchAllMetricsAsync(
                 _masterConnectionString, _activeDbs, _slicerStartUtc, _slicerEndUtc, _maxDop, ct);
 
             if (_supportsWaitStats)
@@ -180,7 +191,7 @@ public partial class QueryStoreOverviewControl : UserControl
 
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
-                DrawBarCards();
+                ApplyMetrics(metrics);
                 DrawWaitStatsChart();
             });
         }
@@ -188,6 +199,42 @@ public partial class QueryStoreOverviewControl : UserControl
         {
             await Dispatcher.UIThread.InvokeAsync(() => LoadingBar.IsIndeterminate = false);
         }
+    }
+
+    /// <summary>
+    /// Takes a fetched set of Query Store states and redraws the state card from it.
+    ///
+    /// <para>This and <see cref="ApplyMetrics"/> are the two seams between "we asked a server" and
+    /// "we drew something". The load path above calls them after each fetch; the tests call them
+    /// with hand-built rows, which is the only way to exercise the drawing without standing up a
+    /// SQL Server and inheriting its timeouts.</para>
+    /// </summary>
+    internal void ApplyStates(List<DatabaseQueryStoreState> states)
+    {
+        _states = states;
+        DrawStatesCard();
+    }
+
+    /// <summary>
+    /// Takes a fetched set of per-database metrics and redraws the legend and the metric cards.
+    /// </summary>
+    internal void ApplyMetrics(List<DatabaseMetrics> metrics)
+    {
+        _metrics = metrics;
+        DrawBarCards();
+    }
+
+    /// <summary>
+    /// Both segments raise this — one as it clears, one as it sets — so the guard is what keeps a
+    /// single click from rebuilding seven cards twice.
+    /// </summary>
+    private void OnMetricModeChanged(object? sender, RoutedEventArgs e)
+    {
+        var showAverages = AvgModeToggle.IsChecked == true;
+        if (showAverages == _showAverages) return;
+
+        _showAverages = showAverages;
+        DrawBarCards();
     }
 
     private void UpdateWaitStatsWarning(List<(string Database, string Error)> errors)

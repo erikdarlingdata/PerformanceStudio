@@ -387,9 +387,8 @@ public partial class MainWindow : Window
             var analysisA = ResultMapper.Map(viewerA.CurrentPlan!, "file", capturedQueryText: viewerA.QueryText);
             var analysisB = ResultMapper.Map(viewerB.CurrentPlan!, "file", capturedQueryText: viewerB.QueryText);
 
-            var comparison = ComparisonFormatter.Compare(analysisA, analysisB, labelA, labelB);
             dialog.Close();
-            ShowAdviceWindow("Plan Comparison", comparison);
+            Dialogs.ComparisonWindow.Show(this, analysisA, analysisB, labelA, labelB);
         };
 
         cancelBtn.Click += (_, _) => dialog.Close();

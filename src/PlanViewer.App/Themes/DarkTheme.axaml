@@ -65,6 +65,11 @@
     <!-- One hue per insight section, so a reader learns the section by its colour. Distinct from
          the status triad above: these classify, they do not judge. InsightIndexBrush deliberately
          shares WarningBrush's amber — an index finding is the one insight that is also a warning. -->
+    <!-- The QS Overview's "Others" aggregate. A Color rather than a Brush because the chart
+         code draws with it directly; its siblings (the per-database palette) are user config
+         in settings, so this is the one fixed member of that family the theme owns. -->
+    <Color x:Key="QsOthersColor">#555555</Color>
+
     <SolidColorBrush x:Key="InsightServerBrush" Color="#9B9BFF"/>
     <SolidColorBrush x:Key="InsightIndexBrush"  Color="#FFB347"/>
     <SolidColorBrush x:Key="InsightParamsBrush" Color="#7BCF7B"/>

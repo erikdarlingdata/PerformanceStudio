@@ -17,11 +17,14 @@ namespace PlanViewer.App.Services;
 /// </summary>
 internal static partial class AdviceContentBuilder
 {
-    /* The three status colours resolve from the design tokens (DarkTheme.axaml) so this
-       window cannot drift from the app again; the fallbacks match the tokens byte for byte.
-       The rest of this palette is advice-window-specific presentation — it gets rebuilt
-       wholesale when the advice window becomes structured cards (roadmap phase 3), so
-       tokenising it now would be churn against a file scheduled for replacement. */
+    /* Colours resolve from the design tokens (DarkTheme.axaml) wherever a token means the same
+       thing, so this window cannot drift from the app again; the fallbacks match the tokens byte
+       for byte. The card path adds no literals of its own — see AdviceContentBuilder.Cards.cs.
+
+       What is still literal below is this pane's own presentation palette — the SQL keyword blue,
+       the operator purple, the code green, the link blue, the triage card's ground and the section
+       rule — and none of them has a token to resolve to. Inventing one means editing
+       DarkTheme.axaml, which is a change to the app's palette rather than to this window. */
     private static SolidColorBrush FromTheme(string key, string fallbackHex) =>
         Avalonia.Application.Current?.TryGetResource(key, null, out var value) == true
             && value is SolidColorBrush brush
@@ -35,14 +38,14 @@ internal static partial class AdviceContentBuilder
     private static readonly SolidColorBrush LabelBrush = FromTheme("ForegroundBrush", "#E4E6EB");
     private static readonly SolidColorBrush ValueBrush = FromTheme("ForegroundBrush", "#E4E6EB");
     private static readonly SolidColorBrush CodeBrush = new(Color.Parse("#7BCF7B"));
-    private static readonly SolidColorBrush MutedBrush = new(Color.Parse("#E4E6EB"));
+    /* Subordinate text: stats under an operator, the detail lines of a warning, a wait's label.
+       This was #E4E6EB — the full-strength foreground under a name promising the opposite, so
+       "muted" detail was painted in exactly the same ink as the value it sat under. */
+    private static readonly SolidColorBrush MutedBrush = FromTheme("ForegroundMutedBrush", "#B0B6C0");
     private static readonly SolidColorBrush OperatorBrush = new(Color.Parse("#C792EA"));
     private static readonly SolidColorBrush SqlKeywordBrush = new(Color.Parse("#569CD6"));
     private static readonly SolidColorBrush SeparatorBrush = new(Color.Parse("#2A2D35"));
-    private static readonly SolidColorBrush WarningAccentBrush = new(Color.Parse("#332A1A"));
     private static readonly SolidColorBrush CardBackgroundBrush = new(Color.Parse("#1A2233"));
-    private static readonly SolidColorBrush AmberBarBrush = new(Color.Parse("#FFB347"));
-    private static readonly SolidColorBrush BlueBarBrush = new(Color.Parse("#4FA3FF"));
     private static readonly FontFamily MonoFont = new("Consolas, Menlo, monospace");
 
     private const double MaxBarWidth = 200.0;
@@ -94,7 +97,27 @@ internal static partial class AdviceContentBuilder
         return Build(content, analysis, null);
     }
 
+    /// <summary>
+    /// The advice pane's content.
+    ///
+    /// <para>Two views over one model. When the caller has the <see cref="AnalysisResult"/> —
+    /// which Advice for Humans always does — the pane is built from that model as structured
+    /// cards. The plain-text report the Copy button hands out is the other view of the same
+    /// model, written by <see cref="TextFormatter"/>, and it is a frozen contract: people paste
+    /// it into tickets. Nothing on the card path touches <paramref name="content"/>, so the two
+    /// cannot drift.</para>
+    ///
+    /// <para>With no model — Advice for Robots, whose content is raw JSON — the text is all
+    /// there is, and <see cref="BuildFromText"/> renders it line by line as before.</para>
+    /// </summary>
     public static StackPanel Build(string content, AnalysisResult? analysis, Action<int>? onNodeClick)
+    {
+        return analysis != null
+            ? BuildCards(analysis, onNodeClick)
+            : BuildFromText(content, analysis, onNodeClick);
+    }
+
+    private static StackPanel BuildFromText(string content, AnalysisResult? analysis, Action<int>? onNodeClick)
     {
         var panel = new StackPanel { Margin = new Avalonia.Thickness(4, 0) };
         var lines = content.Split('\n');
