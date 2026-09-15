@@ -37,7 +37,13 @@ public partial class QueryStoreOverviewControl : UserControl
     // Color palette for databases — loaded from user settings
     private readonly Color[] _palette;
 
-    private static readonly Color OthersColor = Color.Parse("#555555");
+    /* Resolved from the theme token; the literal is the token's own value as lookup-miss
+       insurance - the same pattern AdviceContentBuilder uses for its status brushes. */
+    private static readonly Color OthersColor =
+        Avalonia.Application.Current?.TryGetResource("QsOthersColor", null, out var othersColor) == true
+            && othersColor is Color qsOthers
+            ? qsOthers
+            : Color.Parse("#555555");
 
     /// <summary>
     /// Which half of every metric card is on show. The dashboard used to render both: a Total row
