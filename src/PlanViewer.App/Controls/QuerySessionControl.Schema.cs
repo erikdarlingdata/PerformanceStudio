@@ -151,11 +151,11 @@ public partial class QuerySessionControl : UserControl
         closeBtn.Click += (s, _) =>
         {
             if (s is Button btn && btn.Tag is TabItem t)
-                SubTabControl.Items.Remove(t);
+                RemoveDocument(t);
         };
 
-        SubTabControl.Items.Add(tab);
-        SubTabControl.SelectedItem = tab;
+        AddDocument(tab);
+        SelectDocument(tab);
     }
 
 }
