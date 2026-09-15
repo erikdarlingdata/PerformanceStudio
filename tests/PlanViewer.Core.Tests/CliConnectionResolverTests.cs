@@ -29,10 +29,30 @@ public class CliConnectionResolverTests
            concurrently and re-flipping it mid-test. */
         EntraInteractiveAuth.ResetRegistrationForTests();
 
-        var ex = Assert.Throws<InvalidOperationException>(() =>
-            CliConnectionResolver.BuildServerConnection("srv", "entra", trustCert: false, new NoCredentials()));
+        /* The refusal is CLI code doing CLI things: it writes its guidance to Console.Error and sets
+           Environment.ExitCode before throwing — correct in the planview process, but process-global
+           side effects inside a shared test host. The stray stderr write raced dotnet test's process
+           protocol and intermittently ABORTED the whole session mid-run (partial totals, zero failures,
+           exit -1, the guard's own text reported as the host's error output). Capture the stream for
+           the call and put both globals back; the capture also lets the guidance finally be asserted
+           instead of leaking. */
+        var realError = Console.Error;
+        var captured = new StringWriter();
+        Console.SetError(captured);
+        try
+        {
+            var ex = Assert.Throws<InvalidOperationException>(() =>
+                CliConnectionResolver.BuildServerConnection("srv", "entra", trustCert: false, new NoCredentials()));
 
-        Assert.Contains("headless", ex.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("headless", ex.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("account picker", captured.ToString());
+            Assert.Contains("--auth sql", captured.ToString());
+        }
+        finally
+        {
+            Console.SetError(realError);
+            Environment.ExitCode = 0;
+        }
     }
 
     /* Minimal stand-in: the resolver only asks whether a credential exists, and the entra refusal must fire
