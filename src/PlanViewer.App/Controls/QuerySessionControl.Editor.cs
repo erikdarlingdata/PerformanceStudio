@@ -276,6 +276,33 @@ public partial class QuerySessionControl : UserControl
                 e.Handled = true;
             }
         }
+        /* Ctrl+1 → the editor view, the keyboard's half of the view bar beside the strip.
+
+           Already being there is not nothing to do. The surface machine moves the caret into the
+           editor when it ARRIVES at it, and a request to go somewhere it already is moves nothing
+           — so with focus out on a toolbar button or a tab header, the shortcut would latch a
+           segment that was already latched and leave the caret where it was. Asking for the
+           editor has to mean the same thing both times. */
+        else if (e.Key == Key.D1 && e.KeyModifiers == KeyModifiers.Control)
+        {
+            if (IsEditorSelected)
+                FocusEditor();
+            else
+                SelectEditor();
+
+            e.Handled = true;
+        }
+        /* Ctrl+2 → the Overview view, through the segment's own implementation rather than a
+           second copy of it. That is what keeps the never-connected case honest: asking for the
+           Overview without a server offers the connection dialog and, if it is cancelled, leaves
+           the user where they were — parity the keyboard would lose the moment it grew its own
+           idea of what opening the Overview means. Fired and not awaited, the way the window's
+           own key handler starts its async commands. */
+        else if (e.Key == Key.D2 && e.KeyModifiers == KeyModifiers.Control)
+        {
+            _ = ShowOverviewAsync();
+            e.Handled = true;
+        }
     }
 
     private void OnEditorPointerWheel(object? sender, PointerWheelEventArgs e)
