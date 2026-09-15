@@ -99,6 +99,26 @@ public partial class QuerySessionControl : UserControl
     /// </remarks>
     private async Task ShowOverviewAsync()
     {
+        /* Every way in here is fire-and-forget - two async void handlers (the segment and the
+           toolbar button) and a discarded task (Ctrl+2) - so an exception that escapes this method
+           has nowhere to be caught: on the async void paths it takes the process with it. The catch
+           inside covers the load, which is the part that talks to a server; this covers everything
+           around it, where a failure is less likely and killing the app over it is worse. */
+        try
+        {
+            await ShowOverviewCoreAsync();
+        }
+        catch (Exception ex)
+        {
+            SetStatusFromException(ex);
+
+            // Whatever state the surface machine reached, the bar says what is actually showing.
+            ApplySurface();
+        }
+    }
+
+    private async Task ShowOverviewCoreAsync()
+    {
         if (_serverConnection == null || _connectionString == null)
         {
             await ShowConnectionDialogAsync();
