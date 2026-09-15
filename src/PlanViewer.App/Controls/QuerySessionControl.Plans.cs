@@ -118,8 +118,8 @@ public partial class QuerySessionControl : UserControl
 
         header.ContextMenu = contextMenu;
 
-        SubTabControl.Items.Add(tab);
-        SubTabControl.SelectedItem = tab;
+        AddDocument(tab);
+        SelectDocument(tab);
         return true;
     }
 
@@ -169,7 +169,7 @@ public partial class QuerySessionControl : UserControl
         {
             if (tab.Content is PlanViewerControl viewer)
                 viewer.Clear();
-            SubTabControl.Items.Remove(tab);
+            RemoveDocument(tab);
         }
     }
 
@@ -189,40 +189,38 @@ public partial class QuerySessionControl : UserControl
                 {
                     if (tab.Content is PlanViewerControl closeViewer)
                         closeViewer.Clear();
-                    SubTabControl.Items.Remove(tab);
+                    RemoveDocument(tab);
                 }
                 break;
 
             case "Close Other Tabs":
                 if (item.Tag is TabItem keepTab)
                 {
-                    // Keep the Editor tab (index 0) and the selected tab
-                    var others = SubTabControl.Items.Cast<object>()
-                        .OfType<TabItem>()
+                    // Keep the selected tab; the editor is not this menu's to close
+                    var others = DocumentTabs
                         .Where(t => t != keepTab && t.Content is PlanViewerControl)
                         .ToList();
                     foreach (var t in others)
                     {
                         if (t.Content is PlanViewerControl otherViewer)
                             otherViewer.Clear();
-                        SubTabControl.Items.Remove(t);
+                        RemoveDocument(t);
                     }
-                    SubTabControl.SelectedItem = keepTab;
+                    SelectDocument(keepTab);
                 }
                 break;
 
             case "Close All Tabs":
-                var planTabs = SubTabControl.Items.Cast<object>()
-                    .OfType<TabItem>()
+                var planTabs = DocumentTabs
                     .Where(t => t.Content is PlanViewerControl)
                     .ToList();
                 foreach (var t in planTabs)
                 {
                     if (t.Content is PlanViewerControl allViewer)
                         allViewer.Clear();
-                    SubTabControl.Items.Remove(t);
+                    RemoveDocument(t);
                 }
-                SubTabControl.SelectedIndex = 0; // back to Editor
+                SelectEditor();
                 break;
         }
     }
@@ -267,9 +265,9 @@ public partial class QuerySessionControl : UserControl
     private int CountOwnPlans()
     {
         int planCount = 0;
-        foreach (var item in SubTabControl.Items)
+        foreach (var t in DocumentTabs)
         {
-            if (item is TabItem t && t.Content is PlanViewerControl v && v.CurrentPlan != null)
+            if (t.Content is PlanViewerControl v && v.CurrentPlan != null)
                 planCount++;
         }
         return planCount;
@@ -444,8 +442,7 @@ public partial class QuerySessionControl : UserControl
     /// </summary>
     private PlanViewerControl? GetSelectedPlanViewer()
     {
-        if (SubTabControl.SelectedItem is TabItem tab && tab.Content is PlanViewerControl viewer
-            && viewer.CurrentPlan != null)
+        if (SelectedDocument is { Content: PlanViewerControl viewer } && viewer.CurrentPlan != null)
         {
             return viewer;
         }
