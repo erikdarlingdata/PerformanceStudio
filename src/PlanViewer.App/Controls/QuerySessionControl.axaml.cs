@@ -112,6 +112,12 @@ public partial class QuerySessionControl : UserControl
     private CancellationTokenSource? _statusClearCts;
     private CompletionWindow? _completionWindow;
 
+    /// <summary>
+    /// The toolbar's overflow: which trailing commands have moved into the chevron menu because
+    /// the row is wider than the window, and the menu they moved into.
+    /// </summary>
+    public Helpers.ToolbarOverflow Overflow { get; }
+
     public QuerySessionControl(ICredentialService credentialService, ConnectionStore connectionStore)
     {
         _credentialService = credentialService;
@@ -125,14 +131,37 @@ public partial class QuerySessionControl : UserControl
            icon in the set says "estimated" — a lone play glyph on one of the pair would
            read as the difference between them being run-vs-not, which it is not. */
         ConnectButton.Content = Helpers.AppIcons.MakeContent(Helpers.AppIcons.Connect, "Connect");
-        HumanAdviceButton.Content = Helpers.AppIcons.MakeContent(Helpers.AppIcons.HumanAdvice, "Human Advice");
-        RobotAdviceButton.Content = Helpers.AppIcons.MakeContent(Helpers.AppIcons.RobotAdvice, "Robot Advice");
-        ComparePlansButton.Content = Helpers.AppIcons.MakeContent(Helpers.AppIcons.Compare, "Compare Plans");
-        QueryStoreButton.Content = Helpers.AppIcons.MakeContent(Helpers.AppIcons.QueryStore, "Query Store");
-        QueryStoreOverviewButton.Content = Helpers.AppIcons.MakeContent(Helpers.AppIcons.Overview, "QS Overview");
-        CopyReproButton.Content = Helpers.AppIcons.MakeContent(Helpers.AppIcons.CopyRepro, "Copy Repro");
-        GetActualPlanButton.Content = Helpers.AppIcons.MakeContent(Helpers.AppIcons.RunRepro, "Run Repro");
-        FormatButton.Content = Helpers.AppIcons.MakeContent(Helpers.AppIcons.Format, "Format");
+        ToolbarOverflowButton.Content = Helpers.AppIcons.MakeIcon(Helpers.AppIcons.More);
+
+        /* The rest of the icon-bearing buttons are also the ones allowed to leave the row when it
+           runs out of width, and the menu entry that stands in for one has to wear the same icon
+           and label the button does — so both are said once, here, rather than spelled out again in
+           a list somewhere else that could quietly disagree.
+
+           The order is the order they LEAVE: Format first, then backwards along the row. It is
+           deliberately the reverse of the XAML's, because what the row gives up is always its tail.
+           Connect, the server label, the database picker, Actual Plan and Est Plan are not in this
+           list at all — a query editor whose toolbar can lose the button that runs the query is not
+           a query editor, and the two plan verbs carry no icon to put in a menu anyway. */
+        var collapsible = new List<Helpers.ToolbarOverflow.Item>();
+
+        void Collapsible(Button button, StreamGeometry icon, string label, Border? groupSeparator = null)
+        {
+            button.Content = Helpers.AppIcons.MakeContent(icon, label);
+            collapsible.Add(new Helpers.ToolbarOverflow.Item(button, icon, label, groupSeparator));
+        }
+
+        Collapsible(FormatButton, Helpers.AppIcons.Format, "Format", FormatGroupSeparator);
+        Collapsible(GetActualPlanButton, Helpers.AppIcons.RunRepro, "Run Repro");
+        Collapsible(CopyReproButton, Helpers.AppIcons.CopyRepro, "Copy Repro", ReproGroupSeparator);
+        Collapsible(QueryStoreOverviewButton, Helpers.AppIcons.Overview, "QS Overview");
+        Collapsible(QueryStoreButton, Helpers.AppIcons.QueryStore, "Query Store", QueryStoreGroupSeparator);
+        Collapsible(ComparePlansButton, Helpers.AppIcons.Compare, "Compare Plans");
+        Collapsible(RobotAdviceButton, Helpers.AppIcons.RobotAdvice, "Robot Advice");
+        Collapsible(HumanAdviceButton, Helpers.AppIcons.HumanAdvice, "Human Advice", AdviceGroupSeparator);
+
+        Overflow = Helpers.ToolbarOverflow.Attach(
+            ToolbarScroll, ToolbarOverflowButton, new MenuFlyout(), collapsible);
 
         // Initialize editor with empty text so the document is ready
         QueryEditor.Text = "";
