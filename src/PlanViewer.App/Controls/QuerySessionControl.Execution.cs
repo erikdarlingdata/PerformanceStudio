@@ -248,6 +248,14 @@ public partial class QuerySessionControl : UserControl
         viewer.OpenInEditorRequested += OnOpenInEditorRequested;
         viewer.LoadPlan(planXml, tabLabel, queryText);
         planTab.Content = viewer;
+
+        /* The content swap above changes no selection, so SelectionChanged never fires and the
+           button row never hears that a plan arrived: Copy Repro and Run Repro stayed dead after
+           every execute until the user clicked away and back. (The lines that manually enable the
+           two Advice buttons in the execute path papered over half of this without the other
+           half.) Refreshing here covers both execute paths; on a view surface the refresh reads a
+           null SelectedDocument and correctly keeps everything disabled. */
+        UpdatePlanTabButtonState();
     }
 
     /// <summary>
