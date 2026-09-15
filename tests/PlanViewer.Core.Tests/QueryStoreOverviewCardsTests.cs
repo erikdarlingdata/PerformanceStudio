@@ -334,9 +334,12 @@ public class QueryStoreOverviewCardsTests
     }
 
     /// <summary>
-    /// The sub-tab host builds a brand new overview on every QS Overview click, so two can be open
-    /// at once. A process-wide RadioButton GroupName would let one pane's toggle clear the other
-    /// pane's, leaving it with NEITHER segment checked while its cards still read Total.
+    /// A session builds its overview once and keeps it, so the two on screen here are not two
+    /// clicks in one session — they are two sessions, which is as close together as a session
+    /// detached into its own window and the one it left. A process-wide RadioButton GroupName would
+    /// let one pane's toggle clear the other pane's, leaving it with NEITHER segment checked while
+    /// its cards still read Total. The hazard is unchanged by where the second one comes from,
+    /// which is why the premise being out of date did not make the test wrong.
     /// </summary>
     [Fact]
     public void TwoOverviewsOnScreenDoNotShareOneToggle()
