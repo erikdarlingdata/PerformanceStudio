@@ -203,6 +203,39 @@ internal static class SessionHarness
             .Invoke(session, [label, content, true]);
 
     /// <summary>
+    /// The token the Overview's current load is running on, or null before it has started one.
+    /// Two asks produce two of these, which is how a refresh is told from a redraw.
+    /// </summary>
+    internal static CancellationTokenSource? OverviewLoadToken(QueryStoreOverviewControl overview) =>
+        (CancellationTokenSource?)GetField(overview, "_cts");
+
+    /// <summary>
+    /// A History document, built the way the app builds one rather than through the designer's
+    /// parameterless constructor.
+    /// </summary>
+    /// <remarks>
+    /// The difference is not cosmetic: the real constructor is where the control subscribes to its
+    /// own detach and cancels its fetch there, and the designer one wires none of that. An empty
+    /// connection string is a deliberate dead end — SqlConnection refuses it before opening a
+    /// socket, so the load this kicks off on attach fails instantly and locally instead of dialling
+    /// whatever is listening on the machine running the suite.
+    /// </remarks>
+    internal static QueryStoreHistoryControl NewHistory(string label = "0xABC") =>
+        new(connectionString: "", queryHash: label, queryText: "select 1;", database: "master");
+
+    /// <summary>
+    /// Puts a live fetch token into a History control, standing in for a fetch still waiting on a
+    /// server. Everything downstream cancels whatever it finds in this field, and a test has no way
+    /// to hold a real fetch open without a real server to hold it open against.
+    /// </summary>
+    internal static CancellationTokenSource PlantHistoryFetch(QueryStoreHistoryControl history)
+    {
+        var fetch = new CancellationTokenSource();
+        SetField(history, "_fetchCts", fetch);
+        return fetch;
+    }
+
+    /// <summary>
     /// Stops an Overview load before it can reach a socket, then drains what it left behind.
     ///
     /// <para>A load is started by the view being asked for, and by the time control comes back the

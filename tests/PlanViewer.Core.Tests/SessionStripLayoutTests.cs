@@ -197,7 +197,7 @@ public class SessionStripLayoutTests
             {
                 var plan = SessionHarness.OpenPlanDocuments(session).Single();
 
-                session.AddHistorySubTab("History — hash", new QueryStoreHistoryControl());
+                session.AddHistorySubTab("History — hash", SessionHarness.NewHistory());
                 SessionHarness.OpenSchemaDocument(session, "Table — dbo.Users", "create table dbo.Users;");
                 window.UpdateLayout();
 
