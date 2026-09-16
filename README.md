@@ -38,19 +38,19 @@ Navigate stored procedures and batches with multiple statements. Click any state
 ![Navigate Stored Procedure Statements and Plans](screenshots/Navigate%20Stored%20Procedure%20Statements%20and%20Plans.png)
 
 ### Operator Tooltip and Properties
-Hover over any operator for a detailed tooltip with costs, rows, I/O, timing, parallelism, and warnings. Click to open the full properties panel with per-thread timing, predicates, and more.
+Hover any operator for a grouped tooltip with costs, rows, timing, and parallelism. Click for the full properties panel, which has a filter box and folds per-thread stats into one expander per section instead of hundreds of rows.
 
 ![Operator Tooltip](screenshots/Actual%20Execution%20Plan%20With%20Warning%20Tool%20Tip.png)
 
 ![Operator Properties](screenshots/Operator%20Properties.png)
 
 ### Advice for Humans
-One-click text report with server context, warnings, wait stats, and expensive operators — ready to read or share.
+Severity-scored cards for each statement: the warnings that fired, wait stats, memory grant, and missing indexes. Copy to clipboard gives you the plain-text version to paste into a ticket.
 
 ![Advice for Humans](screenshots/Advice%20For%20Humans.png)
 
 ### Plan Comparison
-Side-by-side comparison of two plans showing cost, runtime, I/O, memory, and wait stat differences.
+A real metric diff. Each statement is scored as regressed or improved, every metric carries its own delta chip, and the direction that counts as better is declared per metric rather than guessed from the sign.
 
 ![Plan Comparison](screenshots/Plan%20Comparison.png)
 
