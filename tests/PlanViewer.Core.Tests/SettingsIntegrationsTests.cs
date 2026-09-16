@@ -5,6 +5,7 @@ using System.Reflection;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.LogicalTree;
+using Avalonia.Media;
 using Avalonia.Threading;
 using PlanViewer.App;
 using PlanViewer.App.Dialogs;
@@ -97,6 +98,11 @@ public class SettingsIntegrationsTests
     [Fact]
     public void ChoosingManualRevealsTheProxyFieldsAndMarksTheDialogDirty()
     {
+        /* Start from a known proxy mode. The redirected settings file is shared for the whole run,
+           and a sibling test saves a Manual proxy into it — so this test's "the fields start
+           hidden" premise depended on which order the two happened to run in. */
+        SettingsFile.Update(o => o["proxy_mode"] = "system");
+
         HeadlessUi.Run(() =>
         {
             var window = new SettingsWindow(new AppSettings());
@@ -123,6 +129,170 @@ public class SettingsIntegrationsTests
 
             Assert.All(fields, f => Assert.True(f.IsEffectivelyVisible));
             Assert.True(IsDirty(window), "choosing a proxy mode is an edit");
+
+            CloseWithoutPrompting(window);
+        });
+    }
+
+    [Fact]
+    public void AnEditSurvivesLeavingItsSectionAndComingBack()
+    {
+        /* Sections build their controls on first visit and are thrown away on the way out. While
+           Save read values back off whatever controls existed, an edit lived only in the control:
+           leave the section and the control was orphaned, come back and a fresh one was built from
+           the unchanged settings, and the edit was gone — while the dialog still believed itself
+           dirty and would ask to discard changes that no longer existed. Every section writes into
+           the settings as it is edited now, so this is a round trip rather than a reset. */
+        HeadlessUi.Run(() =>
+        {
+            var window = new SettingsWindow(new AppSettings { QueryStoreSlicerDays = 30 });
+            AppSettings? saved = null;
+            window.SettingsSaved += s => saved = s;
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            var sections = window.FindControl<ListBox>("SectionList")!;
+            var detail = window.FindControl<ContentControl>("DetailPanel")!;
+
+            var slicerDays = FindByRowLabel<NumericUpDown>(detail, "Default history length (days)");
+            slicerDays.Value = 45;
+            Dispatcher.UIThread.RunJobs();
+
+            // Away...
+            sections.SelectedIndex = 1;
+            Dispatcher.UIThread.RunJobs();
+            // ...and back.
+            sections.SelectedIndex = 0;
+            Dispatcher.UIThread.RunJobs();
+
+            var rebuilt = FindByRowLabel<NumericUpDown>(detail, "Default history length (days)");
+            Assert.Equal(45m, rebuilt.Value);
+
+            window.FindControl<Button>("SaveButton")!
+                  .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Dispatcher.UIThread.RunJobs();
+
+            Assert.NotNull(saved);
+            Assert.Equal(45, saved!.QueryStoreSlicerDays);
+        });
+    }
+
+    [Fact]
+    public void EditingDoesNotReachTheLiveSettingsUntilSave()
+    {
+        /* Now that sections write into _settings as they are edited, _settings has to be a draft
+           rather than the configuration the rest of the app is reading. The parameterless
+           constructor takes AppSettingsService.Load(), which hands back a cached instance shared
+           process-wide, so without a copy a single keystroke in this dialog would already have
+           changed the app's settings and Cancel would have nothing left to undo. */
+        HeadlessUi.Run(() =>
+        {
+            var before = AppSettingsService.Load().QueryStoreSlicerDays;
+
+            var window = new SettingsWindow();
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            var detail = window.FindControl<ContentControl>("DetailPanel")!;
+            FindByRowLabel<NumericUpDown>(detail, "Default history length (days)").Value = before + 7;
+            Dispatcher.UIThread.RunJobs();
+
+            Assert.Equal(before, AppSettingsService.Load().QueryStoreSlicerDays);
+
+            /* Both halves, or this passes when the edit never lands at all — which is exactly what
+               a stuck _building flag would do, and it would look identical from the cache's side. */
+            Assert.True(IsDirty(window), "the draft must have taken the edit the cache did not");
+
+            CloseWithoutPrompting(window);
+        });
+    }
+
+    [Fact]
+    public void ChangingTheDatabaseCountResizesTheStoredColours()
+    {
+        /* The colour rows are rebuilt from the stored list whenever the count changes, so the two
+           have to agree. They used to only meet at save time, where the list was rebuilt from
+           whatever boxes existed — which meant editing a colour and then changing the count threw
+           the edit away. */
+        HeadlessUi.Run(() =>
+        {
+            var window = new SettingsWindow(new AppSettings { MultiQsTopDbCount = 5 });
+            AppSettings? saved = null;
+            window.SettingsSaved += s => saved = s;
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            var detail = window.FindControl<ContentControl>("DetailPanel")!;
+            var dbCount = FindByRowLabel<NumericUpDown>(detail, "Number of top databases");
+
+            dbCount.Value = 8;
+            Dispatcher.UIThread.RunJobs();
+
+            var boxes = ((Control)detail.Content!).GetLogicalDescendants().OfType<TextBox>().ToList();
+            Assert.Equal(8, boxes.Count);
+
+            boxes[7].Text = "#123456";
+            Dispatcher.UIThread.RunJobs();
+
+            // Shrink past that row and grow back. The colour has to survive the trip: the stored
+            // list is the only record of it, so trimming the list to the count would lose it and
+            // hand back a stock colour instead.
+            dbCount.Value = 3;
+            Dispatcher.UIThread.RunJobs();
+            Assert.Equal(3, ((Control)detail.Content!).GetLogicalDescendants().OfType<TextBox>().Count());
+
+            dbCount.Value = 8;
+            Dispatcher.UIThread.RunJobs();
+
+            var regrown = ((Control)detail.Content!).GetLogicalDescendants().OfType<TextBox>().ToList();
+            Assert.Equal("#123456", regrown[7].Text);
+
+            window.FindControl<Button>("SaveButton")!
+                  .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Dispatcher.UIThread.RunJobs();
+
+            Assert.NotNull(saved);
+            Assert.Equal(8, saved!.MultiQsTopDbCount);
+            Assert.Equal("#123456", saved.MultiQsTopDbColors[7]);
+        });
+    }
+
+    [Fact]
+    public void AnInvalidColourRefusesTheSaveAndShowsWhichOne()
+    {
+        /* Saving used to validate the text boxes themselves. From any other section those boxes
+           were detached, so the refusal reddened controls nobody could see and the dialog just
+           silently declined to close. The colours are checked in the settings now, and an invalid
+           one brings its own section forward to be corrected. */
+        HeadlessUi.Run(() =>
+        {
+            var window = new SettingsWindow(new AppSettings());
+            var saves = 0;
+            window.SettingsSaved += _ => saves++;
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            var sections = window.FindControl<ListBox>("SectionList")!;
+            var detail = window.FindControl<ContentControl>("DetailPanel")!;
+
+            ((Control)detail.Content!).GetLogicalDescendants().OfType<TextBox>().First()
+                .Text = "not a colour";
+            Dispatcher.UIThread.RunJobs();
+
+            // Walk away, so the offending boxes are detached, then try to save.
+            sections.SelectedIndex = 2;
+            Dispatcher.UIThread.RunJobs();
+            window.FindControl<Button>("SaveButton")!
+                  .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Dispatcher.UIThread.RunJobs();
+
+            Assert.Equal(0, saves);
+            Assert.Equal(0, sections.SelectedIndex);
+
+            var offending = ((Control)detail.Content!).GetLogicalDescendants()
+                                                      .OfType<TextBox>().First();
+            Assert.Equal("not a colour", offending.Text);
+            Assert.Equal(Brushes.Red, offending.BorderBrush);
 
             CloseWithoutPrompting(window);
         });
@@ -315,6 +485,20 @@ public class SettingsIntegrationsTests
     }
 
     // ── helpers ──────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The control on the row carrying <paramref name="label"/>. CreateRow lays each setting out
+    /// as a label above its control, so this finds one the way a reader would rather than by
+    /// counting spinners — which breaks the moment a row is added above it.
+    /// </summary>
+    private static T FindByRowLabel<T>(ContentControl detail, string label) where T : Control =>
+        ((Control)detail.Content!).GetLogicalDescendants().OfType<StackPanel>()
+            .Where(row => row.Children.Count >= 2
+                       && row.Children[0] is TextBlock caption
+                       && caption.Text == label)
+            .Select(row => row.Children[1])
+            .OfType<T>()
+            .First();
 
     /// <summary>Whether a Save from here would remove the stored proxy password.</summary>
     private static bool StagesCredentialDeletion(SettingsWindow window) =>
