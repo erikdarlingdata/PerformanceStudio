@@ -35,6 +35,7 @@ public partial class PlanViewerControl : UserControl
         MinimapPanel.Width = _minimapWidth;
         MinimapPanel.Height = _minimapHeight;
         MinimapPanel.IsVisible = true;
+        MinimapToggleButton.Classes.Set("on", true);
         RenderMinimap();
     }
 
@@ -43,6 +44,9 @@ public partial class PlanViewerControl : UserControl
         MinimapPanel.IsVisible = false;
         _minimapDragging = false;
         _minimapResizing = false;
+        // Follows the panel, not the click: the minimap's own close button and clearing the plan
+        // both come through here without going near the toggle.
+        MinimapToggleButton.Classes.Set("on", false);
     }
 
     private void RenderMinimap()

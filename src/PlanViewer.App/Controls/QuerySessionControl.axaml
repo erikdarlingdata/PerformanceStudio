@@ -218,6 +218,14 @@
                                      ToolTip.Tip="Query Stores across all databases"/>
                     </StackPanel>
                 </Border>
+                <!-- "Aa" is doing real work. This picker and the plan canvas's zoom readout both
+                     rendered a bare percentage at the same size, close enough together to grab the
+                     wrong one, and neither said what it scaled. The prefix names this one as text
+                     size; the canvas readout sits between its own zoom buttons and says so on
+                     hover. -->
+                <TextBlock Text="Aa" FontSize="11" VerticalAlignment="Center"
+                           Foreground="{DynamicResource ForegroundMutedBrush}"
+                           ToolTip.Tip="Editor font size (Ctrl+mousewheel)"/>
                 <ComboBox x:Name="ZoomBox" Width="72" Height="22" FontSize="11"
                           VerticalAlignment="Center"
                           SelectionChanged="Zoom_SelectionChanged"
