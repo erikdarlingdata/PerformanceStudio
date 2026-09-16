@@ -32,3 +32,4 @@ When using Performance Studio:
 - Use dedicated accounts with minimal required permissions
 - Enable encryption for SQL Server connections
 - Keep your SQL Server instances patched and up to date
+
