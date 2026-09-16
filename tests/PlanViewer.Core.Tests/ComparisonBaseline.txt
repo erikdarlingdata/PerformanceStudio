@@ -1,0 +1,2254 @@
+##### case_predicate_plan.sqlplan vs case_predicate_plan.sqlplan
+=== Plan Comparison ===
+Plan A: case_predicate_plan.sqlplan
+Plan B: case_predicate_plan.sqlplan
+
+--- Statement 1 ---
+SELECT [u].* FROM [dbo].[Users] [u] WHERE [u].[DisplayName]=case when getdate()<'20270101' then N'Jon Skeet' else 'Fluffy Jim' end
+
+  Estimated cost:     66.6425 -> 66.6425  (0.0% costlier)
+  Estimated rows:     7 -> 7  (0.0% more)
+  Runtime:            80ms -> 80ms  (0.0% slower)
+  CPU time:           629ms -> 629ms  (0.0% slower)
+  Logical reads:      89,696 -> 89,696  (0.0% more)
+  Memory grant:       0.3 MB -> 0.3 MB  (0.0% more)
+  DOP:                8 -> 8
+  Warnings:           3 -> 3  (no change)
+  Missing indexes:    1 -> 1  (no change)
+
+  Wait stats:
+    Plan A:
+      - CXSYNC_PORT 2ms
+      - SOS_SCHEDULER_YIELD 1ms
+      - LATCH_EX 1ms
+
+    Plan B:
+      - CXSYNC_PORT 2ms
+      - SOS_SCHEDULER_YIELD 1ms
+      - LATCH_EX 1ms
+
+
+##### compile_memory_exceeded_plan.sqlplan vs compile_memory_exceeded_plan.sqlplan
+=== Plan Comparison ===
+Plan A: compile_memory_exceeded_plan.sqlplan
+Plan B: compile_memory_exceeded_plan.sqlplan
+
+--- Statement 1 ---
+SELECT @job_name = name,             @owner_sid = owner_sid      FROM msdb.dbo.sysjobs_view      WHERE (job_id = '846EFE14-2AEE-4A65-9EE0-213187F82250')
+
+  Estimated cost:     0.0066 -> 0.0066  (0.0% costlier)
+  Estimated rows:     2 -> 2  (0.0% more)
+  Warnings:           1 -> 1  (no change)
+
+
+##### convert_implicit_masking_function_plan.sqlplan vs convert_implicit_masking_function_plan.sqlplan
+=== Plan Comparison ===
+Plan A: convert_implicit_masking_function_plan.sqlplan
+Plan B: convert_implicit_masking_function_plan.sqlplan
+
+--- Statement 1 ---
+select * from dbo . Orders where @0 = year ( OrderDate )
+
+  Estimated cost:     5 -> 5  (0.0% costlier)
+  Estimated rows:     1,000 -> 1,000  (0.0% more)
+
+
+##### convert_implicit_parameter_side_plan.sqlplan vs convert_implicit_parameter_side_plan.sqlplan
+=== Plan Comparison ===
+Plan A: convert_implicit_parameter_side_plan.sqlplan
+Plan B: convert_implicit_parameter_side_plan.sqlplan
+
+--- Statement 1 ---
+select * from dbo . IB03_GARANZ IB03 where UNIV_SEZIONI = 1
+
+  Estimated cost:     0.4109 -> 0.4109  (0.0% costlier)
+  Estimated rows:     50 -> 50  (0.0% more)
+  Runtime:            2ms -> 2ms  (0.0% slower)
+  CPU time:           2ms -> 2ms  (0.0% slower)
+  Logical reads:      481 -> 481  (0.0% more)
+  DOP:                1 -> 1
+
+
+##### convert_implicit_plan.sqlplan vs convert_implicit_plan.sqlplan
+=== Plan Comparison ===
+Plan A: convert_implicit_plan.sqlplan
+Plan B: convert_implicit_plan.sqlplan
+
+--- Statement 1 ---
+SELECT      *  FROM dbo.UsersBad AS ub  WHERE ub.DisplayName = N'Jon Skeet'
+
+  Estimated cost:     14.5403 -> 14.5403  (0.0% costlier)
+  Estimated rows:     1,570 -> 1,570  (0.0% more)
+  Runtime:            215ms -> 215ms  (0.0% slower)
+  CPU time:           215ms -> 215ms  (0.0% slower)
+  Logical reads:      7,224 -> 7,224  (0.0% more)
+  DOP:                1 -> 1
+  Warnings:           3 -> 3  (no change)
+
+
+##### cte_multi_ref_plan.sqlplan vs cte_multi_ref_plan.sqlplan
+=== Plan Comparison ===
+Plan A: cte_multi_ref_plan.sqlplan
+Plan B: cte_multi_ref_plan.sqlplan
+
+--- Statement 1 ---
+WITH TopUsers AS (     SELECT TOP (100) Id, DisplayName, Reputation     FROM dbo.Users     ORDER BY Reputation DESC ) SELECT t1.DisplayName AS User1, t2.DisplayName AS User2 FROM TopUsers AS t1 CROSS JOIN TopUsers AS t2 WHERE t1.Id < t2.Id OPTION (MAXDOP 1)
+
+  Estimated cost:     617.42 -> 617.42  (0.0% costlier)
+  Estimated rows:     5,000 -> 5,000  (0.0% more)
+  Runtime:            1.2s -> 1.2s  (0.0% slower)
+  CPU time:           1.1s -> 1.1s  (0.0% slower)
+  Logical reads:      178,055 -> 178,055  (0.0% more)
+  Memory grant:       1.0 MB -> 1.0 MB  (0.0% more)
+  Warnings:           3 -> 3  (no change)
+
+  Wait stats:
+    Plan A:
+      - ASYNC_NETWORK_IO 22ms
+      - SOS_SCHEDULER_YIELD 2ms
+
+    Plan B:
+      - ASYNC_NETWORK_IO 22ms
+      - SOS_SCHEDULER_YIELD 2ms
+
+
+##### eager_index_spool_plan.sqlplan vs eager_index_spool_plan.sqlplan
+=== Plan Comparison ===
+Plan A: eager_index_spool_plan.sqlplan
+Plan B: eager_index_spool_plan.sqlplan
+
+--- Statement 1 ---
+SELECT --TOP (40)      u.Id,      u.DisplayName,      b.*  FROM dbo.Users AS u  CROSS APPLY  (      SELECT TOP (1)          b.Name      FROM dbo.Badges AS b      WHERE b.UserId = u.Id      ORDER BY          u.Id DESC  ) AS b  WHERE u.Reputation > 100000  ORDER BY      u.Reputation DESC,      u.Id DESC
+
+  Estimated cost:     549.213 -> 549.213  (0.0% costlier)
+  Estimated rows:     2,983 -> 2,983  (0.0% more)
+  Runtime:            17.6s -> 17.6s  (0.0% slower)
+  CPU time:           17.1s -> 17.1s  (0.0% slower)
+  Logical reads:      139,250 -> 139,250  (0.0% more)
+  Memory grant:       5.4 MB -> 5.4 MB  (0.0% more)
+  DOP:                8 -> 8
+  Warnings:           5 -> 5  (no change)
+  Missing indexes:    1 -> 1  (no change)
+
+  Wait stats:
+    Plan A:
+      - EXECSYNC 2m 3s
+      - SOS_SCHEDULER_YIELD 777ms
+      - CXSYNC_PORT 41ms
+      - MEMORY_ALLOCATION_EXT 9ms
+
+    Plan B:
+      - EXECSYNC 2m 3s
+      - SOS_SCHEDULER_YIELD 777ms
+      - CXSYNC_PORT 41ms
+      - MEMORY_ALLOCATION_EXT 9ms
+
+
+##### eager_table_spool_plan.sqlplan vs eager_table_spool_plan.sqlplan
+=== Plan Comparison ===
+Plan A: eager_table_spool_plan.sqlplan
+Plan B: eager_table_spool_plan.sqlplan
+
+--- Statement 1 ---
+BEGIN             SELECT TOP ( 5000 )                  @bmax = [Sequence]          FROM    dbo.RealBigTest WITH ( NOLOCK )          WHERE [Sequence] > @hkey          ORDER BY Sequence
+
+  Estimated cost:     0.0217 -> 0.0217  (0.0% costlier)
+  Estimated rows:     5,000 -> 5,000  (0.0% more)
+
+--- Statement 2 ---
+;             UPDATE  R          SET     ID = NEWID()          FROM    dbo.RealBigTest R          WHERE   R.[Sequence] > @hkey                  AND R.[Sequence] <= @bmax
+
+  Estimated cost:     135,408 -> 135,408  (0.0% costlier)
+  Estimated rows:     12,323,800 -> 12,323,800  (0.0% more)
+
+--- Statement 3 ---
+DECLARE @hkey BIGINT = -1 ,      @bmax BIGINT,   @cur VARCHAR(20)
+
+
+--- Statement 4 ---
+SET NOCOUNT ON
+
+
+--- Statement 5 ---
+
+
+
+--- Statement 6 ---
+SET @hkey = @bmax
+
+
+--- Statement 7 ---
+SELECT  @cur = REPLACE(CONVERT(VARCHAR, CAST(@bmax AS MONEY), 1), '.00', '')
+
+
+--- Statement 8 ---
+--Print out current place in loop, converted to money for commas.  RAISERROR ('Current key: %s', 0, 1, @cur) WITH NOWAIT                   --Reading long numbers is hard without formatting
+
+
+
+##### excellent-parallel-spill.sqlplan vs excellent-parallel-spill.sqlplan
+=== Plan Comparison ===
+Plan A: excellent-parallel-spill.sqlplan
+Plan B: excellent-parallel-spill.sqlplan
+
+--- Statement 1 ---
+WITH precheck AS (   SELECT TOP (2147483647)              u.Id,           p.Id AS PostId,       p.AcceptedAnswerId   FROM dbo.Users AS u   JOIN   dbo.Posts AS p       ON p.OwnerUserId = u.Id   WHERE  u.CreationDate > '20110901'    AND    u.Reputation > 100    AND    p.PostTypeId = 1   ORDER BY u.Id       )  SELECT u.*, p.*  FROM precheck p  JOIN dbo.Users AS u      ON p.Id = u.Id  WHERE ISNULL(u.Age, p.AcceptedAnswerId) < 0  ORDER BY u.Id, u.Reputation  OPTION(USE HINT('ENABLE_PARALLEL_PLAN_PREF...
+
+  Estimated cost:     518.388 -> 518.388  (0.0% costlier)
+  Estimated rows:     1,881,930 -> 1,881,930  (0.0% more)
+  Runtime:            3m 45s -> 3m 45s  (0.0% slower)
+  CPU time:           2m 52s -> 2m 52s  (0.0% slower)
+  Logical reads:      107,117 -> 107,117  (0.0% more)
+  Memory grant:       7.2 MB -> 7.2 MB  (0.0% more)
+  DOP:                4 -> 4
+  Warnings:           8 -> 8  (no change)
+
+  Wait stats:
+    Plan A:
+      - CXPACKET 37m 18s
+      - PAGEIOLATCH_EX 40.8s
+      - MEMORY_ALLOCATION_EXT 871ms
+      - SOS_SCHEDULER_YIELD 552ms
+      - ASYNC_NETWORK_IO 50ms
+      - PAGEIOLATCH_SH 43ms
+      - PAGELATCH_EX 17ms
+      - PAGELATCH_UP 3ms
+
+    Plan B:
+      - CXPACKET 37m 18s
+      - PAGEIOLATCH_EX 40.8s
+      - MEMORY_ALLOCATION_EXT 871ms
+      - SOS_SCHEDULER_YIELD 552ms
+      - ASYNC_NETWORK_IO 50ms
+      - PAGEIOLATCH_SH 43ms
+      - PAGELATCH_EX 17ms
+      - PAGELATCH_UP 3ms
+
+
+##### exchange_spill_plan.sqlplan vs exchange_spill_plan.sqlplan
+=== Plan Comparison ===
+Plan A: exchange_spill_plan.sqlplan
+Plan B: exchange_spill_plan.sqlplan
+
+--- Statement 1 ---
+SELECT * FROM dbo.Test ORDER BY Col1
+
+  Estimated cost:     100 -> 100  (0.0% costlier)
+  Estimated rows:     1,000,000 -> 1,000,000  (0.0% more)
+  Runtime:            1m 20s -> 1m 20s  (0.0% slower)
+  CPU time:           50.0s -> 50.0s  (0.0% slower)
+  Memory grant:       4.0 MB -> 4.0 MB  (0.0% more)
+  DOP:                8 -> 8
+
+
+##### exec_stored_procedure_plan.sqlplan vs exec_stored_procedure_plan.sqlplan
+=== Plan Comparison ===
+Plan A: exec_stored_procedure_plan.sqlplan
+Plan B: exec_stored_procedure_plan.sqlplan
+
+--- Statement 1 ---
+SELECT COUNT_BIG(*) FROM dbo.Orders WHERE Code = N'123'
+
+  Estimated cost:     0.2696 -> 0.2696  (0.0% costlier)
+  Estimated rows:     1 -> 1  (0.0% more)
+
+--- Statement 2 ---
+;      /* a scan with a residual predicate */     SELECT TOP (10) * FROM dbo.Orders WHERE Amount > 0.5 ORDER BY Amount DESC
+
+  Estimated cost:     1.589 -> 1.589  (0.0% costlier)
+  Estimated rows:     10 -> 10  (0.0% more)
+
+--- Statement 3 ---
+;      /* a table variable, which the analyzer flags */     DECLARE @t table (Id int);     INSERT @t (Id) SELECT TOP (100) Id FROM dbo.Orders
+
+  Estimated cost:     0.0147 -> 0.0147  (0.0% costlier)
+  Estimated rows:     100 -> 100  (0.0% more)
+  Warnings:           1 -> 1  (no change)
+
+--- Statement 4 ---
+;      SELECT o.Id FROM dbo.Orders o JOIN @t t ON t.Id = o.Id
+
+  Estimated cost:     0.0066 -> 0.0066  (0.0% costlier)
+  Estimated rows:     1 -> 1  (0.0% more)
+  Warnings:           1 -> 1  (no change)
+
+--- Statement 5 ---
+EXEC dbo.ReproProc @code = N'123'
+
+
+--- Statement 6 ---
+/* A procedure whose body carries several statements, including shapes the analyzer    would normally have plenty to say about. */ CREATE   PROCEDURE dbo.ReproProc     @code nvarchar(20) AS BEGIN     SET NOCOUNT ON;      /* nvarchar parameter against a varchar column: conversion lands on the COLUMN */
+
+
+
+##### forced_parameterization_plan.sqlplan vs forced_parameterization_plan.sqlplan
+=== Plan Comparison ===
+Plan A: forced_parameterization_plan.sqlplan
+Plan B: forced_parameterization_plan.sqlplan
+
+--- Statement 1 ---
+select COUNT(*) from [TimeCard].[Cards] as [t] where exists (select 1 from [TimeCard].[Perms] as [t0] where [t].[TimeCardId]=[t0].[TimeCardId] and [t0].[AuthUserId]='123456') and [t].[StatusId] in (5,6,7,8,9) and [t].[FirstName] like 'kexin%' and [t].[FromDateTime]>='2026-05-28 10:28:07.3132561'
+
+  Estimated cost:     0.0135 -> 0.0135  (0.0% costlier)
+  Estimated rows:     1 -> 1  (0.0% more)
+  Logical reads:      9 -> 9  (0.0% more)
+
+
+##### implicit_convert_seek_plan.sqlplan vs implicit_convert_seek_plan.sqlplan
+=== Plan Comparison ===
+Plan A: implicit_convert_seek_plan.sqlplan
+Plan B: implicit_convert_seek_plan.sqlplan
+
+--- Statement 1 ---
+SELECT * FROM dbo.Users WHERE DisplayName = @d
+
+  Estimated cost:     5 -> 5  (0.0% costlier)
+  Estimated rows:     1,000 -> 1,000  (0.0% more)
+
+
+##### isnull_plan.sqlplan vs isnull_plan.sqlplan
+=== Plan Comparison ===
+Plan A: isnull_plan.sqlplan
+Plan B: isnull_plan.sqlplan
+
+--- Statement 1 ---
+SELECT COUNT(*) FROM dbo.Posts AS p WHERE ISNULL(p.LastEditorDisplayName, '') = 'Jeff Atwood' OPTION (MAXDOP 1)
+
+  Estimated cost:     3,119.42 -> 3,119.42  (0.0% costlier)
+  Estimated rows:     1 -> 1  (0.0% more)
+  Runtime:            6.6s -> 6.6s  (0.0% slower)
+  CPU time:           5.7s -> 5.7s  (0.0% slower)
+  Logical reads:      4,181,158 -> 4,181,158  (0.0% more)
+  Physical reads:     404 -> 404  (0.0% more)
+  Warnings:           4 -> 4  (no change)
+
+  Wait stats:
+    Plan A:
+      - PAGEIOLATCH_SH 500ms
+      - SOS_SCHEDULER_YIELD 426ms
+      - MEMORY_ALLOCATION_EXT 96ms
+
+    Plan B:
+      - PAGEIOLATCH_SH 500ms
+      - SOS_SCHEDULER_YIELD 426ms
+      - MEMORY_ALLOCATION_EXT 96ms
+
+
+##### join_or_clause_plan.sqlplan vs join_or_clause_plan.sqlplan
+=== Plan Comparison ===
+Plan A: join_or_clause_plan.sqlplan
+Plan B: join_or_clause_plan.sqlplan
+
+--- Statement 1 ---
+SELECT       u.Id,       MaxScore = MAX(p.Score)  FROM dbo.Users AS u  JOIN dbo.Posts AS p    ON u.Id = p.OwnerUserId    OR u.Id = p.LastEditorUserId  WHERE p.PostTypeId IN (1, 2)  GROUP BY       u.Id  HAVING      MAX(p.Score) >= 5000  ORDER BY      MaxScore DESC
+
+  Estimated cost:     3,030.74 -> 3,030.74  (0.0% costlier)
+  Estimated rows:     135 -> 135  (0.0% more)
+  Runtime:            33.0s -> 33.0s  (0.0% slower)
+  CPU time:           3m 48s -> 3m 48s  (0.0% slower)
+  Logical reads:      93,307,943 -> 93,307,943  (0.0% more)
+  Physical reads:     107,624 -> 107,624  (0.0% more)
+  Memory grant:       451.8 MB -> 451.8 MB  (0.0% more)
+  DOP:                8 -> 8
+  Warnings:           8 -> 8  (no change)
+
+  Wait stats:
+    Plan A:
+      - CXSYNC_PORT 33.0s
+      - PAGEIOLATCH_SH 24.3s
+      - RESERVED_MEMORY_ALLOCATION_EXT 12.9s
+      - MEMORY_ALLOCATION_EXT 8.4s
+      - SOS_SCHEDULER_YIELD 6.3s
+      - HTBUILD 5.2s
+      - BPSORT 185ms
+      - HTDELETE 33ms
+
+    Plan B:
+      - CXSYNC_PORT 33.0s
+      - PAGEIOLATCH_SH 24.3s
+      - RESERVED_MEMORY_ALLOCATION_EXT 12.9s
+      - MEMORY_ALLOCATION_EXT 8.4s
+      - SOS_SCHEDULER_YIELD 6.3s
+      - HTBUILD 5.2s
+      - BPSORT 185ms
+      - HTDELETE 33ms
+
+
+##### key_lookup_plan.sqlplan vs key_lookup_plan.sqlplan
+=== Plan Comparison ===
+Plan A: key_lookup_plan.sqlplan
+Plan B: key_lookup_plan.sqlplan
+
+--- Statement 1 ---
+SELECT [u].* FROM [dbo].[Users] [u] WHERE [u].[Reputation]=942 AND [u].[DisplayName]=N'Eggs McLaren'
+
+  Estimated cost:     0.341 -> 0.341  (0.0% costlier)
+  Estimated rows:     1 -> 1  (0.0% more)
+  Logical reads:      322 -> 322  (0.0% more)
+  DOP:                1 -> 1
+
+
+##### lazy_spool_plan.sqlplan vs lazy_spool_plan.sqlplan
+=== Plan Comparison ===
+Plan A: lazy_spool_plan.sqlplan
+Plan B: lazy_spool_plan.sqlplan
+
+--- Statement 1 ---
+SELECT p.Id, b.Id     FROM dbo.Posts AS p     CROSS APPLY (         SELECT TOP (1) b.Id         FROM dbo.Badges AS b         WHERE b.UserId = p.OwnerUserId         ORDER BY b.Date DESC     ) AS b     WHERE p.PostTypeId = 1     OPTION (MAXDOP 1)
+
+  Estimated cost:     17,697.2 -> 17,697.2  (0.0% costlier)
+  Estimated rows:     6,022,820 -> 6,022,820  (0.0% more)
+  Runtime:            44.1s -> 44.1s  (0.0% slower)
+  CPU time:           41.8s -> 41.8s  (0.0% slower)
+  Logical reads:      59,739,832 -> 59,739,832  (0.0% more)
+  Physical reads:     1 -> 1  (0.0% more)
+  Memory grant:       1.0 MB -> 1.0 MB  (0.0% more)
+  Warnings:           6 -> 6  (no change)
+
+  Wait stats:
+    Plan A:
+      - SOS_SCHEDULER_YIELD 2.3s
+      - RESERVED_MEMORY_ALLOCATION_EXT 308ms
+      - MEMORY_ALLOCATION_EXT 271ms
+      - ASYNC_NETWORK_IO 5ms
+      - PAGEIOLATCH_EX 1ms
+
+    Plan B:
+      - SOS_SCHEDULER_YIELD 2.3s
+      - RESERVED_MEMORY_ALLOCATION_EXT 308ms
+      - MEMORY_ALLOCATION_EXT 271ms
+      - ASYNC_NETWORK_IO 5ms
+      - PAGEIOLATCH_EX 1ms
+
+
+##### leading_wildcard_like_plan.sqlplan vs leading_wildcard_like_plan.sqlplan
+=== Plan Comparison ===
+Plan A: leading_wildcard_like_plan.sqlplan
+Plan B: leading_wildcard_like_plan.sqlplan
+
+--- Statement 1 ---
+SELECT      u.*  FROM dbo.Users AS u  WHERE u.DisplayName LIKE N'%zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzZZZ'
+
+  Estimated cost:     66.8966 -> 66.8966  (0.0% costlier)
+  Estimated rows:     103 -> 103  (0.0% more)
+  Runtime:            225ms -> 225ms  (0.0% slower)
+  CPU time:           1.8s -> 1.8s  (0.0% slower)
+  Logical reads:      89,696 -> 89,696  (0.0% more)
+  Memory grant:       0.3 MB -> 0.3 MB  (0.0% more)
+  DOP:                8 -> 8
+  Warnings:           2 -> 2  (no change)
+
+  Wait stats:
+    Plan A:
+      - CXSYNC_PORT 1ms
+      - LATCH_EX 1ms
+
+    Plan B:
+      - CXSYNC_PORT 1ms
+      - LATCH_EX 1ms
+
+
+##### local_variable_plan.sqlplan vs local_variable_plan.sqlplan
+=== Plan Comparison ===
+Plan A: local_variable_plan.sqlplan
+Plan B: local_variable_plan.sqlplan
+
+--- Statement 1 ---
+SELECT COUNT(*) FROM dbo.Posts WHERE CreationDate >= '2013-01-01 00:00:00.000'
+
+  Estimated cost:     3,097.47 -> 3,097.47  (0.0% costlier)
+  Estimated rows:     1 -> 1  (0.0% more)
+  Runtime:            692ms -> 692ms  (0.0% slower)
+  CPU time:           5.5s -> 5.5s  (0.0% slower)
+  Logical reads:      4,226,624 -> 4,226,624  (0.0% more)
+  Memory grant:       24.2 MB -> 24.2 MB  (0.0% more)
+  DOP:                8 -> 8
+  Warnings:           6 -> 6  (no change)
+  Missing indexes:    1 -> 1  (no change)
+
+  Wait stats:
+    Plan A:
+      - LATCH_EX 15ms
+      - SOS_SCHEDULER_YIELD 4ms
+      - HTBUILD 4ms
+      - HTDELETE 1ms
+      - CXSYNC_PORT 1ms
+
+    Plan B:
+      - LATCH_EX 15ms
+      - SOS_SCHEDULER_YIELD 4ms
+      - HTBUILD 4ms
+      - HTDELETE 1ms
+      - CXSYNC_PORT 1ms
+
+
+##### many_to_many_merge_plan.sqlplan vs many_to_many_merge_plan.sqlplan
+=== Plan Comparison ===
+Plan A: many_to_many_merge_plan.sqlplan
+Plan B: many_to_many_merge_plan.sqlplan
+
+--- Statement 1 ---
+SELECT TOP (100) p.Id, v.Id FROM dbo.Posts AS p INNER MERGE JOIN dbo.Votes AS v     ON p.PostTypeId = v.VoteTypeId OPTION (MAXDOP 1)
+
+  Estimated cost:     12,414,800 -> 12,414,800  (0.0% costlier)
+  Estimated rows:     100 -> 100  (0.0% more)
+  Runtime:            42.4s -> 42.4s  (0.0% slower)
+  CPU time:           42.1s -> 42.1s  (0.0% slower)
+  Logical reads:      11,290,589 -> 11,290,589  (0.0% more)
+  Memory grant:       5,160.8 MB -> 5,160.8 MB  (0.0% more)
+  Warnings:           5 -> 5  (no change)
+
+  Wait stats:
+    Plan A:
+      - RESERVED_MEMORY_ALLOCATION_EXT 426ms
+      - SOS_SCHEDULER_YIELD 268ms
+      - MEMORY_ALLOCATION_EXT 4ms
+
+    Plan B:
+      - RESERVED_MEMORY_ALLOCATION_EXT 426ms
+      - SOS_SCHEDULER_YIELD 268ms
+      - MEMORY_ALLOCATION_EXT 4ms
+
+
+##### memory_grant_wait_plan.sqlplan vs memory_grant_wait_plan.sqlplan
+=== Plan Comparison ===
+Plan A: memory_grant_wait_plan.sqlplan
+Plan B: memory_grant_wait_plan.sqlplan
+
+--- Statement 1 ---
+SELECT      u.DisplayName,      p.Score      , p.Title      , p.Tags      , p.Body  FROM dbo.Users AS u  LEFT JOIN  (      SELECT          p.*,          n = ROW_NUMBER() OVER              (                  PARTITION BY                      p.OwnerUserId                  ORDER BY                      p.Score DESC              )      FROM dbo.Posts AS p      WHERE p.PostTypeId = 2      AND   p.Score > 0  ) AS p    ON  p.OwnerUserId = u.Id    AND p.n = 1  WHERE u.Reputation >= 20000  ORDER BY     ...
+
+  Estimated cost:     16,976.5 -> 16,976.5  (0.0% costlier)
+  Estimated rows:     482,677 -> 482,677  (0.0% more)
+  Runtime:            26.8s -> 26.8s  (0.0% slower)
+  CPU time:           1m 16s -> 1m 16s  (0.0% slower)
+  Logical reads:      4,229,245 -> 4,229,245  (0.0% more)
+  Memory grant:       10,597.0 MB -> 10,597.0 MB  (0.0% more)
+  DOP:                8 -> 8
+  Warnings:           13 -> 13  (no change)
+  Missing indexes:    1 -> 1  (no change)
+
+  Wait stats:
+    Plan A:
+      - CXSYNC_PORT 3m 22s
+      - CXPACKET 2m 12s
+      - LOGBUFFER 42.7s
+      - IO_COMPLETION 27.5s
+      - RESERVED_MEMORY_ALLOCATION_EXT 5.4s
+      - SOS_PHYS_PAGE_CACHE 3.2s
+      - PAGEIOLATCH_EX 873ms
+      - MEMORY_ALLOCATION_EXT 256ms
+      - PAGEIOLATCH_SH 225ms
+      - SOS_SCHEDULER_YIELD 83ms
+
+    Plan B:
+      - CXSYNC_PORT 3m 22s
+      - CXPACKET 2m 12s
+      - LOGBUFFER 42.7s
+      - IO_COMPLETION 27.5s
+      - RESERVED_MEMORY_ALLOCATION_EXT 5.4s
+      - SOS_PHYS_PAGE_CACHE 3.2s
+      - PAGEIOLATCH_EX 873ms
+      - MEMORY_ALLOCATION_EXT 256ms
+      - PAGEIOLATCH_SH 225ms
+      - SOS_SCHEDULER_YIELD 83ms
+
+
+##### mismatched_data_type_plan.sqlplan vs mismatched_data_type_plan.sqlplan
+=== Plan Comparison ===
+Plan A: mismatched_data_type_plan.sqlplan
+Plan B: mismatched_data_type_plan.sqlplan
+
+--- Statement 1 ---
+SELECT      c = COUNT_BIG(*)  FROM dbo.Votes AS v  WHERE v.CreationDate >= @date  OPTION(RECOMPILE)
+
+  Estimated cost:     98.8142 -> 98.8142  (0.0% costlier)
+  Estimated rows:     1 -> 1  (0.0% more)
+  Runtime:            4.7s -> 4.7s  (0.0% slower)
+  CPU time:           4.7s -> 4.7s  (0.0% slower)
+  Logical reads:      51,219 -> 51,219  (0.0% more)
+  Memory grant:       3.0 MB -> 3.0 MB  (0.0% more)
+  DOP:                1 -> 1
+  Warnings:           1 -> 1  (no change)
+
+  Wait stats:
+    Plan A:
+      - SOS_SCHEDULER_YIELD 2ms
+
+    Plan B:
+      - SOS_SCHEDULER_YIELD 2ms
+
+
+##### missing-join-predicate.sqlplan vs missing-join-predicate.sqlplan
+=== Plan Comparison ===
+Plan A: missing-join-predicate.sqlplan
+Plan B: missing-join-predicate.sqlplan
+
+--- Statement 1 ---
+SELECT TOP (1)      c.Id  FROM dbo.Posts AS p  JOIN dbo.Comments AS c    ON p.OwnerUserId = c.UserId  WHERE p.OwnerUserId = 22656
+
+  Estimated cost:     0.0238 -> 0.0238  (0.0% costlier)
+  Estimated rows:     1 -> 1  (0.0% more)
+  Runtime:            2ms -> 2ms  (0.0% slower)
+  CPU time:           2ms -> 2ms  (0.0% slower)
+  Logical reads:      786 -> 786  (0.0% more)
+  DOP:                1 -> 1
+  Warnings:           1 -> 1  (no change)
+  Missing indexes:    2 -> 2  (no change)
+
+
+##### multi_index_delete_plan.sqlplan vs multi_index_delete_plan.sqlplan
+=== Plan Comparison ===
+Plan A: multi_index_delete_plan.sqlplan
+Plan B: multi_index_delete_plan.sqlplan
+
+--- Statement 1 ---
+DELETE [dbo].[Users]  WHERE [Id]=22656
+
+  Estimated cost:     0.0633 -> 0.0633  (0.0% costlier)
+  Estimated rows:     1 -> 1  (0.0% more)
+  Logical reads:      3 -> 3  (0.0% more)
+  DOP:                1 -> 1
+
+
+##### multi_index_insert_plan.sqlplan vs multi_index_insert_plan.sqlplan
+=== Plan Comparison ===
+Plan A: multi_index_insert_plan.sqlplan
+Plan B: multi_index_insert_plan.sqlplan
+
+--- Statement 1 ---
+INSERT INTO [dbo].[Users]([AboutMe],[Age],[CreationDate],[DisplayName],[DownVotes],[EmailHash],[LastAccessDate],[Location],[Reputation],[UpVotes],[Views],[WebsiteUrl],[AccountId]) values(NULL,NULL,getdate(),N'',0,NULL,getdate(),NULL,0,0,0,NULL,NULL)
+
+  Estimated cost:     0.06 -> 0.06  (0.0% costlier)
+  Estimated rows:     1 -> 1  (0.0% more)
+  Logical reads:      3 -> 3  (0.0% more)
+  DOP:                1 -> 1
+
+
+##### multi_index_update_plan.sqlplan vs multi_index_update_plan.sqlplan
+=== Plan Comparison ===
+Plan A: multi_index_update_plan.sqlplan
+Plan B: multi_index_update_plan.sqlplan
+
+--- Statement 1 ---
+UPDATE [dbo].[Users] set [Age] = 138  WHERE [Id]=22656
+
+  Estimated cost:     0.0633 -> 0.0633  (0.0% costlier)
+  Estimated rows:     1 -> 1  (0.0% more)
+  Runtime:            1ms -> 1ms  (0.0% slower)
+  CPU time:           1ms -> 1ms  (0.0% slower)
+  Logical reads:      3 -> 3  (0.0% more)
+  DOP:                1 -> 1
+
+
+##### non_sargable_function_plan.sqlplan vs non_sargable_function_plan.sqlplan
+=== Plan Comparison ===
+Plan A: non_sargable_function_plan.sqlplan
+Plan B: non_sargable_function_plan.sqlplan
+
+--- Statement 1 ---
+SELECT COUNT(*) FROM dbo.Posts WHERE YEAR(CreationDate) = 2013
+
+  Estimated cost:     3,097.52 -> 3,097.52  (0.0% costlier)
+  Estimated rows:     1 -> 1  (0.0% more)
+  Runtime:            725ms -> 725ms  (0.0% slower)
+  CPU time:           5.8s -> 5.8s  (0.0% slower)
+  Logical reads:      4,226,624 -> 4,226,624  (0.0% more)
+  Memory grant:       24.2 MB -> 24.2 MB  (0.0% more)
+  DOP:                8 -> 8
+  Warnings:           5 -> 5  (no change)
+
+  Wait stats:
+    Plan A:
+      - LATCH_EX 22ms
+      - SOS_SCHEDULER_YIELD 3ms
+      - CXSYNC_PORT 2ms
+      - HTBUILD 2ms
+      - HTDELETE 1ms
+
+    Plan B:
+      - LATCH_EX 22ms
+      - SOS_SCHEDULER_YIELD 3ms
+      - CXSYNC_PORT 2ms
+      - HTBUILD 2ms
+      - HTDELETE 1ms
+
+
+##### optimize_for_unknown_plan.sqlplan vs optimize_for_unknown_plan.sqlplan
+=== Plan Comparison ===
+Plan A: optimize_for_unknown_plan.sqlplan
+Plan B: optimize_for_unknown_plan.sqlplan
+
+--- Statement 1 ---
+SELECT * FROM dbo.Users WHERE Reputation > @rep OPTION (OPTIMIZE FOR UNKNOWN)
+
+  Estimated cost:     1 -> 1  (0.0% costlier)
+  Estimated rows:     1,000 -> 1,000  (0.0% more)
+  Warnings:           1 -> 1  (no change)
+
+
+##### parallel-skew.sqlplan vs parallel-skew.sqlplan
+=== Plan Comparison ===
+Plan A: parallel-skew.sqlplan
+Plan B: parallel-skew.sqlplan
+
+--- Statement 1 ---
+SELECT   p.*      FROM     dbo.Posts AS p      JOIN     dbo.Votes AS v          ON p.Id = v.PostId      LEFT JOIN #t ON 1 = 0      WHERE    p.PostTypeId = 2      AND      p.CreationDate >= '20131225'      ORDER BY p.Id   OPTION(HASH JOIN)
+
+  Estimated cost:     6,729.7 -> 6,729.7  (0.0% costlier)
+  Estimated rows:     2,982,900 -> 2,982,900  (0.0% more)
+  Runtime:            9.4s -> 9.4s  (0.0% slower)
+  CPU time:           28.6s -> 28.6s  (0.0% slower)
+  Logical reads:      4,947,424 -> 4,947,424  (0.0% more)
+  Memory grant:       360.2 MB -> 360.2 MB  (0.0% more)
+  DOP:                4 -> 4
+  Warnings:           11 -> 11  (no change)
+  Missing indexes:    1 -> 1  (no change)
+
+  Wait stats:
+    Plan A:
+      - CXPACKET 9.3s
+      - BPSORT 5.0s
+      - HTDELETE 1.6s
+      - ASYNC_NETWORK_IO 1.4s
+      - HTREPARTITION 1.2s
+      - SOS_SCHEDULER_YIELD 18ms
+      - RESERVED_MEMORY_ALLOCATION_EXT 7ms
+      - BMPBUILD 3ms
+      - MEMORY_ALLOCATION_EXT 1ms
+      - HTBUILD 1ms
+
+    Plan B:
+      - CXPACKET 9.3s
+      - BPSORT 5.0s
+      - HTDELETE 1.6s
+      - ASYNC_NETWORK_IO 1.4s
+      - HTREPARTITION 1.2s
+      - SOS_SCHEDULER_YIELD 18ms
+      - RESERVED_MEMORY_ALLOCATION_EXT 7ms
+      - BMPBUILD 3ms
+      - MEMORY_ALLOCATION_EXT 1ms
+      - HTBUILD 1ms
+
+
+##### parallel_row_over_batch_plan.sqlplan vs parallel_row_over_batch_plan.sqlplan
+=== Plan Comparison ===
+Plan A: parallel_row_over_batch_plan.sqlplan
+Plan B: parallel_row_over_batch_plan.sqlplan
+
+--- Statement 1 ---
+SELECT 1;
+
+  Estimated cost:     1 -> 1  (0.0% costlier)
+  Estimated rows:     1 -> 1  (0.0% more)
+  Runtime:            1.0s -> 1.0s  (0.0% slower)
+  CPU time:           60ms -> 60ms  (0.0% slower)
+  DOP:                2 -> 2
+  Warnings:           1 -> 1  (no change)
+
+
+##### param-sniffing-posttypeid2.sqlplan vs param-sniffing-posttypeid2.sqlplan
+=== Plan Comparison ===
+Plan A: param-sniffing-posttypeid2.sqlplan
+Plan B: param-sniffing-posttypeid2.sqlplan
+
+--- Statement 1 ---
+SELECT          UserId =               ISNULL(v.UserId, 0),          Votes2013 =               SUM              (                  CASE                      WHEN                       (                            v.CreationDate >= '20130101'                        AND v.CreationDate <  '20140101'                      )                      THEN 1                      ELSE 0                  END              ),          TotalBounty =               SUM              (                  CASE         ...
+
+  Estimated cost:     0.1216 -> 0.1216  (0.0% costlier)
+  Estimated rows:     1 -> 1  (0.0% more)
+  Runtime:            1m 49s -> 1m 49s  (0.0% slower)
+  CPU time:           29.4s -> 29.4s  (0.0% slower)
+  Logical reads:      981,922 -> 981,922  (0.0% more)
+  Physical reads:     113,689 -> 113,689  (0.0% more)
+  Memory grant:       28.9 MB -> 28.9 MB  (0.0% more)
+  DOP:                1 -> 1
+  Warnings:           2 -> 2  (no change)
+
+  Wait stats:
+    Plan A:
+      - RESERVED_MEMORY_ALLOCATION_EXT 1.1s
+      - SOS_SCHEDULER_YIELD 6ms
+
+    Plan B:
+      - RESERVED_MEMORY_ALLOCATION_EXT 1.1s
+      - SOS_SCHEDULER_YIELD 6ms
+
+
+##### pspo-example.sqlplan vs pspo-example.sqlplan
+=== Plan Comparison ===
+Plan A: pspo-example.sqlplan
+Plan B: pspo-example.sqlplan
+
+--- Statement 1 ---
+SELECT      p.*  FROM dbo.Posts AS p  WHERE p.OwnerUserId = 22656      ORDER BY      p.Score DESC option (PLAN PER VALUE(ObjectID = 0, QueryVariantID = 3, predicate_range([StackOverflow2013].[dbo].[Posts].[OwnerUserId] = 22656, 100.0, 1000.0)))
+
+  Estimated cost:     93.3842 -> 93.3842  (0.0% costlier)
+  Estimated rows:     27,901 -> 27,901  (0.0% more)
+  Runtime:            563ms -> 563ms  (0.0% slower)
+  CPU time:           302ms -> 302ms  (0.0% slower)
+  Logical reads:      93,797 -> 93,797  (0.0% more)
+  Physical reads:     181 -> 181  (0.0% more)
+  Memory grant:       172.1 MB -> 172.1 MB  (0.0% more)
+  DOP:                1 -> 1
+  Warnings:           4 -> 4  (no change)
+
+  Wait stats:
+    Plan A:
+      - ASYNC_NETWORK_IO 187ms
+      - PAGEIOLATCH_SH 75ms
+      - RESERVED_MEMORY_ALLOCATION_EXT 8ms
+      - MEMORY_ALLOCATION_EXT 4ms
+
+    Plan B:
+      - ASYNC_NETWORK_IO 187ms
+      - PAGEIOLATCH_SH 75ms
+      - RESERVED_MEMORY_ALLOCATION_EXT 8ms
+      - MEMORY_ALLOCATION_EXT 4ms
+
+
+##### rid_lookup_plan.sqlplan vs rid_lookup_plan.sqlplan
+=== Plan Comparison ===
+Plan A: rid_lookup_plan.sqlplan
+Plan B: rid_lookup_plan.sqlplan
+
+--- Statement 1 ---
+SELECT * FROM dbo.HeapTable WHERE col1 = 42
+
+  Estimated cost:     5 -> 5  (0.0% costlier)
+  Estimated rows:     100 -> 100  (0.0% more)
+
+
+##### row-count-spool-slow.sqlplan vs row-count-spool-slow.sqlplan
+=== Plan Comparison ===
+Plan A: row-count-spool-slow.sqlplan
+Plan B: row-count-spool-slow.sqlplan
+
+--- Statement 1 ---
+SELECT COUNT(*)  FROM #NewUsers AS nu  WHERE nu.UserId NOT IN (SELECT ou.UserId FROM #OldUsers AS ou)
+
+  Estimated cost:     4,590.71 -> 4,590.71  (0.0% costlier)
+  Estimated rows:     1 -> 1  (0.0% more)
+  Runtime:            26m 10s -> 26m 10s  (0.0% slower)
+  CPU time:           156m 17s -> 156m 17s  (0.0% slower)
+  Logical reads:      24,767,239 -> 24,767,239  (0.0% more)
+  Physical reads:     18 -> 18  (0.0% more)
+  Memory grant:       257.0 MB -> 257.0 MB  (0.0% more)
+  DOP:                6 -> 6
+  Warnings:           7 -> 7  (no change)
+  Missing indexes:    1 -> 1  (no change)
+
+  Wait stats:
+    Plan A:
+      - CXPACKET 26m 13s
+      - SOS_SCHEDULER_YIELD 9.5s
+      - PAGELATCH_SH 412ms
+      - RESERVED_MEMORY_ALLOCATION_EXT 11ms
+      - LATCH_EX 1ms
+      - SOS_PHYS_PAGE_CACHE 1ms
+      - MEMORY_ALLOCATION_EXT 1ms
+
+    Plan B:
+      - CXPACKET 26m 13s
+      - SOS_SCHEDULER_YIELD 9.5s
+      - PAGELATCH_SH 412ms
+      - RESERVED_MEMORY_ALLOCATION_EXT 11ms
+      - LATCH_EX 1ms
+      - SOS_PHYS_PAGE_CACHE 1ms
+      - MEMORY_ALLOCATION_EXT 1ms
+
+
+##### row_goal_plan.sqlplan vs row_goal_plan.sqlplan
+=== Plan Comparison ===
+Plan A: row_goal_plan.sqlplan
+Plan B: row_goal_plan.sqlplan
+
+--- Statement 1 ---
+SELECT TOP (1) * FROM dbo.Users u JOIN dbo.Posts p ON p.OwnerUserId = u.Id
+
+  Estimated cost:     10 -> 10  (0.0% costlier)
+  Estimated rows:     1 -> 1  (0.0% more)
+
+
+##### serially-parallel.sqlplan vs serially-parallel.sqlplan
+=== Plan Comparison ===
+Plan A: serially-parallel.sqlplan
+Plan B: serially-parallel.sqlplan
+
+--- Statement 1 ---
+SELECT      flat_date =          DATEFROMPARTS          (              DATEPART(YEAR,  q.CreationDate),              DATEPART(MONTH, q.CreationDate),              1          ),      answers_or_something =          COUNT_BIG(*)  FROM dbo.Posts AS q  JOIN dbo.Posts AS a    ON q.AcceptedAnswerId = a.Id  CROSS JOIN  (      SELECT          tsNow = MAX(p.CreationDate)      FROM dbo.Posts AS p      WHERE p.Score > 0  ) AS tsNow  WHERE q.CreationDate < tsNow.tsNow  AND   q.ClosedDate IS NULL  AND   q.Sc...
+
+  Estimated cost:     1,782.74 -> 1,782.74  (0.0% costlier)
+  Estimated rows:     3,278 -> 3,278  (0.0% more)
+  Runtime:            17.1s -> 17.1s  (0.0% slower)
+  CPU time:           17.1s -> 17.1s  (0.0% slower)
+  Logical reads:      41,340,356 -> 41,340,356  (0.0% more)
+  Memory grant:       929.4 MB -> 929.4 MB  (0.0% more)
+  DOP:                8 -> 8
+  Warnings:           4 -> 4  (no change)
+
+  Wait stats:
+    Plan A:
+      - CXSYNC_PORT 17.1s
+      - RESERVED_MEMORY_ALLOCATION_EXT 65ms
+      - SOS_SCHEDULER_YIELD 13ms
+      - CXSYNC_CONSUMER 2ms
+
+    Plan B:
+      - CXSYNC_PORT 17.1s
+      - RESERVED_MEMORY_ALLOCATION_EXT 65ms
+      - SOS_SCHEDULER_YIELD 13ms
+      - CXSYNC_CONSUMER 2ms
+
+
+##### slow-multi-seek.sqlplan vs slow-multi-seek.sqlplan
+=== Plan Comparison ===
+Plan A: slow-multi-seek.sqlplan
+Plan B: slow-multi-seek.sqlplan
+
+--- Statement 1 ---
+SELECT       p.Id,      p.Score,      v.VoteTypeId  FROM dbo.Posts AS p  CROSS APPLY  (      SELECT          v.VoteTypeId,          LastVoteByType =               ROW_NUMBER() OVER              (                  PARTITION BY                      v.VoteTypeId                  ORDER BY                      v.CreationDate DESC              )      FROM dbo.Votes AS v      WHERE v.PostId = p.Id      AND   v.VoteTypeId IN (1, 2, 3) /* Looks like one seek */      AND   v.CreationDate >= CONVERT(date, ...
+
+  Estimated cost:     2,209.05 -> 2,209.05  (0.0% costlier)
+  Estimated rows:     36,946,200 -> 36,946,200  (0.0% more)
+  Runtime:            20.0s -> 20.0s  (0.0% slower)
+  CPU time:           2m 31s -> 2m 31s  (0.0% slower)
+  Logical reads:      133,228,207 -> 133,228,207  (0.0% more)
+  Memory grant:       0.1 MB -> 0.1 MB  (0.0% more)
+  DOP:                8 -> 8
+  Warnings:           2 -> 2  (no change)
+
+  Wait stats:
+    Plan A:
+      - SOS_SCHEDULER_YIELD 199ms
+      - CXSYNC_PORT 1ms
+
+    Plan B:
+      - SOS_SCHEDULER_YIELD 199ms
+      - CXSYNC_PORT 1ms
+
+
+##### spill_plan.sqlplan vs spill_plan.sqlplan
+=== Plan Comparison ===
+Plan A: spill_plan.sqlplan
+Plan B: spill_plan.sqlplan
+
+--- Statement 1 ---
+SELECT      u.DisplayName,      p.Score      , p.Title      , p.Tags      , p.Body  FROM dbo.Users AS u  LEFT JOIN  (      SELECT          p.*,          n = ROW_NUMBER() OVER              (                  PARTITION BY                      p.OwnerUserId                  ORDER BY                      p.Score DESC              )      FROM dbo.Posts AS p      WHERE p.PostTypeId = 2      AND   p.Score > 0  ) AS p    ON  p.OwnerUserId = u.Id    AND p.n = 1  WHERE u.Reputation >= 20000  ORDER BY     ...
+
+  Estimated cost:     16,976.5 -> 16,976.5  (0.0% costlier)
+  Estimated rows:     482,677 -> 482,677  (0.0% more)
+  Runtime:            26.8s -> 26.8s  (0.0% slower)
+  CPU time:           1m 16s -> 1m 16s  (0.0% slower)
+  Logical reads:      4,229,245 -> 4,229,245  (0.0% more)
+  Memory grant:       10,597.0 MB -> 10,597.0 MB  (0.0% more)
+  DOP:                8 -> 8
+  Warnings:           12 -> 12  (no change)
+  Missing indexes:    1 -> 1  (no change)
+
+  Wait stats:
+    Plan A:
+      - CXSYNC_PORT 3m 22s
+      - CXPACKET 2m 12s
+      - LOGBUFFER 42.7s
+      - IO_COMPLETION 27.5s
+      - RESERVED_MEMORY_ALLOCATION_EXT 5.4s
+      - SOS_PHYS_PAGE_CACHE 3.2s
+      - PAGEIOLATCH_EX 873ms
+      - MEMORY_ALLOCATION_EXT 256ms
+      - PAGEIOLATCH_SH 225ms
+      - SOS_SCHEDULER_YIELD 83ms
+
+    Plan B:
+      - CXSYNC_PORT 3m 22s
+      - CXPACKET 2m 12s
+      - LOGBUFFER 42.7s
+      - IO_COMPLETION 27.5s
+      - RESERVED_MEMORY_ALLOCATION_EXT 5.4s
+      - SOS_PHYS_PAGE_CACHE 3.2s
+      - PAGEIOLATCH_EX 873ms
+      - MEMORY_ALLOCATION_EXT 256ms
+      - PAGEIOLATCH_SH 225ms
+      - SOS_SCHEDULER_YIELD 83ms
+
+
+##### table_variable_plan.sqlplan vs table_variable_plan.sqlplan
+=== Plan Comparison ===
+Plan A: table_variable_plan.sqlplan
+Plan B: table_variable_plan.sqlplan
+
+--- Statement 1 ---
+SELECT t.Id FROM @t AS t
+
+  Estimated cost:     0.0033 -> 0.0033  (0.0% costlier)
+  Estimated rows:     3 -> 3  (0.0% more)
+  Logical reads:      2 -> 2  (0.0% more)
+  DOP:                1 -> 1
+  Warnings:           1 -> 1  (no change)
+
+
+##### top_above_scan_plan.sqlplan vs top_above_scan_plan.sqlplan
+=== Plan Comparison ===
+Plan A: top_above_scan_plan.sqlplan
+Plan B: top_above_scan_plan.sqlplan
+
+--- Statement 1 ---
+SELECT TOP (1)      p.Id  FROM dbo.Posts AS p  WHERE NOT EXISTS  (      SELECT          1/0      FROM dbo.Votes AS v      WHERE v.PostId = p.Id  )  ORDER BY      p.Id DESC
+
+  Estimated cost:     4.8408 -> 4.8408  (0.0% costlier)
+  Estimated rows:     1 -> 1  (0.0% more)
+  Runtime:            5.1s -> 5.1s  (0.0% slower)
+  CPU time:           5.1s -> 5.1s  (0.0% slower)
+  Logical reads:      88,341 -> 88,341  (0.0% more)
+  DOP:                1 -> 1
+  Warnings:           1 -> 1  (no change)
+  Missing indexes:    1 -> 1  (no change)
+
+  Wait stats:
+    Plan A:
+      - SOS_SCHEDULER_YIELD 3ms
+
+    Plan B:
+      - SOS_SCHEDULER_YIELD 3ms
+
+
+##### tvf_plan.sqlplan vs tvf_plan.sqlplan
+=== Plan Comparison ===
+Plan A: tvf_plan.sqlplan
+Plan B: tvf_plan.sqlplan
+
+--- Statement 1 ---
+SELECT * FROM dbo.GetTopPosts(10)
+
+  Estimated cost:     0.0033 -> 0.0033  (0.0% costlier)
+  Estimated rows:     10 -> 10  (0.0% more)
+  Runtime:            17.1s -> 17.1s  (0.0% slower)
+  CPU time:           1ms -> 1ms  (0.0% slower)
+  Logical reads:      1 -> 1  (0.0% more)
+  DOP:                1 -> 1
+
+
+##### udf_plan.sqlplan vs udf_plan.sqlplan
+=== Plan Comparison ===
+Plan A: udf_plan.sqlplan
+Plan B: udf_plan.sqlplan
+
+--- Statement 1 ---
+SELECT      u.Id,      u.DisplayName,      u.Reputation,      LastBadge =          (              SELECT                  COUNT_BIG(DISTINCT b.Name)              FROM dbo.Badges AS b              WHERE b.UserId = u.Id          ),      TotalBounties =          (              SELECT                  SUM(ISNULL(v.BountyAmount, 0))              FROM dbo.Votes AS v              WHERE v.UserId = u.Id          ),      TotalScore = dbo.TotalScore(u.Id) /* <-- UDF call */  FROM dbo.Users AS u  WHERE u.Re...
+
+  Estimated cost:     97.2957 -> 97.2957  (0.0% costlier)
+  Estimated rows:     5,689 -> 5,689  (0.0% more)
+  Runtime:            3.0s -> 3.0s  (0.0% slower)
+  CPU time:           2.9s -> 2.9s  (0.0% slower)
+  Logical reads:      125,537 -> 125,537  (0.0% more)
+  Memory grant:       2.2 MB -> 2.2 MB  (0.0% more)
+  Warnings:           4 -> 4  (no change)
+  Missing indexes:    1 -> 1  (no change)
+
+  Wait stats:
+    Plan A:
+      - SOS_SCHEDULER_YIELD 133ms
+      - MEMORY_ALLOCATION_EXT 15ms
+
+    Plan B:
+      - SOS_SCHEDULER_YIELD 133ms
+      - MEMORY_ALLOCATION_EXT 15ms
+
+
+##### case_predicate_plan.sqlplan vs compile_memory_exceeded_plan.sqlplan
+=== Plan Comparison ===
+Plan A: case_predicate_plan.sqlplan
+Plan B: compile_memory_exceeded_plan.sqlplan
+
+Note: Plan B is an estimated plan. Runtime metrics only available for the actual plan.
+
+--- Statement 1 ---
+SELECT [u].* FROM [dbo].[Users] [u] WHERE [u].[DisplayName]=case when getdate()<'20270101' then N'Jon Skeet' else 'Fluffy Jim' end
+
+  Estimated cost:     66.6425 -> 0.0066  (99.9% cheaper)
+  Estimated rows:     7 -> 2  (71.4% fewer)
+  Runtime:            80ms -> N/A
+  CPU time:           629ms -> N/A
+  Logical reads:      89,696 -> 0  (eliminated)
+  Memory grant:       0.3 MB -> 0.0 MB  (eliminated)
+  DOP:                8 -> 0
+  Warnings:           3 -> 1  (2 resolved)
+  Missing indexes:    1 -> 0  (1 resolved)
+
+  Wait stats:
+    Plan A:
+      - CXSYNC_PORT 2ms
+      - SOS_SCHEDULER_YIELD 1ms
+      - LATCH_EX 1ms
+
+
+##### compile_memory_exceeded_plan.sqlplan vs convert_implicit_masking_function_plan.sqlplan
+=== Plan Comparison ===
+Plan A: compile_memory_exceeded_plan.sqlplan
+Plan B: convert_implicit_masking_function_plan.sqlplan
+
+--- Statement 1 ---
+SELECT @job_name = name,             @owner_sid = owner_sid      FROM msdb.dbo.sysjobs_view      WHERE (job_id = '846EFE14-2AEE-4A65-9EE0-213187F82250')
+
+  Estimated cost:     0.0066 -> 5  (9,999% costlier)
+  Estimated rows:     2 -> 1,000  (9,999% more)
+  Warnings:           1 -> 0  (1 resolved)
+
+
+##### convert_implicit_masking_function_plan.sqlplan vs convert_implicit_parameter_side_plan.sqlplan
+=== Plan Comparison ===
+Plan A: convert_implicit_masking_function_plan.sqlplan
+Plan B: convert_implicit_parameter_side_plan.sqlplan
+
+Note: Plan A is an estimated plan. Runtime metrics only available for the actual plan.
+
+--- Statement 1 ---
+select * from dbo . Orders where @0 = year ( OrderDate )
+
+  Estimated cost:     5 -> 0.4109  (91.8% cheaper)
+  Estimated rows:     1,000 -> 50  (95.0% fewer)
+  Runtime:            N/A -> 2ms
+  CPU time:           N/A -> 2ms
+  Logical reads:      0 -> 481  (new)
+  DOP:                0 -> 1
+
+
+##### convert_implicit_parameter_side_plan.sqlplan vs convert_implicit_plan.sqlplan
+=== Plan Comparison ===
+Plan A: convert_implicit_parameter_side_plan.sqlplan
+Plan B: convert_implicit_plan.sqlplan
+
+--- Statement 1 ---
+select * from dbo . IB03_GARANZ IB03 where UNIV_SEZIONI = 1
+
+  Estimated cost:     0.4109 -> 14.5403  (3,439% costlier)
+  Estimated rows:     50 -> 1,570  (3,041% more)
+  Runtime:            2ms -> 215ms  (9,999% slower)
+  CPU time:           2ms -> 215ms  (9,999% slower)
+  Logical reads:      481 -> 7,224  (1,402% more)
+  DOP:                1 -> 1
+  Warnings:           0 -> 3  (3 new)
+
+
+##### convert_implicit_plan.sqlplan vs cte_multi_ref_plan.sqlplan
+=== Plan Comparison ===
+Plan A: convert_implicit_plan.sqlplan
+Plan B: cte_multi_ref_plan.sqlplan
+
+--- Statement 1 ---
+SELECT      *  FROM dbo.UsersBad AS ub  WHERE ub.DisplayName = N'Jon Skeet'
+
+  Estimated cost:     14.5403 -> 617.42  (4,146% costlier)
+  Estimated rows:     1,570 -> 5,000  (218% more)
+  Runtime:            215ms -> 1.2s  (437% slower)
+  CPU time:           215ms -> 1.1s  (427% slower)
+  Logical reads:      7,224 -> 178,055  (2,365% more)
+  Memory grant:       0.0 MB -> 1.0 MB  (new)
+  DOP:                1 -> 0
+  Warnings:           3 -> 3  (no change)
+
+  Wait stats:
+    Plan B:
+      - ASYNC_NETWORK_IO 22ms
+      - SOS_SCHEDULER_YIELD 2ms
+
+
+##### cte_multi_ref_plan.sqlplan vs eager_index_spool_plan.sqlplan
+=== Plan Comparison ===
+Plan A: cte_multi_ref_plan.sqlplan
+Plan B: eager_index_spool_plan.sqlplan
+
+--- Statement 1 ---
+WITH TopUsers AS (     SELECT TOP (100) Id, DisplayName, Reputation     FROM dbo.Users     ORDER BY Reputation DESC ) SELECT t1.DisplayName AS User1, t2.DisplayName AS User2 FROM TopUsers AS t1 CROSS JOIN TopUsers AS t2 WHERE t1.Id < t2.Id OPTION (MAXDOP 1)
+
+  Estimated cost:     617.42 -> 549.213  (11.0% cheaper)
+  Estimated rows:     5,000 -> 2,983  (40.3% fewer)
+  Runtime:            1.2s -> 17.6s  (1,429% slower)
+  CPU time:           1.1s -> 17.1s  (1,413% slower)
+  Logical reads:      178,055 -> 139,250  (21.8% fewer)
+  Memory grant:       1.0 MB -> 5.4 MB  (438% more)
+  DOP:                0 -> 8
+  Warnings:           3 -> 5  (2 new)
+  Missing indexes:    0 -> 1  (1 new)
+
+  Wait stats:
+    Plan A:
+      - ASYNC_NETWORK_IO 22ms
+      - SOS_SCHEDULER_YIELD 2ms
+
+    Plan B:
+      - EXECSYNC 2m 3s
+      - SOS_SCHEDULER_YIELD 777ms
+      - CXSYNC_PORT 41ms
+      - MEMORY_ALLOCATION_EXT 9ms
+
+
+##### eager_index_spool_plan.sqlplan vs eager_table_spool_plan.sqlplan
+=== Plan Comparison ===
+Plan A: eager_index_spool_plan.sqlplan
+Plan B: eager_table_spool_plan.sqlplan
+
+Note: Plan B is an estimated plan. Runtime metrics only available for the actual plan.
+
+--- Statement 1 ---
+SELECT --TOP (40)      u.Id,      u.DisplayName,      b.*  FROM dbo.Users AS u  CROSS APPLY  (      SELECT TOP (1)          b.Name      FROM dbo.Badges AS b      WHERE b.UserId = u.Id      ORDER BY          u.Id DESC  ) AS b  WHERE u.Reputation > 100000  ORDER BY      u.Reputation DESC,      u.Id DESC
+
+  Estimated cost:     549.213 -> 0  (eliminated)
+  Estimated rows:     2,983 -> 0  (eliminated)
+  Runtime:            17.6s -> N/A
+  CPU time:           17.1s -> N/A
+  Logical reads:      139,250 -> 0  (eliminated)
+  Memory grant:       5.4 MB -> 0.0 MB  (eliminated)
+  DOP:                8 -> 0
+  Warnings:           5 -> 0  (5 resolved)
+  Missing indexes:    1 -> 0  (1 resolved)
+
+  Wait stats:
+    Plan A:
+      - EXECSYNC 2m 3s
+      - SOS_SCHEDULER_YIELD 777ms
+      - CXSYNC_PORT 41ms
+      - MEMORY_ALLOCATION_EXT 9ms
+
+--- Statement 2 (only in Plan B) ---
+SET NOCOUNT ON
+  (no comparison available)
+
+--- Statement 3 (only in Plan B) ---
+
+  (no comparison available)
+
+--- Statement 4 (only in Plan B) ---
+BEGIN             SELECT TOP ( 5000 )                  @bmax = [Sequence]          FROM    dbo.RealBigTest WITH ( NOLOCK )          WHERE [Sequence] > @hkey          ORDER BY Sequence
+  (no comparison available)
+
+--- Statement 5 (only in Plan B) ---
+;             UPDATE  R          SET     ID = NEWID()          FROM    dbo.RealBigTest R          WHERE   R.[Sequence] > @hkey                  AND R.[Sequence] <= @bmax
+  (no comparison available)
+
+--- Statement 6 (only in Plan B) ---
+SET @hkey = @bmax
+  (no comparison available)
+
+--- Statement 7 (only in Plan B) ---
+SELECT  @cur = REPLACE(CONVERT(VARCHAR, CAST(@bmax AS MONEY), 1), '.00', '')
+  (no comparison available)
+
+--- Statement 8 (only in Plan B) ---
+--Print out current place in loop, converted to money for commas.  RAISERROR ('Current key: %s', 0, 1, @cur) WITH NOWAIT                   --Reading long numbers is hard without formatting
+  (no comparison available)
+
+
+##### eager_table_spool_plan.sqlplan vs excellent-parallel-spill.sqlplan
+=== Plan Comparison ===
+Plan A: eager_table_spool_plan.sqlplan
+Plan B: excellent-parallel-spill.sqlplan
+
+Note: Plan A is an estimated plan. Runtime metrics only available for the actual plan.
+
+--- Statement 1 ---
+DECLARE @hkey BIGINT = -1 ,      @bmax BIGINT,   @cur VARCHAR(20)
+
+  Estimated cost:     0 -> 518.388  (new)
+  Estimated rows:     0 -> 1,881,930  (new)
+  Runtime:            N/A -> 3m 45s
+  CPU time:           N/A -> 2m 52s
+  Logical reads:      0 -> 107,117  (new)
+  Memory grant:       0.0 MB -> 7.2 MB  (new)
+  DOP:                0 -> 4
+  Warnings:           0 -> 8  (8 new)
+
+  Wait stats:
+    Plan B:
+      - CXPACKET 37m 18s
+      - PAGEIOLATCH_EX 40.8s
+      - MEMORY_ALLOCATION_EXT 871ms
+      - SOS_SCHEDULER_YIELD 552ms
+      - ASYNC_NETWORK_IO 50ms
+      - PAGEIOLATCH_SH 43ms
+      - PAGELATCH_EX 17ms
+      - PAGELATCH_UP 3ms
+
+--- Statement 2 (only in Plan A) ---
+SET NOCOUNT ON
+  (no comparison available)
+
+--- Statement 3 (only in Plan A) ---
+
+  (no comparison available)
+
+--- Statement 4 (only in Plan A) ---
+BEGIN             SELECT TOP ( 5000 )                  @bmax = [Sequence]          FROM    dbo.RealBigTest WITH ( NOLOCK )          WHERE [Sequence] > @hkey          ORDER BY Sequence
+  (no comparison available)
+
+--- Statement 5 (only in Plan A) ---
+;             UPDATE  R          SET     ID = NEWID()          FROM    dbo.RealBigTest R          WHERE   R.[Sequence] > @hkey                  AND R.[Sequence] <= @bmax
+  (no comparison available)
+
+--- Statement 6 (only in Plan A) ---
+SET @hkey = @bmax
+  (no comparison available)
+
+--- Statement 7 (only in Plan A) ---
+SELECT  @cur = REPLACE(CONVERT(VARCHAR, CAST(@bmax AS MONEY), 1), '.00', '')
+  (no comparison available)
+
+--- Statement 8 (only in Plan A) ---
+--Print out current place in loop, converted to money for commas.  RAISERROR ('Current key: %s', 0, 1, @cur) WITH NOWAIT                   --Reading long numbers is hard without formatting
+  (no comparison available)
+
+
+##### excellent-parallel-spill.sqlplan vs exchange_spill_plan.sqlplan
+=== Plan Comparison ===
+Plan A: excellent-parallel-spill.sqlplan
+Plan B: exchange_spill_plan.sqlplan
+
+--- Statement 1 ---
+WITH precheck AS (   SELECT TOP (2147483647)              u.Id,           p.Id AS PostId,       p.AcceptedAnswerId   FROM dbo.Users AS u   JOIN   dbo.Posts AS p       ON p.OwnerUserId = u.Id   WHERE  u.CreationDate > '20110901'    AND    u.Reputation > 100    AND    p.PostTypeId = 1   ORDER BY u.Id       )  SELECT u.*, p.*  FROM precheck p  JOIN dbo.Users AS u      ON p.Id = u.Id  WHERE ISNULL(u.Age, p.AcceptedAnswerId) < 0  ORDER BY u.Id, u.Reputation  OPTION(USE HINT('ENABLE_PARALLEL_PLAN_PREF...
+
+  Estimated cost:     518.388 -> 100  (80.7% cheaper)
+  Estimated rows:     1,881,930 -> 1,000,000  (46.9% fewer)
+  Runtime:            3m 45s -> 1m 20s  (64.6% faster)
+  CPU time:           2m 52s -> 50.0s  (71.0% faster)
+  Logical reads:      107,117 -> 0  (eliminated)
+  Memory grant:       7.2 MB -> 4.0 MB  (44.8% less)
+  DOP:                4 -> 8
+  Warnings:           8 -> 0  (8 resolved)
+
+  Wait stats:
+    Plan A:
+      - CXPACKET 37m 18s
+      - PAGEIOLATCH_EX 40.8s
+      - MEMORY_ALLOCATION_EXT 871ms
+      - SOS_SCHEDULER_YIELD 552ms
+      - ASYNC_NETWORK_IO 50ms
+      - PAGEIOLATCH_SH 43ms
+      - PAGELATCH_EX 17ms
+      - PAGELATCH_UP 3ms
+
+
+##### exchange_spill_plan.sqlplan vs exec_stored_procedure_plan.sqlplan
+=== Plan Comparison ===
+Plan A: exchange_spill_plan.sqlplan
+Plan B: exec_stored_procedure_plan.sqlplan
+
+Note: Plan B is an estimated plan. Runtime metrics only available for the actual plan.
+
+--- Statement 1 ---
+SELECT * FROM dbo.Test ORDER BY Col1
+
+  Estimated cost:     100 -> 0  (eliminated)
+  Estimated rows:     1,000,000 -> 0  (eliminated)
+  Runtime:            1m 20s -> N/A
+  CPU time:           50.0s -> N/A
+  Memory grant:       4.0 MB -> 0.0 MB  (eliminated)
+  DOP:                8 -> 0
+
+--- Statement 2 (only in Plan B) ---
+/* A procedure whose body carries several statements, including shapes the analyzer    would normally have plenty to say about. */ CREATE   PROCEDURE dbo.ReproProc     @code nvarchar(20) AS BEGIN     SET NOCOUNT ON;      /* nvarchar parameter against a varchar column: conversion lands on the COLUMN */
+  (no comparison available)
+
+--- Statement 3 (only in Plan B) ---
+SELECT COUNT_BIG(*) FROM dbo.Orders WHERE Code = N'123'
+  (no comparison available)
+
+--- Statement 4 (only in Plan B) ---
+;      /* a scan with a residual predicate */     SELECT TOP (10) * FROM dbo.Orders WHERE Amount > 0.5 ORDER BY Amount DESC
+  (no comparison available)
+
+--- Statement 5 (only in Plan B) ---
+;      /* a table variable, which the analyzer flags */     DECLARE @t table (Id int);     INSERT @t (Id) SELECT TOP (100) Id FROM dbo.Orders
+  (no comparison available)
+
+--- Statement 6 (only in Plan B) ---
+;      SELECT o.Id FROM dbo.Orders o JOIN @t t ON t.Id = o.Id
+  (no comparison available)
+
+
+##### exec_stored_procedure_plan.sqlplan vs forced_parameterization_plan.sqlplan
+=== Plan Comparison ===
+Plan A: exec_stored_procedure_plan.sqlplan
+Plan B: forced_parameterization_plan.sqlplan
+
+--- Statement 1 ---
+EXEC dbo.ReproProc @code = N'123'
+
+  Estimated cost:     0 -> 0.0135  (new)
+  Estimated rows:     0 -> 1  (new)
+  Logical reads:      0 -> 9  (new)
+
+--- Statement 2 (only in Plan A) ---
+/* A procedure whose body carries several statements, including shapes the analyzer    would normally have plenty to say about. */ CREATE   PROCEDURE dbo.ReproProc     @code nvarchar(20) AS BEGIN     SET NOCOUNT ON;      /* nvarchar parameter against a varchar column: conversion lands on the COLUMN */
+  (no comparison available)
+
+--- Statement 3 (only in Plan A) ---
+SELECT COUNT_BIG(*) FROM dbo.Orders WHERE Code = N'123'
+  (no comparison available)
+
+--- Statement 4 (only in Plan A) ---
+;      /* a scan with a residual predicate */     SELECT TOP (10) * FROM dbo.Orders WHERE Amount > 0.5 ORDER BY Amount DESC
+  (no comparison available)
+
+--- Statement 5 (only in Plan A) ---
+;      /* a table variable, which the analyzer flags */     DECLARE @t table (Id int);     INSERT @t (Id) SELECT TOP (100) Id FROM dbo.Orders
+  (no comparison available)
+
+--- Statement 6 (only in Plan A) ---
+;      SELECT o.Id FROM dbo.Orders o JOIN @t t ON t.Id = o.Id
+  (no comparison available)
+
+
+##### forced_parameterization_plan.sqlplan vs implicit_convert_seek_plan.sqlplan
+=== Plan Comparison ===
+Plan A: forced_parameterization_plan.sqlplan
+Plan B: implicit_convert_seek_plan.sqlplan
+
+--- Statement 1 ---
+select COUNT(*) from [TimeCard].[Cards] as [t] where exists (select 1 from [TimeCard].[Perms] as [t0] where [t].[TimeCardId]=[t0].[TimeCardId] and [t0].[AuthUserId]='123456') and [t].[StatusId] in (5,6,7,8,9) and [t].[FirstName] like 'kexin%' and [t].[FromDateTime]>='2026-05-28 10:28:07.3132561'
+
+  Estimated cost:     0.0135 -> 5  (9,999% costlier)
+  Estimated rows:     1 -> 1,000  (9,999% more)
+  Logical reads:      9 -> 0  (eliminated)
+
+
+##### implicit_convert_seek_plan.sqlplan vs isnull_plan.sqlplan
+=== Plan Comparison ===
+Plan A: implicit_convert_seek_plan.sqlplan
+Plan B: isnull_plan.sqlplan
+
+Note: Plan A is an estimated plan. Runtime metrics only available for the actual plan.
+
+--- Statement 1 ---
+SELECT * FROM dbo.Users WHERE DisplayName = @d
+
+  Estimated cost:     5 -> 3,119.42  (9,999% costlier)
+  Estimated rows:     1,000 -> 1  (99.9% fewer)
+  Runtime:            N/A -> 6.6s
+  CPU time:           N/A -> 5.7s
+  Logical reads:      0 -> 4,181,158  (new)
+  Physical reads:     0 -> 404  (new)
+  Warnings:           0 -> 4  (4 new)
+
+  Wait stats:
+    Plan B:
+      - PAGEIOLATCH_SH 500ms
+      - SOS_SCHEDULER_YIELD 426ms
+      - MEMORY_ALLOCATION_EXT 96ms
+
+
+##### isnull_plan.sqlplan vs join_or_clause_plan.sqlplan
+=== Plan Comparison ===
+Plan A: isnull_plan.sqlplan
+Plan B: join_or_clause_plan.sqlplan
+
+--- Statement 1 ---
+SELECT COUNT(*) FROM dbo.Posts AS p WHERE ISNULL(p.LastEditorDisplayName, '') = 'Jeff Atwood' OPTION (MAXDOP 1)
+
+  Estimated cost:     3,119.42 -> 3,030.74  (2.8% cheaper)
+  Estimated rows:     1 -> 135  (9,999% more)
+  Runtime:            6.6s -> 33.0s  (401% slower)
+  CPU time:           5.7s -> 3m 48s  (3,925% slower)
+  Logical reads:      4,181,158 -> 93,307,943  (2,132% more)
+  Physical reads:     404 -> 107,624  (9,999% more)
+  Memory grant:       0.0 MB -> 451.8 MB  (new)
+  DOP:                0 -> 8
+  Warnings:           4 -> 8  (4 new)
+
+  Wait stats:
+    Plan A:
+      - PAGEIOLATCH_SH 500ms
+      - SOS_SCHEDULER_YIELD 426ms
+      - MEMORY_ALLOCATION_EXT 96ms
+
+    Plan B:
+      - CXSYNC_PORT 33.0s
+      - PAGEIOLATCH_SH 24.3s
+      - RESERVED_MEMORY_ALLOCATION_EXT 12.9s
+      - MEMORY_ALLOCATION_EXT 8.4s
+      - SOS_SCHEDULER_YIELD 6.3s
+      - HTBUILD 5.2s
+      - BPSORT 185ms
+      - HTDELETE 33ms
+
+
+##### join_or_clause_plan.sqlplan vs key_lookup_plan.sqlplan
+=== Plan Comparison ===
+Plan A: join_or_clause_plan.sqlplan
+Plan B: key_lookup_plan.sqlplan
+
+--- Statement 1 ---
+SELECT       u.Id,       MaxScore = MAX(p.Score)  FROM dbo.Users AS u  JOIN dbo.Posts AS p    ON u.Id = p.OwnerUserId    OR u.Id = p.LastEditorUserId  WHERE p.PostTypeId IN (1, 2)  GROUP BY       u.Id  HAVING      MAX(p.Score) >= 5000  ORDER BY      MaxScore DESC
+
+  Estimated cost:     3,030.74 -> 0.341  (99.9% cheaper)
+  Estimated rows:     135 -> 1  (99.3% fewer)
+  Runtime:            33.0s -> 0ms  (eliminated)
+  CPU time:           3m 48s -> 0ms  (eliminated)
+  Logical reads:      93,307,943 -> 322  (99.9% fewer)
+  Physical reads:     107,624 -> 0  (eliminated)
+  Memory grant:       451.8 MB -> 0.0 MB  (eliminated)
+  DOP:                8 -> 1
+  Warnings:           8 -> 0  (8 resolved)
+
+  Wait stats:
+    Plan A:
+      - CXSYNC_PORT 33.0s
+      - PAGEIOLATCH_SH 24.3s
+      - RESERVED_MEMORY_ALLOCATION_EXT 12.9s
+      - MEMORY_ALLOCATION_EXT 8.4s
+      - SOS_SCHEDULER_YIELD 6.3s
+      - HTBUILD 5.2s
+      - BPSORT 185ms
+      - HTDELETE 33ms
+
+
+##### key_lookup_plan.sqlplan vs lazy_spool_plan.sqlplan
+=== Plan Comparison ===
+Plan A: key_lookup_plan.sqlplan
+Plan B: lazy_spool_plan.sqlplan
+
+--- Statement 1 ---
+SELECT [u].* FROM [dbo].[Users] [u] WHERE [u].[Reputation]=942 AND [u].[DisplayName]=N'Eggs McLaren'
+
+  Estimated cost:     0.341 -> 17,697.2  (9,999% costlier)
+  Estimated rows:     1 -> 6,022,820  (9,999% more)
+  Runtime:            0ms -> 44.1s  (new)
+  CPU time:           0ms -> 41.8s  (new)
+  Logical reads:      322 -> 59,739,832  (9,999% more)
+  Physical reads:     0 -> 1  (new)
+  Memory grant:       0.0 MB -> 1.0 MB  (new)
+  DOP:                1 -> 0
+  Warnings:           0 -> 6  (6 new)
+
+  Wait stats:
+    Plan B:
+      - SOS_SCHEDULER_YIELD 2.3s
+      - RESERVED_MEMORY_ALLOCATION_EXT 308ms
+      - MEMORY_ALLOCATION_EXT 271ms
+      - ASYNC_NETWORK_IO 5ms
+      - PAGEIOLATCH_EX 1ms
+
+
+##### lazy_spool_plan.sqlplan vs leading_wildcard_like_plan.sqlplan
+=== Plan Comparison ===
+Plan A: lazy_spool_plan.sqlplan
+Plan B: leading_wildcard_like_plan.sqlplan
+
+--- Statement 1 ---
+SELECT p.Id, b.Id     FROM dbo.Posts AS p     CROSS APPLY (         SELECT TOP (1) b.Id         FROM dbo.Badges AS b         WHERE b.UserId = p.OwnerUserId         ORDER BY b.Date DESC     ) AS b     WHERE p.PostTypeId = 1     OPTION (MAXDOP 1)
+
+  Estimated cost:     17,697.2 -> 66.8966  (99.6% cheaper)
+  Estimated rows:     6,022,820 -> 103  (99.9% fewer)
+  Runtime:            44.1s -> 225ms  (99.5% faster)
+  CPU time:           41.8s -> 1.8s  (95.8% faster)
+  Logical reads:      59,739,832 -> 89,696  (99.8% fewer)
+  Physical reads:     1 -> 0  (eliminated)
+  Memory grant:       1.0 MB -> 0.3 MB  (73.4% less)
+  DOP:                0 -> 8
+  Warnings:           6 -> 2  (4 resolved)
+
+  Wait stats:
+    Plan A:
+      - SOS_SCHEDULER_YIELD 2.3s
+      - RESERVED_MEMORY_ALLOCATION_EXT 308ms
+      - MEMORY_ALLOCATION_EXT 271ms
+      - ASYNC_NETWORK_IO 5ms
+      - PAGEIOLATCH_EX 1ms
+
+    Plan B:
+      - CXSYNC_PORT 1ms
+      - LATCH_EX 1ms
+
+
+##### leading_wildcard_like_plan.sqlplan vs local_variable_plan.sqlplan
+=== Plan Comparison ===
+Plan A: leading_wildcard_like_plan.sqlplan
+Plan B: local_variable_plan.sqlplan
+
+--- Statement 1 ---
+SELECT      u.*  FROM dbo.Users AS u  WHERE u.DisplayName LIKE N'%zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzZZZ'
+
+  Estimated cost:     66.8966 -> 3,097.47  (4,530% costlier)
+  Estimated rows:     103 -> 1  (99.0% fewer)
+  Runtime:            225ms -> 692ms  (208% slower)
+  CPU time:           1.8s -> 5.5s  (213% slower)
+  Logical reads:      89,696 -> 4,226,624  (4,612% more)
+  Memory grant:       0.3 MB -> 24.2 MB  (9,009% more)
+  DOP:                8 -> 8
+  Warnings:           2 -> 6  (4 new)
+  Missing indexes:    0 -> 1  (1 new)
+
+  Wait stats:
+    Plan A:
+      - CXSYNC_PORT 1ms
+      - LATCH_EX 1ms
+
+    Plan B:
+      - LATCH_EX 15ms
+      - SOS_SCHEDULER_YIELD 4ms
+      - HTBUILD 4ms
+      - HTDELETE 1ms
+      - CXSYNC_PORT 1ms
+
+
+##### local_variable_plan.sqlplan vs many_to_many_merge_plan.sqlplan
+=== Plan Comparison ===
+Plan A: local_variable_plan.sqlplan
+Plan B: many_to_many_merge_plan.sqlplan
+
+--- Statement 1 ---
+SELECT COUNT(*) FROM dbo.Posts WHERE CreationDate >= '2013-01-01 00:00:00.000'
+
+  Estimated cost:     3,097.47 -> 12,414,800  (9,999% costlier)
+  Estimated rows:     1 -> 100  (9,900% more)
+  Runtime:            692ms -> 42.4s  (6,023% slower)
+  CPU time:           5.5s -> 42.1s  (664% slower)
+  Logical reads:      4,226,624 -> 11,290,589  (167% more)
+  Memory grant:       24.2 MB -> 5,160.8 MB  (9,999% more)
+  DOP:                8 -> 0
+  Warnings:           6 -> 5  (1 resolved)
+  Missing indexes:    1 -> 0  (1 resolved)
+
+  Wait stats:
+    Plan A:
+      - LATCH_EX 15ms
+      - SOS_SCHEDULER_YIELD 4ms
+      - HTBUILD 4ms
+      - HTDELETE 1ms
+      - CXSYNC_PORT 1ms
+
+    Plan B:
+      - RESERVED_MEMORY_ALLOCATION_EXT 426ms
+      - SOS_SCHEDULER_YIELD 268ms
+      - MEMORY_ALLOCATION_EXT 4ms
+
+
+##### many_to_many_merge_plan.sqlplan vs memory_grant_wait_plan.sqlplan
+=== Plan Comparison ===
+Plan A: many_to_many_merge_plan.sqlplan
+Plan B: memory_grant_wait_plan.sqlplan
+
+--- Statement 1 ---
+SELECT TOP (100) p.Id, v.Id FROM dbo.Posts AS p INNER MERGE JOIN dbo.Votes AS v     ON p.PostTypeId = v.VoteTypeId OPTION (MAXDOP 1)
+
+  Estimated cost:     12,414,800 -> 16,976.5  (99.9% cheaper)
+  Estimated rows:     100 -> 482,677  (9,999% more)
+  Runtime:            42.4s -> 26.8s  (36.7% faster)
+  CPU time:           42.1s -> 1m 16s  (81.0% slower)
+  Logical reads:      11,290,589 -> 4,229,245  (62.5% fewer)
+  Memory grant:       5,160.8 MB -> 10,597.0 MB  (105% more)
+  DOP:                0 -> 8
+  Warnings:           5 -> 13  (8 new)
+  Missing indexes:    0 -> 1  (1 new)
+
+  Wait stats:
+    Plan A:
+      - RESERVED_MEMORY_ALLOCATION_EXT 426ms
+      - SOS_SCHEDULER_YIELD 268ms
+      - MEMORY_ALLOCATION_EXT 4ms
+
+    Plan B:
+      - CXSYNC_PORT 3m 22s
+      - CXPACKET 2m 12s
+      - LOGBUFFER 42.7s
+      - IO_COMPLETION 27.5s
+      - RESERVED_MEMORY_ALLOCATION_EXT 5.4s
+      - SOS_PHYS_PAGE_CACHE 3.2s
+      - PAGEIOLATCH_EX 873ms
+      - MEMORY_ALLOCATION_EXT 256ms
+      - PAGEIOLATCH_SH 225ms
+      - SOS_SCHEDULER_YIELD 83ms
+
+
+##### memory_grant_wait_plan.sqlplan vs mismatched_data_type_plan.sqlplan
+=== Plan Comparison ===
+Plan A: memory_grant_wait_plan.sqlplan
+Plan B: mismatched_data_type_plan.sqlplan
+
+--- Statement 1 ---
+SELECT      u.DisplayName,      p.Score      , p.Title      , p.Tags      , p.Body  FROM dbo.Users AS u  LEFT JOIN  (      SELECT          p.*,          n = ROW_NUMBER() OVER              (                  PARTITION BY                      p.OwnerUserId                  ORDER BY                      p.Score DESC              )      FROM dbo.Posts AS p      WHERE p.PostTypeId = 2      AND   p.Score > 0  ) AS p    ON  p.OwnerUserId = u.Id    AND p.n = 1  WHERE u.Reputation >= 20000  ORDER BY     ...
+
+  Estimated cost:     16,976.5 -> 98.8142  (99.4% cheaper)
+  Estimated rows:     482,677 -> 1  (99.9% fewer)
+  Runtime:            26.8s -> 4.7s  (82.6% faster)
+  CPU time:           1m 16s -> 4.7s  (93.9% faster)
+  Logical reads:      4,229,245 -> 51,219  (98.8% fewer)
+  Memory grant:       10,597.0 MB -> 3.0 MB  (99.9% less)
+  DOP:                8 -> 1
+  Warnings:           13 -> 1  (12 resolved)
+  Missing indexes:    1 -> 0  (1 resolved)
+
+  Wait stats:
+    Plan A:
+      - CXSYNC_PORT 3m 22s
+      - CXPACKET 2m 12s
+      - LOGBUFFER 42.7s
+      - IO_COMPLETION 27.5s
+      - RESERVED_MEMORY_ALLOCATION_EXT 5.4s
+      - SOS_PHYS_PAGE_CACHE 3.2s
+      - PAGEIOLATCH_EX 873ms
+      - MEMORY_ALLOCATION_EXT 256ms
+      - PAGEIOLATCH_SH 225ms
+      - SOS_SCHEDULER_YIELD 83ms
+
+    Plan B:
+      - SOS_SCHEDULER_YIELD 2ms
+
+
+##### mismatched_data_type_plan.sqlplan vs missing-join-predicate.sqlplan
+=== Plan Comparison ===
+Plan A: mismatched_data_type_plan.sqlplan
+Plan B: missing-join-predicate.sqlplan
+
+--- Statement 1 ---
+SELECT      c = COUNT_BIG(*)  FROM dbo.Votes AS v  WHERE v.CreationDate >= @date  OPTION(RECOMPILE)
+
+  Estimated cost:     98.8142 -> 0.0238  (99.9% cheaper)
+  Estimated rows:     1 -> 1  (0.0% more)
+  Runtime:            4.7s -> 2ms  (99.9% faster)
+  CPU time:           4.7s -> 2ms  (99.9% faster)
+  Logical reads:      51,219 -> 786  (98.5% fewer)
+  Memory grant:       3.0 MB -> 0.0 MB  (eliminated)
+  DOP:                1 -> 1
+  Warnings:           1 -> 1  (no change)
+  Missing indexes:    0 -> 2  (2 new)
+
+  Wait stats:
+    Plan A:
+      - SOS_SCHEDULER_YIELD 2ms
+
+
+##### missing-join-predicate.sqlplan vs multi_index_delete_plan.sqlplan
+=== Plan Comparison ===
+Plan A: missing-join-predicate.sqlplan
+Plan B: multi_index_delete_plan.sqlplan
+
+--- Statement 1 ---
+SELECT TOP (1)      c.Id  FROM dbo.Posts AS p  JOIN dbo.Comments AS c    ON p.OwnerUserId = c.UserId  WHERE p.OwnerUserId = 22656
+
+  Estimated cost:     0.0238 -> 0.0633  (166% costlier)
+  Estimated rows:     1 -> 1  (0.0% more)
+  Runtime:            2ms -> 0ms  (eliminated)
+  CPU time:           2ms -> 0ms  (eliminated)
+  Logical reads:      786 -> 3  (99.6% fewer)
+  DOP:                1 -> 1
+  Warnings:           1 -> 0  (1 resolved)
+  Missing indexes:    2 -> 0  (2 resolved)
+
+
+##### multi_index_delete_plan.sqlplan vs multi_index_insert_plan.sqlplan
+=== Plan Comparison ===
+Plan A: multi_index_delete_plan.sqlplan
+Plan B: multi_index_insert_plan.sqlplan
+
+--- Statement 1 ---
+DELETE [dbo].[Users]  WHERE [Id]=22656
+
+  Estimated cost:     0.0633 -> 0.06  (5.2% cheaper)
+  Estimated rows:     1 -> 1  (0.0% more)
+  Logical reads:      3 -> 3  (0.0% more)
+  DOP:                1 -> 1
+
+
+##### multi_index_insert_plan.sqlplan vs multi_index_update_plan.sqlplan
+=== Plan Comparison ===
+Plan A: multi_index_insert_plan.sqlplan
+Plan B: multi_index_update_plan.sqlplan
+
+--- Statement 1 ---
+INSERT INTO [dbo].[Users]([AboutMe],[Age],[CreationDate],[DisplayName],[DownVotes],[EmailHash],[LastAccessDate],[Location],[Reputation],[UpVotes],[Views],[WebsiteUrl],[AccountId]) values(NULL,NULL,getdate(),N'',0,NULL,getdate(),NULL,0,0,0,NULL,NULL)
+
+  Estimated cost:     0.06 -> 0.0633  (5.5% costlier)
+  Estimated rows:     1 -> 1  (0.0% more)
+  Runtime:            0ms -> 1ms  (new)
+  CPU time:           0ms -> 1ms  (new)
+  Logical reads:      3 -> 3  (0.0% more)
+  DOP:                1 -> 1
+
+
+##### multi_index_update_plan.sqlplan vs non_sargable_function_plan.sqlplan
+=== Plan Comparison ===
+Plan A: multi_index_update_plan.sqlplan
+Plan B: non_sargable_function_plan.sqlplan
+
+--- Statement 1 ---
+UPDATE [dbo].[Users] set [Age] = 138  WHERE [Id]=22656
+
+  Estimated cost:     0.0633 -> 3,097.52  (9,999% costlier)
+  Estimated rows:     1 -> 1  (0.0% more)
+  Runtime:            1ms -> 725ms  (9,999% slower)
+  CPU time:           1ms -> 5.8s  (9,999% slower)
+  Logical reads:      3 -> 4,226,624  (9,999% more)
+  Memory grant:       0.0 MB -> 24.2 MB  (new)
+  DOP:                1 -> 8
+  Warnings:           0 -> 5  (5 new)
+
+  Wait stats:
+    Plan B:
+      - LATCH_EX 22ms
+      - SOS_SCHEDULER_YIELD 3ms
+      - CXSYNC_PORT 2ms
+      - HTBUILD 2ms
+      - HTDELETE 1ms
+
+
+##### non_sargable_function_plan.sqlplan vs optimize_for_unknown_plan.sqlplan
+=== Plan Comparison ===
+Plan A: non_sargable_function_plan.sqlplan
+Plan B: optimize_for_unknown_plan.sqlplan
+
+Note: Plan B is an estimated plan. Runtime metrics only available for the actual plan.
+
+--- Statement 1 ---
+SELECT COUNT(*) FROM dbo.Posts WHERE YEAR(CreationDate) = 2013
+
+  Estimated cost:     3,097.52 -> 1  (99.9% cheaper)
+  Estimated rows:     1 -> 1,000  (9,999% more)
+  Runtime:            725ms -> N/A
+  CPU time:           5.8s -> N/A
+  Logical reads:      4,226,624 -> 0  (eliminated)
+  Memory grant:       24.2 MB -> 0.0 MB  (eliminated)
+  DOP:                8 -> 0
+  Warnings:           5 -> 1  (4 resolved)
+
+  Wait stats:
+    Plan A:
+      - LATCH_EX 22ms
+      - SOS_SCHEDULER_YIELD 3ms
+      - CXSYNC_PORT 2ms
+      - HTBUILD 2ms
+      - HTDELETE 1ms
+
+
+##### optimize_for_unknown_plan.sqlplan vs parallel-skew.sqlplan
+=== Plan Comparison ===
+Plan A: optimize_for_unknown_plan.sqlplan
+Plan B: parallel-skew.sqlplan
+
+Note: Plan A is an estimated plan. Runtime metrics only available for the actual plan.
+
+--- Statement 1 ---
+SELECT * FROM dbo.Users WHERE Reputation > @rep OPTION (OPTIMIZE FOR UNKNOWN)
+
+  Estimated cost:     1 -> 6,729.7  (9,999% costlier)
+  Estimated rows:     1,000 -> 2,982,900  (9,999% more)
+  Runtime:            N/A -> 9.4s
+  CPU time:           N/A -> 28.6s
+  Logical reads:      0 -> 4,947,424  (new)
+  Memory grant:       0.0 MB -> 360.2 MB  (new)
+  DOP:                0 -> 4
+  Warnings:           1 -> 11  (10 new)
+  Missing indexes:    0 -> 1  (1 new)
+
+  Wait stats:
+    Plan B:
+      - CXPACKET 9.3s
+      - BPSORT 5.0s
+      - HTDELETE 1.6s
+      - ASYNC_NETWORK_IO 1.4s
+      - HTREPARTITION 1.2s
+      - SOS_SCHEDULER_YIELD 18ms
+      - RESERVED_MEMORY_ALLOCATION_EXT 7ms
+      - BMPBUILD 3ms
+      - MEMORY_ALLOCATION_EXT 1ms
+      - HTBUILD 1ms
+
+
+##### parallel-skew.sqlplan vs parallel_row_over_batch_plan.sqlplan
+=== Plan Comparison ===
+Plan A: parallel-skew.sqlplan
+Plan B: parallel_row_over_batch_plan.sqlplan
+
+--- Statement 1 ---
+SELECT   p.*      FROM     dbo.Posts AS p      JOIN     dbo.Votes AS v          ON p.Id = v.PostId      LEFT JOIN #t ON 1 = 0      WHERE    p.PostTypeId = 2      AND      p.CreationDate >= '20131225'      ORDER BY p.Id   OPTION(HASH JOIN)
+
+  Estimated cost:     6,729.7 -> 1  (99.9% cheaper)
+  Estimated rows:     2,982,900 -> 1  (99.9% fewer)
+  Runtime:            9.4s -> 1.0s  (89.4% faster)
+  CPU time:           28.6s -> 60ms  (99.8% faster)
+  Logical reads:      4,947,424 -> 0  (eliminated)
+  Memory grant:       360.2 MB -> 0.0 MB  (eliminated)
+  DOP:                4 -> 2
+  Warnings:           11 -> 1  (10 resolved)
+  Missing indexes:    1 -> 0  (1 resolved)
+
+  Wait stats:
+    Plan A:
+      - CXPACKET 9.3s
+      - BPSORT 5.0s
+      - HTDELETE 1.6s
+      - ASYNC_NETWORK_IO 1.4s
+      - HTREPARTITION 1.2s
+      - SOS_SCHEDULER_YIELD 18ms
+      - RESERVED_MEMORY_ALLOCATION_EXT 7ms
+      - BMPBUILD 3ms
+      - MEMORY_ALLOCATION_EXT 1ms
+      - HTBUILD 1ms
+
+
+##### parallel_row_over_batch_plan.sqlplan vs param-sniffing-posttypeid2.sqlplan
+=== Plan Comparison ===
+Plan A: parallel_row_over_batch_plan.sqlplan
+Plan B: param-sniffing-posttypeid2.sqlplan
+
+--- Statement 1 ---
+SELECT 1;
+
+  Estimated cost:     1 -> 0.1216  (87.8% cheaper)
+  Estimated rows:     1 -> 1  (1.1% more)
+  Runtime:            1.0s -> 1m 49s  (9,999% slower)
+  CPU time:           60ms -> 29.4s  (9,999% slower)
+  Logical reads:      0 -> 981,922  (new)
+  Physical reads:     0 -> 113,689  (new)
+  Memory grant:       0.0 MB -> 28.9 MB  (new)
+  DOP:                2 -> 1
+  Warnings:           1 -> 2  (1 new)
+
+  Wait stats:
+    Plan B:
+      - RESERVED_MEMORY_ALLOCATION_EXT 1.1s
+      - SOS_SCHEDULER_YIELD 6ms
+
+
+##### param-sniffing-posttypeid2.sqlplan vs pspo-example.sqlplan
+=== Plan Comparison ===
+Plan A: param-sniffing-posttypeid2.sqlplan
+Plan B: pspo-example.sqlplan
+
+--- Statement 1 ---
+SELECT          UserId =               ISNULL(v.UserId, 0),          Votes2013 =               SUM              (                  CASE                      WHEN                       (                            v.CreationDate >= '20130101'                        AND v.CreationDate <  '20140101'                      )                      THEN 1                      ELSE 0                  END              ),          TotalBounty =               SUM              (                  CASE         ...
+
+  Estimated cost:     0.1216 -> 93.3842  (9,999% costlier)
+  Estimated rows:     1 -> 27,901  (9,999% more)
+  Runtime:            1m 49s -> 563ms  (99.5% faster)
+  CPU time:           29.4s -> 302ms  (99.0% faster)
+  Logical reads:      981,922 -> 93,797  (90.4% fewer)
+  Physical reads:     113,689 -> 181  (99.8% fewer)
+  Memory grant:       28.9 MB -> 172.1 MB  (496% more)
+  DOP:                1 -> 1
+  Warnings:           2 -> 4  (2 new)
+
+  Wait stats:
+    Plan A:
+      - RESERVED_MEMORY_ALLOCATION_EXT 1.1s
+      - SOS_SCHEDULER_YIELD 6ms
+
+    Plan B:
+      - ASYNC_NETWORK_IO 187ms
+      - PAGEIOLATCH_SH 75ms
+      - RESERVED_MEMORY_ALLOCATION_EXT 8ms
+      - MEMORY_ALLOCATION_EXT 4ms
+
+
+##### pspo-example.sqlplan vs rid_lookup_plan.sqlplan
+=== Plan Comparison ===
+Plan A: pspo-example.sqlplan
+Plan B: rid_lookup_plan.sqlplan
+
+Note: Plan B is an estimated plan. Runtime metrics only available for the actual plan.
+
+--- Statement 1 ---
+SELECT      p.*  FROM dbo.Posts AS p  WHERE p.OwnerUserId = 22656      ORDER BY      p.Score DESC option (PLAN PER VALUE(ObjectID = 0, QueryVariantID = 3, predicate_range([StackOverflow2013].[dbo].[Posts].[OwnerUserId] = 22656, 100.0, 1000.0)))
+
+  Estimated cost:     93.3842 -> 5  (94.6% cheaper)
+  Estimated rows:     27,901 -> 100  (99.6% fewer)
+  Runtime:            563ms -> N/A
+  CPU time:           302ms -> N/A
+  Logical reads:      93,797 -> 0  (eliminated)
+  Physical reads:     181 -> 0  (eliminated)
+  Memory grant:       172.1 MB -> 0.0 MB  (eliminated)
+  DOP:                1 -> 0
+  Warnings:           4 -> 0  (4 resolved)
+
+  Wait stats:
+    Plan A:
+      - ASYNC_NETWORK_IO 187ms
+      - PAGEIOLATCH_SH 75ms
+      - RESERVED_MEMORY_ALLOCATION_EXT 8ms
+      - MEMORY_ALLOCATION_EXT 4ms
+
+
+##### rid_lookup_plan.sqlplan vs row-count-spool-slow.sqlplan
+=== Plan Comparison ===
+Plan A: rid_lookup_plan.sqlplan
+Plan B: row-count-spool-slow.sqlplan
+
+Note: Plan A is an estimated plan. Runtime metrics only available for the actual plan.
+
+--- Statement 1 ---
+SELECT * FROM dbo.HeapTable WHERE col1 = 42
+
+  Estimated cost:     5 -> 4,590.71  (9,999% costlier)
+  Estimated rows:     100 -> 1  (99.0% fewer)
+  Runtime:            N/A -> 26m 10s
+  CPU time:           N/A -> 156m 17s
+  Logical reads:      0 -> 24,767,239  (new)
+  Physical reads:     0 -> 18  (new)
+  Memory grant:       0.0 MB -> 257.0 MB  (new)
+  DOP:                0 -> 6
+  Warnings:           0 -> 7  (7 new)
+  Missing indexes:    0 -> 1  (1 new)
+
+  Wait stats:
+    Plan B:
+      - CXPACKET 26m 13s
+      - SOS_SCHEDULER_YIELD 9.5s
+      - PAGELATCH_SH 412ms
+      - RESERVED_MEMORY_ALLOCATION_EXT 11ms
+      - LATCH_EX 1ms
+      - SOS_PHYS_PAGE_CACHE 1ms
+      - MEMORY_ALLOCATION_EXT 1ms
+
+
+##### row-count-spool-slow.sqlplan vs row_goal_plan.sqlplan
+=== Plan Comparison ===
+Plan A: row-count-spool-slow.sqlplan
+Plan B: row_goal_plan.sqlplan
+
+Note: Plan B is an estimated plan. Runtime metrics only available for the actual plan.
+
+--- Statement 1 ---
+SELECT COUNT(*)  FROM #NewUsers AS nu  WHERE nu.UserId NOT IN (SELECT ou.UserId FROM #OldUsers AS ou)
+
+  Estimated cost:     4,590.71 -> 10  (99.8% cheaper)
+  Estimated rows:     1 -> 1  (0.0% more)
+  Runtime:            26m 10s -> N/A
+  CPU time:           156m 17s -> N/A
+  Logical reads:      24,767,239 -> 0  (eliminated)
+  Physical reads:     18 -> 0  (eliminated)
+  Memory grant:       257.0 MB -> 0.0 MB  (eliminated)
+  DOP:                6 -> 0
+  Warnings:           7 -> 0  (7 resolved)
+  Missing indexes:    1 -> 0  (1 resolved)
+
+  Wait stats:
+    Plan A:
+      - CXPACKET 26m 13s
+      - SOS_SCHEDULER_YIELD 9.5s
+      - PAGELATCH_SH 412ms
+      - RESERVED_MEMORY_ALLOCATION_EXT 11ms
+      - LATCH_EX 1ms
+      - SOS_PHYS_PAGE_CACHE 1ms
+      - MEMORY_ALLOCATION_EXT 1ms
+
+
+##### row_goal_plan.sqlplan vs serially-parallel.sqlplan
+=== Plan Comparison ===
+Plan A: row_goal_plan.sqlplan
+Plan B: serially-parallel.sqlplan
+
+Note: Plan A is an estimated plan. Runtime metrics only available for the actual plan.
+
+--- Statement 1 ---
+SELECT TOP (1) * FROM dbo.Users u JOIN dbo.Posts p ON p.OwnerUserId = u.Id
+
+  Estimated cost:     10 -> 1,782.74  (9,999% costlier)
+  Estimated rows:     1 -> 3,278  (9,999% more)
+  Runtime:            N/A -> 17.1s
+  CPU time:           N/A -> 17.1s
+  Logical reads:      0 -> 41,340,356  (new)
+  Memory grant:       0.0 MB -> 929.4 MB  (new)
+  DOP:                0 -> 8
+  Warnings:           0 -> 4  (4 new)
+
+  Wait stats:
+    Plan B:
+      - CXSYNC_PORT 17.1s
+      - RESERVED_MEMORY_ALLOCATION_EXT 65ms
+      - SOS_SCHEDULER_YIELD 13ms
+      - CXSYNC_CONSUMER 2ms
+
+
+##### serially-parallel.sqlplan vs slow-multi-seek.sqlplan
+=== Plan Comparison ===
+Plan A: serially-parallel.sqlplan
+Plan B: slow-multi-seek.sqlplan
+
+--- Statement 1 ---
+SELECT      flat_date =          DATEFROMPARTS          (              DATEPART(YEAR,  q.CreationDate),              DATEPART(MONTH, q.CreationDate),              1          ),      answers_or_something =          COUNT_BIG(*)  FROM dbo.Posts AS q  JOIN dbo.Posts AS a    ON q.AcceptedAnswerId = a.Id  CROSS JOIN  (      SELECT          tsNow = MAX(p.CreationDate)      FROM dbo.Posts AS p      WHERE p.Score > 0  ) AS tsNow  WHERE q.CreationDate < tsNow.tsNow  AND   q.ClosedDate IS NULL  AND   q.Sc...
+
+  Estimated cost:     1,782.74 -> 2,209.05  (23.9% costlier)
+  Estimated rows:     3,278 -> 36,946,200  (9,999% more)
+  Runtime:            17.1s -> 20.0s  (16.6% slower)
+  CPU time:           17.1s -> 2m 31s  (784% slower)
+  Logical reads:      41,340,356 -> 133,228,207  (222% more)
+  Memory grant:       929.4 MB -> 0.1 MB  (99.9% less)
+  DOP:                8 -> 8
+  Warnings:           4 -> 2  (2 resolved)
+
+  Wait stats:
+    Plan A:
+      - CXSYNC_PORT 17.1s
+      - RESERVED_MEMORY_ALLOCATION_EXT 65ms
+      - SOS_SCHEDULER_YIELD 13ms
+      - CXSYNC_CONSUMER 2ms
+
+    Plan B:
+      - SOS_SCHEDULER_YIELD 199ms
+      - CXSYNC_PORT 1ms
+
+
+##### slow-multi-seek.sqlplan vs spill_plan.sqlplan
+=== Plan Comparison ===
+Plan A: slow-multi-seek.sqlplan
+Plan B: spill_plan.sqlplan
+
+--- Statement 1 ---
+SELECT       p.Id,      p.Score,      v.VoteTypeId  FROM dbo.Posts AS p  CROSS APPLY  (      SELECT          v.VoteTypeId,          LastVoteByType =               ROW_NUMBER() OVER              (                  PARTITION BY                      v.VoteTypeId                  ORDER BY                      v.CreationDate DESC              )      FROM dbo.Votes AS v      WHERE v.PostId = p.Id      AND   v.VoteTypeId IN (1, 2, 3) /* Looks like one seek */      AND   v.CreationDate >= CONVERT(date, ...
+
+  Estimated cost:     2,209.05 -> 16,976.5  (668% costlier)
+  Estimated rows:     36,946,200 -> 482,677  (98.7% fewer)
+  Runtime:            20.0s -> 26.8s  (34.4% slower)
+  CPU time:           2m 31s -> 1m 16s  (49.6% faster)
+  Logical reads:      133,228,207 -> 4,229,245  (96.8% fewer)
+  Memory grant:       0.1 MB -> 10,597.0 MB  (9,999% more)
+  DOP:                8 -> 8
+  Warnings:           2 -> 12  (10 new)
+  Missing indexes:    0 -> 1  (1 new)
+
+  Wait stats:
+    Plan A:
+      - SOS_SCHEDULER_YIELD 199ms
+      - CXSYNC_PORT 1ms
+
+    Plan B:
+      - CXSYNC_PORT 3m 22s
+      - CXPACKET 2m 12s
+      - LOGBUFFER 42.7s
+      - IO_COMPLETION 27.5s
+      - RESERVED_MEMORY_ALLOCATION_EXT 5.4s
+      - SOS_PHYS_PAGE_CACHE 3.2s
+      - PAGEIOLATCH_EX 873ms
+      - MEMORY_ALLOCATION_EXT 256ms
+      - PAGEIOLATCH_SH 225ms
+      - SOS_SCHEDULER_YIELD 83ms
+
+
+##### spill_plan.sqlplan vs table_variable_plan.sqlplan
+=== Plan Comparison ===
+Plan A: spill_plan.sqlplan
+Plan B: table_variable_plan.sqlplan
+
+--- Statement 1 ---
+SELECT      u.DisplayName,      p.Score      , p.Title      , p.Tags      , p.Body  FROM dbo.Users AS u  LEFT JOIN  (      SELECT          p.*,          n = ROW_NUMBER() OVER              (                  PARTITION BY                      p.OwnerUserId                  ORDER BY                      p.Score DESC              )      FROM dbo.Posts AS p      WHERE p.PostTypeId = 2      AND   p.Score > 0  ) AS p    ON  p.OwnerUserId = u.Id    AND p.n = 1  WHERE u.Reputation >= 20000  ORDER BY     ...
+
+  Estimated cost:     16,976.5 -> 0.0033  (99.9% cheaper)
+  Estimated rows:     482,677 -> 3  (99.9% fewer)
+  Runtime:            26.8s -> 0ms  (eliminated)
+  CPU time:           1m 16s -> 0ms  (eliminated)
+  Logical reads:      4,229,245 -> 2  (99.9% fewer)
+  Memory grant:       10,597.0 MB -> 0.0 MB  (eliminated)
+  DOP:                8 -> 1
+  Warnings:           12 -> 1  (11 resolved)
+  Missing indexes:    1 -> 0  (1 resolved)
+
+  Wait stats:
+    Plan A:
+      - CXSYNC_PORT 3m 22s
+      - CXPACKET 2m 12s
+      - LOGBUFFER 42.7s
+      - IO_COMPLETION 27.5s
+      - RESERVED_MEMORY_ALLOCATION_EXT 5.4s
+      - SOS_PHYS_PAGE_CACHE 3.2s
+      - PAGEIOLATCH_EX 873ms
+      - MEMORY_ALLOCATION_EXT 256ms
+      - PAGEIOLATCH_SH 225ms
+      - SOS_SCHEDULER_YIELD 83ms
+
+
+##### table_variable_plan.sqlplan vs top_above_scan_plan.sqlplan
+=== Plan Comparison ===
+Plan A: table_variable_plan.sqlplan
+Plan B: top_above_scan_plan.sqlplan
+
+--- Statement 1 ---
+SELECT t.Id FROM @t AS t
+
+  Estimated cost:     0.0033 -> 4.8408  (9,999% costlier)
+  Estimated rows:     3 -> 1  (66.7% fewer)
+  Runtime:            0ms -> 5.1s  (new)
+  CPU time:           0ms -> 5.1s  (new)
+  Logical reads:      2 -> 88,341  (9,999% more)
+  DOP:                1 -> 1
+  Warnings:           1 -> 1  (no change)
+  Missing indexes:    0 -> 1  (1 new)
+
+  Wait stats:
+    Plan B:
+      - SOS_SCHEDULER_YIELD 3ms
+
+
+##### top_above_scan_plan.sqlplan vs tvf_plan.sqlplan
+=== Plan Comparison ===
+Plan A: top_above_scan_plan.sqlplan
+Plan B: tvf_plan.sqlplan
+
+--- Statement 1 ---
+SELECT TOP (1)      p.Id  FROM dbo.Posts AS p  WHERE NOT EXISTS  (      SELECT          1/0      FROM dbo.Votes AS v      WHERE v.PostId = p.Id  )  ORDER BY      p.Id DESC
+
+  Estimated cost:     4.8408 -> 0.0033  (99.9% cheaper)
+  Estimated rows:     1 -> 10  (900% more)
+  Runtime:            5.1s -> 17.1s  (234% slower)
+  CPU time:           5.1s -> 1ms  (99.9% faster)
+  Logical reads:      88,341 -> 1  (99.9% fewer)
+  DOP:                1 -> 1
+  Warnings:           1 -> 0  (1 resolved)
+  Missing indexes:    1 -> 0  (1 resolved)
+
+  Wait stats:
+    Plan A:
+      - SOS_SCHEDULER_YIELD 3ms
+
+
+##### tvf_plan.sqlplan vs udf_plan.sqlplan
+=== Plan Comparison ===
+Plan A: tvf_plan.sqlplan
+Plan B: udf_plan.sqlplan
+
+--- Statement 1 ---
+SELECT * FROM dbo.GetTopPosts(10)
+
+  Estimated cost:     0.0033 -> 97.2957  (9,999% costlier)
+  Estimated rows:     10 -> 5,689  (9,999% more)
+  Runtime:            17.1s -> 3.0s  (82.3% faster)
+  CPU time:           1ms -> 2.9s  (9,999% slower)
+  Logical reads:      1 -> 125,537  (9,999% more)
+  Memory grant:       0.0 MB -> 2.2 MB  (new)
+  DOP:                1 -> 0
+  Warnings:           0 -> 4  (4 new)
+  Missing indexes:    0 -> 1  (1 new)
+
+  Wait stats:
+    Plan B:
+      - SOS_SCHEDULER_YIELD 133ms
+      - MEMORY_ALLOCATION_EXT 15ms
+
+
+##### udf_plan.sqlplan vs case_predicate_plan.sqlplan
+=== Plan Comparison ===
+Plan A: udf_plan.sqlplan
+Plan B: case_predicate_plan.sqlplan
+
+--- Statement 1 ---
+SELECT      u.Id,      u.DisplayName,      u.Reputation,      LastBadge =          (              SELECT                  COUNT_BIG(DISTINCT b.Name)              FROM dbo.Badges AS b              WHERE b.UserId = u.Id          ),      TotalBounties =          (              SELECT                  SUM(ISNULL(v.BountyAmount, 0))              FROM dbo.Votes AS v              WHERE v.UserId = u.Id          ),      TotalScore = dbo.TotalScore(u.Id) /* <-- UDF call */  FROM dbo.Users AS u  WHERE u.Re...
+
+  Estimated cost:     97.2957 -> 66.6425  (31.5% cheaper)
+  Estimated rows:     5,689 -> 7  (99.9% fewer)
+  Runtime:            3.0s -> 80ms  (97.4% faster)
+  CPU time:           2.9s -> 629ms  (78.3% faster)
+  Logical reads:      125,537 -> 89,696  (28.6% fewer)
+  Memory grant:       2.2 MB -> 0.3 MB  (88.2% less)
+  DOP:                0 -> 8
+  Warnings:           4 -> 3  (1 resolved)
+  Missing indexes:    1 -> 1  (no change)
+
+  Wait stats:
+    Plan A:
+      - SOS_SCHEDULER_YIELD 133ms
+      - MEMORY_ALLOCATION_EXT 15ms
+
+    Plan B:
+      - CXSYNC_PORT 2ms
+      - SOS_SCHEDULER_YIELD 1ms
+      - LATCH_EX 1ms
+
+

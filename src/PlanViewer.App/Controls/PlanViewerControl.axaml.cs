@@ -41,18 +41,12 @@ public class StatementRow
     public int Warnings { get; set; }
     public PlanStatement Statement { get; set; } = null!;
 
-    // Display helpers
-    public string CpuDisplay => FormatDuration(CpuMs);
-    public string ElapsedDisplay => FormatDuration(ElapsedMs);
-    public string UdfDisplay => UdfMs > 0 ? FormatDuration(UdfMs) : "";
-    public string CostDisplay => EstCost > 0 ? $"{EstCost:F2}" : "";
-
-    private static string FormatDuration(long ms)
-    {
-        if (ms < 1000) return $"{ms}ms";
-        if (ms < 60_000) return $"{ms / 1000.0:F1}s";
-        return $"{ms / 60_000}m {(ms % 60_000) / 1000}s";
-    }
+    // Display helpers. The duration ladder this grid used to carry privately is now
+    // MetricFormatter's, so the panels and tooltips scale the same numbers the same way.
+    public string CpuDisplay => MetricFormatter.FormatDuration(CpuMs);
+    public string ElapsedDisplay => MetricFormatter.FormatDuration(ElapsedMs);
+    public string UdfDisplay => UdfMs > 0 ? MetricFormatter.FormatDuration(UdfMs) : "";
+    public string CostDisplay => EstCost > 0 ? MetricFormatter.FormatCost(EstCost) : "";
 }
 
 public partial class PlanViewerControl : UserControl
@@ -125,10 +119,14 @@ public partial class PlanViewerControl : UserControl
     private double _panStartOffsetX;
     private double _panStartOffsetY;
 
-    // Minimap state
-    private static double _minimapWidth = 400;
-    private static double _minimapHeight = 400;
-    private const double MinimapMinSize = 200;
+    /* Minimap state. The default is a corner overlay, not a window: at the old 400x400 it
+       covered roughly a quarter of the canvas on a laptop and read as something you had to
+       dismiss to carry on working, which defeats a navigation aid. Resize still reaches 500
+       for anyone who wants the old size, and the chosen size is static so it survives being
+       reopened on another plan. */
+    private static double _minimapWidth = 220;
+    private static double _minimapHeight = 220;
+    private const double MinimapMinSize = 160;
     private const double MinimapMaxSize = 500;
     private bool _minimapDragging;
     private Border? _minimapViewportBox;
@@ -140,9 +138,69 @@ public partial class PlanViewerControl : UserControl
     private Border? _minimapSelectedNode;
     private PlanNode? _selectedNode;
 
+    /// <summary>
+    /// Pans the plan toolbar when it is wider than the window — the same contract as the
+    /// session toolbar's row: wheel up scrolls left, a horizontal wheel wins when the device
+    /// sends both, and a fully visible toolbar leaves the wheel to whatever is under it.
+    /// </summary>
+    private void OnPlanToolbarWheel(object? sender, PointerWheelEventArgs e)
+    {
+        var max = Math.Max(0, PlanToolbarScroll.Extent.Width - PlanToolbarScroll.Viewport.Width);
+        if (max <= 0)
+            return;
+
+        var delta = e.Delta.X != 0 ? e.Delta.X : e.Delta.Y;
+        if (delta == 0)
+            return;
+
+        PlanToolbarScroll.Offset = new Avalonia.Vector(
+            Math.Clamp(PlanToolbarScroll.Offset.X - (delta * 48), 0, max),
+            PlanToolbarScroll.Offset.Y);
+        e.Handled = true;
+    }
+
+    /// <summary>
+    /// The toolbar's overflow: which trailing commands have moved into the chevron menu because
+    /// the row is wider than the window, and the menu they moved into.
+    /// </summary>
+    public ToolbarOverflow Overflow { get; }
+
     public PlanViewerControl()
     {
         InitializeComponent();
+
+        /* Icon adoption for the XAML-declared toolbar buttons. Set here rather than in the
+           XAML because a bare PathIcon does not inherit the button's foreground (its stock
+           theme sets one); AppIcons.MakeContent installs the corrected theme. */
+        PlanConnectButton.Content = AppIcons.MakeContent(AppIcons.Connect, "Connect");
+        SavePlanButton.Content = AppIcons.MakeContent(AppIcons.Save, "Save .sqlplan");
+        StatementsButton.Content = AppIcons.MakeContent(AppIcons.Statements, "Statements");
+        PlanToolbarOverflowButton.Content = AppIcons.MakeIcon(AppIcons.More);
+
+        /* The minimap toggle used to be the literal word "minimap" at 9px, which read as a label
+           rather than a control. AppIcons.Minimap was drawn for this button and left unwired. */
+        MinimapToggleButton.Content = AppIcons.MakeIcon(AppIcons.Minimap);
+
+        /* Same contract as the session toolbar's overflow, in the order these leave the row:
+           Statements first, then Save. Zoom, Fit and the zoom readout stay — they are what this
+           toolbar is for, and Fit in particular is the recovery from a zoom that went wrong.
+
+           Statements is the interesting one: its visibility already belongs to the plan (a plan
+           with no statement list has no button), so the overflow observes that intent rather than
+           overwriting it — see ToolbarOverflow. Its divider is registered with it for the same
+           reason the session toolbar's group dividers are, and moves with it either way. */
+        var collapsible = new List<ToolbarOverflow.Item>
+        {
+            new(StatementsButton, AppIcons.Statements, "Statements", StatementsButtonSeparator),
+            new(SavePlanButton, AppIcons.Save, "Save .sqlplan", SavePlanSeparator)
+        };
+
+        Overflow = ToolbarOverflow.Attach(
+            PlanToolbarScroll, PlanToolbarOverflowButton, new MenuFlyout(), collapsible);
+
+        // Same wheel contract as the session toolbar's scrolling row (see OnPlanToolbarWheel).
+        PlanToolbarScroll.AddHandler(PointerWheelChangedEvent, OnPlanToolbarWheel, Avalonia.Interactivity.RoutingStrategies.Tunnel);
+
         // Use Tunnel routing so Ctrl+wheel zoom fires before ScrollViewer consumes the event
         PlanScrollViewer.AddHandler(PointerWheelChangedEvent, PlanScrollViewer_PointerWheelChanged, Avalonia.Interactivity.RoutingStrategies.Tunnel);
         // Use Tunnel routing so pan handlers fire before ScrollViewer consumes the events
@@ -169,15 +227,22 @@ public partial class PlanViewerControl : UserControl
         Helpers.DataGridBehaviors.AttachCopyGuard(StatementsGrid,
             item => item is StatementRow row ? RunnableStatementText(row.Statement) : null);
 
-        // Wire minimap resize grip (defined in AXAML, not in canvas)
+        /* Wire minimap resize grip (defined in AXAML, not in canvas).
+
+           PointerCaptureLost matters as much as PointerReleased. Capture can go away without a
+           release — alt-tab mid-drag, a touch cancel, another control taking it — and the "am I
+           dragging?" flag is the only thing the move handlers check. Left set, a later plain
+           hover over the grip resizes the panel against a start point from minutes ago. */
         MinimapResizeGrip.PointerPressed += MinimapResizeGrip_PointerPressed;
         MinimapResizeGrip.PointerMoved += MinimapResizeGrip_PointerMoved;
         MinimapResizeGrip.PointerReleased += MinimapResizeGrip_PointerReleased;
+        MinimapResizeGrip.PointerCaptureLost += (_, _) => _minimapResizing = false;
 
         // Wire minimap canvas interaction handlers once
         MinimapCanvas.PointerPressed += MinimapCanvas_PointerPressed;
         MinimapCanvas.PointerMoved += MinimapCanvas_PointerMoved;
         MinimapCanvas.PointerReleased += MinimapCanvas_PointerReleased;
+        MinimapCanvas.PointerCaptureLost += (_, _) => _minimapDragging = false;
     }
 
     /// <summary>
@@ -221,6 +286,33 @@ public partial class PlanViewerControl : UserControl
     /// </summary>
     public string? ConnectionString { get; set; }
 
+    /// <summary>
+    /// Whether this viewer is living as a sub-tab inside a query session, rather than as a
+    /// top-level tab of its own.
+    ///
+    /// <para>Hosted, it drops the connection half of its toolbar — Reconnect, the server label
+    /// and the Database picker — because the session's toolbar is one row above showing the same
+    /// connection, and its own picker was permanently disabled there anyway: a plan inside a
+    /// session inherits <see cref="ConnectionString"/> from the session (see
+    /// QuerySessionControl.AddPlanTab), and never populates a database list of its own. Two
+    /// stacked toolbars, three of the controls duplicated, one of them dead.</para>
+    ///
+    /// <para>Everything plan-scoped stays: zoom, Fit, the zoom readout, Save .sqlplan and
+    /// Statements. And schema lookups keep working, since they read ConnectionString rather than
+    /// the controls.</para>
+    /// </summary>
+    public bool HostedInSession
+    {
+        get => _hostedInSession;
+        set
+        {
+            _hostedInSession = value;
+            PlanConnectionControls.IsVisible = !value;
+        }
+    }
+
+    private bool _hostedInSession;
+
     // Connection state for plans that connect via the toolbar
     private ServerConnection? _planConnection;
     private ICredentialService? _planCredentialService;
@@ -242,8 +334,8 @@ public partial class PlanViewerControl : UserControl
     public void SetConnectionStatus(string serverName, string? database)
     {
         PlanServerLabel.Text = serverName;
-        PlanServerLabel.Foreground = Brushes.LimeGreen;
-        PlanConnectButton.Content = "Reconnect";
+        PlanServerLabel.Foreground = FindBrushResource("SuccessBrush");
+        PlanConnectButton.Content = AppIcons.MakeContent(AppIcons.Connect, "Reconnect");
         if (database != null)
             _planSelectedDatabase = database;
     }
@@ -447,8 +539,8 @@ public partial class PlanViewerControl : UserControl
         InsightsPanel.IsVisible = false;
         CostText.Text = "";
         CloseStatementsPanel();
-        StatementsButton.IsVisible = false;
-        StatementsButtonSeparator.IsVisible = false;
+        // Button and divider both belong to the overflow — see ShowStatementsPanel.
+        Overflow.SetAvailable(StatementsButton, false);
         ClosePropertiesPanel();
         CloseMinimapPanel();
     }
@@ -483,7 +575,8 @@ public partial class PlanViewerControl : UserControl
     {
         if (_planCredentialService == null || _planConnectionStore == null) return;
 
-        var dialog = new ConnectionDialog(_planCredentialService, _planConnectionStore);
+        // Pass the current database so a reconnect comes back to it rather than master.
+        var dialog = new ConnectionDialog(_planCredentialService, _planConnectionStore, _planSelectedDatabase);
         var topLevel = TopLevel.GetTopLevel(this);
         if (topLevel is not Window parentWindow) return;
 
@@ -495,8 +588,8 @@ public partial class PlanViewerControl : UserControl
         ConnectionString = _planConnection.GetConnectionString(_planCredentialService, _planSelectedDatabase);
 
         PlanServerLabel.Text = _planConnection.ServerName;
-        PlanServerLabel.Foreground = Brushes.LimeGreen;
-        PlanConnectButton.Content = "Reconnect";
+        PlanServerLabel.Foreground = FindBrushResource("SuccessBrush");
+        PlanConnectButton.Content = AppIcons.MakeContent(AppIcons.Connect, "Reconnect");
 
         // Populate database dropdown
         try

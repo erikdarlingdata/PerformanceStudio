@@ -117,7 +117,7 @@ public partial class WaitStatsProfileControl : UserControl
         for (int i = 0; i < AllWaitCategories.Length; i++)
         {
             var cat = AllWaitCategories[i];
-            var brush = TryFindBrush($"WaitCategory.{cat}", new SolidColorBrush(Color.Parse("#555D66")));
+            var brush = TryFindBrush($"WaitCategory.{cat}", new SolidColorBrush(Color.Parse("#676E73")));
 
             var swatch = new Border
             {

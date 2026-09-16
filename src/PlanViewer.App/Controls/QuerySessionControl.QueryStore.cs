@@ -9,6 +9,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Xml.Linq;
 using Avalonia.Controls;
+using Avalonia.LogicalTree;
 using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
@@ -33,15 +34,14 @@ public partial class QuerySessionControl : UserControl
 {
     private bool HasQueryStoreTab()
     {
-        return SubTabControl.Items.OfType<TabItem>()
-            .Any(t => t.Content is QueryStoreGridControl);
+        return DocumentTabs.Any(t => t.Content is QueryStoreGridControl);
     }
 
     public void TriggerQueryStore() => QueryStore_Click(null, new RoutedEventArgs());
 
     /// <summary>
     /// Creates a sub-tab with a standard header (label + optional extra buttons + close button).
-    /// Returns the TabItem. The close button removes the tab from SubTabControl.
+    /// Returns the TabItem. The close button removes the tab from the document strip.
     /// </summary>
     private TabItem CreateSubTab(string label, Control content, Action<TabItem>? onClose = null, params Button[] extraButtons)
     {
@@ -61,7 +61,7 @@ public partial class QuerySessionControl : UserControl
             Margin = new Avalonia.Thickness(2, 0, 0, 0),
             Background = Brushes.Transparent,
             BorderThickness = new Avalonia.Thickness(0),
-            Foreground = new SolidColorBrush(Color.FromRgb(0xE4, 0xE6, 0xEB)),
+            Foreground = ForegroundToken,
             VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
             HorizontalContentAlignment = HorizontalAlignment.Center,
             VerticalContentAlignment = VerticalAlignment.Center
@@ -84,7 +84,7 @@ public partial class QuerySessionControl : UserControl
             if (s is Button btn && btn.Tag is TabItem t)
             {
                 onClose?.Invoke(t);
-                SubTabControl.Items.Remove(t);
+                RemoveDocument(t);
             }
         };
 
@@ -99,41 +99,15 @@ public partial class QuerySessionControl : UserControl
         return null;
     }
 
+    /// <summary>
+    /// The toolbar's way in to the Overview. It is a view rather than a document now, so this and
+    /// the view bar's Overview segment are the same gesture and share one implementation — two
+    /// entry points that could disagree about what "open the Overview" means is exactly the bug
+    /// nobody finds.
+    /// </summary>
     private async void QueryStoreOverview_Click(object? sender, RoutedEventArgs e)
     {
-        if (_serverConnection == null || _connectionString == null)
-        {
-            await ShowConnectionDialogAsync();
-            if (_serverConnection == null || _connectionString == null)
-                return;
-        }
-
-        SetStatus("Loading Query Store Overview...");
-
-        var supportsWaitStats = _serverMetadata?.SupportsQueryStoreWaitStats ?? false;
-        var overview = new QueryStoreOverviewControl(_serverConnection, _credentialService,
-            supportsWaitStats: supportsWaitStats);
-        overview.DrillDownRequested += async (_, args) =>
-        {
-            // Open a single-database Query Store tab directly (no connection dialog)
-            _selectedDatabase = args.Database;
-            _connectionString = _serverConnection!.GetConnectionString(_credentialService, args.Database);
-            await OpenQueryStoreForDatabaseAsync(args.Database, args.StartUtc, args.EndUtc);
-        };
-
-        var tab = CreateSubTab("QS Overview", overview);
-        SubTabControl.Items.Add(tab);
-        SubTabControl.SelectedItem = tab;
-
-        try
-        {
-            await overview.LoadAsync();
-            SetStatus("");
-        }
-        catch (Exception ex)
-        {
-            SetStatus(ex.Message, autoClear: false);
-        }
+        await ShowOverviewAsync();
     }
 
     private async Task OpenQueryStoreForDatabaseAsync(string database, DateTime? initialStartUtc = null, DateTime? initialEndUtc = null)
@@ -147,7 +121,7 @@ public partial class QuerySessionControl : UserControl
             var (enabled, state, readOnlyReplica) = await QueryStoreService.CheckEnabledAsync(connStr);
             if (!enabled)
             {
-                SetStatus(readOnlyReplica
+                SetErrorStatus(readOnlyReplica
                     ? $"{database} is a read-only replica with no Query Store data ({state ?? "unknown"}); enable it on the primary"
                     : $"Query Store not enabled on {database} ({state ?? "unknown"})");
                 return;
@@ -155,11 +129,11 @@ public partial class QuerySessionControl : UserControl
         }
         catch (Exception ex)
         {
-            SetStatus(ex.Message, autoClear: false);
+            SetStatusFromException(ex);
             return;
         }
 
-        SetStatus("");
+        ClearStatus();
 
         // Check if wait stats are supported
         var supportsWaitStats = _serverMetadata?.SupportsQueryStoreWaitStats ?? false;
@@ -187,8 +161,8 @@ public partial class QuerySessionControl : UserControl
                 tb.Text = $"Query Store — {db}";
         };
 
-        SubTabControl.Items.Add(tab);
-        SubTabControl.SelectedItem = tab;
+        AddDocument(tab);
+        SelectDocument(tab);
     }
 
     private async void QueryStore_Click(object? sender, RoutedEventArgs e)
@@ -208,7 +182,7 @@ public partial class QuerySessionControl : UserControl
             var (enabled, state, readOnlyReplica) = await QueryStoreService.CheckEnabledAsync(_connectionString);
             if (!enabled)
             {
-                SetStatus(readOnlyReplica
+                SetErrorStatus(readOnlyReplica
                     ? $"Read-only replica with no Query Store data ({state ?? "unknown"}); enable it on the primary"
                     : $"Query Store not enabled ({state ?? "unknown"})");
                 return;
@@ -221,11 +195,11 @@ public partial class QuerySessionControl : UserControl
                the actual available width; doing it again in code just threw away text the control
                would have kept, and with it the tooltip that now carries the full message. Same
                family as #448. */
-            SetStatus(ex.Message, autoClear: false);
+            SetStatusFromException(ex);
             return;
         }
 
-        SetStatus("");
+        ClearStatus();
 
         // Check if wait stats are supported (SQL 2017+ / Azure) and capture is enabled
         var supportsWaitStats = _serverMetadata?.SupportsQueryStoreWaitStats ?? false;
@@ -257,8 +231,8 @@ public partial class QuerySessionControl : UserControl
                 tb.Text = $"Query Store — {db}";
         };
 
-        SubTabControl.Items.Add(tab);
-        SubTabControl.SelectedItem = tab;
+        AddDocument(tab);
+        SelectDocument(tab);
     }
 
     /// <summary>
@@ -271,20 +245,30 @@ public partial class QuerySessionControl : UserControl
     internal void OnQueryStorePlansSelected(object? sender, List<QueryStorePlan> plans)
     {
         int loaded = 0;
+        var failures = new List<string>();
         foreach (var qsPlan in plans)
         {
             var tabLabel = $"QS {qsPlan.QueryId} / {qsPlan.PlanId}";
-            if (AddPlanTab(qsPlan.PlanXml, qsPlan.QueryText, estimated: true, labelOverride: tabLabel))
+            if (AddPlanTab(qsPlan.PlanXml, qsPlan.QueryText, estimated: true, labelOverride: tabLabel, out var failure))
                 loaded++;
+            else if (failure != null)
+                failures.Add(failure);
         }
 
-        // Only show the success summary when every plan loaded; otherwise AddPlanTab has
-        // already left a persistent status explaining the failure — don't clobber it.
-        if (loaded == plans.Count)
+        /* The one status that matters comes after the loop: every successful AddPlanTab selects
+           its new tab, and selecting a sub-tab clears the strip — so a failure reported mid-batch
+           is wiped by the very next success. Only a message written after the last tab survives. */
+        if (failures.Count == 0)
             SetStatus($"{plans.Count} Query Store plans loaded");
+        else if (plans.Count == 1)
+            SetErrorStatus(failures[0]);
+        else
+            SetErrorStatus($"Loaded {loaded} of {plans.Count} Query Store plans. {string.Join(" ", failures)}");
 
-        HumanAdviceButton.IsEnabled = true;
-        RobotAdviceButton.IsEnabled = true;
+        /* No manual button enables here: every successful AddPlanTab above selected its tab,
+           whose SelectionChanged already ran UpdatePlanTabButtonState — and when EVERY plan in
+           the batch failed, nothing was added or selected and the buttons must stay disabled.
+           An unconditional enable at this spot lit Advice with no document at all. */
     }
 
     /// <summary>
@@ -306,7 +290,7 @@ public partial class QuerySessionControl : UserControl
             Margin = new Avalonia.Thickness(4, 0, 0, 0),
             Background = Brushes.Transparent,
             BorderThickness = new Avalonia.Thickness(0),
-            Foreground = new SolidColorBrush(Color.FromRgb(0xA0, 0xA0, 0xA0)),
+            Foreground = MutedToken,
             VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
             HorizontalContentAlignment = HorizontalAlignment.Center,
             VerticalContentAlignment = VerticalAlignment.Center
@@ -324,8 +308,8 @@ public partial class QuerySessionControl : UserControl
                 DetachHistorySubTabToWindow(t);
         };
 
-        SubTabControl.Items.Add(tab);
-        SubTabControl.SelectedItem = tab;
+        AddDocument(tab);
+        SelectDocument(tab);
     }
 
     private void OnHistoryPlanLoadRequested(object? sender, HistoryPlanLoadEventArgs e)
@@ -347,7 +331,7 @@ public partial class QuerySessionControl : UserControl
         var tabLabel = GetSubTabHeaderText(tab)?.Text ?? "History";
 
         // Remove from sub-tabs
-        SubTabControl.Items.Remove(tab);
+        RemoveDocument(tab);
         tab.Content = null;
 
         var mainWindow = Avalonia.Controls.TopLevel.GetTopLevel(this) as Window;
@@ -361,8 +345,14 @@ public partial class QuerySessionControl : UserControl
             backgroundBrush: (Avalonia.Media.IBrush?)this.FindResource("BackgroundBrush"),
             onRedock: c =>
             {
-                if (mainWindow is not MainWindow mw || !mw.IsShuttingDown)
-                    AddHistorySubTab(tabLabel, (QueryStoreHistoryControl)c);
+                /* Shutdown is decided at REDOCK time through the logical tree. The visual
+                   answer captured at detach goes stale, is a plain Window for a detached
+                   session, and is null for an unrealized background tab - and a redock during
+                   shutdown rebuilds a sub-tab inside a session that is being torn down. Null
+                   here (a detached session) means no MainWindow shutdown applies; proceed. */
+                if (this.FindLogicalAncestorOfType<MainWindow>() is { IsShuttingDown: true })
+                    return;
+                AddHistorySubTab(tabLabel, (QueryStoreHistoryControl)c);
             },
             onClosing: c =>
             {

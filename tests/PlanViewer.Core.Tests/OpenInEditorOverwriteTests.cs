@@ -53,7 +53,9 @@ public class OpenInEditorOverwriteTests
                 session.OnOpenInEditorRequested(null, "SELECT 99 AS from_plan;");
 
                 Assert.Equal("SELECT 99 AS from_plan;", session.QueryEditor.Text);
-                Assert.Equal(0, session.SubTabControl.SelectedIndex);
+                /* "The editor came to the front" used to be sub-tab index 0. The editor is a view
+                   beside the document strip now, so the strip has no index that means it. */
+                Assert.Equal(QuerySessionControl.SessionSurface.Editor, session.SelectedView);
             }
             finally
             {
@@ -128,10 +130,10 @@ public class OpenInEditorOverwriteTests
                 PromptButton(prompt, "Replace").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                 Dispatcher.UIThread.RunJobs();
 
-                /* An explicit yes is still a yes: the statement lands and the editor sub-tab
-                   comes to the front, exactly as the unguarded path always did. */
+                /* An explicit yes is still a yes: the statement lands and the editor view comes
+                   to the front, exactly as the unguarded path always did. */
                 Assert.Equal("SELECT 99 AS from_plan;", session.QueryEditor.Text);
-                Assert.Equal(0, session.SubTabControl.SelectedIndex);
+                Assert.Equal(QuerySessionControl.SessionSurface.Editor, session.SelectedView);
             }
             finally
             {

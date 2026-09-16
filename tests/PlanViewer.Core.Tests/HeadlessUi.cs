@@ -9,6 +9,7 @@ using Avalonia.Headless;
 using Avalonia.Threading;
 using PlanViewer.App;
 using PlanViewer.App.Services;
+using PlanViewer.Core.Services;
 
 namespace PlanViewer.Core.Tests;
 
@@ -79,6 +80,15 @@ internal static class HeadlessUi
 
         SettingsRedirectRoot = Directory.CreateTempSubdirectory("PlanViewer.Core.Tests-").FullName;
         AppSettingsService.RedirectStorageForTestHost(SettingsRedirectRoot);
+
+        // The other settings store: MCP port and proxy configuration, which Settings >
+        // Integrations writes. Redirected for the same reason as the line above.
+        SettingsFile.RedirectForTestHost(SettingsRedirectRoot);
+
+        // And the third store. Proxy passwords live in the OS credential manager, not in either
+        // JSON file, so redirecting those two still left a test able to read — or delete — the
+        // developer's real saved credential.
+        CredentialServiceFactory.UseInMemoryForTestHost();
     }
 
     /// <summary>

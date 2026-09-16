@@ -37,7 +37,8 @@ public partial class QuerySessionControl : UserControl
 
     private async Task ShowConnectionDialogAsync()
     {
-        var dialog = new ConnectionDialog(_credentialService, _connectionStore);
+        // Pass the session's current database so a reconnect comes back to it rather than master.
+        var dialog = new ConnectionDialog(_credentialService, _connectionStore, _selectedDatabase);
         var result = await dialog.ShowDialog<bool?>(GetParentWindow());
 
         if (result == true && dialog.ResultConnection != null)
@@ -49,8 +50,12 @@ public partial class QuerySessionControl : UserControl
             ServerLabel.Text = _serverConnection.ApplicationIntentReadOnly
                 ? $"{_serverConnection.ServerName} (Read-only)"
                 : _serverConnection.ServerName;
-            ServerLabel.Foreground = Brushes.LimeGreen;
-            ConnectButton.Content = "Reconnect";
+            /* The label sits in a width-pinned slot so connecting cannot shove the rest of the
+               toolbar sideways, which means a long server name ellipsizes — the hover is where
+               the rest of it has to live. */
+            ToolTip.SetTip(ServerLabel, ServerLabel.Text);
+            ServerLabel.Foreground = Token("SuccessBrush", Brushes.LimeGreen);
+            ConnectButton.Content = Helpers.AppIcons.MakeContent(Helpers.AppIcons.Connect, "Reconnect");
 
             await PopulateDatabases();
             await FetchServerMetadataAsync();
@@ -72,6 +77,12 @@ public partial class QuerySessionControl : UserControl
 
             ExecuteButton.IsEnabled = true;
             ExecuteEstButton.IsEnabled = true;
+
+            /* Here, at the end, rather than beside the connection string at the top of this block:
+               _serverMetadata is not the new server's until FetchServerMetadataAsync above has
+               returned, and an Overview rebuilt inside that window would ask the OLD server what it
+               supports and hold that answer for the rest of the session. */
+            InvalidateOverviewView();
         }
     }
 

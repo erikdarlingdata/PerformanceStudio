@@ -400,6 +400,35 @@ public partial class MainWindow : Window
         EmptyOverlay.IsVisible = MainTabControl.Items.Count == 0;
     }
 
+    /// <summary>
+    /// Scrolls the single-row tab strip under a plain mouse wheel. Wheel up scrolls left, the
+    /// same direction the session toolbar's strip moves.
+    ///
+    /// <para>Only plain-wheel is new: dragging the rail, Shift+wheel and a trackpad's horizontal
+    /// swipe all worked the moment the strip got a ScrollViewer, and selecting a tab off-screen
+    /// (Ctrl+Tab included) brings it into view on its own. Avalonia maps a vertical wheel onto a
+    /// horizontal scroller only while Shift is held — ScrollContentPresenter.OnPointerWheelChanged
+    /// swaps the delta vector on that modifier alone — and nobody holds Shift to reach a tab.</para>
+    /// </summary>
+    private void TabStrip_PointerWheel(object? sender, PointerWheelEventArgs e)
+    {
+        if (sender is not ScrollViewer strip)
+            return;
+
+        var max = Math.Max(0, strip.Extent.Width - strip.Viewport.Width);
+        if (max <= 0)
+            return; // every tab is visible — leave the wheel alone
+
+        var delta = e.Delta.X != 0 ? e.Delta.X : e.Delta.Y;
+        if (delta == 0)
+            return;
+
+        strip.Offset = new Avalonia.Vector(
+            Math.Clamp(strip.Offset.X - (delta * 48), 0, max),
+            strip.Offset.Y);
+        e.Handled = true;
+    }
+
 
     // ── Unsaved query changes (#462) ──────────────────────────────────────
 
@@ -827,7 +856,7 @@ public partial class MainWindow : Window
         Close();
     }
 
-    private void Settings_Click(object? sender, RoutedEventArgs e)
+    private async void Settings_Click(object? sender, RoutedEventArgs e)
     {
         if (_settingsWindow != null)
         {
@@ -841,7 +870,10 @@ public partial class MainWindow : Window
             _appSettings = settings;
         };
         _settingsWindow.Closed += (_, _) => _settingsWindow = null;
-        _settingsWindow.Show(this);
+
+        // Modal: Settings owns the interaction until it closes, so its own child prompts
+        // (the unsaved-changes discard dialog) cannot be talked over from this window.
+        await _settingsWindow.ShowDialog(this);
     }
 
     private void About_Click(object? sender, RoutedEventArgs e)
@@ -858,21 +890,60 @@ public partial class MainWindow : Window
 
 
     /// <summary>
-    /// Re-decides whether Compare Plans is offered, for every query session in the window (#447).
+    /// Re-decides whether Compare Plans is offered, for every Compare button in the window (#447).
     ///
     /// <para>The button used to be enabled from a session's OWN plan count, so two queries in two
     /// separate sessions — one plan each — left it disabled in both, even though comparing them is
     /// exactly what it is for. The plans were always reachable: <see cref="CollectAllPlanTabs"/>
     /// spans sessions and is what the file-mode Compare button has always used, which is why saving
     /// a plan and reopening it worked around this.</para>
+    ///
+    /// <para>The plan-tab toolbar's own Compare button was left out of that fix and was never
+    /// disabled at all: with one plan open it looked available, and clicking it did nothing
+    /// whatsoever — <see cref="ShowCompareDialog"/> returns early and silently. It is refreshed
+    /// here too now, from the same count, so the two toolbars cannot disagree.</para>
     /// </summary>
     internal void RefreshComparePlanAvailability()
     {
         var comparable = CollectAllPlanTabs().Count >= 2;
+
         foreach (var item in MainTabControl.Items)
+            ApplyCompareAvailability((item as TabItem)?.Content as Control, comparable);
+
+        /* Detached PLAN windows keep their toolbar, and the button on it still opens THIS
+           window's picker — which cannot see the detached plan itself — so the window-wide
+           count is the honest answer there too. Left out, a plan window detached while a pair
+           existed kept an enabled button after the pair stopped existing.
+
+           Detached SESSIONS are deliberately not in this loop: their button falls back to their
+           own picker over their own plans, and QuerySessionControl.UpdateCompareButtonState
+           answers for them from that count (#447). */
+        foreach (var content in _detachedTabContents.OfType<DockPanel>())
+            ApplyCompareAvailability(content, comparable);
+    }
+
+    /// <summary>
+    /// Applies the window-wide answer to whatever Compare button one tab's content owns: a query
+    /// session has a named one in its own toolbar, and a plan tab has the code-built one from
+    /// <see cref="CreatePlanTabContent"/>.
+    /// </summary>
+    private static void ApplyCompareAvailability(Control? content, bool comparable)
+    {
+        if (content is QuerySessionControl session)
         {
-            if (item is TabItem { Content: QuerySessionControl session })
-                session.SetCompareAvailability(comparable);
+            session.SetCompareAvailability(comparable);
+            return;
+        }
+
+        if (content is not DockPanel dock) return;
+
+        foreach (var toolbar in dock.Children.OfType<StackPanel>())
+        {
+            foreach (var button in toolbar.Children.OfType<Button>())
+            {
+                if (button.Name == ComparePlansButtonState.Name)
+                    ComparePlansButtonState.Apply(button, comparable);
+            }
         }
     }
 
@@ -933,19 +1004,38 @@ public partial class MainWindow : Window
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Icon = this.Icon,
             Background = new SolidColorBrush(Color.Parse("#1A1D23")),
-            Foreground = new SolidColorBrush(Color.Parse("#E4E6EB")),
-            Content = new StackPanel
+            Foreground = new SolidColorBrush(Color.Parse("#E4E6EB"))
+        };
+
+        /* IsDefault/IsCancel so Enter and Esc both dismiss - this dialog used to offer no
+           way out but the titlebar X, and Alt+Tab could park it over the app indefinitely. */
+        var okButton = new Button
+        {
+            Content = "OK",
+            Width = 80,
+            Height = 32,
+            IsDefault = true,
+            IsCancel = true,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center,
+            Theme = (Avalonia.Styling.ControlTheme)this.FindResource("AppButton")!
+        };
+        okButton.Click += (_, _) => dialog.Close();
+
+        DockPanel.SetDock(okButton, Dock.Bottom);
+        dialog.Content = new DockPanel
+        {
+            Margin = new Avalonia.Thickness(20),
+            Children =
             {
-                Margin = new Avalonia.Thickness(20),
-                Children =
+                okButton,
+                new TextBlock
                 {
-                    new TextBlock
-                    {
-                        Text = message,
-                        TextWrapping = TextWrapping.Wrap,
-                        FontSize = 13,
-                        Foreground = new SolidColorBrush(Color.Parse("#E4E6EB"))
-                    }
+                    Text = message,
+                    TextWrapping = TextWrapping.Wrap,
+                    FontSize = 13,
+                    Foreground = new SolidColorBrush(Color.Parse("#E4E6EB"))
                 }
             }
         };
@@ -954,6 +1044,8 @@ public partial class MainWindow : Window
             dialog.ShowDialog(this);
         else
             dialog.Show();
+
+        okButton.Focus();
     }
 
     private async Task CheckForUpdatesOnStartupAsync()

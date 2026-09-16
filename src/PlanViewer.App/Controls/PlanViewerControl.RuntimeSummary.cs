@@ -20,8 +20,9 @@ public partial class PlanViewerControl : UserControl
     {
         RuntimeSummaryContent.Children.Clear();
 
-        var labelColor = "#E4E6EB";
-        var valueColor = "#E4E6EB";
+        // Muted labels, full-strength values: the numbers are the content, the labels are scaffolding.
+        var labelBrush = FindBrushResource("ForegroundMutedBrush");
+        var valueBrush = FindBrushResource("ForegroundBrush");
 
         var grid = new Grid
         {
@@ -29,7 +30,7 @@ public partial class PlanViewerControl : UserControl
         };
         int rowIndex = 0;
 
-        void AddRow(string label, string value, string? color = null)
+        void AddRow(string label, string value, string? brushKey = null)
         {
             grid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
 
@@ -37,7 +38,7 @@ public partial class PlanViewerControl : UserControl
             {
                 Text = label,
                 FontSize = 11,
-                Foreground = new SolidColorBrush(Color.Parse(labelColor)),
+                Foreground = labelBrush,
                 HorizontalAlignment = HorizontalAlignment.Left,
                 Margin = new Thickness(0, 1, 8, 1)
             };
@@ -49,7 +50,7 @@ public partial class PlanViewerControl : UserControl
             {
                 Text = value,
                 FontSize = 11,
-                Foreground = new SolidColorBrush(Color.Parse(color ?? valueColor)),
+                Foreground = brushKey == null ? valueBrush : FindBrushResource(brushKey),
                 Margin = new Thickness(0, 1, 0, 1)
             };
             Grid.SetRow(valueText, rowIndex);
@@ -59,22 +60,22 @@ public partial class PlanViewerControl : UserControl
             rowIndex++;
         }
 
-        // Efficiency thresholds: white >= 40%, orange >= 20%, red < 20%.
+        // Efficiency thresholds: plain >= 40%, warning >= 20%, error < 20%.
         // Loosened per Joe's feedback (#215 C1): for memory grants, moderate
         // utilization (e.g. 60%) is fine — operators can spill near their max,
         // so we shouldn't flag anything above a real over-grant threshold.
-        static string EfficiencyColor(double pct) => pct >= 40 ? "#E4E6EB"
-            : pct >= 20 ? "#FFB347" : "#E57373";
+        static string EfficiencyBrushKey(double pct) => pct >= 40 ? "ForegroundBrush"
+            : pct >= 20 ? "WarningBrush" : "ErrorBrush";
 
-        // Memory grant color tiers (#215 C1 + E8 + E9): over-used grant (red),
-        // any operator spilled (orange), otherwise tier by utilization.
-        static string MemoryGrantColor(double pctUsed, bool hasSpill)
+        // Memory grant color tiers (#215 C1 + E8 + E9): over-used grant (error),
+        // any operator spilled (warning), otherwise tier by utilization.
+        static string MemoryGrantBrushKey(double pctUsed, bool hasSpill)
         {
-            if (pctUsed > 100) return "#E57373";
-            if (hasSpill) return "#FFB347";
-            if (pctUsed >= 40) return "#E4E6EB";
-            if (pctUsed >= 20) return "#FFB347";
-            return "#E57373";
+            if (pctUsed > 100) return "ErrorBrush";
+            if (hasSpill) return "WarningBrush";
+            if (pctUsed >= 40) return "ForegroundBrush";
+            if (pctUsed >= 20) return "WarningBrush";
+            return "ErrorBrush";
         }
 
         // E7: rename the panel title for estimated plans
@@ -105,7 +106,7 @@ public partial class PlanViewerControl : UserControl
         if (statement.DegreeOfParallelism > 0)
         {
             var dopText = statement.DegreeOfParallelism.ToString();
-            string? dopColor = null;
+            string? dopBrushKey = null;
             if (statement.QueryTimeStats != null &&
                 statement.QueryTimeStats.ElapsedTimeMs > 0 &&
                 statement.QueryTimeStats.CpuTimeMs > 0 &&
@@ -120,9 +121,9 @@ public partial class PlanViewerControl : UserControl
                 var efficiency = Math.Min(100.0, (speedup - 1.0) / (statement.DegreeOfParallelism - 1.0) * 100.0);
                 efficiency = Math.Max(0.0, efficiency);
                 dopText += $" ({efficiency:N0}% efficient)";
-                dopColor = EfficiencyColor(efficiency);
+                dopBrushKey = EfficiencyBrushKey(efficiency);
             }
-            AddRow("DOP", dopText, dopColor);
+            AddRow("DOP", dopText, dopBrushKey);
         }
         else if (statement.NonParallelPlanReason != null)
             AddRow("Serial", statement.NonParallelPlanReason);
@@ -148,13 +149,13 @@ public partial class PlanViewerControl : UserControl
             var mg = statement.MemoryGrant;
             var grantPct = mg.GrantedMemoryKB > 0
                 ? (double)mg.MaxUsedMemoryKB / mg.GrantedMemoryKB * 100 : 100;
-            var grantColor = MemoryGrantColor(grantPct, hasSpillInTree);
+            var grantBrushKey = MemoryGrantBrushKey(grantPct, hasSpillInTree);
             var spillTag = hasSpillInTree ? " ⚠ spill" : "";
             AddRow("Memory grant",
                 $"{TextFormatter.FormatMemoryGrantKB(mg.GrantedMemoryKB)} granted, {TextFormatter.FormatMemoryGrantKB(mg.MaxUsedMemoryKB)} used ({grantPct:N0}%){spillTag}",
-                grantColor);
+                grantBrushKey);
             if (mg.GrantWaitTimeMs > 0)
-                AddRow("Grant wait", $"{mg.GrantWaitTimeMs:N0}ms", "#E57373");
+                AddRow("Grant wait", $"{mg.GrantWaitTimeMs:N0}ms", "ErrorBrush");
         }
 
         // Thread stats
@@ -166,11 +167,11 @@ public partial class PlanViewerControl : UserControl
             if (totalReserved > 0)
             {
                 var threadPct = (double)ts.UsedThreads / totalReserved * 100;
-                var threadColor = EfficiencyColor(threadPct);
+                var threadBrushKey = EfficiencyBrushKey(threadPct);
                 var threadText = ts.UsedThreads == totalReserved
                     ? $"{ts.UsedThreads} used ({totalReserved} reserved)"
                     : $"{ts.UsedThreads} used of {totalReserved} reserved ({totalReserved - ts.UsedThreads} inactive)";
-                AddRow("Threads", threadText, threadColor);
+                AddRow("Threads", threadText, threadBrushKey);
             }
             else
             {
@@ -195,6 +196,7 @@ public partial class PlanViewerControl : UserControl
         {
             RuntimeSummaryEmpty.IsVisible = true;
         }
+        SetInsightQuiet(RuntimeSummaryTitle, RuntimeSummaryAccent, grid.Children.Count == 0);
         ShowServerContext();
     }
 
@@ -205,13 +207,17 @@ public partial class PlanViewerControl : UserControl
         {
             ServerContextEmpty.IsVisible = true;
             ServerContextBorder.IsVisible = true;
+            SetInsightQuiet(ServerContextHeader, ServerContextAccent, true);
             return;
         }
 
         ServerContextEmpty.IsVisible = false;
+        SetInsightQuiet(ServerContextHeader, ServerContextAccent, false);
 
         var m = _serverMetadata;
-        var fgColor = "#E4E6EB";
+        // Same split as Runtime Summary: muted labels, full-strength values.
+        var labelBrush = FindBrushResource("ForegroundMutedBrush");
+        var valueBrush = FindBrushResource("ForegroundBrush");
 
         var grid = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*") };
         int rowIndex = 0;
@@ -222,7 +228,7 @@ public partial class PlanViewerControl : UserControl
             var lb = new TextBlock
             {
                 Text = label, FontSize = 11,
-                Foreground = new SolidColorBrush(Color.Parse(fgColor)),
+                Foreground = labelBrush,
                 HorizontalAlignment = HorizontalAlignment.Left,
                 Margin = new Thickness(0, 1, 8, 1)
             };
@@ -233,7 +239,7 @@ public partial class PlanViewerControl : UserControl
             var vb = new TextBlock
             {
                 Text = value, FontSize = 11,
-                Foreground = new SolidColorBrush(Color.Parse(fgColor)),
+                Foreground = valueBrush,
                 Margin = new Thickness(0, 1, 0, 1)
             };
             Grid.SetRow(vb, rowIndex);

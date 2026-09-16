@@ -44,7 +44,7 @@ public partial class QuerySessionControl : UserControl
     {
         if (_serverConnection == null || _selectedDatabase == null)
         {
-            SetStatus("Connect to a server first", autoClear: false);
+            SetErrorStatus("Connect to a server first");
             return;
         }
 
@@ -57,7 +57,7 @@ public partial class QuerySessionControl : UserControl
                         ?? QueryEditor.Text?.Trim();
         if (string.IsNullOrEmpty(queryText))
         {
-            SetStatus("Enter a query", autoClear: false);
+            SetErrorStatus("Enter a query");
             return;
         }
 
@@ -90,7 +90,7 @@ public partial class QuerySessionControl : UserControl
         {
             Text = $"Capturing {planType.ToLower()} plan...",
             FontSize = 14,
-            Foreground = new SolidColorBrush(Color.Parse("#E4E6EB")),
+            Foreground = ForegroundToken,
             HorizontalAlignment = HorizontalAlignment.Center,
             TextAlignment = Avalonia.Media.TextAlignment.Center,
             TextWrapping = TextWrapping.Wrap
@@ -117,7 +117,7 @@ public partial class QuerySessionControl : UserControl
 
         var loadingContainer = new Grid
         {
-            Background = new SolidColorBrush(Color.Parse("#1A1D23")),
+            Background = BackgroundToken,
             Focusable = true,
             Children = { loadingPanel }
         };
@@ -129,37 +129,10 @@ public partial class QuerySessionControl : UserControl
         // Add loading tab and switch to it
         _planCounter++;
         var tabLabel = estimated ? $"Est Plan {_planCounter}" : $"Plan {_planCounter}";
-        var headerText = new TextBlock
-        {
-            Text = tabLabel,
-            VerticalAlignment = VerticalAlignment.Center,
-            FontSize = 12
-        };
-        var closeBtn = new Button
-        {
-            Content = "\u2715",
-            MinWidth = 22, MinHeight = 22, Width = 22, Height = 22,
-            Padding = new Avalonia.Thickness(0),
-            FontSize = 11,
-            Margin = new Avalonia.Thickness(6, 0, 0, 0),
-            Background = Brushes.Transparent,
-            BorderThickness = new Avalonia.Thickness(0),
-            Foreground = new SolidColorBrush(Color.FromRgb(0xE4, 0xE6, 0xEB)),
-            VerticalAlignment = VerticalAlignment.Center,
-            HorizontalContentAlignment = HorizontalAlignment.Center,
-            VerticalContentAlignment = VerticalAlignment.Center
-        };
-        var header = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Children = { headerText, closeBtn }
-        };
-        var loadingTab = new TabItem { Header = header, Content = loadingContainer };
-        closeBtn.Tag = loadingTab;
-        closeBtn.Click += ClosePlanTab_Click;
+        var loadingTab = NewPlanTab(tabLabel, loadingContainer);
 
-        SubTabControl.Items.Add(loadingTab);
-        SubTabControl.SelectedItem = loadingTab;
+        AddDocument(loadingTab);
+        SelectDocument(loadingTab);
         loadingContainer.Focus();
 
         try
@@ -198,13 +171,17 @@ public partial class QuerySessionControl : UserControl
             // Replace loading content with the plan viewer
             SetStatus($"{planType} plan captured ({sw.Elapsed.TotalSeconds:F1}s)");
             ShowCapturedPlan(loadingTab, planXml, tabLabel, queryText);
-            HumanAdviceButton.IsEnabled = true;
-            RobotAdviceButton.IsEnabled = true;
         }
         catch (OperationCanceledException)
         {
-            SetStatus("Cancelled");
-            SubTabControl.Items.Remove(loadingTab);
+            /* Nothing in the strip. The user cancelled this themselves — Escape, the Cancel
+               button, or by starting the next query — and the spinner tab vanishing is the
+               answer to that. Saying so as well used to be harmless and is no longer even
+               visible: removing the selected tab clears the selection, and a selection change
+               empties the strip. (It used to MOVE the selection to a neighbour. A deselectable
+               strip clears it instead and RemoveDocument picks the neighbour afterwards — a
+               different mechanism, and the same thing this relies on either way.) */
+            RemoveDocument(loadingTab);
         }
         catch (SqlException ex)
         {
@@ -232,6 +209,8 @@ public partial class QuerySessionControl : UserControl
     internal void ShowCapturedPlan(TabItem planTab, string planXml, string tabLabel, string queryText)
     {
         var viewer = new PlanViewerControl();
+        // Sub-tab of this session: the session's toolbar above it owns the connection (#U5).
+        viewer.HostedInSession = true;
         viewer.Metadata = _serverMetadata;
         viewer.ConnectionString = _connectionString;
         viewer.SetConnectionServices(_credentialService, _connectionStore);
@@ -240,6 +219,16 @@ public partial class QuerySessionControl : UserControl
         viewer.OpenInEditorRequested += OnOpenInEditorRequested;
         viewer.LoadPlan(planXml, tabLabel, queryText);
         planTab.Content = viewer;
+
+        /* The content swap above changes no selection, so SelectionChanged never fires and the
+           button row never hears that a plan arrived: Copy Repro and Run Repro stayed dead after
+           every execute until the user clicked away and back. This call is the ONLY correct
+           answer — manual IsEnabled writes at the call sites used to paper over half of it, and
+           because they ran unconditionally AFTER this refresh they re-lit Advice on a view
+           surface, where pressing it opened advice for a document the user was not looking at.
+           On a view the refresh reads a null SelectedDocument and keeps everything disabled;
+           that is the Q2 gate and nothing may write these buttons around it. */
+        UpdatePlanTabButtonState();
     }
 
     /// <summary>
@@ -266,7 +255,10 @@ public partial class QuerySessionControl : UserControl
         panel.MaxWidth = 640;
 
         statusLabel.Text = message;
-        statusLabel.Foreground = new SolidColorBrush(Color.Parse("#E57373"));
+        /* Static, so it resolves off the label rather than off the session; the label is already
+           in the tree by the time a failure lands on it. ErrorBrush lives in the theme now; the
+           fallback only matters if a lookup ever misses. */
+        statusLabel.Foreground = Token(statusLabel, "ErrorBrush", FallbackError);
 
         progressBar.IsVisible = false;
         cancelBtn.IsVisible = false;
@@ -277,13 +269,13 @@ public partial class QuerySessionControl : UserControl
         var viewer = GetSelectedPlanViewer();
         if (viewer == null)
         {
-            SetStatus("Select a plan tab first");
+            SetErrorStatus("Select a plan tab first");
             return;
         }
 
         if (_connectionString == null || _selectedDatabase == null)
         {
-            SetStatus("Connect to a server first", autoClear: false);
+            SetErrorStatus("Connect to a server first");
             return;
         }
 
@@ -292,7 +284,7 @@ public partial class QuerySessionControl : UserControl
 
         if (string.IsNullOrEmpty(queryText))
         {
-            SetStatus("No query text available for this plan");
+            SetErrorStatus("No query text available for this plan");
             return;
         }
 
@@ -328,7 +320,7 @@ public partial class QuerySessionControl : UserControl
         {
             Text = "Capturing actual plan...",
             FontSize = 14,
-            Foreground = new SolidColorBrush(Color.Parse("#E4E6EB")),
+            Foreground = ForegroundToken,
             HorizontalAlignment = HorizontalAlignment.Center,
             TextAlignment = Avalonia.Media.TextAlignment.Center,
             TextWrapping = TextWrapping.Wrap
@@ -355,7 +347,7 @@ public partial class QuerySessionControl : UserControl
 
         var loadingContainer = new Grid
         {
-            Background = new SolidColorBrush(Color.Parse("#1A1D23")),
+            Background = BackgroundToken,
             Focusable = true,
             Children = { loadingPanel }
         };
@@ -366,37 +358,10 @@ public partial class QuerySessionControl : UserControl
 
         _planCounter++;
         var tabLabel = $"Plan {_planCounter}";
-        var headerText = new TextBlock
-        {
-            Text = tabLabel,
-            VerticalAlignment = VerticalAlignment.Center,
-            FontSize = 12
-        };
-        var closeBtn = new Button
-        {
-            Content = "\u2715",
-            MinWidth = 22, MinHeight = 22, Width = 22, Height = 22,
-            Padding = new Avalonia.Thickness(0),
-            FontSize = 11,
-            Margin = new Avalonia.Thickness(6, 0, 0, 0),
-            Background = Brushes.Transparent,
-            BorderThickness = new Avalonia.Thickness(0),
-            Foreground = new SolidColorBrush(Color.FromRgb(0xE4, 0xE6, 0xEB)),
-            VerticalAlignment = VerticalAlignment.Center,
-            HorizontalContentAlignment = HorizontalAlignment.Center,
-            VerticalContentAlignment = VerticalAlignment.Center
-        };
-        var header = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            Children = { headerText, closeBtn }
-        };
-        var loadingTab = new TabItem { Header = header, Content = loadingContainer };
-        closeBtn.Tag = loadingTab;
-        closeBtn.Click += ClosePlanTab_Click;
+        var loadingTab = NewPlanTab(tabLabel, loadingContainer);
 
-        SubTabControl.Items.Add(loadingTab);
-        SubTabControl.SelectedItem = loadingTab;
+        AddDocument(loadingTab);
+        SelectDocument(loadingTab);
         loadingContainer.Focus();
 
         try
@@ -424,8 +389,9 @@ public partial class QuerySessionControl : UserControl
         }
         catch (OperationCanceledException)
         {
-            SetStatus("Cancelled");
-            SubTabControl.Items.Remove(loadingTab);
+            // Same as the capture path above: the cancel was the user's own, and the tab going
+            // away says so. See that catch for why the message is gone.
+            RemoveDocument(loadingTab);
         }
         catch (SqlException ex)
         {

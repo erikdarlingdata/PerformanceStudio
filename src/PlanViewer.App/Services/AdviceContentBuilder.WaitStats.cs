@@ -17,7 +17,19 @@ namespace PlanViewer.App.Services;
 
 internal static partial class AdviceContentBuilder
 {
-    private static StackPanel CreateWaitStatLine(string waitName, string waitValue, double maxWaitMs)
+    /// <summary>
+    /// One wait type, its time, and a bar scaled against the largest wait in the group.
+    ///
+    /// <para><paramref name="benefitTag"/> rides alongside the value rather than inside it. The
+    /// bar's width is parsed back out of <paramref name="waitValue"/>, so a tag folded into that
+    /// string costs the line its bar — which is exactly what happens to the text view's tagged
+    /// wait lines, and is why the card view passes the tag separately.</para>
+    /// </summary>
+    private static StackPanel CreateWaitStatLine(
+        string waitName,
+        string waitValue,
+        double maxWaitMs,
+        string? benefitTag = null)
     {
         var wrapper = new StackPanel
         {
@@ -34,6 +46,8 @@ internal static partial class AdviceContentBuilder
         var waitBrush = GetWaitCategoryBrush(waitName);
         tb.Inlines!.Add(new Run(waitName) { Foreground = waitBrush });
         tb.Inlines.Add(new Run(": " + waitValue) { Foreground = ValueBrush });
+        if (!string.IsNullOrEmpty(benefitTag))
+            tb.Inlines.Add(new Run(benefitTag) { Foreground = WarningBrush, FontSize = 11 });
 
         // Inline description label for the wait type
         var label = PlanAnalyzer.GetWaitLabel(waitName);
@@ -131,9 +145,22 @@ internal static partial class AdviceContentBuilder
     }
 
     /// <summary>
-    /// Creates a per-statement triage summary card showing key findings at a glance.
+    /// The utilisation verdict on a memory grant: under a tenth of it used is waste worth calling
+    /// out, under half is worth noticing, and anything above that is fine.
     /// </summary>
-    private static Border? CreateTriageSummaryCard(StatementResult stmt)
+    private static SolidColorBrush MemoryGrantBrush(double usedPercent) =>
+        usedPercent < 10 ? CriticalBrush
+        : usedPercent < 50 ? WarningBrush
+        : InfoBrush;
+
+    /// <summary>
+    /// Creates a per-statement triage summary card showing key findings at a glance.
+    ///
+    /// <para><paramref name="includeMemoryGrant"/> is off for the card view, which prints the
+    /// grant in full underneath — granted against used, and against max server memory — and would
+    /// otherwise say it twice in two different shapes.</para>
+    /// </summary>
+    private static Border? CreateTriageSummaryCard(StatementResult stmt, bool includeMemoryGrant = true)
     {
         var items = new List<(string text, SolidColorBrush brush)>();
 
@@ -152,17 +179,13 @@ internal static partial class AdviceContentBuilder
         }
 
         // Memory grant — color by utilization efficiency
-        if (stmt.MemoryGrant != null && stmt.MemoryGrant.GrantedKB > 0)
+        if (includeMemoryGrant && stmt.MemoryGrant != null && stmt.MemoryGrant.GrantedKB > 0)
         {
             var grantedMB = stmt.MemoryGrant.GrantedKB / 1024.0;
             var usedPct = stmt.MemoryGrant.MaxUsedKB > 0
                 ? (double)stmt.MemoryGrant.MaxUsedKB / stmt.MemoryGrant.GrantedKB * 100.0
                 : 0.0;
-            // Red: <10% used (massive waste), Amber: <50%, Blue: <80%, Green-ish (info): >=80%
-            var memBrush = usedPct < 10 ? CriticalBrush
-                         : usedPct < 50 ? WarningBrush
-                         : InfoBrush;
-            items.Add(($"Memory grant: {grantedMB:F1} MB ({usedPct:F0}% used)", memBrush));
+            items.Add(($"Memory grant: {grantedMB:F1} MB ({usedPct:F0}% used)", MemoryGrantBrush(usedPct)));
         }
 
         // Wait profile classification

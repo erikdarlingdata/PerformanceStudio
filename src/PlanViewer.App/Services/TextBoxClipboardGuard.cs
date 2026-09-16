@@ -4,7 +4,8 @@ using Avalonia.Interactivity;
 namespace PlanViewer.App.Services;
 
 /// <summary>
-/// App-wide interception of TextBox clipboard operations. Avalonia's built-in
+/// App-wide interception of TextBox and SelectableTextBlock clipboard operations.
+/// Avalonia's built-in
 /// TextBox.Copy()/Cut() are async void with an unguarded clipboard await, and
 /// Paste() catches only TimeoutException, so a locked Windows clipboard
 /// (CLIPBRD_E_CANT_OPEN) crashes the app (issue #415). TextBox raises these
@@ -30,6 +31,13 @@ internal static class TextBoxClipboardGuard
         TextBox.CopyingToClipboardEvent.AddClassHandler<TextBox>(OnCopying);
         TextBox.CuttingToClipboardEvent.AddClassHandler<TextBox>(OnCutting);
         TextBox.PastingFromClipboardEvent.AddClassHandler<TextBox>(OnPasting);
+
+        // SelectableTextBlock registers its own CopyingToClipboard routed event rather than
+        // sharing TextBox's (the two event objects are not reference-equal), so the handlers
+        // above never fire for it — and its built-in Copy() is the same async void over an
+        // unguarded SetTextAsync that #415 was about. It is read-only, so copy is the only
+        // clipboard operation it has.
+        SelectableTextBlock.CopyingToClipboardEvent.AddClassHandler<SelectableTextBlock>(OnSelectableCopying);
     }
 
     // CanCopy/CanCut/CanPaste mirror the built-in gates (password box, read-only,
@@ -43,6 +51,15 @@ internal static class TextBoxClipboardGuard
 
         e.Handled = true;
         _ = ClipboardHelper.TrySetTextAsync(textBox, textBox.SelectedText);
+    }
+
+    private static void OnSelectableCopying(SelectableTextBlock block, RoutedEventArgs e)
+    {
+        if (!block.CanCopy)
+            return;
+
+        e.Handled = true;
+        _ = ClipboardHelper.TrySetTextAsync(block, block.SelectedText);
     }
 
     private static async void OnCutting(TextBox textBox, RoutedEventArgs e)

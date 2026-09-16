@@ -21,9 +21,11 @@ namespace PlanViewer.App.Services;
 /// - <b>Linux</b>: a freedesktop <c>.desktop</c> entry + MIME glob, with the desktop
 ///   databases refreshed only when something was actually written.
 /// - <b>macOS</b>: no-op. Launch Services reads <c>CFBundleDocumentTypes</c> from the
-///   bundle's Info.plist. (Loading the opened plan additionally needs Avalonia's
-///   <c>FileActivatedEventArgs</c> to deliver the path; Avalonia 11.3.17 does not
-///   expose it, so macOS double-click currently launches the app without the plan.)
+///   bundle's Info.plist, and the opened path arrives through Avalonia's
+///   <c>IActivatableLifetime.Activated</c> as <c>FileActivatedEventArgs</c> rather than
+///   in argv — subscribed in <c>App.OnAppActivated</c>, which routes it to the same
+///   <c>MainWindow.OpenFiles</c> the other platforms reach. Still unverified at runtime:
+///   it compiles and the type is present, but nobody has double-clicked a plan on a Mac.
 /// </summary>
 public static class FileAssociationService
 {

@@ -12,6 +12,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
+using Avalonia.Markup.Xaml.MarkupExtensions;
 using Avalonia.Media;
 using AvaloniaEdit;
 using AvaloniaEdit.CodeCompletion;
@@ -210,7 +211,7 @@ public partial class QuerySessionControl : UserControl
         }
 
         QueryEditor.Text = queryText;
-        SubTabControl.SelectedIndex = 0; // Switch to the editor tab
+        SelectEditor();
         QueryEditor.Focus();
     }
 
@@ -230,10 +231,76 @@ public partial class QuerySessionControl : UserControl
             ExecuteEstimated_Click(this, new RoutedEventArgs());
             e.Handled = true;
         }
+        /* Ctrl+Shift+F → Format.
+           The toolbar is a fixed row that scrolls now, and at laptop width Format is one of the
+           slots that starts off the right-hand end of it. Every other button in that half either
+           has a shortcut already or acts on a plan you have to click to first; Format acts on the
+           query you are typing, so reaching it by wheeling the toolbar is the wrong ask.
+
+           Ctrl+Shift+F and not the editors' Shift+Alt+F, which collides with the menu bar: an
+           Alt-modified key without Control is an access key as far as AccessKeyHandler is
+           concerned, and Alt+F is _File. It survives inside the editor only because this handler
+           marks it handled first, so the same keystroke with focus anywhere else in the window
+           (a tab header, a plan tab) would open the File menu instead of formatting. Ctrl
+           modifiers are skipped by that handler outright, and Ctrl+Shift+O is already this app's
+           spelling of Open Query, so the grammar matches. */
+        else if (e.Key == Key.F && e.KeyModifiers == (KeyModifiers.Control | KeyModifiers.Shift)
+                 && FormatButton.IsEnabled)
+        {
+            Format_Click(this, new RoutedEventArgs());
+            e.Handled = true;
+        }
         // Escape → Cancel running query
         else if (e.Key == Key.Escape && _executionCts != null && !_executionCts.IsCancellationRequested)
         {
             _executionCts.Cancel();
+            e.Handled = true;
+        }
+        /* Ctrl+F4 → close the document being looked at.
+           Ctrl+W, the shortcut most apps spell this with, is taken: the window's tunnel handler
+           claims it whenever a top-level tab is selected, which is always, and closes that whole
+           tab. A tunneled Handled never reaches this bubbling handler, so binding Ctrl+W here
+           would do nothing at all — and that is the good outcome, because the alternative is a
+           keystroke that sometimes closes a plan and sometimes closes the session it lives in.
+           F4 is free: the only F4 in the app is the menu's Alt+F4, and the window's tunnel has no
+           case for it, so the keystroke arrives here intact.
+
+           On a view there is nothing selected to close and this does nothing — deliberately
+           including not falling through to the top-level tab, which is what Ctrl+W would have
+           done and is the surprise this binding exists to avoid. */
+        else if (e.Key == Key.F4 && e.KeyModifiers == KeyModifiers.Control)
+        {
+            if (SelectedDocument is { } document)
+            {
+                CloseDocument(document);
+                e.Handled = true;
+            }
+        }
+        /* Ctrl+1 → the editor view, the keyboard's half of the view bar beside the strip.
+
+           Already being there is not nothing to do. The surface machine moves the caret into the
+           editor when it ARRIVES at it, and a request to go somewhere it already is moves nothing
+           — so with focus out on a toolbar button or a tab header, the shortcut would latch a
+           segment that was already latched and leave the caret where it was. Asking for the
+           editor has to mean the same thing both times. */
+        else if (e.Key == Key.D1 && e.KeyModifiers == KeyModifiers.Control)
+        {
+            if (IsEditorSelected)
+                FocusEditor();
+            else
+                SelectEditor();
+
+            e.Handled = true;
+        }
+        /* Ctrl+2 → the Overview view, through the segment's own implementation rather than a
+           second copy of it. That is what keeps the never-connected case honest: asking for the
+           Overview without a server offers the connection dialog and, if it is cancelled, leaves
+           the user where they were — parity the keyboard would lose the moment it grew its own
+           idea of what opening the Overview means. Fired and not awaited, the way the window's
+           own key handler starts its async commands. */
+        else if (e.Key == Key.D2 && e.KeyModifiers == KeyModifiers.Control)
+        {
+            _ = ShowOverviewAsync();
             e.Handled = true;
         }
     }
@@ -358,7 +425,50 @@ public partial class QuerySessionControl : UserControl
         return text[batchStart..batchEnd].Trim();
     }
 
-    private void SetStatus(string text, bool autoClear = true)
+    /// <summary>How long an ordinary message — progress, or something that worked — stays up.</summary>
+    private static readonly TimeSpan StatusClearDelay = TimeSpan.FromSeconds(3);
+
+    /// <summary>
+    /// How long a failure stays up. Longer than an ordinary message, because an error is the one
+    /// thing on this strip worth reading twice, but still finite: a message that never clears
+    /// outlives the view it was about and ends up hanging over an unrelated one.
+    /// </summary>
+    private static readonly TimeSpan ErrorStatusClearDelay = TimeSpan.FromSeconds(12);
+
+    private void SetStatus(string text, bool autoClear = true) =>
+        ShowStatus(text, isError: false, autoClear ? StatusClearDelay : null);
+
+    /// <summary>
+    /// Reports something the session could not do. Red, and gone on its own before long.
+    /// </summary>
+    private void SetErrorStatus(string text) =>
+        ShowStatus(text, isError: true, ErrorStatusClearDelay);
+
+    /// <summary>
+    /// Reports a failed operation — unless it failed because the user moved on.
+    ///
+    /// <para>Cancellation is not a failure worth a word: switching sub-tabs, closing a view, or
+    /// starting the next thing tears down whatever was in flight, and the exception that comes
+    /// back says "A task was canceled." with no hint of which task or why. That string used to
+    /// land in the strip with <c>autoClear: false</c> and sit there across every view the user
+    /// visited afterwards. <see cref="TaskCanceledException"/> derives from
+    /// <see cref="OperationCanceledException"/>, so the one check covers both.</para>
+    /// </summary>
+    private void SetStatusFromException(Exception ex, string prefix = "")
+    {
+        if (ex is OperationCanceledException)
+            return;
+
+        SetErrorStatus(prefix + ex.Message);
+    }
+
+    /// <summary>
+    /// Empties the strip. Called when the active sub-tab changes and when the session leaves the
+    /// visual tree, so a message never outlives what it was about.
+    /// </summary>
+    private void ClearStatus() => ShowStatus("", isError: false, clearAfter: null);
+
+    private void ShowStatus(string text, bool isError, TimeSpan? clearAfter)
     {
         var old = _statusClearCts;
         _statusClearCts = null;
@@ -367,19 +477,32 @@ public partial class QuerySessionControl : UserControl
 
         StatusText.Text = text;
 
+        /* Bound rather than assigned so the strip keeps following the theme dictionary, the way
+           its XAML foreground always has. */
+        StatusText[!TextBlock.ForegroundProperty] =
+            new DynamicResourceExtension(isError ? "ErrorBrush" : "ForegroundBrush");
+
         /* The bar is one line and trims with an ellipsis, so a long message - an error, usually -
            is readable only on hover. Setting the tip to the same text costs nothing when it fits and
            is the difference between a truncated error and a recoverable one when it does not. */
         ToolTip.SetTip(StatusText, string.IsNullOrEmpty(text) ? null : text);
 
-        if (autoClear && !string.IsNullOrEmpty(text))
+        if (clearAfter is not { } delay || string.IsNullOrEmpty(text))
+            return;
+
+        var cts = new CancellationTokenSource();
+        _statusClearCts = cts;
+        _ = Task.Delay(delay, cts.Token).ContinueWith(_ =>
         {
-            var cts = new CancellationTokenSource();
-            _statusClearCts = cts;
-            _ = Task.Delay(3000, cts.Token).ContinueWith(_ =>
+            /* Re-checked on the UI thread: a status set between the delay completing and this
+               posted job running has already cancelled this cts, but cancellation can no longer
+               stop a continuation that is past its token check — without the identity test the
+               stale timer would wipe the fresh message the moment it was posted. */
+            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
             {
-                Avalonia.Threading.Dispatcher.UIThread.Post(() => StatusText.Text = "");
-            }, TaskContinuationOptions.OnlyOnRanToCompletion);
-        }
+                if (_statusClearCts == cts)
+                    ClearStatus();
+            });
+        }, TaskContinuationOptions.OnlyOnRanToCompletion);
     }
 }

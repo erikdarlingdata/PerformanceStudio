@@ -35,6 +35,7 @@ public partial class PlanViewerControl : UserControl
         MinimapPanel.Width = _minimapWidth;
         MinimapPanel.Height = _minimapHeight;
         MinimapPanel.IsVisible = true;
+        MinimapToggleButton.Classes.Set("on", true);
         RenderMinimap();
     }
 
@@ -43,6 +44,9 @@ public partial class PlanViewerControl : UserControl
         MinimapPanel.IsVisible = false;
         _minimapDragging = false;
         _minimapResizing = false;
+        // Follows the panel, not the click: the minimap's own close button and clearing the plan
+        // both come through here without going near the toggle.
+        MinimapToggleButton.Classes.Set("on", false);
     }
 
     private void RenderMinimap()
@@ -461,9 +465,15 @@ public partial class PlanViewerControl : UserControl
         }
     }
 
+    /* Resize drags are measured against this control, NOT against MinimapPanel.
+
+       The panel is pinned to the bottom-right, so growing it moves its own top-left corner —
+       and the grip lives in that corner. Measured in the panel's own coordinates the grip would
+       therefore sit still while the pointer moved, and the drag would fight itself. This control
+       does not move, so deltas taken from it mean what they say. */
     private void MinimapResizeGrip_PointerPressed(object? sender, PointerPressedEventArgs e)
     {
-        var point = e.GetCurrentPoint(MinimapPanel);
+        var point = e.GetCurrentPoint(this);
         if (!point.Properties.IsLeftButtonPressed) return;
         _minimapResizing = true;
         _minimapResizeStart = point.Position;
@@ -476,11 +486,22 @@ public partial class PlanViewerControl : UserControl
     private void MinimapResizeGrip_PointerMoved(object? sender, PointerEventArgs e)
     {
         if (!_minimapResizing) return;
-        var current = e.GetPosition(MinimapPanel);
+
+        // Belt to PointerCaptureLost's braces: if the button is no longer down, the drag is over
+        // however it ended. Without this a stale flag turns an ordinary hover into a resize.
+        if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+        {
+            _minimapResizing = false;
+            return;
+        }
+
+        var current = e.GetPosition(this);
+        // Dragging toward the top-left — away from the pinned corner — is what grows the panel,
+        // so the deltas subtract.
         var dx = current.X - _minimapResizeStart.X;
         var dy = current.Y - _minimapResizeStart.Y;
-        var newW = Math.Max(MinimapMinSize, Math.Min(MinimapMaxSize, _minimapResizeStartW + dx));
-        var newH = Math.Max(MinimapMinSize, Math.Min(MinimapMaxSize, _minimapResizeStartH + dy));
+        var newW = Math.Max(MinimapMinSize, Math.Min(MinimapMaxSize, _minimapResizeStartW - dx));
+        var newH = Math.Max(MinimapMinSize, Math.Min(MinimapMaxSize, _minimapResizeStartH - dy));
         MinimapPanel.Width = newW;
         MinimapPanel.Height = newH;
         _minimapWidth = newW;

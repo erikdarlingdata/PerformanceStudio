@@ -72,7 +72,7 @@ public partial class QuerySessionControl : UserControl
         }
         catch (Exception ex)
         {
-            SetStatus($"Error: {ex.Message}", autoClear: false);
+            SetStatusFromException(ex, "Error: ");
             Debug.WriteLine($"Schema lookup error: {ex}");
         }
     }
@@ -134,7 +134,7 @@ public partial class QuerySessionControl : UserControl
             Margin = new Avalonia.Thickness(6, 0, 0, 0),
             Background = Brushes.Transparent,
             BorderThickness = new Avalonia.Thickness(0),
-            Foreground = new SolidColorBrush(Color.FromRgb(0xE4, 0xE6, 0xEB)),
+            Foreground = ForegroundToken,
             VerticalAlignment = VerticalAlignment.Center,
             HorizontalContentAlignment = HorizontalAlignment.Center,
             VerticalContentAlignment = VerticalAlignment.Center
@@ -151,11 +151,11 @@ public partial class QuerySessionControl : UserControl
         closeBtn.Click += (s, _) =>
         {
             if (s is Button btn && btn.Tag is TabItem t)
-                SubTabControl.Items.Remove(t);
+                RemoveDocument(t);
         };
 
-        SubTabControl.Items.Add(tab);
-        SubTabControl.SelectedItem = tab;
+        AddDocument(tab);
+        SelectDocument(tab);
     }
 
 }

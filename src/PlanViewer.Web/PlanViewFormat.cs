@@ -102,8 +102,8 @@ public static class PlanViewFormat
             parts.Add($"Estimated rows: {node.EstimateRows:N0}");
         }
 
-        parts.Add($"Estimated cost: {node.EstimatedOperatorCost:N4}");
-        parts.Add($"Subtree cost: {node.EstimatedTotalSubtreeCost:N4}");
+        parts.Add($"Estimated cost: {MetricFormatter.FormatCost(node.EstimatedOperatorCost)}");
+        parts.Add($"Subtree cost: {MetricFormatter.FormatCost(node.EstimatedTotalSubtreeCost)}");
 
         if (!string.IsNullOrEmpty(node.ObjectName)) parts.Add($"Object: {node.FullObjectName ?? node.ObjectName}");
         if (!string.IsNullOrEmpty(node.IndexName)) parts.Add($"Index: {node.IndexName}");

@@ -115,6 +115,12 @@ public partial class MainWindow : Window
                persistence — same single-subscription argument as the #495 tab watcher.
                Idempotent, because redock passes the same living session through again. */
             HookScratchPersistence(querySession);
+
+            /* And, for the same "every session, exactly here" reason, the moment it gains a
+               window. Its empty state lists this window's recent plans and runs this window's
+               File actions, and it cannot find the window by looking: a tab that opens behind
+               the selected one is never realised, so there is no tree to walk up. */
+            querySession.SetOwningWindow(this);
         }
 
         // Middle-click to close
@@ -431,7 +437,21 @@ public partial class MainWindow : Window
            session's plans, which inside a detached window is the only honest answer. Redock
            needs no twin call: adding the tab back fires MainWindow's collection watcher. */
         if (content is QuerySessionControl detachedSession)
+        {
             detachedSession.UpdateCompareButtonState();
+
+            /* Off the tab strip, its empty state has no window to open files into. Redock hands
+               it back through CreateTab. */
+            detachedSession.SetOwningWindow(null);
+        }
+        else
+        {
+            /* A detached plan window keeps its own Compare button, still wired to THIS window's
+               picker — and the plan that just left is no longer in it, so the pair it was
+               offering may no longer exist. The watcher fired on the tab's removal, which was
+               before the detached register knew about this window. */
+            RefreshComparePlanAvailability();
+        }
 
         return detachedWindow;
     }

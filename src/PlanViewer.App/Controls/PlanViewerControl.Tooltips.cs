@@ -6,6 +6,7 @@ using Avalonia.Controls;
 using Avalonia.Layout;
 using Avalonia.Media;
 using PlanViewer.Core.Models;
+using PlanViewer.Core.Output;
 
 namespace PlanViewer.App.Controls;
 
@@ -40,8 +41,8 @@ public partial class PlanViewerControl : UserControl
 
         // Cost
         AddTooltipSection(stack, "Costs");
-        AddTooltipRow(stack, "Cost", $"{node.CostPercent}% of statement ({node.EstimatedOperatorCost:F6})");
-        AddTooltipRow(stack, "Subtree Cost", $"{node.EstimatedTotalSubtreeCost:F6}");
+        AddTooltipRow(stack, "Cost", $"{node.CostPercent}% of statement ({MetricFormatter.FormatCost(node.EstimatedOperatorCost)})");
+        AddTooltipRow(stack, "Subtree Cost", MetricFormatter.FormatCost(node.EstimatedTotalSubtreeCost));
 
         // Rows
         AddTooltipSection(stack, "Rows");
@@ -70,8 +71,8 @@ public partial class PlanViewerControl : UserControl
         if (node.EstimateIO > 0 || node.EstimateCPU > 0 || node.EstimatedRowSize > 0)
         {
             AddTooltipSection(stack, "Estimates");
-            if (node.EstimateIO > 0) AddTooltipRow(stack, "I/O Cost", $"{node.EstimateIO:F6}");
-            if (node.EstimateCPU > 0) AddTooltipRow(stack, "CPU Cost", $"{node.EstimateCPU:F6}");
+            if (node.EstimateIO > 0) AddTooltipRow(stack, "I/O Cost", MetricFormatter.FormatCost(node.EstimateIO));
+            if (node.EstimateCPU > 0) AddTooltipRow(stack, "CPU Cost", MetricFormatter.FormatCost(node.EstimateCPU));
             if (node.EstimatedRowSize > 0) AddTooltipRow(stack, "Avg Row Size", $"{node.EstimatedRowSize} B");
         }
 
@@ -187,14 +188,12 @@ public partial class PlanViewerControl : UserControl
 
                 foreach (var (type, severity, count, maxBenefit) in distinct)
                 {
-                    var warnColor = severity == PlanWarningSeverity.Critical ? "#E57373"
-                        : severity == PlanWarningSeverity.Warning ? "#FFB347" : "#6BB5FF";
                     var benefitSuffix = maxBenefit >= 0 ? $" \u2014 up to {maxBenefit:N0}%" : "";
                     var label = count > 1 ? $"\u26A0 {type} ({count}){benefitSuffix}" : $"\u26A0 {type}{benefitSuffix}";
                     stack.Children.Add(new TextBlock
                     {
                         Text = label,
-                        Foreground = new SolidColorBrush(Color.Parse(warnColor)),
+                        Foreground = WarningSeverityBrush(severity),
                         FontSize = 11,
                         Margin = new Thickness(0, 2, 0, 0)
                     });
@@ -205,12 +204,10 @@ public partial class PlanViewerControl : UserControl
                 // Individual node: show full warning messages
                 foreach (var w in warnings)
                 {
-                    var warnColor = w.Severity == PlanWarningSeverity.Critical ? "#E57373"
-                        : w.Severity == PlanWarningSeverity.Warning ? "#FFB347" : "#6BB5FF";
                     stack.Children.Add(new TextBlock
                     {
                         Text = $"\u26A0 {w.WarningType}: {w.Message}",
-                        Foreground = new SolidColorBrush(Color.Parse(warnColor)),
+                        Foreground = WarningSeverityBrush(w.Severity),
                         FontSize = 11,
                         TextWrapping = TextWrapping.Wrap,
                         Margin = new Thickness(0, 2, 0, 0)
