@@ -910,10 +910,31 @@ internal partial class SettingsWindow : Window
 	private static string GetComboTag(ComboBox box) =>
 		(box.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "";
 
-	/// <summary>Rebuilds <c>FormatOptions</c> from the grid rows, after any one of them changes.</summary>
+	/// <summary>
+	/// Rebuilds <c>FormatOptions</c> from the grid rows, after any one of them changes.
+	///
+	/// <para>Starts from what is already stored rather than from a fresh
+	/// <see cref="SqlFormatSettings"/>, because a row that cannot be read right now has to keep
+	/// its current value. An int field is unreadable for as long as it is empty, which it is the
+	/// moment you select its contents to retype them — and this runs on every keystroke now, not
+	/// once when Save is pressed. Seeded from a fresh instance, clearing a field would drop the
+	/// default into the draft immediately, and navigating away would make that stick: the same
+	/// silent revert this whole change set out to stop.</para>
+	/// </summary>
 	private void CommitFormatOptions()
 	{
 		var fmt = new SqlFormatSettings();
+		if (_settings.FormatOptions is { } stored)
+		{
+			foreach (var prop in typeof(SqlFormatSettings)
+				.GetProperties(BindingFlags.Public | BindingFlags.Instance))
+			{
+				if (!prop.CanRead || !prop.CanWrite) continue;
+				try { prop.SetValue(fmt, prop.GetValue(stored)); }
+				catch { /* leave this one at its default */ }
+			}
+		}
+
 		foreach (var row in _formatRows)
 		{
 			try
@@ -924,7 +945,7 @@ internal partial class SettingsWindow : Window
 					value = row.BoolValue;
 				else if (prop.PropertyType == typeof(int))
 				{
-					// A half-typed number is not a value yet; keep the last good one.
+					// A half-typed number is not a value yet; the seeding above keeps the last good one.
 					if (!int.TryParse(row.CurrentValue, out var intVal)) continue;
 					value = intVal;
 				}

@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -12,6 +14,7 @@ using PlanViewer.App.Dialogs;
 using PlanViewer.App.Mcp;
 using PlanViewer.App.Services;
 using PlanViewer.Core.Services;
+using PlanViewer.Core.Models;
 
 namespace PlanViewer.Core.Tests;
 
@@ -299,6 +302,44 @@ public class SettingsIntegrationsTests
     }
 
     [Fact]
+    public void ClearingAFormatNumberMidEditKeepsTheStoredValue()
+    {
+        /* The format grid commits on every keystroke now. An int field is unreadable for as long
+           as it is empty, which it is the instant you select its contents to retype them — so a
+           rebuild that started from a fresh SqlFormatSettings would drop the default into the
+           draft right then, and navigating away would make it stick. */
+        HeadlessUi.Run(() =>
+        {
+            var settings = new AppSettings
+            {
+                FormatOptions = new SqlFormatSettings { IndentationSize = 7 }
+            };
+
+            var window = new SettingsWindow(settings);
+            AppSettings? saved = null;
+            window.SettingsSaved += s => saved = s;
+            window.Show();
+            Dispatcher.UIThread.RunJobs();
+
+            window.FindControl<ListBox>("SectionList")!.SelectedIndex = 2;
+            Dispatcher.UIThread.RunJobs();
+
+            var indent = FormatRows(window).Single(r => r.PropertyInfo.Name == "IndentationSize");
+            Assert.Equal("7", indent.CurrentValue);
+
+            indent.CurrentValue = "";   // mid-retype
+            Dispatcher.UIThread.RunJobs();
+
+            window.FindControl<Button>("SaveButton")!
+                  .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Dispatcher.UIThread.RunJobs();
+
+            Assert.NotNull(saved);
+            Assert.Equal(7, saved!.FormatOptions!.IndentationSize);
+        });
+    }
+
+    [Fact]
     public void ResetAllFromAnotherSectionStillResetsQueryStore()
     {
         /* The other half of the save bug above, and the same root cause: Reset All replaces the
@@ -499,6 +540,15 @@ public class SettingsIntegrationsTests
             .Select(row => row.Children[1])
             .OfType<T>()
             .First();
+
+    /// <summary>
+    /// The format grid's rows. They are the model the grid edits, so driving them is the same as
+    /// typing into a cell without depending on DataGrid cell templating in a headless run.
+    /// </summary>
+    private static IEnumerable<FormatOptionRow> FormatRows(SettingsWindow window) =>
+        (ObservableCollection<FormatOptionRow>)typeof(SettingsWindow)
+            .GetField("_formatRows", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetValue(window)!;
 
     /// <summary>Whether a Save from here would remove the stored proxy password.</summary>
     private static bool StagesCredentialDeletion(SettingsWindow window) =>
