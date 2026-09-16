@@ -345,6 +345,7 @@ public partial class PlanViewerControl : UserControl
            already hidden. Saying it this way is what keeps "Statements" out of the chevron menu for
            a plan that has none, and keeps the divider from being stranded on the row alone. */
         Overflow.SetAvailable(StatementsButton, true);
+        StatementsButton.Classes.Set("on", true);
     }
 
     private void CloseStatementsPanel()
@@ -353,5 +354,10 @@ public partial class PlanViewerControl : UserControl
         StatementsSplitter.IsVisible = false;
         _statementsColumn.Width = new GridLength(0);
         _statementsSplitterColumn.Width = new GridLength(0);
+        /* Marked here rather than in the click handler, because the click is not the only way this
+           panel closes — the panel's own close button goes straight to CloseStatementsPanel, and
+           so does clearing the plan. Following the panel's visibility is what stops the button and
+           the panel disagreeing about whether it is open. */
+        StatementsButton.Classes.Set("on", false);
     }
 }

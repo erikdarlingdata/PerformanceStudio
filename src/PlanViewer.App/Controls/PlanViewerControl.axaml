@@ -150,8 +150,13 @@
                     <Button Content="Fit" Click="ZoomFit_Click" Height="28" Padding="7,0"
                             ToolTip.Tip="Zoom to Fit"
                             Theme="{StaticResource AppButton}"/>
+                    <!-- Says what it scales. The session's editor font picker renders the same bare
+                         percentage at the same size a row above, so on its own this read as a
+                         second copy of that control rather than the plan's own zoom. -->
                     <TextBlock x:Name="ZoomLevelText" Text="100%" VerticalAlignment="Center"
-                               Foreground="{DynamicResource ForegroundBrush}" Margin="4,0,0,0" FontSize="11"/>
+                               Foreground="{DynamicResource ForegroundBrush}" Margin="4,0,0,0" FontSize="11"
+                               Background="Transparent"
+                               ToolTip.Tip="Plan zoom (Ctrl+scroll over the plan)"/>
                     <!-- Named because the overflow owns it: nothing left to divide once Save has
                          moved into the chevron menu (see ToolbarOverflow). -->
                     <Border x:Name="SavePlanSeparator" Classes="separator"/>

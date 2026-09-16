@@ -98,6 +98,11 @@
         code exists anywhere. Hover is now a surface step plus an accent border, pressed is a 12%
         accent wash, and focus is its own explicit visual. Nothing here paints a solid accent
         background, so no combination of stuck pseudo-classes can invent a selected-looking button.
+
+        The one button that IS latched says so through the "on" class below, which only the code
+        owning that panel's visibility sets. That is the difference from the old behaviour: a
+        toggled look is now something a button is given on purpose, never something a stuck
+        pseudo-class can hand it by accident.
     -->
     <ControlTheme x:Key="AppButton" TargetType="Button">
         <Setter Property="Background" Value="{DynamicResource BackgroundLightBrush}"/>
@@ -141,6 +146,29 @@
              it, so without this rule a tabbing user gets no ring at all. -->
         <Style Selector="^:focus-visible /template/ Border#PART_Border">
             <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+        </Style>
+
+        <!-- The panel this button shows is open. Applied by the code that opens and closes the
+             panel, not by the click, so a panel dismissed by its own close button turns its
+             button off too.
+
+             Deliberately the same soft wash and accent border SegmentedButton gives :checked. The
+             original complaint about the accent was that it meant four different things; one of
+             them is worth keeping, and it is this one. A quieter mark would not survive sitting
+             next to :pointerover, which already lights the border. The weight is what separates
+             them: SemiBold plus a filled ground reads as latched, a lit border alone reads as
+             "the pointer is here". -->
+        <Style Selector="^.on /template/ Border#PART_Border">
+            <Setter Property="Background" Value="{DynamicResource AccentSoftBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+        </Style>
+        <Style Selector="^.on">
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <!-- The label carries the accent, not the button's ground. A wash and a lit border are
+                 what :focus-visible and :pointerover already look like, so on their own "latched"
+                 and "the pointer is here" came down to a weight change. Colouring the text settles
+                 it at a glance, and the icon comes along because AppIcons lets it inherit. -->
+            <Setter Property="Foreground" Value="{DynamicResource AccentBrush}"/>
         </Style>
 
         <Style Selector="^:disabled">
