@@ -40,13 +40,12 @@ internal partial class SettingsWindow : Window
 	/// <summary>Set while the discard prompt is up, so a second close cannot stack another.</summary>
 	private bool _closeWalkInProgress;
 
-	// QueryStore controls
-	private NumericUpDown? _slicerDaysBox;
-	private ComboBox? _defaultMetricBox;
-	private NumericUpDown? _topLimitBox;
-	private ComboBox? _defaultTimeRangeBox;
-	private ComboBox? _defaultTimeDisplayBox;
-	private ComboBox? _defaultGroupByBox;
+	/* Only the controls something still consults are kept. Every section used to cache each of its
+	   controls in a field so Save could read the values back out at the end; now that edits are
+	   written as they happen, those fields held nothing anyone asked for. What remains is the
+	   colour list, which is rebuilt in place and validated on save, and the row count that decides
+	   how long it is. These two hold the section that is on screen, or the last one that was —
+	   nothing depends on which, but do not read them as a picture of the current section. */
 
 	// Multi QS Overview controls
 	private NumericUpDown? _topDbCountBox;
@@ -54,26 +53,16 @@ internal partial class SettingsWindow : Window
 	private readonly List<Rectangle> _colorPreviews = new();
 	private StackPanel? _colorListPanel;
 
-	// Query History controls
-	private ComboBox? _historyMetricBox;
-	private NumericUpDown? _historyMaxPlansBox;
-
-	// Script Options (Format) controls
+	// Script Options (Format) rows. The grid itself is a local in its builder — nothing outside
+	// needs it, and only the rows carry state worth keeping.
 	private readonly ObservableCollection<FormatOptionRow> _formatRows = new();
-	private DataGrid? _formatGrid;
 
 	/* Integrations (MCP server + proxy). These do not live in AppSettings: MCP is two raw keys in
 	   settings.json and the proxy password is in the OS credential store, so this section keeps its
-	   own pending state and commits it in Save_Click. Unlike the other sections, the controls write
-	   back on every change rather than being read at save time — the pending fields survive
-	   navigating away and back, which an orphaned control's value does not. */
-	private CheckBox? _mcpEnabledBox;
-	private NumericUpDown? _mcpPortBox;
+	   own pending state, which Save_Click writes out separately. Edits land in these fields as they
+	   happen, the same way every other section now writes straight into _settings. */
 	private TextBlock? _mcpCopyStatus;
-	private RadioButton? _proxySystemRadio;
-	private RadioButton? _proxyManualRadio;
 	private Grid? _proxyManualPanel;
-	private TextBox? _proxyPasswordBox;
 
 	private bool _integrationsLoaded;
 	private bool _mcpEnabled;
@@ -92,9 +81,17 @@ internal partial class SettingsWindow : Window
 
 	internal event Action<AppSettings>? SettingsSaved;
 
+	/* Both constructors take a copy, and the copy is what makes Cancel mean anything.
+
+	   Every section writes its edits straight into _settings as they happen, so _settings is the
+	   draft, not the live configuration — discarding it is how Cancel discards. AppSettingsService
+	   .Load() hands back a cached instance shared with the rest of the app, so using it directly
+	   would mean editing a text box had already changed the app's settings in memory and Cancel
+	   had nothing left to undo. Clone() round-trips through JSON, so the collections come apart
+	   too, which matters because the colour list is edited in place. */
 	public SettingsWindow()
 	{
-		_settings = AppSettingsService.Load();
+		_settings = AppSettingsService.Load().Clone();
 		InitializeComponent();
 		ShowSection(0);
 	}
@@ -136,21 +133,21 @@ internal partial class SettingsWindow : Window
 		}, DispatcherPriority.Background);
 	}
 
-	/// <summary>Marks the dialog dirty unless a section is still being built and initialized.</summary>
-	private void MarkDirty()
-	{
-		if (!_building)
-			_isDirty = true;
-	}
-
 	/// <summary>
-	/// Applies a pending-state edit from a control, and marks the dialog dirty — unless the
-	/// section is still being built, in which case the event came from initialization rather
-	/// than from the user and neither should happen.
+	/// Applies an edit from a control and marks the dialog dirty. Every section's change handlers
+	/// go through here.
+	///
+	/// <para>Two events are dropped rather than applied. One is an edit raised while the section
+	/// is still being built, which came from a control taking its initial value rather than from
+	/// the user — that is what <c>_building</c> has always been for. The other is an edit from a
+	/// control whose section has since been rebuilt: <paramref name="buildToken"/> is the token
+	/// its build was given, so a handler that outlived its controls recognises itself and stays
+	/// out of the way. Nothing reads the controls back any more, so a stale handler writing into
+	/// the settings is the only way an orphan could still do damage.</para>
 	/// </summary>
-	private void Pending(Action edit)
+	private void Commit(int buildToken, Action edit)
 	{
-		if (_building) return;
+		if (_building || buildToken != _buildToken) return;
 		edit();
 		_isDirty = true;
 	}
@@ -186,54 +183,73 @@ internal partial class SettingsWindow : Window
 
 	private Control BuildQueryStoreSection()
 	{
+		var token = _buildToken;
 		var panel = new StackPanel { Spacing = 16 };
 
 		// Chapter 1: Query Store
 		panel.Children.Add(CreateChapterHeader("Query Store"));
 
-		_slicerDaysBox = CreateNumericUpDown(_settings.QueryStoreSlicerDays, 1, 365);
-		_slicerDaysBox.ValueChanged += (_, _) => MarkDirty();
-		panel.Children.Add(CreateRow("Default history length (days)", _slicerDaysBox));
+		var slicerDays = CreateNumericUpDown(_settings.QueryStoreSlicerDays, 1, 365);
+		slicerDays.ValueChanged += (_, _) =>
+			Commit(token, () => _settings.QueryStoreSlicerDays = (int)(slicerDays.Value ?? 30));
+		panel.Children.Add(CreateRow("Default history length (days)", slicerDays));
 
-		_defaultMetricBox = CreateTagComboBox(MetricOptions, _settings.QueryStoreDefaultMetric);
-		_defaultMetricBox.SelectionChanged += (_, _) => MarkDirty();
-		panel.Children.Add(CreateRow("Default metric for top", _defaultMetricBox));
+		var defaultMetric = CreateTagComboBox(MetricOptions, _settings.QueryStoreDefaultMetric);
+		defaultMetric.SelectionChanged += (_, _) =>
+			Commit(token, () => _settings.QueryStoreDefaultMetric = GetComboTag(defaultMetric));
+		panel.Children.Add(CreateRow("Default metric for top", defaultMetric));
 
-		_topLimitBox = CreateNumericUpDown(_settings.QueryStoreTopLimit, 1, 200);
-		_topLimitBox.ValueChanged += (_, _) => MarkDirty();
-		panel.Children.Add(CreateRow("Top elements limit", _topLimitBox));
+		var topLimit = CreateNumericUpDown(_settings.QueryStoreTopLimit, 1, 200);
+		topLimit.ValueChanged += (_, _) =>
+			Commit(token, () => _settings.QueryStoreTopLimit = (int)(topLimit.Value ?? 25));
+		panel.Children.Add(CreateRow("Top elements limit", topLimit));
 
-		_defaultTimeRangeBox = CreateTagComboBox(TimeRangeOptions, _settings.QueryStoreDefaultTimeRange);
-		_defaultTimeRangeBox.SelectionChanged += (_, _) => MarkDirty();
-		panel.Children.Add(CreateRow("Default time range", _defaultTimeRangeBox));
+		var timeRange = CreateTagComboBox(TimeRangeOptions, _settings.QueryStoreDefaultTimeRange);
+		timeRange.SelectionChanged += (_, _) =>
+			Commit(token, () => _settings.QueryStoreDefaultTimeRange = GetComboTag(timeRange));
+		panel.Children.Add(CreateRow("Default time range", timeRange));
 
-		_defaultTimeDisplayBox = CreateTagComboBox(TimeDisplayOptions, _settings.QueryStoreDefaultTimeDisplay);
-		_defaultTimeDisplayBox.SelectionChanged += (_, _) => MarkDirty();
-		panel.Children.Add(CreateRow("Default time display", _defaultTimeDisplayBox));
+		var timeDisplay = CreateTagComboBox(TimeDisplayOptions, _settings.QueryStoreDefaultTimeDisplay);
+		timeDisplay.SelectionChanged += (_, _) =>
+			Commit(token, () => _settings.QueryStoreDefaultTimeDisplay = GetComboTag(timeDisplay));
+		panel.Children.Add(CreateRow("Default time display", timeDisplay));
 
-		_defaultGroupByBox = CreateTagComboBox(GroupByOptions, _settings.QueryStoreDefaultGroupBy);
-		_defaultGroupByBox.SelectionChanged += (_, _) => MarkDirty();
-		panel.Children.Add(CreateRow("Default group by", _defaultGroupByBox));
+		var groupBy = CreateTagComboBox(GroupByOptions, _settings.QueryStoreDefaultGroupBy);
+		groupBy.SelectionChanged += (_, _) =>
+			Commit(token, () => _settings.QueryStoreDefaultGroupBy = GetComboTag(groupBy));
+		panel.Children.Add(CreateRow("Default group by", groupBy));
 
 		// Chapter 2: Multi QS Overview
 		panel.Children.Add(CreateChapterHeader("Multi QS Overview"));
 
-		_topDbCountBox = CreateNumericUpDown(_settings.MultiQsTopDbCount, 2, 20);
-		_topDbCountBox.ValueChanged += (_, e) =>
+		var topDbCount = CreateNumericUpDown(_settings.MultiQsTopDbCount, 2, 20);
+		_topDbCountBox = topDbCount;
+		topDbCount.ValueChanged += (_, _) => Commit(token, () =>
 		{
-			MarkDirty();
-			RebuildColorList();
-		};
-		panel.Children.Add(CreateRow("Number of top databases", _topDbCountBox));
+			_settings.MultiQsTopDbCount = (int)(topDbCount.Value ?? 5);
+			RebuildColorList(token);
+		});
+		panel.Children.Add(CreateRow("Number of top databases", topDbCount));
 
 		_colorListPanel = new StackPanel { Spacing = 4 };
-		RebuildColorList();
+		RebuildColorList(token);
 		panel.Children.Add(CreateRow("Top database colors", _colorListPanel));
 
 		return panel;
 	}
 
-	private void RebuildColorList()
+	/// <summary>
+	/// Rebuilds the colour rows for the current database count, padding the stored list if the
+	/// count has outgrown it.
+	///
+	/// <para><b>It only ever grows.</b> Trimming the tail to match the count looks like tidying up
+	/// and is data loss: the list is the sole record of the palette now, so dropping entry 8
+	/// because the count is 5 throws away a colour the user chose, and raising the count back
+	/// hands them a stock one instead. Entries past the count cost nothing — the row loop below is
+	/// bounded by the count, and so is everything that reads the palette — and keeping them is what
+	/// lets the count go down and up again without the trip costing anything.</para>
+	/// </summary>
+	private void RebuildColorList(int buildToken)
 	{
 		if (_colorListPanel == null) return;
 		_colorListPanel.Children.Clear();
@@ -243,9 +259,12 @@ internal partial class SettingsWindow : Window
 		var count = (int)(_topDbCountBox?.Value ?? _settings.MultiQsTopDbCount);
 		var colors = _settings.MultiQsTopDbColors;
 
+		while (colors.Count < count)
+			colors.Add(AppSettingsService.DefaultTopDbColors[colors.Count % AppSettingsService.DefaultTopDbColors.Count]);
+
 		for (int i = 0; i < count; i++)
 		{
-			var hex = i < colors.Count ? colors[i] : AppSettingsService.DefaultTopDbColors[i % AppSettingsService.DefaultTopDbColors.Count];
+			var hex = colors[i];
 			var preview = new Rectangle
 			{
 				Width = 24, Height = 24,
@@ -259,12 +278,16 @@ internal partial class SettingsWindow : Window
 				Foreground = (IBrush?)this.FindResource("ForegroundBrush") ?? Brushes.White
 			};
 			var index = i;
-			textBox.TextChanged += (_, _) =>
+			textBox.TextChanged += (_, _) => Commit(buildToken, () =>
 			{
-				MarkDirty();
+				var text = textBox.Text ?? "";
+				// Stored as typed, valid or not — Save is where a bad colour is refused, and
+				// keeping the raw text is what lets the user see it again to correct it.
+				if (index < _settings.MultiQsTopDbColors.Count)
+					_settings.MultiQsTopDbColors[index] = text;
 				if (index < _colorPreviews.Count)
-					_colorPreviews[index].Fill = TryParseBrush(textBox.Text ?? "");
-			};
+					_colorPreviews[index].Fill = TryParseBrush(text);
+			});
 
 			_colorTextBoxes.Add(textBox);
 			_colorPreviews.Add(preview);
@@ -319,16 +342,19 @@ internal partial class SettingsWindow : Window
 
 	private Control BuildQueryHistorySection()
 	{
+		var token = _buildToken;
 		var panel = new StackPanel { Spacing = 16 };
 		panel.Children.Add(CreateChapterHeader("Query History"));
 
-		_historyMetricBox = CreateTagComboBox(HistoryMetricOptions, _settings.QueryHistoryDefaultMetric);
-		_historyMetricBox.SelectionChanged += (_, _) => MarkDirty();
-		panel.Children.Add(CreateRow("Default chart metric", _historyMetricBox));
+		var metric = CreateTagComboBox(HistoryMetricOptions, _settings.QueryHistoryDefaultMetric);
+		metric.SelectionChanged += (_, _) =>
+			Commit(token, () => _settings.QueryHistoryDefaultMetric = GetComboTag(metric));
+		panel.Children.Add(CreateRow("Default chart metric", metric));
 
-		_historyMaxPlansBox = CreateNumericUpDown(_settings.QueryHistoryMaxPlans, 1, 100);
-		_historyMaxPlansBox.ValueChanged += (_, _) => MarkDirty();
-		panel.Children.Add(CreateRow("Max plans fetched per query", _historyMaxPlansBox));
+		var maxPlans = CreateNumericUpDown(_settings.QueryHistoryMaxPlans, 1, 100);
+		maxPlans.ValueChanged += (_, _) =>
+			Commit(token, () => _settings.QueryHistoryMaxPlans = (int)(maxPlans.Value ?? 10));
+		panel.Children.Add(CreateRow("Max plans fetched per query", maxPlans));
 
 		return panel;
 	}
@@ -365,6 +391,7 @@ internal partial class SettingsWindow : Window
 	{
 		EnsureIntegrationsLoaded();
 
+		var token = _buildToken;
 		var panel = new StackPanel { Spacing = 16 };
 
 		panel.Children.Add(CreateChapterHeader("MCP Server"));
@@ -375,24 +402,17 @@ internal partial class SettingsWindow : Window
 			FontSize = 12, Opacity = 0.8, TextWrapping = TextWrapping.Wrap, MaxWidth = 520
 		});
 
-		/* Every handler below leaves through Pending(), which drops the write while a section is
-		   being built. The other sections are read at save time, so a control raising a change
-		   event as it initializes only cost them a stray dirty flag — which is all _building was
-		   written to stop. This section commits on change, so the same stray event would quietly
-		   overwrite the value just loaded, and MarkDirty being suppressed would hide it. */
 		var enabledBox = new CheckBox
 		{
 			Content = "Enable MCP server",
 			IsChecked = _mcpEnabled,
 			FontSize = 13
 		};
-		_mcpEnabledBox = enabledBox;
-		enabledBox.IsCheckedChanged += (_, _) => Pending(() => _mcpEnabled = enabledBox.IsChecked == true);
+		enabledBox.IsCheckedChanged += (_, _) => Commit(token, () => _mcpEnabled = enabledBox.IsChecked == true);
 		panel.Children.Add(enabledBox);
 
 		var portBox = CreateNumericUpDown(_mcpPort, 1024, 65535);
-		_mcpPortBox = portBox;
-		portBox.ValueChanged += (_, _) => Pending(() => _mcpPort = (int)(portBox.Value ?? 5152));
+		portBox.ValueChanged += (_, _) => Commit(token, () => _mcpPort = (int)(portBox.Value ?? 5152));
 		panel.Children.Add(CreateRow("Port", portBox));
 
 		panel.Children.Add(new TextBlock
@@ -420,14 +440,14 @@ internal partial class SettingsWindow : Window
 
 		panel.Children.Add(CreateChapterHeader("Proxy"));
 
-		_proxySystemRadio = new RadioButton
+		var systemRadio = new RadioButton
 		{
 			GroupName = "ProxyMode",
 			Content = "Use system proxy (Windows credentials)",
 			FontSize = 13,
 			IsChecked = _proxyMode == ProxyMode.System
 		};
-		_proxyManualRadio = new RadioButton
+		var manualRadio = new RadioButton
 		{
 			GroupName = "ProxyMode",
 			Content = "Manual",
@@ -435,19 +455,12 @@ internal partial class SettingsWindow : Window
 			IsChecked = _proxyMode == ProxyMode.Manual
 		};
 
-		var systemRadio = _proxySystemRadio;
-		var manualRadio = _proxyManualRadio;
-
 		/* Both radios raise IsCheckedChanged on every selection — one going false, one going
-		   true. Only the now-checked one drives the update, or the two events fight.
-
-		   The locals are what the handler reads, not the fields: the fields are reassigned on
-		   every ShowSection rebuild, so a late event from a previous build's control would
-		   otherwise be answered with the current build's state. */
+		   true. Only the now-checked one drives the update, or the two events fight. */
 		void OnProxyModeChanged(object? sender, RoutedEventArgs _)
 		{
 			if (sender is not RadioButton { IsChecked: true }) return;
-			Pending(() =>
+			Commit(token, () =>
 			{
 				_proxyMode = manualRadio.IsChecked == true ? ProxyMode.Manual : ProxyMode.System;
 				if (_proxyManualPanel != null)
@@ -465,16 +478,15 @@ internal partial class SettingsWindow : Window
 		});
 
 		var addressBox = CreateProxyInput(_proxyAddress, "http://proxy.example.com:8080");
-		addressBox.TextChanged += (_, _) => Pending(() => _proxyAddress = addressBox.Text ?? "");
+		addressBox.TextChanged += (_, _) => Commit(token, () => _proxyAddress = addressBox.Text ?? "");
 
 		var usernameBox = CreateProxyInput(_proxyUsername, "DOMAIN\\user");
-		usernameBox.TextChanged += (_, _) => Pending(() => _proxyUsername = usernameBox.Text ?? "");
+		usernameBox.TextChanged += (_, _) => Commit(token, () => _proxyUsername = usernameBox.Text ?? "");
 
 		var passwordBox = CreateProxyInput(_proxyTypedPassword,
 			_hasStoredProxyPassword ? "(saved — leave blank to keep)" : "");
 		passwordBox.PasswordChar = '•';
-		_proxyPasswordBox = passwordBox;
-		passwordBox.TextChanged += (_, _) => Pending(() => _proxyTypedPassword = passwordBox.Text ?? "");
+		passwordBox.TextChanged += (_, _) => Commit(token, () => _proxyTypedPassword = passwordBox.Text ?? "");
 
 		_proxyManualPanel = new Grid
 		{
@@ -657,6 +669,7 @@ internal partial class SettingsWindow : Window
 
 	private Control BuildScriptOptionsSection()
 	{
+		var token = _buildToken;
 		var panel = new StackPanel { Spacing = 16 };
 		panel.Children.Add(CreateChapterHeader("Format Options"));
 
@@ -687,11 +700,11 @@ internal partial class SettingsWindow : Window
 				ChoiceOptions = choiceOptions,
 				PropertyInfo = prop
 			};
-			row.PropertyChanged += (_, _) => MarkDirty();
+			row.PropertyChanged += (_, _) => Commit(token, CommitFormatOptions);
 			_formatRows.Add(row);
 		}
 
-		_formatGrid = new DataGrid
+		var formatGrid = new DataGrid
 		{
 			ItemsSource = _formatRows,
 			AutoGenerateColumns = false,
@@ -705,10 +718,10 @@ internal partial class SettingsWindow : Window
 			FontSize = 13,
 		};
 
-		Helpers.DataGridBehaviors.AttachCopyGuard(_formatGrid,
+		Helpers.DataGridBehaviors.AttachCopyGuard(formatGrid,
 			item => item is FormatOptionRow row ? $"{row.Name}\t{row.CurrentValue}" : null);
 
-		_formatGrid.Columns.Add(new DataGridTextColumn
+		formatGrid.Columns.Add(new DataGridTextColumn
 		{
 			Header = "Setting",
 			Binding = new Binding("Name"),
@@ -762,7 +775,7 @@ internal partial class SettingsWindow : Window
 
 			return container;
 		}, supportsRecycling: false);
-		_formatGrid.Columns.Add(valueColumn);
+		formatGrid.Columns.Add(valueColumn);
 
 		// Default column: disabled ToggleSwitch for bools, TextBlock for others
 		var defaultColumn = new DataGridTemplateColumn
@@ -799,9 +812,9 @@ internal partial class SettingsWindow : Window
 
 			return container;
 		}, supportsRecycling: false);
-		_formatGrid.Columns.Add(defaultColumn);
+		formatGrid.Columns.Add(defaultColumn);
 
-		panel.Children.Add(_formatGrid);
+		panel.Children.Add(formatGrid);
 
 		var revertBtn = new Button
 		{
@@ -894,115 +907,107 @@ internal partial class SettingsWindow : Window
 		TextAlignment = TextAlignment.Left,
 	};
 
-	private static string GetComboTag(ComboBox? box) =>
-		(box?.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "";
+	private static string GetComboTag(ComboBox box) =>
+		(box.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "";
 
 	/// <summary>
-	/// Releases every cached section control, so <see cref="Save_Click"/> falls back to whatever
-	/// <c>_settings</c> already holds instead of reading a control that outlived its section.
+	/// Rebuilds <c>FormatOptions</c> from the grid rows, after any one of them changes.
+	///
+	/// <para>Starts from what is already stored rather than from a fresh
+	/// <see cref="SqlFormatSettings"/>, because a row that cannot be read right now has to keep
+	/// its current value. An int field is unreadable for as long as it is empty, which it is the
+	/// moment you select its contents to retype them — and this runs on every keystroke now, not
+	/// once when Save is pressed. Seeded from a fresh instance, clearing a field would drop the
+	/// default into the draft immediately, and navigating away would make that stick: the same
+	/// silent revert this whole change set out to stop.</para>
 	/// </summary>
-	private void ForgetSectionControls()
+	private void CommitFormatOptions()
 	{
-		_slicerDaysBox = null;
-		_defaultMetricBox = null;
-		_topLimitBox = null;
-		_defaultTimeRangeBox = null;
-		_defaultTimeDisplayBox = null;
-		_defaultGroupByBox = null;
-		_topDbCountBox = null;
-		_colorTextBoxes.Clear();
-		_colorPreviews.Clear();
-		_colorListPanel = null;
-		_historyMetricBox = null;
-		_historyMaxPlansBox = null;
-		_formatRows.Clear();
-		_formatGrid = null;
+		var fmt = new SqlFormatSettings();
+		if (_settings.FormatOptions is { } stored)
+		{
+			foreach (var prop in typeof(SqlFormatSettings)
+				.GetProperties(BindingFlags.Public | BindingFlags.Instance))
+			{
+				if (!prop.CanRead || !prop.CanWrite) continue;
+				try { prop.SetValue(fmt, prop.GetValue(stored)); }
+				catch { /* leave this one at its default */ }
+			}
+		}
+
+		foreach (var row in _formatRows)
+		{
+			try
+			{
+				var prop = row.PropertyInfo;
+				object? value;
+				if (prop.PropertyType == typeof(bool))
+					value = row.BoolValue;
+				else if (prop.PropertyType == typeof(int))
+				{
+					// A half-typed number is not a value yet; the seeding above keeps the last good one.
+					if (!int.TryParse(row.CurrentValue, out var intVal)) continue;
+					value = intVal;
+				}
+				else
+					value = row.CurrentValue;
+				prop.SetValue(fmt, value);
+			}
+			catch { /* skip bad values */ }
+		}
+		_settings.FormatOptions = fmt;
+	}
+
+	/// <summary>
+	/// Checks the stored colours parse, and shows the user the ones that do not.
+	///
+	/// <para>Validated against the settings rather than the text boxes, because the boxes only
+	/// exist while their section is on screen. Saving from another section used to redden a set of
+	/// detached controls nobody could see and then refuse to save, with no visible reason; now an
+	/// invalid colour brings its section forward and marks itself.</para>
+	/// </summary>
+	private bool ColorsAreValid()
+	{
+		/* Only the rows in play. The stored list is allowed to run past the current count so a
+		   colour survives the count going down and back up, but those extra entries have no row
+		   and no box — refusing a save over one would be a dead end the user cannot get out of. */
+		var bad = new List<int>();
+		var colors = _settings.MultiQsTopDbColors;
+		var visible = Math.Min(colors.Count, _settings.MultiQsTopDbCount);
+		for (int i = 0; i < visible; i++)
+		{
+			try { Color.Parse(colors[i]); }
+			catch { bad.Add(i); }
+		}
+
+		if (bad.Count == 0)
+		{
+			foreach (var tb in _colorTextBoxes)
+				tb.BorderBrush = null;
+			return true;
+		}
+
+		if (SectionList.SelectedIndex != 0)
+			SectionList.SelectedIndex = 0;  // raises SelectionChanged, which rebuilds the section
+
+		foreach (var i in bad)
+			if (i < _colorTextBoxes.Count)
+				_colorTextBoxes[i].BorderBrush = Brushes.Red;
+
+		return false;
 	}
 
 	// ── Button handlers ──────────────────────────────────────────────
 
 	private void Save_Click(object? sender, RoutedEventArgs e)
 	{
-		/* Read QueryStore settings. Guarded like every other section: a null field means those
-		   controls do not currently exist, so _settings already holds the right value and reading
-		   a hardcoded fallback would overwrite it. Reset All is what makes these nullable — it
-		   drops the cached controls so the fresh defaults it just wrote survive this pass. */
-		if (_slicerDaysBox != null)
-			_settings.QueryStoreSlicerDays = (int)(_slicerDaysBox.Value ?? 30);
-		if (_defaultMetricBox != null)
-			_settings.QueryStoreDefaultMetric = GetComboTag(_defaultMetricBox);
-		if (_topLimitBox != null)
-			_settings.QueryStoreTopLimit = (int)(_topLimitBox.Value ?? 25);
-		if (_defaultTimeRangeBox != null)
-			_settings.QueryStoreDefaultTimeRange = GetComboTag(_defaultTimeRangeBox);
-		if (_defaultTimeDisplayBox != null)
-			_settings.QueryStoreDefaultTimeDisplay = GetComboTag(_defaultTimeDisplayBox);
-		if (_defaultGroupByBox != null)
-			_settings.QueryStoreDefaultGroupBy = GetComboTag(_defaultGroupByBox);
-
-		// Read Multi QS Overview settings
-		if (_topDbCountBox != null)
-			_settings.MultiQsTopDbCount = (int)(_topDbCountBox.Value ?? 5);
-
-		// Validate hex color inputs before saving
-		var hasInvalidColor = false;
-		foreach (var tb in _colorTextBoxes)
-		{
-			try
-			{
-				Color.Parse(tb.Text ?? "");
-				tb.BorderBrush = null; // reset to default
-			}
-			catch
-			{
-				tb.BorderBrush = Brushes.Red;
-				hasInvalidColor = true;
-			}
-		}
-		if (hasInvalidColor)
+		/* Nothing is read back off the controls here. Every section writes its edits into
+		   _settings as they happen, so this method's job is to validate, apply and persist what
+		   is already there. Reading at save time was the shape that produced three separate bugs:
+		   values from sections the user never opened, values from sections rebuilt since, and
+		   edits lost entirely by leaving a section and coming back. */
+		if (!ColorsAreValid())
 			return;
-
-		// Same guard: no colour boxes means the section is not built, not that the user wants an
-		// empty palette.
-		if (_colorTextBoxes.Count > 0)
-			_settings.MultiQsTopDbColors = _colorTextBoxes.Select(tb => tb.Text ?? "#555555").ToList();
-
-		/* Read Query History settings — guarded the way Format Options below already is. These
-		   fields hold the controls from the last time the section was built, and the section is
-		   only built once the user visits it. Unguarded, saving from any other section read a
-		   null combo as "" and a null spinner as 10, silently wiping both stored values: open
-		   Settings, change a Query Store option, hit Save, and a configured max-plans of 50 came
-		   back as 10 with the default metric blanked. */
-		if (_historyMetricBox != null)
-			_settings.QueryHistoryDefaultMetric = GetComboTag(_historyMetricBox);
-		if (_historyMaxPlansBox != null)
-			_settings.QueryHistoryMaxPlans = (int)(_historyMaxPlansBox.Value ?? 10);
-
-		// Read Format Options
-		if (_formatRows.Count > 0)
-		{
-			var fmt = new SqlFormatSettings();
-			foreach (var row in _formatRows)
-			{
-				try
-				{
-					var prop = row.PropertyInfo;
-					object? value;
-					if (prop.PropertyType == typeof(bool))
-						value = row.BoolValue;
-					else if (prop.PropertyType == typeof(int))
-					{
-						if (!int.TryParse(row.CurrentValue, out var intVal)) continue;
-						value = intVal;
-					}
-					else
-						value = row.CurrentValue;
-					prop.SetValue(fmt, value);
-				}
-				catch { /* skip bad values */ }
-			}
-			_settings.FormatOptions = fmt;
-		}
 
 		// Apply live settings
 		if (Enum.TryParse<TimeDisplayMode>(_settings.QueryStoreDefaultTimeDisplay, true, out var tdm))
@@ -1071,13 +1076,6 @@ internal partial class SettingsWindow : Window
 		   they never came here for, with nothing on screen to warn them and no real way back.
 		   Reset Section, pressed on Integrations, is the gesture that means that. */
 		ResetIntegrations(clearStoredPassword: false);
-
-		/* Drop every cached control. Only the visible section is rebuilt below, so without this
-		   the other sections' controls survive holding pre-reset values and Save reads them back
-		   over the defaults — a Reset All performed from anywhere but Query Store silently kept
-		   the old Query Store settings. Save skips a section whose controls are null and keeps
-		   what _settings already holds, which is now the fresh defaults. */
-		ForgetSectionControls();
 
 		_isDirty = true;
 		ShowSection(SectionList.SelectedIndex);
