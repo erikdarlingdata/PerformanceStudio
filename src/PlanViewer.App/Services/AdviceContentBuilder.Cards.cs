@@ -10,8 +10,9 @@ using PlanViewer.Core.Output;
 namespace PlanViewer.App.Services;
 
 /// <summary>
-/// The card view of an <see cref="AnalysisResult"/>: a header strip of stat chips over one card
-/// per statement, in place of the monospace report the pane used to print.
+/// The card view of an <see cref="AnalysisResult"/>: a header strip — server line, labelled
+/// context facts, stat chips — over one card per statement, in place of the monospace report
+/// the pane used to print.
 ///
 /// <para>The report itself has not moved. <see cref="TextFormatter"/> still writes it from the same
 /// model and the Copy button still hands out exactly those bytes — this file is a second view over
@@ -58,9 +59,12 @@ internal static partial class AdviceContentBuilder
     // -----------------------------------------------------------------------------------
 
     /// <summary>
-    /// Server line plus the summary as chips. The counts used to be four lines of "Label: value"
-    /// that had to be read to be counted; as chips the critical count is the one red thing on the
-    /// screen and lands before the reader has finished the server name.
+    /// Server line, the context facts as labelled rows, the deviating settings as chips, then
+    /// the summary as chips. The counts used to be four lines of "Label: value" that had to be
+    /// read to be counted; as chips the critical count is the one red thing on the screen and
+    /// lands before the reader has finished the server name. The context facts went the other
+    /// way (#540): they started as chips too, and seven neutral facts in identical pills made a
+    /// row to decode where the old report had a block to scan.
     /// </summary>
     private static Border BuildHeaderStrip(AnalysisResult analysis)
     {
@@ -80,9 +84,13 @@ internal static partial class AdviceContentBuilder
             });
         }
 
-        var context = ContextChips(analysis.ServerContext);
-        if (context.Count > 0)
-            body.Children.Add(ChipRow(context));
+        var facts = ContextFacts(analysis.ServerContext);
+        if (facts != null)
+            body.Children.Add(facts);
+
+        var outliers = OutlierChips(analysis.ServerContext);
+        if (outliers.Count > 0)
+            body.Children.Add(ChipRow(outliers));
 
         var summary = analysis.Summary;
         var stats = new List<Border>
@@ -147,32 +155,83 @@ internal static partial class AdviceContentBuilder
     }
 
     /// <summary>
-    /// The instance and database settings the report prints under Server Context. Chips rather
-    /// than lines: every one of them is a short "name value" pair that a reader scans for an
-    /// outlier, which is what a chip row is for.
+    /// The neutral facts the report prints under Server Context — hardware, the three instance
+    /// settings, the database — as labelled rows. These shipped as chips first, and a user said
+    /// the old report was easier to read, naming this section (#540): a chip earns its keep by
+    /// popping out of a row, and seven facts that are all supposed to be there pop nothing.
+    /// Labels give the block back its shape; the pills that remain (<see cref="OutlierChips"/>)
+    /// are the ones with something to say.
     /// </summary>
-    private static List<Border> ContextChips(ServerContextResult? ctx)
+    private static Grid? ContextFacts(ServerContextResult? ctx)
     {
-        var chips = new List<Border>();
         if (ctx == null)
-            return chips;
+            return null;
+
+        var rows = new List<(string Label, string Value)>();
 
         if (ctx.CpuCount > 0)
-            chips.Add(Chip($"{ctx.CpuCount:N0} CPUs, {ctx.PhysicalMemoryMB:N0} MB RAM", QuietTextBrush));
-        chips.Add(Chip($"MAXDOP {ctx.MaxDop}", QuietTextBrush));
-        chips.Add(Chip($"Cost threshold {ctx.CostThresholdForParallelism}", QuietTextBrush));
-        chips.Add(Chip($"Max memory {ctx.MaxServerMemoryMB:N0} MB", QuietTextBrush));
+            rows.Add(("Hardware", $"{ctx.CpuCount:N0} CPUs, {ctx.PhysicalMemoryMB:N0} MB RAM"));
 
-        var db = ctx.Database;
-        if (db == null)
+        rows.Add(("Instance",
+            $"MAXDOP {ctx.MaxDop}, cost threshold {ctx.CostThresholdForParallelism}, " +
+            $"max memory {ctx.MaxServerMemoryMB:N0} MB"));
+
+        if (ctx.Database is { } db)
+        {
+            var collation = string.IsNullOrWhiteSpace(db.CollationName) ? "" : $", {db.CollationName}";
+            rows.Add(("Database", $"{db.Name} (compat {db.CompatibilityLevel}{collation})"));
+        }
+
+        var grid = new Grid
+        {
+            ColumnDefinitions = new ColumnDefinitions("Auto,*"),
+            // Bottom 4 meets the next chip row's top 4 to keep the strip's 8px block rhythm.
+            Margin = new Avalonia.Thickness(0, 2, 0, 4)
+        };
+
+        for (int i = 0; i < rows.Count; i++)
+        {
+            grid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
+            var rowTop = i == 0 ? 0 : 2;
+
+            var label = new SelectableTextBlock
+            {
+                Text = rows[i].Label,
+                FontSize = 12,
+                Foreground = QuietTextBrush,
+                Margin = new Avalonia.Thickness(0, rowTop, 12, 0),
+                VerticalAlignment = VerticalAlignment.Top
+            };
+            Grid.SetRow(label, i);
+            grid.Children.Add(label);
+
+            var value = new SelectableTextBlock
+            {
+                Text = rows[i].Value,
+                FontSize = 12,
+                Foreground = ValueBrush,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Avalonia.Thickness(0, rowTop, 0, 0)
+            };
+            Grid.SetRow(value, i);
+            Grid.SetColumn(value, 1);
+            grid.Children.Add(value);
+        }
+
+        return grid;
+    }
+
+    /// <summary>
+    /// The settings that deviate from a healthy default — the report's indented "notable" lines,
+    /// plus non-default scoped configs — as chips on the severity colours. A short row of things
+    /// worth a second look is what a chip row is for.
+    /// </summary>
+    private static List<Border> OutlierChips(ServerContextResult? ctx)
+    {
+        var chips = new List<Border>();
+        if (ctx?.Database is not { } db)
             return chips;
 
-        chips.Add(Chip($"{db.Name} (compat {db.CompatibilityLevel})", AccentTokenBrush));
-        if (!string.IsNullOrWhiteSpace(db.CollationName))
-            chips.Add(Chip(db.CollationName, QuietTextBrush));
-
-        /* Same rule the report applies: only settings that deviate from a healthy default get
-           named, so the row stays a list of things worth a second look. */
         if (db.SnapshotIsolationState > 0)
             chips.Add(Chip("Snapshot isolation ON", WarningBrush));
         if (db.ReadCommittedSnapshot)
