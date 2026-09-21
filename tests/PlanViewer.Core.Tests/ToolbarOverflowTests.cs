@@ -17,10 +17,11 @@ namespace PlanViewer.Core.Tests;
 /// The session toolbar is one fixed row of slots inside a ScrollViewer whose rail is deliberately
 /// suppressed. Measured in this harness, that row wants 2116px — it wanted 1910px until the headless
 /// text metrics changed under Avalonia 12, which HeadlessUi explains once for every number in these
-/// files. On real metrics the row is narrower than either figure, and Erik's maximized display is
-/// 1536 logical, so Format and part of Run Repro were simply not on screen, behind a scrollbar that
-/// had been hidden on purpose because a rail under a 28px button row grows the strip and drags the
-/// sub-tab row with it. Hidden content, hidden affordance.
+/// files. Neither figure is what the row measures on the fonts a user has; they are the widths the
+/// thresholds below are chosen against. What put this file here is real: on Erik's maximized
+/// 1536-logical display, Format and part of Run Repro were simply not on screen, behind a scrollbar
+/// that had been hidden on purpose because a rail under a 28px button row grows the strip and drags
+/// the sub-tab row with it. Hidden content, hidden affordance.
 ///
 /// <para>The fix is a chevron that holds whatever did not fit. What these tests pin is the part of
 /// it that is easy to get subtly wrong and impossible to see in a screenshot: that a command in the
