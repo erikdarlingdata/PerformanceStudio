@@ -31,10 +31,13 @@
          longer raises any floor it did not already meet. It also has no lever over the
          collision it was written for: issue #139 is ScottPlot's
          SkiaSharp.NativeAssets.Linux.NoDependencies 3.119.0, a DIFFERENT package id that
-         ships its own libSkiaSharp.so and overwrites the right one at publish time. A
-         PackageReference on one id cannot constrain the other. It stays because that
-         collision is still unresolved and removing the pin is out of the scope of the
-         Avalonia 12 migration, not because it prevents anything. -->
+         ships its own libSkiaSharp.so at the same runtimes path, and a PackageReference on
+         one id cannot constrain the other. Which of the two wins a publish is NuGet's
+         choice, not this pin's. Measured on the Avalonia 12 bump: a linux-x64 self-contained
+         publish takes the 3.119.4 file, hash-identical to this package's copy and different
+         from the NoDependencies one, so the pairing with managed SkiaSharp 3.119.4 is
+         intact. The pin stays because the underlying collision is unresolved and removing it
+         is out of the scope of that migration, not because it prevents anything. -->
     <PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="3.119.4" />
   </ItemGroup>
 
