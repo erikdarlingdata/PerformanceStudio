@@ -16,11 +16,38 @@ namespace PlanViewer.Core.Tests;
 /// <summary>
 /// A headless Avalonia session, so UI code can be tested without a display.
 ///
-/// <para><b>Why this is hand-rolled rather than Avalonia.Headless.XUnit.</b> That package exists and
-/// would be less code, but at 11.3.20 it depends on <c>xunit.core 2.4.0</c> — xunit v2 — and this
-/// suite runs on xunit.v3. Putting two xunit frameworks in one test project to get an attribute is a
-/// worse trade than owning fifteen lines. <see cref="HeadlessUnitTestSession"/> is runner-agnostic
-/// and is what that package wraps anyway.</para>
+/// <para><b>Why this is hand-rolled rather than Avalonia.Headless.XUnit.</b> The original objection
+/// has expired and the conclusion has not. That package used to depend on <c>xunit.core 2.4.0</c> —
+/// xunit v2 — against a suite running xunit.v3, so adopting it meant two xunit frameworks in one
+/// project. At 12.1.2 it asks for <c>xunit.v3.extensibility.core 3.2.2</c>, which unifies upward
+/// against this project's own 4.0.1, so it is now merely possible. It is still the wrong trade:
+/// <see cref="HeadlessUnitTestSession"/> is runner-agnostic and is what that package wraps anyway,
+/// while <c>[AvaloniaFact]</c> offers neither of the two behaviours this class exists for — the #474
+/// queue drain and the <see cref="EnsureSessionSurvived"/> canary, which is the only reason a
+/// session-poisoning test fails with its own name on it. Rewriting every entry point to lose both
+/// would be a migration dressed as a simplification.</para>
+///
+/// <para><b>Inter ships here and is never used.</b> Avalonia.Headless 12.1.2 pulls
+/// <c>Avalonia.Fonts.Inter</c> and <c>Avalonia.HarfBuzz</c> in transitively, so the Inter assembly
+/// sits in the test output directory. Nothing registers it: <c>.WithInterFont()</c> lives on
+/// <c>Program.BuildAvaloniaApp</c>, and the session below boots <c>App</c>, which has no such
+/// method, so the builder never runs it. Text in this suite is measured against headless's own
+/// embedded font, not Inter — see the metrics paragraph below.</para>
+///
+/// <para><b>What text measures, and why the layout numbers in this suite moved.</b> Stated once
+/// here because several files pin measured widths and heights, and a number repeated with its
+/// reason in every file is a number that goes stale in some of them. Headless 11 bound a stub text
+/// shaper that gave every character a flat 10 DIP advance at any font size, over synthetic font
+/// metrics that worked out to a line height of 0.8 em. Headless 12 drops the stub and shapes for
+/// real through HarfBuzz against its own embedded BareMinimum font, which has no glyph for
+/// ordinary text and so measures every character at one em. Both numbers therefore changed, on
+/// different axes: a string is now exactly <c>FontSize</c> DIP per character, so widths scale by
+/// <c>FontSize / 10</c> — unchanged at font size 10, 1.1x at the toolbar's 11, 1.4x at Fluent's
+/// default 14 — while a line is 1.0898 em tall (measured: 11, 12, 14 and 16 DIP at font sizes 10,
+/// 11, 12 and 14), which is 1.36x the old height at every size rather than a function of it.
+/// Padding, margins and fixed sizes did not move at all, so text-driven measurements grew and
+/// everything else stayed put. Thresholds elsewhere in the suite carry their new numbers and point
+/// back here rather than re-deriving this.</para>
 ///
 /// <para><b>The real App, not a stub.</b> A bare Application looked tidier but does not load the
 /// application XAML, and MainWindow's toolbars resolve styles from it — FindResource("AppButton")
@@ -122,22 +149,28 @@ internal static class HeadlessUi
     /// <c>Dispatcher.ResetForUnitTests</c>, which executes whatever is still queued. A window whose
     /// content is involved enough to leave a deferred render pass behind — a
     /// <c>PlanViewerControl</c> reliably does, a TextBlock does not — therefore renders text against
-    /// a font manager that has just been disposed, throws <c>KeyNotFoundException</c> for
-    /// <c>fonts:SystemFonts</c>, and that exception escapes the teardown delegate before it reaches
-    /// <c>scope.Dispose()</c>. The locator scope is then never popped: every later dispatch nests
-    /// inside the leaked one, resolves the disposed font manager through its parent chain, and dies
-    /// constructing any <see cref="Window"/> at all. The guilty test passes, because the throw
-    /// happens after its result has been recorded.</para>
+    /// a font manager that has just been disposed, and throws <c>KeyNotFoundException</c> for
+    /// <c>fonts:SystemFonts</c>. That ordering is unchanged in 12.1.2 — the dispose and the reset are
+    /// still consecutive lines of <c>EnsureIsolatedApplication</c>'s teardown — so draining here,
+    /// which leaves the teardown nothing to run, is still the only thing that prevents the throw.
+    /// It is done even when the body failed, because a failing test is no less capable of poisoning
+    /// the session than a passing one.</para>
     ///
-    /// <para>Draining here leaves the teardown nothing to run, which is the whole fix. It is done
-    /// even when the body failed, because a failing test is no less capable of poisoning the
-    /// session than a passing one.</para>
+    /// <para><b>What 12 fixed, and why the drain is not now redundant.</b> Under 11.3.22 the
+    /// escaping exception also skipped <c>scope.Dispose()</c>, so the locator scope was never
+    /// popped: every later dispatch nested inside the leaked one, resolved the disposed font manager
+    /// through its parent chain, and died constructing any <see cref="Window"/> at all — while the
+    /// guilty test passed, because the throw happened after its result had been recorded. 12 moved
+    /// the scope disposal into a <c>finally</c> and routes the teardown failure into the dispatch's
+    /// task. So the blast radius is now one test instead of every test after it, and the failure
+    /// lands on the test that caused it. That makes #474 survivable, not absent. Deleting the drain
+    /// would trade a prevented failure for a reported one.</para>
     /// </summary>
     private static Exception? Dispatch(Action body)
     {
         Exception? failure = null;
 
-        Session.Value.Dispatch(() =>
+        var dispatch = Session.Value.Dispatch(() =>
         {
             try
             {
@@ -158,7 +191,22 @@ internal static class HeadlessUi
             }
 
             return Task.CompletedTask;
-        }, default).GetAwaiter().GetResult();
+        }, default);
+
+        /* A teardown failure arrives here rather than in either catch above: 12 reports it through
+           the dispatch's own task, which is awaited outside the delegate. Measured under 12.1.2,
+           not assumed — a queued job that throws during teardown comes out of GetResult(), and when
+           the body had failed too, the teardown exception is the one the caller sees, silently
+           replacing the assertion message. That inverts the rule Run documents, so catch it and let
+           the body's failure keep precedence. */
+        try
+        {
+            dispatch.GetAwaiter().GetResult();
+        }
+        catch (Exception ex)
+        {
+            failure ??= ex;
+        }
 
         return failure;
     }
