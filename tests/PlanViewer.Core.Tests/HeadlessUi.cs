@@ -150,7 +150,29 @@ internal static class HeadlessUi
 
     /// <summary>
     /// Runs one body on the UI thread and hands back whatever it threw rather than throwing here,
-    /// so <see cref="Run"/> can decide which of two failures to report.
+    /// so <see cref="Run"/> can decide which of two failures to report. Retries once, and only,
+    /// when Avalonia 12's own session setup lost a race before the body was ever reached — see
+    /// <see cref="IsHeadlessSetupRace"/>.
+    ///
+    /// <para><b>The retry, and why it is not a test retry.</b> Avalonia 12's headless session setup
+    /// has a race that fails one arbitrary test per run. Measured on the 12 bump: 2 of 6 full-suite
+    /// runs, 1 of 6 more with the two classes that were red for an unrelated reason excluded, and 1
+    /// of 6 with xunit parallelization disabled outright — so roughly a quarter of runs, a
+    /// different victim each time, and not caused by test concurrency. The same measurement on
+    /// 11.3.22 was 0 of 6. A quarter of CI runs failing on an upstream race nobody can act on is
+    /// not shippable, and there is no fixed Avalonia release to take instead.</para>
+    ///
+    /// <para>What makes this safe is that it does not re-run tests. It re-runs a dispatch whose
+    /// delegate was never entered, which <paramref name="body"/> cannot tell apart from the first
+    /// attempt because nothing of it ran. A test that started and then failed — for any reason,
+    /// including a thread-affinity bug of our own — is reported, never retried: that is what the
+    /// started flag in <see cref="DispatchOnce"/> and the narrow match in
+    /// <see cref="IsHeadlessSetupRace"/> are for, and why each occurrence writes a line to stderr.
+    /// One retry, no more; if the race hits twice in a row, the run goes red and says so.</para>
+    ///
+    /// <para><b>Remove this when there is an Avalonia release that fixes the race.</b> Delete the
+    /// retry, <see cref="IsHeadlessSetupRace"/> and the started flag, then run the full suite ten
+    /// times: at the rate above, ten clean runs leave about a 6% chance of having missed it.</para>
     ///
     /// <para><b>Why the queue is drained before returning (#474).</b> Avalonia's per-dispatch
     /// teardown disposes the session's <c>FontManager</c> and only then calls
@@ -176,10 +198,56 @@ internal static class HeadlessUi
     /// </summary>
     private static Exception? Dispatch(Action body)
     {
+        var failure = DispatchOnce(body, out var bodyStarted);
+
+        if (failure is null || bodyStarted || !IsHeadlessSetupRace(failure))
+        {
+            return failure;
+        }
+
+        /* Loud on purpose, every single time. A retry nobody can see is how a 1-in-4 flake becomes
+           a 1-in-400 mystery that outlives everyone who remembers this comment. */
+        Console.Error.WriteLine(
+            "Avalonia 12 headless setup race — dispatch retried once; see issue #TBD.");
+
+        return DispatchOnce(body, out _);
+    }
+
+    /// <summary>
+    /// Whether <paramref name="failure"/> is Avalonia 12's session-setup race rather than anything
+    /// this repo wrote.
+    ///
+    /// <para>The failure is an <see cref="InvalidOperationException"/> from
+    /// <c>Dispatcher.VerifyAccess</c>, thrown while <c>EnsureIsolatedApplication</c> builds the
+    /// per-dispatch Application: <c>AvaloniaHeadlessPlatform.Initialize</c> constructs a
+    /// <c>Compositor</c>, whose <c>DefaultRenderLoop.Add</c> verifies dispatcher access and finds a
+    /// different thread owning it. No repo code appears above <see cref="Dispatch"/> in the stack.
+    /// The match is deliberately narrow — the exception type AND one of those two upstream frames —
+    /// so that a thread-affinity bug in our own code, which would name our own frames, is reported
+    /// rather than retried.</para>
+    /// </summary>
+    private static bool IsHeadlessSetupRace(Exception failure) =>
+        failure is InvalidOperationException
+        && failure.StackTrace is { } stack
+        && (stack.Contains("EnsureIsolatedApplication", StringComparison.Ordinal)
+            || stack.Contains("AvaloniaHeadlessPlatform.Initialize", StringComparison.Ordinal));
+
+    /// <summary>
+    /// One attempt. <paramref name="bodyStarted"/> reports whether the dispatched delegate was
+    /// entered at all, which is what makes the retry above safe: it is the difference between
+    /// re-running a test and starting one that never ran.
+    /// </summary>
+    private static Exception? DispatchOnce(Action body, out bool bodyStarted)
+    {
         Exception? failure = null;
+        var started = false;
 
         var dispatch = Session.Value.Dispatch(() =>
         {
+            /* First statement in the delegate, before anything that could throw, so that "the body
+               never started" is a fact rather than an inference. */
+            started = true;
+
             try
             {
                 body();
@@ -216,6 +284,7 @@ internal static class HeadlessUi
             failure ??= ex;
         }
 
+        bodyStarted = started;
         return failure;
     }
 
