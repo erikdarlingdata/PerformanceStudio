@@ -194,6 +194,18 @@ internal static class SessionHarness
             .Invoke(session, null);
 
     /// <summary>
+    /// Calls the session's private <c>RefreshEmptyState</c>, the call the connect block makes
+    /// after flipping the toolbar. Reached this way for the same reason
+    /// <see cref="InvalidateOverview"/> is: the block that calls it in the app is a connection
+    /// dialog and three round trips to a server. Tests using this pin what the refresh decides
+    /// once a connection exists, not that connecting calls it.
+    /// </summary>
+    internal static void RefreshEmptyState(QuerySessionControl session) =>
+        typeof(QuerySessionControl)
+            .GetMethod("RefreshEmptyState", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(session, null);
+
+    /// <summary>
     /// Opens a read-only schema document, the third of the three places in the app that builds a
     /// document header. Its own entry point fetches DDL from a server first.
     /// </summary>

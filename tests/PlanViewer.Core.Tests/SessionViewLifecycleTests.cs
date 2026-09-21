@@ -288,8 +288,10 @@ public class SessionViewLifecycleTests
     }
 
     /// <summary>
-    /// A session with the Overview open still has an empty editor behind it, and going back to that
-    /// editor gets the get-started panel — opening a view is not opening anything.
+    /// A session with the Overview open still has an empty editor behind it, and opening a view
+    /// is not opening anything: the document strip stays empty. The get-started panel proved
+    /// that half before #540; now the connection the Overview needs is itself enough to retire
+    /// the panel, so the strip carries the claim and the overlay is pinned to staying down.
     /// </summary>
     [Fact]
     public void TheOverviewDoesNotCountAsHavingOpenedSomething()
@@ -300,6 +302,8 @@ public class SessionViewLifecycleTests
             try
             {
                 SessionHarness.PretendConnected(session);
+                // The refresh the real connect block runs after flipping the toolbar (#540).
+                SessionHarness.RefreshEmptyState(session);
                 Assert.Empty(session.QueryEditor.Text);
 
                 SessionHarness.OverviewSegment(session).IsChecked = true;
@@ -312,7 +316,8 @@ public class SessionViewLifecycleTests
                 SessionHarness.EditorSegment(session).IsChecked = true;
                 window.UpdateLayout();
 
-                Assert.True(SessionHarness.EmptyStateOverlay(session).IsVisible);
+                Assert.False(SessionHarness.EmptyStateOverlay(session).IsVisible,
+                    "connected — coming back to the editor shows the editor, not get-started (#540)");
                 Assert.True(SessionHarness.EditorView(session).IsVisible);
             }
             finally
