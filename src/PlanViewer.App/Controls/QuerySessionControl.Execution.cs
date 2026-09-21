@@ -446,7 +446,10 @@ public partial class QuerySessionControl : UserControl
 
     private Window GetParentWindow()
     {
-        var parent = this.VisualRoot;
+        /* GetTopLevel rather than VisualRoot because Avalonia 12 hosts a Window inside a
+           TopLevelHost, so the visual root is no longer the Window and casting it to one always
+           misses — silently, since VisualRoot still compiles and still returns something. */
+        var parent = TopLevel.GetTopLevel(this);
         return parent as Window ?? throw new InvalidOperationException("No parent window");
     }
 }
