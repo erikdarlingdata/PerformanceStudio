@@ -46,6 +46,13 @@ namespace PlanViewer.Core.Tests;
 /// default 14 — while a line is 1.0898 em tall, rounded up to whole DIPs, which measures as desired
 /// heights of 11, 12, 14 and 16 at font sizes 10, 11, 12 and 14. That is 1.36x the old line height
 /// at every size, a flat ratio rather than something that scales with the size.
+///
+/// <para>The height figure is worth pinning down because the plausible wrong answer is 1.25x. That
+/// would be the em box alone; 1.36x is the em box plus the font's line gap. The font manager
+/// reports this face as ascent 819, descent 205, line gap 92 over an em of 1024 — the OS/2
+/// typographic values, not the hhea pair (782 and 0) that would have given 0.854 em and a 7%
+/// change. So when a height assertion moves, 1.36x is the tell; if a height moves by something
+/// else, the cause is not this.</para>
 /// Padding, margins and fixed sizes did not move at all, so text-driven measurements grew and
 /// everything else stayed put. Thresholds elsewhere in the suite carry their new numbers and point
 /// back here rather than re-deriving this.</para>

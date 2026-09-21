@@ -152,8 +152,18 @@ public class ToolbarOverflowTests
                 /* Four commands, in the order the row gives them up: the end of the row first.
                    Format being the first entry is the contract — the menu grows and shrinks at its
                    end, so an entry never changes position under the pointer as the window moves.
-                   It was three until the row got wider; QS Overview is simply the next name in
-                   CollapseOrder, which is what makes this a wider row rather than a different one. */
+
+                   How many end up here is a function of the harness's text metrics and is allowed
+                   to move with them; it was three until Avalonia 12 made text wider, and QS
+                   Overview is simply the next name in CollapseOrder. What is NOT allowed to move
+                   is which commands may leave at all: Connect, Execute and Execute-with-estimate
+                   are absent from CollapseOrder and must never appear in this menu at any width.
+                   A metric change adds the next name in the documented order; a regression takes
+                   a protected one. This exact-collection assertion is itself the guard: a
+                   protected command that collapsed would appear in this list and fail it. That is
+                   why it stays an exact collection and never becomes a count or a containment
+                   check. (The X comparison below skips invisible buttons, so it would not catch
+                   a stayer leaving — it pins that the survivors did not shift.) */
                 Assert.Equal(new[] { "Format", "Run Repro", "Copy Repro", "QS Overview" },
                     MenuHeaders(session.Overflow));
                 Assert.False(format.IsVisible);
