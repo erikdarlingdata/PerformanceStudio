@@ -57,6 +57,14 @@ public partial class QuerySessionControl : UserControl
             ServerLabel.Foreground = Token("SuccessBrush", Brushes.LimeGreen);
             ConnectButton.Content = Helpers.AppIcons.MakeContent(Helpers.AppIcons.Connect, "Reconnect");
 
+            /* Connecting is the one way a fresh session stops being empty without a keystroke
+               or a document, so neither of the overlay's other triggers will fire — without
+               this, the "Get started" panel keeps covering the editor and offering "Connect to
+               a server" on a session that just did (#540). Before the awaits below, so the
+               editor appears the moment the dialog closes rather than after three round trips
+               to the server. */
+            RefreshEmptyState();
+
             await PopulateDatabases();
             await FetchServerMetadataAsync();
             await FetchServerUtcOffset();

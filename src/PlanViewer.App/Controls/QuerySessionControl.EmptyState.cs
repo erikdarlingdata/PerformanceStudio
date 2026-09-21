@@ -21,17 +21,21 @@ public partial class QuerySessionControl : UserControl
     /// <summary>
     /// Decides whether the editor's empty state is showing, and rebuilds it when it is.
     ///
-    /// <para>Shown only when this session holds nothing at all: no text, and no sub-tab beyond
-    /// the Query Editor. Both halves matter — a session whose editor is empty because the user
-    /// is reading the plan they just ran must not have an overlay waiting behind that plan.</para>
+    /// <para>Shown only when this session holds nothing at all: no text, no sub-tab beyond
+    /// the Query Editor, and no server connection. All three halves matter — a session whose
+    /// editor is empty because the user is reading the plan they just ran must not have an
+    /// overlay waiting behind that plan, and a session that just connected is in use even
+    /// though nothing has been typed yet: the editor IS the offer now, and a panel still
+    /// suggesting "Connect to a server" over it reads as the connection having failed (#540).</para>
     ///
-    /// <para>Called from the editor's TextChanged and from the sub-tab watcher, so it re-decides
-    /// in both directions: delete every character with no plan open and the panel comes back,
-    /// which is the same state a fresh tab is in and deserves the same offer.</para>
+    /// <para>Called from the editor's TextChanged, from the sub-tab watcher, and from the
+    /// connect block, so it re-decides in both directions: delete every character with no plan
+    /// open and no connection and the panel comes back, which is the same state a fresh tab is
+    /// in and deserves the same offer.</para>
     /// </summary>
     private void RefreshEmptyState()
     {
-        var empty = QueryEditor.Text.Length == 0 && !HasDocuments;
+        var empty = QueryEditor.Text.Length == 0 && !HasDocuments && _serverConnection == null;
 
         if (empty)
         {
