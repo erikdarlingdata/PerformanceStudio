@@ -9,15 +9,15 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Avalonia" Version="11.3.20" />
+    <PackageReference Include="Avalonia" Version="11.3.22" />
     <PackageReference Include="Avalonia.AvaloniaEdit" Version="11.4.1" />
     <PackageReference Include="Avalonia.Controls.DataGrid" Version="11.3.13" />
     <!-- 5.1.58 is the last Avalonia 11 build — 5.1.59+ requires Avalonia >= 12.0.0.
          Bump together with the Avalonia 12 migration (branch upgrade/avalonia-12). -->
     <PackageReference Include="ScottPlot.Avalonia" Version="5.1.58" />
-    <PackageReference Include="Avalonia.Desktop" Version="11.3.20" />
-    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.20" />
-    <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.20" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.3.22" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.22" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.22" />
     <PackageReference Include="AvaloniaEdit.TextMate" Version="11.4.1" />
     <PackageReference Include="BlackwellSystems.Gcf" Version="1.0.0" />
     <PackageReference Include="AvaloniaEdit.TextMate.Grammars" Version="0.10.12.1" />
