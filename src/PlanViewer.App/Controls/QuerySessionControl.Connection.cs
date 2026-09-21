@@ -65,7 +65,14 @@ public partial class QuerySessionControl : UserControl
                to the server. */
             RefreshEmptyState();
 
-            await PopulateDatabases();
+            /* The dialog only closes with true after it opened this connection and enumerated
+               these databases — through the database the user named, which is the one some
+               logins (Azure SQL DB, JIT access) can open when master is off limits. Asking
+               again here through a second, hardcoded-master connection was a wasted round trip
+               whose swallowed failure left a green toolbar over a dead database picker. */
+            DatabaseBox.ItemsSource = dialog.ResultDatabases;
+            DatabaseBox.IsEnabled = true;
+
             await FetchServerMetadataAsync();
             await FetchServerUtcOffset();
 
@@ -91,32 +98,6 @@ public partial class QuerySessionControl : UserControl
                returned, and an Overview rebuilt inside that window would ask the OLD server what it
                supports and hold that answer for the rest of the session. */
             InvalidateOverviewView();
-        }
-    }
-
-    private async Task PopulateDatabases()
-    {
-        if (_serverConnection == null) return;
-
-        try
-        {
-            var connStr = _serverConnection.GetConnectionString(_credentialService, "master");
-            await using var conn = new SqlConnection(connStr);
-            await conn.OpenAsync();
-
-            var databases = new List<string>();
-            using var cmd = new SqlCommand(
-                "SELECT name FROM sys.databases WHERE state_desc = 'ONLINE' ORDER BY name", conn);
-            using var reader = await cmd.ExecuteReaderAsync();
-            while (await reader.ReadAsync())
-                databases.Add(reader.GetString(0));
-
-            DatabaseBox.ItemsSource = databases;
-            DatabaseBox.IsEnabled = true;
-        }
-        catch
-        {
-            DatabaseBox.IsEnabled = false;
         }
     }
 

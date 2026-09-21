@@ -23,6 +23,14 @@ public partial class ConnectionDialog : Window
     public ServerConnection? ResultConnection { get; private set; }
     public string? ResultDatabase { get; private set; }
 
+    /// <summary>
+    /// The databases the login could see when the winning connection opened, for the caller's
+    /// database picker. Handing these over is what lets callers skip re-enumerating through a
+    /// second connection to master — a round trip this dialog deliberately does not make, because
+    /// some logins (Azure SQL DB, JIT access) can only open the database they named.
+    /// </summary>
+    public IReadOnlyList<string> ResultDatabases { get; private set; } = Array.Empty<string>();
+
     /// <param name="currentDatabase">
     /// The database the calling session is already on, when the dialog is opened to reconnect.
     /// It is pre-selected once the database list loads; it never connects on its own.
@@ -176,16 +184,17 @@ public partial class ConnectionDialog : Window
     /// <summary>
     /// Opens a connection with the current settings and fills the Database dropdown with the
     /// databases the login can see. Shared by Test Connection and Connect so both take the same
-    /// path. Reports progress and failures in StatusText; returns true when the connection opened.
+    /// path. Reports progress and failures in StatusText; returns the databases when the
+    /// connection opened, null when it did not.
     /// </summary>
-    private async Task<bool> ConnectAndLoadDatabasesAsync()
+    private async Task<List<string>?> ConnectAndLoadDatabasesAsync()
     {
         var serverName = ServerNameBox.Text?.Trim();
         if (string.IsNullOrEmpty(serverName))
         {
             StatusText.Text = "Enter a server name";
             StatusText.Foreground = StatusBrush("ErrorBrush", Avalonia.Media.Brushes.OrangeRed);
-            return false;
+            return null;
         }
 
         // For Azure SQL DB / JIT access the login often can't open master, so connect
@@ -211,10 +220,13 @@ public partial class ConnectionDialog : Window
             await conn.OpenAsync();
 
             // Fetch databases the login can see. On Azure SQL DB connected to a single user
-            // database this returns master + that database, which is expected.
+            // database this returns master + that database, which is expected. Read
+            // uncommitted so the catalog scan cannot sit blocked behind an in-flight
+            // CREATE or RESTORE — carried over from the plan toolbar's enumeration, which
+            // this one replaced.
             var databases = new List<string>();
             using var cmd = new SqlCommand(
-                "SELECT name FROM sys.databases WHERE state_desc = 'ONLINE' ORDER BY name", conn);
+                "SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED; SELECT name FROM sys.databases WHERE state_desc = 'ONLINE' ORDER BY name", conn);
             using var reader = await cmd.ExecuteReaderAsync();
             while (await reader.ReadAsync())
                 databases.Add(reader.GetString(0));
@@ -234,14 +246,14 @@ public partial class ConnectionDialog : Window
 
             StatusText.Text = $"Connected ({databases.Count} databases)";
             StatusText.Foreground = StatusBrush("SuccessBrush", Avalonia.Media.Brushes.LimeGreen);
-            return true;
+            return databases;
         }
         catch (Exception ex)
         {
             StatusText.Text = ex.Message;
             StatusText.Foreground = StatusBrush("ErrorBrush", Avalonia.Media.Brushes.OrangeRed);
             DatabaseBox.IsEnabled = false;
-            return false;
+            return null;
         }
         finally
         {
@@ -285,7 +297,8 @@ public partial class ConnectionDialog : Window
 
         // Single step: connect and enumerate databases here, so Test Connection is never a
         // prerequisite. On failure the message stays in StatusText and the dialog stays open.
-        if (!await ConnectAndLoadDatabasesAsync())
+        var databases = await ConnectAndLoadDatabasesAsync();
+        if (databases == null)
             return;
 
         // Cancel stays live while the connection opens, so the dialog may already be gone.
@@ -308,6 +321,7 @@ public partial class ConnectionDialog : Window
 
         ResultConnection = connection;
         ResultDatabase = ResolveResultDatabase(typedDatabase);
+        ResultDatabases = databases;
         Close(true);
     }
 
