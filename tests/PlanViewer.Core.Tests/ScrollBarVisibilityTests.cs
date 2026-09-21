@@ -161,6 +161,15 @@ public class ScrollBarVisibilityTests
             };
             Show(grid);
 
+            /* A shown grid is also the only place the suite can falsify the Avalonia 12 migration
+               of DataGridBehaviors.AttachCopyGuard, which moved off the removed
+               TopLevel.PlatformSettings onto Visual.GetPlatformSettings(). Pressing Ctrl+C by hand
+               on Windows cannot falsify it: the guard falls back to KeyModifiers.Control when the
+               lookup yields nothing, and Control is exactly what Windows reports anyway, so a dead
+               lookup and a live one behave identically under the fingers. An attached grid has
+               platform settings, so this asserts the lookup itself rather than its fallback. */
+            Assert.NotNull(grid.GetPlatformSettings());
+
             var bars = grid.GetVisualDescendants().OfType<ScrollBar>().ToList();
 
             Assert.NotEmpty(bars);

@@ -94,7 +94,7 @@
                 <StackPanel x:Name="SearchValuePanel" Spacing="4">
                     <TextBlock Text=" " FontSize="11"/>
                     <TextBox x:Name="SearchValueBox" Width="200" Height="36" FontSize="13"
-                             Watermark="0x1AB2C3, dbo.MyProc"
+                             PlaceholderText="0x1AB2C3, dbo.MyProc"
                              KeyDown="SearchValue_KeyDown"/>
                 </StackPanel>
                 <StackPanel x:Name="ExecutionTypePanel" Spacing="4" IsVisible="False">
@@ -170,12 +170,12 @@
                         <StackPanel Spacing="2">
                             <TextBlock Text="Query text contains" FontSize="11"
                                        Foreground="{DynamicResource ForegroundBrush}"/>
-                            <TextBox x:Name="TextSearchBox" Width="220" Height="32" Watermark="e.g. Votes"/>
+                            <TextBox x:Name="TextSearchBox" Width="220" Height="32" PlaceholderText="e.g. Votes"/>
                         </StackPanel>
                         <StackPanel Spacing="2">
                             <TextBlock Text="Query text excludes" FontSize="11"
                                        Foreground="{DynamicResource ForegroundBrush}"/>
-                            <TextBox x:Name="TextExcludeBox" Width="220" Height="32" Watermark="e.g. #temp"/>
+                            <TextBox x:Name="TextExcludeBox" Width="220" Height="32" PlaceholderText="e.g. #temp"/>
                         </StackPanel>
                         <CheckBox x:Name="EscapeBracketsBox" Content="Treat [ ] _ as literals"
                                   VerticalAlignment="Bottom"
@@ -186,22 +186,22 @@
                         <StackPanel Spacing="2">
                             <TextBlock Text="Include query IDs" FontSize="11"
                                        Foreground="{DynamicResource ForegroundBrush}"/>
-                            <TextBox x:Name="IncludeQueryIdsBox" Width="180" Height="32" Watermark="1, 2, 3"/>
+                            <TextBox x:Name="IncludeQueryIdsBox" Width="180" Height="32" PlaceholderText="1, 2, 3"/>
                         </StackPanel>
                         <StackPanel Spacing="2">
                             <TextBlock Text="Ignore query IDs" FontSize="11"
                                        Foreground="{DynamicResource ForegroundBrush}"/>
-                            <TextBox x:Name="IgnoreQueryIdsBox" Width="180" Height="32" Watermark="4, 5"/>
+                            <TextBox x:Name="IgnoreQueryIdsBox" Width="180" Height="32" PlaceholderText="4, 5"/>
                         </StackPanel>
                         <StackPanel Spacing="2">
                             <TextBlock Text="Include plan IDs" FontSize="11"
                                        Foreground="{DynamicResource ForegroundBrush}"/>
-                            <TextBox x:Name="IncludePlanIdsBox" Width="180" Height="32" Watermark="10, 11"/>
+                            <TextBox x:Name="IncludePlanIdsBox" Width="180" Height="32" PlaceholderText="10, 11"/>
                         </StackPanel>
                         <StackPanel Spacing="2">
                             <TextBlock Text="Ignore plan IDs" FontSize="11"
                                        Foreground="{DynamicResource ForegroundBrush}"/>
-                            <TextBox x:Name="IgnorePlanIdsBox" Width="180" Height="32" Watermark="12"/>
+                            <TextBox x:Name="IgnorePlanIdsBox" Width="180" Height="32" PlaceholderText="12"/>
                         </StackPanel>
                     </StackPanel>
                     <!-- Actions -->

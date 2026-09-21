@@ -43,11 +43,11 @@
             <Setter Property="AllowAutoHide" Value="True"/>
         </Style>
 
-        <!-- DataGrid does not scroll through a ScrollViewer, and the ScrollBar rule above
-             cannot reach its bars either: it assigns AllowAutoHide to them in code, and a
-             local value outranks any style. There is no DataGrid.AllowAutoHide to set, but
-             the value it pushes down is the ATTACHED ScrollViewer property read off itself,
-             so setting that here is what reaches the grids. -->
+        <!-- DataGrid does not scroll through a ScrollViewer, so the ScrollBar rule above
+             cannot reach its bars: PART_HorizontalScrollbar and PART_VerticalScrollbar are
+             bare ScrollBars inside its own template. There is no DataGrid.AllowAutoHide to
+             set, but the template binds each bar's AllowAutoHide to the ATTACHED ScrollViewer
+             property on the grid, so setting that here is what reaches them. -->
         <Style Selector="DataGrid">
             <Setter Property="ScrollViewer.AllowAutoHide" Value="True"/>
         </Style>

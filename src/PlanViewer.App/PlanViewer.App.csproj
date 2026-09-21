@@ -12,8 +12,6 @@
     <PackageReference Include="Avalonia" Version="12.1.2" />
     <PackageReference Include="Avalonia.AvaloniaEdit" Version="12.0.0" />
     <PackageReference Include="Avalonia.Controls.DataGrid" Version="12.1.2" />
-    <!-- 5.1.58 is the last Avalonia 11 build — 5.1.59+ requires Avalonia >= 12.0.0.
-         Bump together with the Avalonia 12 migration (branch upgrade/avalonia-12). -->
     <PackageReference Include="ScottPlot.Avalonia" Version="5.1.59" />
     <PackageReference Include="Avalonia.Desktop" Version="12.1.2" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.2" />
@@ -28,11 +26,15 @@
     <PackageReference Include="Microsoft.SqlServer.TransactSql.ScriptDom" Version="180.107.0" />
     <PackageReference Include="Velopack" Version="1.2.0" />
 
-    <!-- Pin SkiaSharp native assets to match SkiaSharp 3.119.0.
-         Avalonia.Skia 11.3.12 transitively pulls in 2.88.9 for Linux and WebAssembly,
-         but the managed SkiaSharp 3.x requires native libs in the [119.0, 120.0) range.
-         Without these pins, the old 2.88.x .so overwrites the correct one at publish time,
-         causing a TypeInitializationException on Linux (GitHub issue #139). -->
+    <!-- This pin is inert under Avalonia 12 and kept anyway. Avalonia.Skia 12.1.2 already
+         requires SkiaSharp and SkiaSharp.NativeAssets.Linux 3.119.4 itself, so the pin no
+         longer raises any floor it did not already meet. It also has no lever over the
+         collision it was written for: issue #139 is ScottPlot's
+         SkiaSharp.NativeAssets.Linux.NoDependencies 3.119.0, a DIFFERENT package id that
+         ships its own libSkiaSharp.so and overwrites the right one at publish time. A
+         PackageReference on one id cannot constrain the other. It stays because that
+         collision is still unresolved and removing the pin is out of the scope of the
+         Avalonia 12 migration, not because it prevents anything. -->
     <PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="3.119.4" />
   </ItemGroup>
 

@@ -882,12 +882,7 @@ public partial class MainWindow : Window
         about.ShowDialog(this);
     }
 
-#pragma warning disable CS0618 // Data/DataFormats.Files deprecated but IDataTransfer API differs
     private static readonly string[] _supportedExtensions = { ".sqlplan", ".xml", ".sql" };
-
-
-#pragma warning restore CS0618
-
 
     /// <summary>
     /// Re-decides whether Compare Plans is offered, for every Compare button in the window (#447).
