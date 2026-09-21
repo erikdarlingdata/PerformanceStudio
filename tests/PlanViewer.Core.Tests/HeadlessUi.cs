@@ -45,7 +45,7 @@ namespace PlanViewer.Core.Tests;
 /// <c>FontSize / 10</c> — unchanged at font size 10, 1.1x at the toolbar's 11, 1.4x at Fluent's
 /// default 14 — while a line is 1.0898 em tall, rounded up to whole DIPs, which measures as desired
 /// heights of 11, 12, 14 and 16 at font sizes 10, 11, 12 and 14. That is 1.36x the old line height
-/// at every size, a flat ratio rather than something that scales with the size.
+/// at every size, a flat ratio rather than something that scales with the size.</para>
 ///
 /// <para>The height figure is worth pinning down because the plausible wrong answer is 1.25x. That
 /// would be the em box alone; 1.36x is the em box plus the font's line gap. The font manager
@@ -53,7 +53,8 @@ namespace PlanViewer.Core.Tests;
 /// typographic values, not the hhea pair (782 and 0) that would have given 0.854 em and a 7%
 /// change. So when a height assertion moves, 1.36x is the tell; if a height moves by something
 /// else, the cause is not this.</para>
-/// Padding, margins and fixed sizes did not move at all, so text-driven measurements grew and
+///
+/// <para>Padding, margins and fixed sizes did not move at all, so text-driven measurements grew and
 /// everything else stayed put. Thresholds elsewhere in the suite carry their new numbers and point
 /// back here rather than re-deriving this.</para>
 ///
@@ -208,7 +209,7 @@ internal static class HeadlessUi
         /* Loud on purpose, every single time. A retry nobody can see is how a 1-in-4 flake becomes
            a 1-in-400 mystery that outlives everyone who remembers this comment. */
         Console.Error.WriteLine(
-            "Avalonia 12 headless setup race — dispatch retried once; see issue #TBD.");
+            "Avalonia 12 headless setup race — dispatch retried once; see issue #544.");
 
         return DispatchOnce(body, out _);
     }
