@@ -14,7 +14,6 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
 using Avalonia.Platform.Storage;
 using AvaloniaEdit.TextMate;
-using Microsoft.Data.SqlClient;
 using PlanViewer.App.Dialogs;
 using PlanViewer.Core.Interfaces;
 using PlanViewer.App.Helpers;
@@ -329,7 +328,10 @@ public partial class PlanViewerControl : UserControl
     }
 
     /// <summary>
-    /// Update the connection UI to reflect an active connection (used when connection is inherited).
+    /// Update the connection UI to reflect an active connection (used when connection is
+    /// inherited). Label and button only — the session-hosted viewers that call this hide the
+    /// whole connection toolbar, so there is no picker to feed. A standalone tab with a live
+    /// toolbar wants <see cref="AdoptConnection"/> instead.
     /// </summary>
     public void SetConnectionStatus(string serverName, string? database)
     {
@@ -338,6 +340,27 @@ public partial class PlanViewerControl : UserControl
         PlanConnectButton.Content = AppIcons.MakeContent(AppIcons.Connect, "Reconnect");
         if (database != null)
             _planSelectedDatabase = database;
+    }
+
+    /// <summary>
+    /// Takes over a connection the ConnectionDialog just validated, for a standalone tab whose
+    /// toolbar is visible: paints the status AND fills, enables and pre-selects the database
+    /// picker, with <see cref="_planConnection"/> set so changing the picker actually switches
+    /// <see cref="ConnectionString"/>. Status alone left a green label over a disabled, empty
+    /// picker — the same lie the connect handlers used to tell (#540 follow-up).
+    ///
+    /// <para>Call <see cref="SetConnectionServices"/> first: the picker's SelectionChanged
+    /// rebuilds the connection string through the credential service.</para>
+    /// </summary>
+    public void AdoptConnection(ServerConnection connection, string? database,
+        IReadOnlyList<string> databases)
+    {
+        _planConnection = connection;
+        SetConnectionStatus(connection.ServerName, database);
+
+        PlanDatabaseBox.ItemsSource = databases;
+        PlanDatabaseBox.IsEnabled = true;
+        SelectPlanDatabase();
     }
 
     // Events for MainWindow to wire up advice/repro actions
@@ -591,38 +614,33 @@ public partial class PlanViewerControl : UserControl
         PlanServerLabel.Foreground = FindBrushResource("SuccessBrush");
         PlanConnectButton.Content = AppIcons.MakeContent(AppIcons.Connect, "Reconnect");
 
-        // Populate database dropdown
-        try
+        /* The dialog only closes with true after it opened this connection and enumerated
+           these databases — through the database the user named, which is the one some
+           logins (Azure SQL DB, JIT access) can open when master is off limits. Asking
+           again here through a second, hardcoded-master connection was a wasted round trip
+           whose swallowed failure left a green toolbar over a dead database picker. Same
+           hand-over QuerySessionControl's connect block takes. */
+        PlanDatabaseBox.ItemsSource = dialog.ResultDatabases;
+        PlanDatabaseBox.IsEnabled = true;
+        SelectPlanDatabase();
+    }
+
+    /// <summary>
+    /// Points the picker at <see cref="_planSelectedDatabase"/> when the list holds it. The
+    /// selection this raises recomputes the same ConnectionString the caller already set, which
+    /// is idempotent on purpose — the handler is the one place the string is derived.
+    /// </summary>
+    private void SelectPlanDatabase()
+    {
+        if (_planSelectedDatabase == null) return;
+
+        for (int i = 0; i < PlanDatabaseBox.Items.Count; i++)
         {
-            var connStr = _planConnection.GetConnectionString(_planCredentialService, "master");
-            await using var conn = new SqlConnection(connStr);
-            await conn.OpenAsync();
-
-            var databases = new List<string>();
-            using var cmd = new SqlCommand(
-                "SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED; SELECT name FROM sys.databases WHERE state_desc = 'ONLINE' ORDER BY name", conn);
-            using var reader = await cmd.ExecuteReaderAsync();
-            while (await reader.ReadAsync())
-                databases.Add(reader.GetString(0));
-
-            PlanDatabaseBox.ItemsSource = databases;
-            PlanDatabaseBox.IsEnabled = true;
-
-            if (_planSelectedDatabase != null)
+            if (PlanDatabaseBox.Items[i]?.ToString() == _planSelectedDatabase)
             {
-                for (int i = 0; i < PlanDatabaseBox.Items.Count; i++)
-                {
-                    if (PlanDatabaseBox.Items[i]?.ToString() == _planSelectedDatabase)
-                    {
-                        PlanDatabaseBox.SelectedIndex = i;
-                        break;
-                    }
-                }
+                PlanDatabaseBox.SelectedIndex = i;
+                break;
             }
-        }
-        catch
-        {
-            PlanDatabaseBox.IsEnabled = false;
         }
     }
 
