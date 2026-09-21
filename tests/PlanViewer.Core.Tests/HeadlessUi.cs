@@ -43,8 +43,9 @@ namespace PlanViewer.Core.Tests;
 /// ordinary text and so measures every character at one em. Both numbers therefore changed, on
 /// different axes: a string is now exactly <c>FontSize</c> DIP per character, so widths scale by
 /// <c>FontSize / 10</c> — unchanged at font size 10, 1.1x at the toolbar's 11, 1.4x at Fluent's
-/// default 14 — while a line is 1.0898 em tall (measured: 11, 12, 14 and 16 DIP at font sizes 10,
-/// 11, 12 and 14), which is 1.36x the old height at every size rather than a function of it.
+/// default 14 — while a line is 1.0898 em tall, rounded up to whole DIPs, which measures as desired
+/// heights of 11, 12, 14 and 16 at font sizes 10, 11, 12 and 14. That is 1.36x the old line height
+/// at every size, a flat ratio rather than something that scales with the size.
 /// Padding, margins and fixed sizes did not move at all, so text-driven measurements grew and
 /// everything else stayed put. Thresholds elsewhere in the suite carry their new numbers and point
 /// back here rather than re-deriving this.</para>
