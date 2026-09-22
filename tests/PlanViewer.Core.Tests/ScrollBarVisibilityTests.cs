@@ -157,8 +157,9 @@ public class ScrollBarVisibilityTests
     {
         HeadlessUi.Run(() =>
         {
-            /* The grid needs columns and rows before its template puts scrollbars in the tree,
-               so this is a real grid rather than an empty one. */
+            /* No columns on purpose — the summary above explains that nothing realizes here, so
+               what this case pins is the BOUND flag on untemplated bars, not geometry. The
+               columns-bearing sibling below is where bars realize. */
             var grid = new DataGrid
             {
                 ItemsSource = Enumerable.Range(0, 50).Select(i => new { Value = i }).ToList()
@@ -183,6 +184,56 @@ public class ScrollBarVisibilityTests
                 "attached property on the grid, so they need their own rule and their own check"));
         });
     }
+
+    /// <summary>
+    /// The columns-bearing sibling of the contract above (#548). With real columns the rows
+    /// realize, the grid overflows both ways, and the PART_ bars apply their templates — the
+    /// state every grid in the app actually runs in, and the state the columns-less case above
+    /// structurally cannot reach. Pinned here: templated bars exist at all (zero of them realize
+    /// without columns), every one keeps <c>AllowAutoHide</c> from the attached property the
+    /// App.axaml rule sets (12 binds it in-template; upstream PR #241), and the vertical bar
+    /// reports visible, because fifty realized rows cannot fit a 250px grid.
+    /// </summary>
+    [Fact]
+    public void AGridWithColumnsRealizesItsBarsAndKeepsAllowAutoHide()
+    {
+        HeadlessUi.Run(() =>
+        {
+            var grid = new DataGrid
+            {
+                Width = 350,
+                Height = 250,
+                ItemsSource = Enumerable.Range(0, 50).Select(i => new BarRow(i, $"row {i}")).ToList()
+            };
+            grid.Columns.Add(new DataGridTextColumn
+            {
+                Header = "Value",
+                Binding = new Avalonia.Data.Binding(nameof(BarRow.Value))
+            });
+            /* Wider than the grid on purpose, so the horizontal bar has a reason to exist too. */
+            grid.Columns.Add(new DataGridTextColumn
+            {
+                Header = "Name",
+                Binding = new Avalonia.Data.Binding(nameof(BarRow.Name)),
+                Width = new DataGridLength(400)
+            });
+            Show(grid);
+
+            var templated = ScrollBarsOf(grid);
+
+            Assert.NotEmpty(templated);
+            Assert.All(templated, bar => Assert.True(
+                bar.AllowAutoHide,
+                "a realized DataGrid bar takes AllowAutoHide from the attached property on the " +
+                "grid via its template binding — losing it here means the slim-rail contract " +
+                "silently died on the grids people actually scroll"));
+            Assert.True(
+                templated.First(bar => bar.Orientation == Orientation.Vertical).IsVisible,
+                "fifty realized rows cannot fit a 250px grid");
+        });
+    }
+
+    private sealed record BarRow(int Value, string Name);
 
     /// <summary>
     /// How much of the bar is actually painted while it is idle.
