@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:controls="using:PlanViewer.App.Controls"
+             xmlns:helpers="using:PlanViewer.App.Helpers"
              x:Class="PlanViewer.App.Controls.QueryStoreOverviewControl">
     <UserControl.Resources>
         <!--
@@ -179,6 +180,7 @@
         <!-- Row 0: Progress bar + refresh-error badge -->
         <Grid Grid.Row="0">
             <ProgressBar x:Name="LoadingBar" IsIndeterminate="False"
+                         helpers:ProgressBarBehaviors.RestartOnReattach="True"
                          Height="3" Margin="0"
                          VerticalAlignment="Top"
                          Foreground="{DynamicResource AccentBrush}"/>

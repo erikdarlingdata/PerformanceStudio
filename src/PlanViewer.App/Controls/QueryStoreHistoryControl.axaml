@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
 			 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
 			 xmlns:scottplot="clr-namespace:ScottPlot.Avalonia;assembly=ScottPlot.Avalonia"
+			 xmlns:helpers="using:PlanViewer.App.Helpers"
 			 x:Class="PlanViewer.App.Controls.QueryStoreHistoryControl"
 			 Background="{DynamicResource BackgroundBrush}">
 
@@ -71,7 +72,8 @@
 						   FontSize="12" Foreground="{DynamicResource ForegroundBrush}"/>
 				<StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center"
 							x:Name="LoadingPanel" IsVisible="False" Margin="8,0,0,0">
-					<ProgressBar IsIndeterminate="True" Width="80" Height="6" VerticalAlignment="Center"/>
+					<ProgressBar IsIndeterminate="True" Width="80" Height="6" VerticalAlignment="Center"
+							 helpers:ProgressBarBehaviors.RestartOnReattach="True"/>
 					<Button x:Name="CancelButton" Content="Cancel" Click="Cancel_Click"
 							Height="24" Padding="10,0" FontSize="11"
 							Theme="{StaticResource AppButton}"/>

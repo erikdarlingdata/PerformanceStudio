@@ -40,8 +40,9 @@ public class SessionToolbarLayoutTests
     {
         HeadlessUi.Run(() =>
         {
-            /* Wide enough for the whole row (natural 1910px in this harness's font metrics), because
-               the first half of this test is about every slot HAVING a geometry to hold still. */
+            /* Wide enough for the whole row (natural 2116px in this harness's font metrics, which
+               HeadlessUi explains), because the first half of this test is about every slot HAVING
+               a geometry to hold still. */
             var window = new MainWindow { Width = 2200, Height = 800 };
             try
             {

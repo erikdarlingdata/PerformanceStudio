@@ -15,10 +15,13 @@ namespace PlanViewer.Core.Tests;
 
 /// <summary>
 /// The session toolbar is one fixed row of slots inside a ScrollViewer whose rail is deliberately
-/// suppressed. Measured in this harness, that row wants 1910px. Erik's maximized display is 1536
-/// logical, so Format and part of Run Repro were simply not on screen, behind a scrollbar that had
-/// been hidden on purpose because a rail under a 28px button row grows the strip and drags the
-/// sub-tab row with it. Hidden content, hidden affordance.
+/// suppressed. Measured in this harness, that row wants 2116px — it wanted 1910px until the headless
+/// text metrics changed under Avalonia 12, which HeadlessUi explains once for every number in these
+/// files. Neither figure is what the row measures on the fonts a user has; they are the widths the
+/// thresholds below are chosen against. What put this file here is real: on Erik's maximized
+/// 1536-logical display, Format and part of Run Repro were simply not on screen, behind a scrollbar
+/// that had been hidden on purpose because a rail under a 28px button row grows the strip and drags
+/// the sub-tab row with it. Hidden content, hidden affordance.
 ///
 /// <para>The fix is a chevron that holds whatever did not fit. What these tests pin is the part of
 /// it that is easy to get subtly wrong and impossible to see in a screenshot: that a command in the
@@ -105,7 +108,7 @@ public class ToolbarOverflowTests
     private static string[] CollapseLabels => CollapseOrder.Select(c => c.Label).ToArray();
 
     /// <summary>
-    /// The width Erik actually runs at. At a 1520px row the three trailing commands move into the
+    /// The width Erik actually runs at. At a 1520px row the four trailing commands move into the
     /// menu, in the order they left it, and every button in front of them is exactly where it was
     /// on a row wide enough for all of them.
     /// </summary>
@@ -140,16 +143,29 @@ public class ToolbarOverflowTests
 
                 SetViewport(window, scroll, session.Overflow, 1520);
 
-                Assert.True(chevron.IsVisible, "a 1520px row cannot hold a 1910px toolbar");
+                Assert.True(chevron.IsVisible, "a 1520px row cannot hold a 2116px toolbar");
 
                 /* The one failure every other assertion here would sail past: a chevron that
                    appears on cue, holds the right commands, and opens nothing when you press it. */
                 Assert.Same(session.Overflow.Menu, chevron.Flyout);
 
-                /* Three commands, in the order the row gives them up: the end of the row first.
+                /* Four commands, in the order the row gives them up: the end of the row first.
                    Format being the first entry is the contract — the menu grows and shrinks at its
-                   end, so an entry never changes position under the pointer as the window moves. */
-                Assert.Equal(new[] { "Format", "Run Repro", "Copy Repro" }, MenuHeaders(session.Overflow));
+                   end, so an entry never changes position under the pointer as the window moves.
+
+                   How many end up here is a function of the harness's text metrics and is allowed
+                   to move with them; it was three until Avalonia 12 made text wider, and QS
+                   Overview is simply the next name in CollapseOrder. What is NOT allowed to move
+                   is which commands may leave at all: Connect, Execute and Execute-with-estimate
+                   are absent from CollapseOrder and must never appear in this menu at any width.
+                   A metric change adds the next name in the documented order; a regression takes
+                   a protected one. This exact-collection assertion is itself the guard: a
+                   protected command that collapsed would appear in this list and fail it. That is
+                   why it stays an exact collection and never becomes a count or a containment
+                   check. (The X comparison below skips invisible buttons, so it would not catch
+                   a stayer leaving — it pins that the survivors did not shift.) */
+                Assert.Equal(new[] { "Format", "Run Repro", "Copy Repro", "QS Overview" },
+                    MenuHeaders(session.Overflow));
                 Assert.False(format.IsVisible);
 
                 // Everything still on the row is where it was, to the pixel, and the sub-tab row
@@ -513,7 +529,7 @@ public class ToolbarOverflowTests
                 var subTabs = session.FindControl<TabControl>("SubTabControl")!;
                 var subTabsY = subTabs.Bounds.Y;
 
-                /* Connect, the server label, the database picker and the two plan verbs want 708px
+                /* Connect, the server label, the database picker and the two plan verbs want 746px
                    between them and cannot be collapsed, so under that the row has to scroll. */
                 window.Width = 640;
                 Settle(window, session.Overflow);
@@ -746,7 +762,8 @@ public class ToolbarOverflowTests
                 Settle(window, session.Overflow, viewer.Overflow);
 
                 Assert.Equal(planRevisions, viewer.Overflow.Revisions);
-                Assert.Equal(new[] { "Format", "Run Repro", "Copy Repro" }, MenuHeaders(session.Overflow));
+                Assert.Equal(new[] { "Format", "Run Repro", "Copy Repro", "QS Overview" },
+                    MenuHeaders(session.Overflow));
             }
             finally
             {

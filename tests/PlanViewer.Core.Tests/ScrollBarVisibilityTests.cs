@@ -137,16 +137,20 @@ public class ScrollBarVisibilityTests
     /// Two selectors are needed in App.axaml, not one, and that is the whole reason this case is
     /// asserted separately. A ScrollViewer rule alone looks like it covers the app and does not:
     /// DataGrid does not scroll through a ScrollViewer, its template hosts PART_HorizontalScrollbar
-    /// and PART_VerticalScrollbar as bare <see cref="ScrollBar"/>s, and it assigns their
-    /// <c>AllowAutoHide</c> in code from the ATTACHED ScrollViewer property it reads off itself —
-    /// where a local value outranks any style. A style that compiles is not a style that matches.
+    /// and PART_VerticalScrollbar as bare <see cref="ScrollBar"/>s, and it binds their
+    /// <c>AllowAutoHide</c> to the ATTACHED ScrollViewer property on the grid — which nothing sets
+    /// unless this rule does. A style that compiles is not a style that matches.
     ///
-    /// <para><b>Why only the flag is checked here.</b> A DataGrid decides it overflows by measuring
-    /// its rows, rows measure their text, and text needs a font — which this suite has no Skia for,
-    /// so headlessly the rows come out zero-high, the grid concludes it fits, and both bars stay
-    /// <c>IsVisible=false</c> with no template and no thumb to measure. The rail thickness is not
-    /// DataGrid-specific anyway: it comes from app-level resources on the shared ScrollBar
-    /// ControlTheme, and the ScrollViewer cases above prove those resources land.</para>
+    /// <para><b>Why only the flag is checked here.</b> Nothing in this grid overflows, so neither
+    /// bar ever applies its template: measured under 12, both stay <c>IsVisible=false</c> with no
+    /// thumb to measure, which is why only <c>AllowAutoHide</c> is asserted and why asserting it on
+    /// an untemplated bar is still meaningful — the value is bound, not assigned during
+    /// <c>OnApplyTemplate</c>. The reason the grid does not overflow is worth stating because the
+    /// obvious guess is wrong: it is not that text measures short in this harness — under 12 it
+    /// measures against a real font with real metrics — it is that the grid generates no columns
+    /// for its 50 rows, so no row is ever realized. The rail thickness is not DataGrid-specific
+    /// anyway: it comes from app-level resources on the shared ScrollBar ControlTheme, and the
+    /// ScrollViewer cases above prove those resources land.</para>
     /// </summary>
     [Fact]
     public void ADataGridsOwnScrollBarsFollowTheSameContract()
@@ -160,6 +164,15 @@ public class ScrollBarVisibilityTests
                 ItemsSource = Enumerable.Range(0, 50).Select(i => new { Value = i }).ToList()
             };
             Show(grid);
+
+            /* A shown grid is also the only place the suite can falsify the Avalonia 12 migration
+               of DataGridBehaviors.AttachCopyGuard, which moved off the removed
+               TopLevel.PlatformSettings onto Visual.GetPlatformSettings(). Pressing Ctrl+C by hand
+               on Windows cannot falsify it: the guard falls back to KeyModifiers.Control when the
+               lookup yields nothing, and Control is exactly what Windows reports anyway, so a dead
+               lookup and a live one behave identically under the fingers. An attached grid has
+               platform settings, so this asserts the lookup itself rather than its fallback. */
+            Assert.NotNull(grid.GetPlatformSettings());
 
             var bars = grid.GetVisualDescendants().OfType<ScrollBar>().ToList();
 
