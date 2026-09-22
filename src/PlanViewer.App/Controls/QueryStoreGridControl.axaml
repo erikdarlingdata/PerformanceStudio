@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:local="using:PlanViewer.App.Controls"
+             xmlns:helpers="using:PlanViewer.App.Helpers"
              xmlns:models="using:PlanViewer.Core.Models"
              x:Class="PlanViewer.App.Controls.QueryStoreGridControl"
              Background="{DynamicResource BackgroundBrush}">
@@ -487,7 +488,8 @@
                 Background="#80000000" CornerRadius="0"
                 HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8">
-                <ProgressBar IsIndeterminate="True" Width="200" Height="4"/>
+                <ProgressBar IsIndeterminate="True" Width="200" Height="4"
+                             helpers:ProgressBarBehaviors.RestartOnReattach="True"/>
                 <TextBlock x:Name="GridLoadingText" Text="Fetching plans..."
                            FontSize="12" HorizontalAlignment="Center"
                            Foreground="{DynamicResource ForegroundBrush}"/>

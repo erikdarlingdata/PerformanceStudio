@@ -475,6 +475,8 @@ public partial class MainWindow : Window
             Height = 4,
             Margin = new Avalonia.Thickness(0, 0, 0, 12)
         };
+        // This loading tab detaches whenever the user switches top-level tabs mid-capture.
+        Helpers.ProgressBarBehaviors.SetRestartOnReattach(progressBar, true);
 
         var statusText = new TextBlock
         {

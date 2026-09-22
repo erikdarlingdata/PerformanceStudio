@@ -82,6 +82,8 @@ public partial class QuerySessionControl : UserControl
             Height = 4,
             Margin = new Avalonia.Thickness(0, 0, 0, 12)
         };
+        // This overlay lives in tab content the user switches away from mid-capture.
+        Helpers.ProgressBarBehaviors.SetRestartOnReattach(progressBar, true);
 
         /* #448: SelectableTextBlock and wrapping, because this label doubles as the place a query
            failure is reported. A SQL error is the one string in this app a user most needs to copy
@@ -314,6 +316,8 @@ public partial class QuerySessionControl : UserControl
             Height = 4,
             Margin = new Avalonia.Thickness(0, 0, 0, 12)
         };
+        // This overlay lives in tab content the user switches away from mid-capture.
+        Helpers.ProgressBarBehaviors.SetRestartOnReattach(progressBar, true);
 
         /* #448: see the note on the estimated-plan path — this label reports failures too. */
         var statusLabel = new SelectableTextBlock

@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:local="using:PlanViewer.App.Controls"
+             xmlns:helpers="using:PlanViewer.App.Helpers"
              x:Class="PlanViewer.App.Controls.WaitStatsProfileControl">
     <Grid RowDefinitions="Auto,*">
         <!-- Header row: left controls + right-aligned legend button -->
@@ -35,7 +36,8 @@
                     Background="#80000000" CornerRadius="0"
                     HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
                 <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="6">
-                    <ProgressBar IsIndeterminate="True" Width="140" Height="3"/>
+                    <ProgressBar IsIndeterminate="True" Width="140" Height="3"
+                                 helpers:ProgressBarBehaviors.RestartOnReattach="True"/>
                     <TextBlock Text="Loading wait stats..."
                                FontSize="11" HorizontalAlignment="Center"
                                Foreground="{DynamicResource ForegroundBrush}"/>
