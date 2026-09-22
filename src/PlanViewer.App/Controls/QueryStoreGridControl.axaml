@@ -178,7 +178,7 @@
                                        Foreground="{DynamicResource ForegroundBrush}"/>
                             <TextBox x:Name="TextExcludeBox" Width="220" Height="32" PlaceholderText="e.g. #temp"/>
                         </StackPanel>
-                        <CheckBox x:Name="EscapeBracketsBox" Content="Treat [ ] _ as literals"
+                        <CheckBox x:Name="EscapeBracketsBox" Content="Treat [ ] __ as literals"
                                   VerticalAlignment="Bottom"
                                   Foreground="{DynamicResource ForegroundBrush}"/>
                     </StackPanel>
