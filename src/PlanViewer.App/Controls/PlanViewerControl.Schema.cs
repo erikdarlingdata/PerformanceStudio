@@ -109,10 +109,24 @@ public partial class PlanViewerControl : UserControl
             Padding = new Thickness(4)
         };
 
-        // SQL syntax highlighting
-        var registryOptions = new TextMateSharp.Grammars.RegistryOptions(TextMateSharp.Grammars.ThemeName.DarkPlus);
-        var tm = editor.InstallTextMate(registryOptions);
-        tm.SetGrammar(registryOptions.GetScopeByLanguageId("sql"));
+        /* SQL syntax highlighting, on the query editor's own lifecycle: installed on attach,
+           disposed on detach (#546). An installation owns a tokenization model with its own
+           thread, and a thread roots itself against GC — so installing once and never disposing
+           leaked a live thread for every schema tab ever closed. Detach also fires on plain tab
+           switches, which is why attach re-installs. */
+        TextMate.Installation? tm = null;
+        editor.AttachedToVisualTree += (_, _) =>
+        {
+            if (tm != null) return;
+            var registryOptions = new TextMateSharp.Grammars.RegistryOptions(TextMateSharp.Grammars.ThemeName.DarkPlus);
+            tm = editor.InstallTextMate(registryOptions);
+            tm.SetGrammar(registryOptions.GetScopeByLanguageId("sql"));
+        };
+        editor.DetachedFromVisualTree += (_, _) =>
+        {
+            tm?.Dispose();
+            tm = null;
+        };
 
         // Context menu
         var copyItem = new MenuItem { Header = "Copy" };
