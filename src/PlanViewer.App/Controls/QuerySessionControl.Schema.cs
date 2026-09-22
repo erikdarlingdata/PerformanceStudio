@@ -95,9 +95,22 @@ public partial class QuerySessionControl : UserControl
 
         if (isSql)
         {
-            var registryOptions = new RegistryOptions(ThemeName.DarkPlus);
-            var tm = editor.InstallTextMate(registryOptions);
-            tm.SetGrammar(registryOptions.GetScopeByLanguageId("sql"));
+            /* Same lifecycle as the query editor and the plan viewer's schema tabs (#546):
+               install on attach, dispose on detach. The installation's tokenization model runs
+               a thread that roots itself, so a tab closed without disposing leaked it. */
+            TextMate.Installation? tm = null;
+            editor.AttachedToVisualTree += (_, _) =>
+            {
+                if (tm != null) return;
+                var registryOptions = new RegistryOptions(ThemeName.DarkPlus);
+                tm = editor.InstallTextMate(registryOptions);
+                tm.SetGrammar(registryOptions.GetScopeByLanguageId("sql"));
+            };
+            editor.DetachedFromVisualTree += (_, _) =>
+            {
+                tm?.Dispose();
+                tm = null;
+            };
         }
 
         // Context menu for read-only schema tabs
