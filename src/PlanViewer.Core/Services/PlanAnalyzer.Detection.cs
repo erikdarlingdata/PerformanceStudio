@@ -158,8 +158,20 @@ public static partial class PlanAnalyzer
         if (!IsRowstoreScan(node))
             return null;
 
-        var predicate = node.Predicate;
+        return DetectNonSargablePattern(node.Predicate);
+    }
 
+    /// <summary>
+    /// The pattern half of <see cref="DetectNonSargablePredicate"/>: which non-SARGable shape, if
+    /// any, a predicate ScalarString has.
+    ///
+    /// <para>Internal so predicate shapes can be tested as raw strings. The shapes that matter
+    /// (compound AND/OR predicates, date ranges, parenthesized groups, AND inside a literal or a
+    /// bracketed name) outnumber any sensible set of plan fixtures, and every one of them is
+    /// decided entirely in this method and the helpers it calls.</para>
+    /// </summary>
+    internal static string? DetectNonSargablePattern(string predicate)
+    {
         // CASE expression in predicate — check first because CASE bodies
         // often contain CONVERT_IMPLICIT that isn't the root cause
         if (CaseInPredicateRegex.IsMatch(predicate))
@@ -170,9 +182,15 @@ public static partial class PlanAnalyzer
         if (ConvertImplicitWrapsColumn(predicate))
             return "Implicit conversion (CONVERT_IMPLICIT)";
 
-        // ISNULL / COALESCE wrapping column
-        if (Regex.IsMatch(predicate, @"\b(isnull|coalesce)\s*\(", RegexOptions.IgnoreCase))
-            return "ISNULL/COALESCE wrapping column";
+        // ISNULL / COALESCE wrapping column — on the column side only. ISNULL(@p, 0) on the
+        // parameter side is a runtime constant and seeks fine; flagging it contradicted this
+        // warning's own "wrapping a column" message. col = ISNULL(@p, col) is still caught,
+        // because the column sits inside the function, on its side of the comparison.
+        foreach (Match isnullMatch in IsnullCoalesceRegex.Matches(predicate))
+        {
+            if (IsFunctionOnColumnSide(predicate, isnullMatch))
+                return "ISNULL/COALESCE wrapping column";
+        }
 
         // Common function calls on columns — but only if the function wraps a column,
         // not a parameter/variable. Split on comparison operators to check which side
@@ -261,29 +279,69 @@ public static partial class PlanAnalyzer
     /// Checks whether a function call in a predicate is on the column side of the comparison.
     /// Predicate ScalarStrings look like: [db].[schema].[table].[col]>dateadd(day,(0),[@var])
     /// If the function is only on the parameter/literal side, it's still SARGable.
+    ///
+    /// <para><b>Only the function's own comparison is read (#556).</b> A compound predicate is
+    /// several comparisons joined by AND/OR, and the function belongs to exactly one of them.
+    /// Splitting the whole predicate at its FIRST operator instead put every later comparison,
+    /// column and all, on the function's side: in <c>[t].[A]=[@1] AND [t].[B]=CONVERT(tinyint,[@2],0)</c>
+    /// the CONVERT looked like it shared a side with [t].[B], and so did the dateadd in the
+    /// everyday range <c>[t].[d]&gt;=dateadd(day,(-7),getdate()) AND [t].[d]&lt;getdate()</c>.</para>
     /// </summary>
     private static bool IsFunctionOnColumnSide(string predicate, Match funcMatch)
     {
-        // Find the comparison operator that splits the predicate into left/right sides.
-        // Operators in ScalarString: >=, <=, <>, >, <, =
-        var compMatch = Regex.Match(predicate, @"(?<![<>])([<>=!]{1,2})(?![<>=])");
+        var comparison = ComparisonContaining(predicate, funcMatch.Index, out var offset);
+
+        var compMatch = ComparisonOperatorRegex.Match(comparison);
         if (!compMatch.Success)
             return true; // No comparison found — can't determine side, assume worst case
 
         var compPos = compMatch.Index;
-        var funcPos = funcMatch.Index;
+        var funcPos = funcMatch.Index - offset;
 
-        // Determine which side the function is on
-        var funcSide = funcPos < compPos ? "left" : "right";
-
-        // Check if that side also contains a column reference [...].[...].[...]
-        string side = funcSide == "left"
-            ? predicate[..compPos]
-            : predicate[(compPos + compMatch.Length)..];
+        // The side of this comparison the function is on, and whether a column shares it
+        string side = funcPos < compPos
+            ? comparison[..compPos]
+            : comparison[(compPos + compMatch.Length)..];
 
         // Same column-vs-variable distinction ConvertImplicitWrapsColumn needs, so it shares the
         // one regex rather than keeping a second copy of the pattern in sync by hand.
         return ColumnReferenceRegex.IsMatch(side);
+    }
+
+    /// <summary>
+    /// The single comparison around <paramref name="position"/>: the text between the nearest
+    /// AND/OR before it and the nearest after it. <paramref name="offset"/> is where that text
+    /// starts in <paramref name="predicate"/>, so positions can be translated into it.
+    ///
+    /// <para>Operators are split on at every depth, not just the top level: a parenthesized group
+    /// like <c>[t].[A]=(1) AND ([t].[B]=f([@p]) OR [t].[C]=(3))</c> has to come apart into its
+    /// three comparisons, or the group would be read as one. The leftover grouping parentheses
+    /// cannot move a comparison operator or add a column, so they are harmless. No function in a
+    /// ScalarString takes AND/OR inside its arguments; CASE does, and it is caught earlier.</para>
+    /// </summary>
+    private static string ComparisonContaining(string predicate, int position, out int offset)
+    {
+        var start = 0;
+        var end = predicate.Length;
+
+        foreach (Match match in LogicalOperatorRegex.Matches(predicate))
+        {
+            if (!match.Groups[1].Success)
+                continue; // a string literal or bracketed name, skipped whole
+
+            if (match.Index + match.Length <= position)
+            {
+                start = match.Index + match.Length;
+            }
+            else
+            {
+                end = match.Index;
+                break;
+            }
+        }
+
+        offset = start;
+        return predicate[start..end];
     }
 
     /// <summary>

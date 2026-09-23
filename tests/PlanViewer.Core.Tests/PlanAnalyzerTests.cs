@@ -336,6 +336,139 @@ public class PlanAnalyzerTests
     }
 
     // ---------------------------------------------------------------
+    // Rule 12: Non-SARGable Predicate — compound predicates (#556)
+    // ---------------------------------------------------------------
+
+    /// <summary>
+    /// #556: the side check split the WHOLE predicate at its first comparison operator. In
+    /// <c>[t].[A]=CONVERT_IMPLICIT(int,[@1],0) AND [t].[B]=CONVERT(tinyint,[@2],0)</c> that operator
+    /// sits after [t].[A], so the second conjunct, [t].[B] included, landed on the CONVERT's side,
+    /// and a conversion of a parameter was reported as a function on a column. Both columns here are
+    /// compared bare. The fixture is the reporter's own SQL Server 2022 actual plan: an
+    /// auto-parameterized query on a table with no index on A or B, which is why it scans. Rule 11
+    /// still reports that scan, which is true and is the actionable half.
+    /// </summary>
+    [Fact]
+    public void Rule12g_NonSargable_ParameterSideConvertAfterAnotherComparison_NotFlagged()
+    {
+        var plan = PlanTestHelper.LoadAndAnalyze("non_sargable_compound_predicate_plan.sqlplan");
+
+        Assert.Empty(PlanTestHelper.WarningsOfType(plan, "Non-SARGable Predicate"));
+        Assert.NotEmpty(PlanTestHelper.WarningsOfType(plan, "Scan With Predicate"));
+    }
+
+    /// <summary>
+    /// The everyday shape of the same bug, and likely the most common one in the field: a date
+    /// range with dateadd() on the parameter side of the lower bound. Under the old split the
+    /// upper bound's column sat on the dateadd's side, and a perfectly SARGable range was told to
+    /// "remove the function from the column side".
+    /// </summary>
+    [Fact]
+    public void Rule12g_NonSargable_DateRangeWithParameterSideDateadd_NotFlagged()
+    {
+        Assert.Null(PlanAnalyzer.DetectNonSargablePattern(
+            "[db].[dbo].[Posts].[CreationDate] as [p].[CreationDate]>=dateadd(day,(-7),getdate()) " +
+            "AND [db].[dbo].[Posts].[CreationDate] as [p].[CreationDate]<getdate()"));
+    }
+
+    /// <summary>
+    /// The fix must narrow the side check, not blunt it: a function that really does wrap a column
+    /// is still caught when it sits in a later comparison of a compound predicate.
+    /// </summary>
+    [Fact]
+    public void Rule12g_NonSargable_ColumnSideFunctionInLaterComparison_IsFlagged()
+    {
+        Assert.Equal("Function call (DATEPART) on column", PlanAnalyzer.DetectNonSargablePattern(
+            "[db].[dbo].[T].[A] as [t].[A]=(1) " +
+            "AND datepart(year,[db].[dbo].[T].[D] as [t].[D])=(2013)"));
+    }
+
+    /// <summary>
+    /// SQL Server keeps the parentheses of a nested OR, so the predicate splits at every AND/OR
+    /// depth, not only the top level. Splitting at the top level alone would leave the group as
+    /// one piece, and its first operator would again put [t].[C] on the upper()'s side.
+    /// </summary>
+    [Fact]
+    public void Rule12g_NonSargable_ParameterSideFunctionInsideParenthesizedOr_NotFlagged()
+    {
+        Assert.Null(PlanAnalyzer.DetectNonSargablePattern(
+            "[db].[dbo].[T].[A] as [t].[A]=(1) " +
+            "AND ([db].[dbo].[T].[B] as [t].[B]=upper([@p]) OR [db].[dbo].[T].[C] as [t].[C]=(3))"));
+    }
+
+    /// <summary>
+    /// An "and" inside a string literal is text, not an operator. Splitting on it would cut the
+    /// replace() away from its own comparison, and a piece with no operator in it is treated as
+    /// the worst case, which turns a parameter-side function into a false warning.
+    /// </summary>
+    [Fact]
+    public void Rule12g_NonSargable_AndInsideStringLiteral_DoesNotSplitTheComparison()
+    {
+        Assert.Null(PlanAnalyzer.DetectNonSargablePattern(
+            "replace([@p],N'Tom and Jerry',N'')=[db].[dbo].[T].[Name] as [t].[Name]"));
+    }
+
+    /// <summary>
+    /// LIKE is a comparison too. Without it the side check found no operator, fell back to assuming
+    /// the worst, and reported the upper() on the PATTERN as a function on the column. A pattern
+    /// built from a parameter is a runtime constant and seeks fine.
+    /// </summary>
+    [Fact]
+    public void Rule12g_NonSargable_ParameterSideFunctionInLikePattern_NotFlagged()
+    {
+        Assert.Null(PlanAnalyzer.DetectNonSargablePattern(
+            "[db].[dbo].[T].[Name] as [t].[Name] like upper([@p])"));
+    }
+
+    /// <summary>
+    /// The mirror image stays flagged: upper() on the COLUMN side of a LIKE forces every row
+    /// through the function before the pattern can be applied.
+    /// </summary>
+    [Fact]
+    public void Rule12g_NonSargable_ColumnSideFunctionBeforeLike_IsFlagged()
+    {
+        Assert.Equal("Function call (UPPER) on column", PlanAnalyzer.DetectNonSargablePattern(
+            "upper([db].[dbo].[T].[Name] as [t].[Name]) like N'ABC%'"));
+    }
+
+    /// <summary>
+    /// ISNULL was flagged wherever it appeared, so ISNULL(@p, 0) on the parameter side was reported
+    /// as "wrapping a column" even though it is a runtime constant that seeks fine. It now gets the
+    /// same side check as every other function, and in a compound predicate that is the same shape
+    /// #556 reported, with ISNULL in place of CONVERT.
+    /// </summary>
+    [Fact]
+    public void Rule12h_NonSargable_ParameterSideIsnull_NotFlagged()
+    {
+        Assert.Null(PlanAnalyzer.DetectNonSargablePattern(
+            "[db].[dbo].[T].[A] as [t].[A]=(52) AND [db].[dbo].[T].[B] as [t].[B]=isnull([@p],(0))"));
+    }
+
+    /// <summary>
+    /// The optional-parameter pattern, WHERE col = ISNULL(@p, col), still reads as non-SARGable: the
+    /// column sits inside the ISNULL, so it shares the function's side of the comparison.
+    /// </summary>
+    [Fact]
+    public void Rule12h_NonSargable_IsnullWithColumnFallback_IsFlagged()
+    {
+        Assert.Equal("ISNULL/COALESCE wrapping column", PlanAnalyzer.DetectNonSargablePattern(
+            "[db].[dbo].[T].[Name] as [t].[Name]=isnull([@p],[db].[dbo].[T].[Name] as [t].[Name])"));
+    }
+
+    /// <summary>
+    /// A parameter-side ISNULL used to win the check order and report "ISNULL/COALESCE wrapping
+    /// column" for a predicate whose real problem is a function on a column somewhere else. The
+    /// message now names the function that is actually on the column.
+    /// </summary>
+    [Fact]
+    public void Rule12h_NonSargable_ParameterSideIsnullDoesNotMisnameTheRealProblem()
+    {
+        Assert.Equal("Function call (DATEPART) on column", PlanAnalyzer.DetectNonSargablePattern(
+            "datepart(year,[db].[dbo].[T].[D] as [t].[D])=(2013) " +
+            "AND [db].[dbo].[T].[B] as [t].[B]=isnull([@p],(0))"));
+    }
+
+    // ---------------------------------------------------------------
     // Rule 12: Non-SARGable Predicate — Function Call
     // ---------------------------------------------------------------
 

@@ -39,6 +39,25 @@ public static partial class PlanAnalyzer
         @"\[[^\]]+\]\.\[",
         RegexOptions.Compiled);
 
+    /* The operator a comparison turns on in a ScalarString: >=, <=, <>, !=, >, <, = or like.
+       Without like, [col] like upper([@p]) had no operator at all, fell to the assume-the-worst
+       default, and a function on the pattern was reported as a function on the column. */
+    private static readonly Regex ComparisonOperatorRegex = new(
+        @"(?<![<>])([<>=!]{1,2})(?![<>=])|\s(like)\s",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    /* What joins one comparison to the next in a compound predicate. String literals and
+       bracketed identifiers are matched first, so an AND inside one of them (N'Tom AND Jerry',
+       [Terms and Conditions]) is consumed whole and never reaches the capture group. Only a
+       Groups[1] match is a real operator. */
+    private static readonly Regex LogicalOperatorRegex = new(
+        @"'(?:[^']|'')*'|\[(?:[^\]]|\]\])*\]|\s(AND|OR)\s",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private static readonly Regex IsnullCoalesceRegex = new(
+        @"\b(isnull|coalesce)\s*\(",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     public static void Analyze(ParsedPlan plan, AnalyzerConfig? config = null, ServerMetadata? serverMetadata = null) =>
         AnalyzeCancellable(plan, config, serverMetadata, CancellationToken.None);
 

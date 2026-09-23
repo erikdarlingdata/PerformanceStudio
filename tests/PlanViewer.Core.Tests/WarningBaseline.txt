@@ -196,6 +196,9 @@ Scan With Predicate | Critical | Scan with residual predicate — SQL Server is 
 ### multi_index_update_plan.sqlplan
 Expensive Operator | Critical | Clustered Index Update took 1ms (100.0% of statement elapsed) but no specific rule identified a fix. Worth investigating: is the row volume necessary? Are upstream estimates driving this operator harder than it should be?
 
+### non_sargable_compound_predicate_plan.sqlplan
+Scan With Predicate | Critical | Scan with residual predicate — SQL Server is reading every row and filtering after the fact. This scan is 100% of the plan cost. Check that you have appropriate indexes.\nPredicate: [Repro].[dbo].[T].[A] as [t].[A]=CONVERT_IMPLICIT(int,[@1],0) AND [Repro].[dbo].[T].[B] as [t].[B]=CONVERT(tinyint,[@2],0)
+
 ### non_sargable_function_plan.sqlplan
 Wait: LATCH_EX | Info | LATCH_EX Observed 22 ms across 121 waits.
 Wait: SOS_SCHEDULER_YIELD | Info | SOS_SCHEDULER_YIELD Observed 3 ms across 1,387 waits.

@@ -641,6 +641,21 @@ UPDATE [dbo].[Users] set [Age] = 138  WHERE [Id]=22656
   DOP:                1 -> 1
 
 
+##### non_sargable_compound_predicate_plan.sqlplan vs non_sargable_compound_predicate_plan.sqlplan
+=== Plan Comparison ===
+Plan A: non_sargable_compound_predicate_plan.sqlplan
+Plan B: non_sargable_compound_predicate_plan.sqlplan
+
+--- Statement 1 ---
+(52 tinyint,2 int)SELECT COUNT(*) FROM [dbo].[T] [t] WHERE [t].[A]=52 AND [t].[B]=CONVERT([tinyint],2)
+
+  Estimated cost:     0.0033 -> 0.0033  (0.0% costlier)
+  Estimated rows:     1 -> 1  (0.0% more)
+  Runtime:            8ms -> 8ms  (0.0% slower)
+  CPU time:           7ms -> 7ms  (0.0% slower)
+  DOP:                1 -> 1
+
+
 ##### non_sargable_function_plan.sqlplan vs non_sargable_function_plan.sqlplan
 === Plan Comparison ===
 Plan A: non_sargable_function_plan.sqlplan
@@ -1765,19 +1780,35 @@ INSERT INTO [dbo].[Users]([AboutMe],[Age],[CreationDate],[DisplayName],[DownVote
   DOP:                1 -> 1
 
 
-##### multi_index_update_plan.sqlplan vs non_sargable_function_plan.sqlplan
+##### multi_index_update_plan.sqlplan vs non_sargable_compound_predicate_plan.sqlplan
 === Plan Comparison ===
 Plan A: multi_index_update_plan.sqlplan
-Plan B: non_sargable_function_plan.sqlplan
+Plan B: non_sargable_compound_predicate_plan.sqlplan
 
 --- Statement 1 ---
 UPDATE [dbo].[Users] set [Age] = 138  WHERE [Id]=22656
 
-  Estimated cost:     0.0633 -> 3,097.52  (9,999% costlier)
+  Estimated cost:     0.0633 -> 0.0033  (94.8% cheaper)
   Estimated rows:     1 -> 1  (0.0% more)
-  Runtime:            1ms -> 725ms  (9,999% slower)
-  CPU time:           1ms -> 5.8s  (9,999% slower)
-  Logical reads:      3 -> 4,226,624  (9,999% more)
+  Runtime:            1ms -> 8ms  (700% slower)
+  CPU time:           1ms -> 7ms  (600% slower)
+  Logical reads:      3 -> 0  (eliminated)
+  DOP:                1 -> 1
+
+
+##### non_sargable_compound_predicate_plan.sqlplan vs non_sargable_function_plan.sqlplan
+=== Plan Comparison ===
+Plan A: non_sargable_compound_predicate_plan.sqlplan
+Plan B: non_sargable_function_plan.sqlplan
+
+--- Statement 1 ---
+(52 tinyint,2 int)SELECT COUNT(*) FROM [dbo].[T] [t] WHERE [t].[A]=52 AND [t].[B]=CONVERT([tinyint],2)
+
+  Estimated cost:     0.0033 -> 3,097.52  (9,999% costlier)
+  Estimated rows:     1 -> 1  (0.0% more)
+  Runtime:            8ms -> 725ms  (8,962% slower)
+  CPU time:           7ms -> 5.8s  (9,999% slower)
+  Logical reads:      0 -> 4,226,624  (new)
   Memory grant:       0.0 MB -> 24.2 MB  (new)
   DOP:                1 -> 8
   Warnings:           0 -> 5  (5 new)
