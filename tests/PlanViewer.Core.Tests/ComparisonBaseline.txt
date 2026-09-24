@@ -312,7 +312,7 @@ Plan A: in_list_dynamic_seek_plan.sqlplan
 Plan B: in_list_dynamic_seek_plan.sqlplan
 
 --- Statement 1 ---
-(10 int, 20 int)SELECT t.Id, t.A FROM dbo.T AS t WHERE t.A IN (10, 20)
+SELECT t.Id, t.A FROM dbo.T AS t WHERE t.A IN (10, 20)
 
   Estimated cost:     0.0033 -> 0.0033  (0.0% costlier)
   Estimated rows:     2 -> 2  (0.0% more)
@@ -697,7 +697,7 @@ Plan A: non_sargable_compound_predicate_plan.sqlplan
 Plan B: non_sargable_compound_predicate_plan.sqlplan
 
 --- Statement 1 ---
-(52 tinyint,2 int)SELECT COUNT(*) FROM [dbo].[T] [t] WHERE [t].[A]=52 AND [t].[B]=CONVERT([tinyint],2)
+SELECT COUNT(*) FROM [dbo].[T] [t] WHERE [t].[A]=52 AND [t].[B]=CONVERT([tinyint],2)
 
   Estimated cost:     0.0033 -> 0.0033  (0.0% costlier)
   Estimated rows:     1 -> 1  (0.0% more)
@@ -1500,7 +1500,7 @@ Plan A: in_list_dynamic_seek_plan.sqlplan
 Plan B: isnull_plan.sqlplan
 
 --- Statement 1 ---
-(10 int, 20 int)SELECT t.Id, t.A FROM dbo.T AS t WHERE t.A IN (10, 20)
+SELECT t.Id, t.A FROM dbo.T AS t WHERE t.A IN (10, 20)
 
   Estimated cost:     0.0033 -> 3,119.42  (9,999% costlier)
   Estimated rows:     2 -> 1  (50.0% fewer)
@@ -1904,7 +1904,7 @@ Plan A: non_sargable_compound_predicate_plan.sqlplan
 Plan B: non_sargable_function_plan.sqlplan
 
 --- Statement 1 ---
-(52 tinyint,2 int)SELECT COUNT(*) FROM [dbo].[T] [t] WHERE [t].[A]=52 AND [t].[B]=CONVERT([tinyint],2)
+SELECT COUNT(*) FROM [dbo].[T] [t] WHERE [t].[A]=52 AND [t].[B]=CONVERT([tinyint],2)
 
   Estimated cost:     0.0033 -> 3,097.52  (9,999% costlier)
   Estimated rows:     1 -> 1  (0.0% more)
