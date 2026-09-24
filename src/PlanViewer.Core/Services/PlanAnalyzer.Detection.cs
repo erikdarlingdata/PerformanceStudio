@@ -428,8 +428,11 @@ public static partial class PlanAnalyzer
                 {
                     // Unaliased dotted: [..].[table].[col]. An aliased scan's own column never
                     // renders this way, so this can only own the scan when the scan has none.
+                    // The parser cleans a temp table's full tempdb name (#t___...___000000000003)
+                    // down to #t in the scan's own name, so the owner here is cleaned the same way.
                     if (string.IsNullOrEmpty(scan.Alias) && !string.IsNullOrEmpty(scan.Table) &&
-                        string.Equals(owner, scan.Table, StringComparison.OrdinalIgnoreCase))
+                        string.Equals(ShowPlanParser.CleanTempTableName(owner), scan.Table,
+                            StringComparison.OrdinalIgnoreCase))
                         return true;
                 }
 

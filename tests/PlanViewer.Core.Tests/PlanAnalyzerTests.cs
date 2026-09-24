@@ -539,6 +539,29 @@ public class PlanAnalyzerTests
             "abs([#t].[a])=(1)", identity));
     }
 
+    /// <summary>
+    /// A plan can name a temp table by its full tempdb name: the name, underscores, then a hex
+    /// suffix. The parser cleans the scan's own name to #u, so the predicate's name must be
+    /// cleaned the same way before the two are compared.
+    /// </summary>
+    [Fact]
+    public void Rule12i_NonSargable_TempTableOwnColumnWithFullTempdbName_IsFlagged()
+    {
+        var identity = Identity(alias: null, table: "#u");
+        var fullName = "#u" + new string('_', 110) + "000000000004";
+        Assert.Equal("Function call (ABS) on column", PlanAnalyzer.DetectNonSargablePattern(
+            $"abs([tempdb].[dbo].[{fullName}].[X])=(1)", identity));
+    }
+
+    [Fact]
+    public void Rule12i_NonSargable_TempTableAnotherTempTableWithFullTempdbName_NotFlagged()
+    {
+        var identity = Identity(alias: null, table: "#u");
+        var fullName = "#t" + new string('_', 110) + "000000000003";
+        Assert.Null(PlanAnalyzer.DetectNonSargablePattern(
+            $"abs([tempdb].[dbo].[{fullName}].[a])=(1)", identity));
+    }
+
     [Fact]
     public void Rule12i_NonSargable_UnaliasedTableVariableBareOwnColumn_IsFlagged()
     {
