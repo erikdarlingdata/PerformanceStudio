@@ -642,16 +642,21 @@ public static partial class PlanAnalyzer
         if (!cfg.IsRuleDisabled(15) && node.PhysicalOp == "Concatenation")
         {
             var constantScanBranches = node.Children
-                .Count(c => c.PhysicalOp == "Constant Scan" ||
+                .Where(c => c.PhysicalOp == "Constant Scan" ||
                             (c.PhysicalOp == "Compute Scalar" &&
-                             c.Children.Any(gc => gc.PhysicalOp == "Constant Scan")));
+                             c.Children.Any(gc => gc.PhysicalOp == "Constant Scan")))
+                .ToList();
 
-            if (constantScanBranches >= 2 && IsOrExpansionChain(node))
+            /* #558: WHERE t.A IN (@p1, @p2) builds the same operator chain, as a dynamic seek over
+               the parameter values, and there is no join to rewrite. Only a lookup that takes its
+               value from another input's row makes the OR a join OR. */
+            if (constantScanBranches.Count >= 2 && IsOrExpansionChain(node) &&
+                constantScanBranches.Any(LookupReadsAnotherInput))
             {
                 node.Warnings.Add(new PlanWarning
                 {
                     WarningType = "Join OR Clause",
-                    Message = $"OR in a join predicate. SQL Server rewrote the OR as {constantScanBranches} separate lookups, each evaluated independently — this multiplies the work on the inner side. Rewrite as separate queries joined with UNION ALL. For example, change \"FROM a JOIN b ON a.x = b.x OR a.y = b.y\" to \"FROM a JOIN b ON a.x = b.x UNION ALL FROM a JOIN b ON a.y = b.y\".",
+                    Message = $"OR in a join predicate. SQL Server rewrote the OR as {constantScanBranches.Count} separate lookups, each evaluated independently — this multiplies the work on the inner side. Rewrite as separate queries joined with UNION ALL. For example, change \"FROM a JOIN b ON a.x = b.x OR a.y = b.y\" to \"FROM a JOIN b ON a.x = b.x UNION ALL FROM a JOIN b ON a.y = b.y\".",
                     Severity = PlanWarningSeverity.Warning
                 });
             }

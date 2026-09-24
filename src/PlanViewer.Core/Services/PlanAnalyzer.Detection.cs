@@ -380,6 +380,54 @@ public static partial class PlanAnalyzer
     }
 
     /// <summary>
+    /// True when a lookup branch under an OR expansion's Concatenation builds its seek value from
+    /// another input. A join OR does: in ON u.Id = p.OwnerUserId OR u.Id = p.LastEditorUserId the
+    /// branches produce [Posts].[OwnerUserId] and [Posts].[LastEditorUserId], once per outer row.
+    /// The dynamic seek for an IN list of parameters (#558) has the same operator shape, but its
+    /// branches produce only parameters and literals ([@p1], (62)), which no outer row changes.
+    /// </summary>
+    private static bool LookupReadsAnotherInput(PlanNode branch)
+    {
+        var values = branch.PhysicalOp == "Constant Scan"
+            ? branch.ConstantScanValues
+            : branch.DefinedValues;
+
+        // Nothing to read, so nothing proves a parameter list: keep the warning.
+        if (string.IsNullOrEmpty(values))
+            return true;
+
+        return ReadsAnotherInput(values);
+    }
+
+    /// <summary>
+    /// True when a ScalarString names anything other than a parameter or a variable: a column
+    /// ([db].[dbo].[T].[c], or @tv.[c] as [v].[c] on a table variable) or an expression column
+    /// ([Expr1003]). Function names ([dbo].[fn](...)) and string literals are skipped. An
+    /// expression column counts too: an OR join on o.X + 1 renders its branches as [Expr1002],
+    /// computed on the outer input. The Constant Scan under a lookup branch is normally empty,
+    /// so the branch has no expression of its own to name, and a name that cannot be proved to
+    /// be a parameter keeps the warning, as the shape check alone did. Internal so the shapes
+    /// can be tested as raw strings.
+    /// </summary>
+    internal static bool ReadsAnotherInput(string scalarString)
+    {
+        foreach (Match match in BracketedNameRegex.Matches(scalarString))
+        {
+            if (!match.Groups["name"].Success || match.Groups["call"].Success)
+                continue; // a string literal, or the name of a function
+
+            var name = match.Groups["name"].Value;
+            if (name.StartsWith("[@", StringComparison.Ordinal) &&
+                !name.Contains("].[", StringComparison.Ordinal))
+                continue; // a parameter or a variable: [@p1]
+
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
     /// Finds Sort and Hash Match operators in the tree that consume memory.
     /// </summary>
     /// <summary>

@@ -569,6 +569,88 @@ public class PlanAnalyzerTests
         Assert.Contains("UNION ALL", warnings[0].Message);
     }
 
+    /// <summary>
+    /// #558: WHERE t.A IN (@p1, @p2) on an indexed column builds the same operator chain as a join
+    /// OR. It is a dynamic seek: Constant Scans produce [@p1] and [@p2], Merge Interval combines the
+    /// ranges, and one Index Seek reads them. It ran once and returned 2 rows, and a UNION ALL rewrite
+    /// would not help. The fixture is the reporter's own SQL Server 2022 actual plan.
+    /// </summary>
+    [Fact]
+    public void Rule15_JoinOrClause_DynamicSeekForParameterInList_NotFlagged()
+    {
+        var plan = PlanTestHelper.LoadAndAnalyze("in_list_dynamic_seek_plan.sqlplan");
+
+        Assert.Empty(PlanTestHelper.WarningsOfType(plan, "Join OR Clause"));
+    }
+
+    /// <summary>
+    /// The branch values of the reporter's plan, as the parser records them: parameters and a
+    /// literal. The same holds for local variables ([@a]) and for functions of a parameter, such as
+    /// LikeRangeStart([@a]) for an OR of LIKE patterns or abs([@p2]) inside an IN list.
+    /// </summary>
+    [Theory]
+    [InlineData("Expr1002 = [@p2]; Expr1003 = [@p2]; Expr1001 = (62)")]
+    [InlineData("Expr1004 = LikeRangeStart([@a]); Expr1005 = LikeRangeEnd([@a]); Expr1006 = LikeRangeInfo([@a])")]
+    [InlineData("Expr1002 = abs([@p2]); Expr1003 = abs([@p2]); Expr1001 = (62)")]
+    [InlineData("Expr1002 = [dbo].[fn]([@p1])")]
+    public void Rule15_JoinOrClause_ParameterOnlyLookup_DoesNotReadAnotherInput(string values)
+    {
+        Assert.False(PlanAnalyzer.ReadsAnotherInput(values));
+    }
+
+    /// <summary>
+    /// #558's shape guard must not cost a real join OR. This one mixes a column and a parameter:
+    /// ON t.A = o.X OR t.A = @p. One branch produces [o].[X] and the other produces [@p], and one
+    /// branch that reads the outer row is enough. Captured on SQL Server 2022.
+    /// </summary>
+    [Fact]
+    public void Rule15_JoinOrClause_ColumnBranchNextToParameterBranch_IsFlagged()
+    {
+        var plan = PlanTestHelper.LoadAndAnalyze("join_or_mixed_parameter_plan.sqlplan");
+
+        Assert.Single(PlanTestHelper.WarningsOfType(plan, "Join OR Clause"));
+    }
+
+    /// <summary>
+    /// An OR join on expressions of the outer columns (ON t.A = o.X + 1 OR t.A = o.Y + 1) computes
+    /// o.X + 1 on the outer input, so its branches produce [Expr1002] and [Expr1003] and name no
+    /// column at all. A check that looked for column names only, which is what the issue first
+    /// suggested, would lose this warning. Captured on SQL Server 2022.
+    /// </summary>
+    [Fact]
+    public void Rule15_JoinOrClause_OrJoinOnOuterExpressions_IsFlagged()
+    {
+        var plan = PlanTestHelper.LoadAndAnalyze("join_or_expression_plan.sqlplan");
+
+        Assert.Single(PlanTestHelper.WarningsOfType(plan, "Join OR Clause"));
+    }
+
+    /// <summary>
+    /// The branch values that real OR joins produce on SQL Server 2022: the outer columns; an
+    /// expression of the outer columns, which renders as [Expr1002]; and a table variable's column,
+    /// which renders without brackets around its name. The second row puts a parameter before a
+    /// column, so the scan must not stop at the first name it can skip.
+    /// </summary>
+    [Theory]
+    [InlineData("Expr1005 = [StackOverflow2013].[dbo].[Posts].[OwnerUserId] as [p].[OwnerUserId]; Expr1004 = (62)")]
+    [InlineData("Expr1008 = [@p]; Expr1007 = (62); Expr1010 = [Repro].[dbo].[O].[X] as [o].[X]")]
+    [InlineData("Expr1010 = [Expr1002]; Expr1011 = [Expr1002]; Expr1009 = (62)")]
+    [InlineData("Expr1008 = @tv.[X] as [v].[X]; Expr1007 = (62)")]
+    public void Rule15_JoinOrClause_LookupFromAnotherInput_IsRecognized(string values)
+    {
+        Assert.True(PlanAnalyzer.ReadsAnotherInput(values));
+    }
+
+    /// <summary>
+    /// A bracket inside a string literal is text. Read as a name, it would turn an IN list of
+    /// strings back into a false join OR.
+    /// </summary>
+    [Fact]
+    public void Rule15_JoinOrClause_BracketInsideStringLiteral_IsNotAName()
+    {
+        Assert.False(PlanAnalyzer.ReadsAnotherInput("Expr1002 = N'[Posts].[OwnerUserId]'; Expr1001 = (62)"));
+    }
+
     // ---------------------------------------------------------------
     // Rule 16: Nested Loops High Executions
     // ---------------------------------------------------------------
