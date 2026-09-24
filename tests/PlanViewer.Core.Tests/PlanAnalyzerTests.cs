@@ -385,8 +385,7 @@ public class PlanAnalyzerTests
     }
 
     /// <summary>
-    /// [Expr1003] is an optimizer-generated expression name, not an actual column — @tv never
-    /// has a column literally named that, table variable or not.
+    /// [Expr1003] is an optimizer-generated expression name, not a column of the table variable.
     /// </summary>
     [Fact]
     public void Rule12h_NonSargable_FunctionOnExpressionColumn_NotFlaggedEvenWithTableVariableFlag()

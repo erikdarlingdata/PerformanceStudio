@@ -30,20 +30,15 @@ public static partial class PlanAnalyzer
 
     /* A column reference in a ScalarString is multi-part bracket-qualified ([schema].[table]).
        A variable is a single bracket pair with an @ prefix ([@0]) and no dotted part after it —
-       the "].[" sequence is what separates the two, NOT the @. The first cut of this pattern also
-       excluded @ from the first part, which read as belt-and-braces but was actually a hole: an
-       ALIASED table-variable column renders dotted, through the alias — SELECT v.X FROM @tv AS v
-       WHERE ABS(v.X) = 1 gives "abs(@tv.[X] as [v].[X])=(1)" — so a genuine column-side
-       CONVERT_IMPLICIT on one failed the match and the Non-SARGable warning silently vanished. A
-       bare [@p] still cannot match, because nothing dotted follows it.
+       the "].[" sequence is what separates the two, NOT the @. A bare [@p] cannot match, because
+       nothing dotted follows it.
 
-       An UNALIASED table-variable column renders as a bare bracketed name with no dotted
-       qualifier at all — SELECT X FROM @tv WHERE ABS(X) = 1 gives "abs([X])=(1)". Confirmed on
-       SQL Server 2016, 2017, 2019, 2022 and 2025: no version renders [@tv].[col], and that shape
-       never occurs. This regex alone cannot see a bare name as a column, since the same shape
-       could just as easily be a parameter or an expression on an ordinary scan. IsColumnReference
-       (#561) adds that reading only when the caller has already confirmed the scan is on a table
-       variable. */
+       A table-variable column is dotted only through its alias: SELECT v.X FROM @tv AS v WHERE
+       ABS(v.X) = 1 gives "abs(@tv.[X] as [v].[X])=(1)", and [v].[X] matches. With no alias it is
+       a bare name: SELECT X FROM @tv WHERE ABS(X) = 1 gives "abs([X])=(1)". Checked on SQL Server
+       2016, 2017, 2019, 2022 and 2025, and none of them renders [@tv].[col]. A bare name has the
+       same shape as a parameter or an expression, so this regex never reads one as a column.
+       IsColumnReference (#561) does, but only on a scan of a table variable. */
     private static readonly Regex ColumnReferenceRegex = new(
         @"\[[^\]]+\]\.\[",
         RegexOptions.Compiled);

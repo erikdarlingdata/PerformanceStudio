@@ -272,10 +272,12 @@ public static partial class PlanAnalyzer
     /// enough there. An unaliased table-variable column has no dotted qualifier to match — it
     /// renders as a bare bracketed name identical in shape to a parameter or an expression column
     /// (#561). <paramref name="isTableVariableScan"/> is the caller's proof the scan is on a table
-    /// variable, so a bare name here can safely be read as a column too, unless it is a parameter
+    /// variable, so a bare name here is read as a column too, unless it is a parameter
     /// or variable (<c>[@p1]</c>), an optimizer expression (<c>[Expr1003]</c>), or the name of a
     /// function call (followed by <c>(</c>) rather than a reference. A string literal that looks
     /// bracketed (<c>'[Y]'</c>) is never read as a name at all — see <see cref="BracketedNameRegex"/>.
+    /// An outer reference from another unaliased table variable is bare too, and is still read as
+    /// a column here (#564).
     /// </summary>
     private static bool IsColumnReference(string text, bool isTableVariableScan)
     {
