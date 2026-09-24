@@ -58,6 +58,14 @@ public static partial class PlanAnalyzer
         @"\b(isnull|coalesce)\s*\(",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+    /* A name in a ScalarString: one bracketed part or a dotted chain of them ([@p1], [Expr1003],
+       [db].[dbo].[T].[c]). A name followed by ( is a function call. String literals are matched
+       first, so a bracket inside one ('[x]') is never read as a name. Only a match with the
+       name group is a name. */
+    private static readonly Regex BracketedNameRegex = new(
+        @"'(?:[^']|'')*'|(?<name>\[(?:[^\]]|\]\])*\](?:\.\[(?:[^\]]|\]\])*\])*)(?<call>\s*\()?",
+        RegexOptions.Compiled);
+
     public static void Analyze(ParsedPlan plan, AnalyzerConfig? config = null, ServerMetadata? serverMetadata = null) =>
         AnalyzeCancellable(plan, config, serverMetadata, CancellationToken.None);
 
