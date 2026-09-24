@@ -38,6 +38,29 @@ public static class PlanTestHelper
     }
 
     /// <summary>
+    /// Same load + analyze + score, but overrides every statement's QueryTimeStats.ElapsedTimeMs
+    /// before analysis runs. Used to test elapsed-time thresholds (e.g. rule 35's #562 floor) on
+    /// either side of the line without needing a fixture captured at an exact millisecond value.
+    /// </summary>
+    public static ParsedPlan LoadAndAnalyzeWithElapsedTimeMs(string planFileName, long elapsedTimeMs)
+    {
+        var path = Path.Combine("Plans", planFileName);
+        Assert.True(File.Exists(path), $"Test plan not found: {path}");
+
+        var xml = File.ReadAllText(path);
+        xml = xml.Replace("encoding=\"utf-16\"", "encoding=\"utf-8\"");
+        var plan = ShowPlanParser.Parse(xml);
+
+        foreach (var stmt in PlanStatements.EnumerateAll(plan))
+            if (stmt.QueryTimeStats != null)
+                stmt.QueryTimeStats.ElapsedTimeMs = elapsedTimeMs;
+
+        PlanAnalyzer.Analyze(plan);
+        BenefitScorer.Score(plan);
+        return plan;
+    }
+
+    /// <summary>
     /// Same load + analyze + score, with an analyzer config (for rules-config behavior like
     /// severity overrides). Named rather than overloaded so an existing
     /// <c>LoadAndAnalyze(name, null)</c> call can never silently pick a different overload.

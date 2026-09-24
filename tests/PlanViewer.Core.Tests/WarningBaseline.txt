@@ -119,13 +119,9 @@ Join OR Clause | Warning | OR in a join predicate. SQL Server rewrote the OR as 
 Expensive Operator | Warning | Clustered Index Seek took 14,355ms (43.4% of statement elapsed) but no specific rule identified a fix. Worth investigating: is the row volume necessary? Are upstream estimates driving this operator harder than it should be?
 
 ### join_or_expression_plan.sqlplan
-Expensive Operator | Warning | Nested Loops took 1ms (33.3% of statement elapsed) but no specific rule identified a fix. Worth investigating: is the row volume necessary? Are upstream estimates driving this operator harder than it should be?
-Expensive Operator | Warning | Sort took 1ms (33.3% of statement elapsed) but no specific rule identified a fix. Worth investigating: is the row volume necessary? Are upstream estimates driving this operator harder than it should be?
 Join OR Clause | Warning | OR in a join predicate. SQL Server rewrote the OR as 2 separate lookups, each evaluated independently — this multiplies the work on the inner side. Rewrite as separate queries joined with UNION ALL. For example, change "FROM a JOIN b ON a.x = b.x OR a.y = b.y" to "FROM a JOIN b ON a.x = b.x UNION ALL FROM a JOIN b ON a.y = b.y".
 
 ### join_or_mixed_parameter_plan.sqlplan
-Expensive Operator | Warning | Nested Loops took 1ms (33.3% of statement elapsed) but no specific rule identified a fix. Worth investigating: is the row volume necessary? Are upstream estimates driving this operator harder than it should be?
-Expensive Operator | Warning | Sort took 1ms (33.3% of statement elapsed) but no specific rule identified a fix. Worth investigating: is the row volume necessary? Are upstream estimates driving this operator harder than it should be?
 Join OR Clause | Warning | OR in a join predicate. SQL Server rewrote the OR as 2 separate lookups, each evaluated independently — this multiplies the work on the inner side. Rewrite as separate queries joined with UNION ALL. For example, change "FROM a JOIN b ON a.x = b.x OR a.y = b.y" to "FROM a JOIN b ON a.x = b.x UNION ALL FROM a JOIN b ON a.y = b.y".
 
 ### key_lookup_plan.sqlplan
@@ -206,7 +202,6 @@ Scan With Predicate | Critical | Scan with residual predicate — SQL Server is 
 ### multi_index_insert_plan.sqlplan
 
 ### multi_index_update_plan.sqlplan
-Expensive Operator | Critical | Clustered Index Update took 1ms (100.0% of statement elapsed) but no specific rule identified a fix. Worth investigating: is the row volume necessary? Are upstream estimates driving this operator harder than it should be?
 
 ### non_sargable_compound_predicate_plan.sqlplan
 Scan With Predicate | Critical | Scan with residual predicate — SQL Server is reading every row and filtering after the fact. This scan is 100% of the plan cost. Check that you have appropriate indexes.\nPredicate: [Repro].[dbo].[T].[A] as [t].[A]=CONVERT_IMPLICIT(int,[@1],0) AND [Repro].[dbo].[T].[B] as [t].[B]=CONVERT(tinyint,[@2],0)

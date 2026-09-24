@@ -916,6 +916,13 @@ public static partial class PlanAnalyzer
 
     }
 
+    // Rule 35 needs the statement itself to have run long enough that a 20% share
+    // means something. Under this floor, a statement of a few ms is dominated by
+    // one or two operators just because there's almost nothing else to divide the
+    // time among, so the share points at nothing (#562). Same floor rule 19 uses
+    // to fire on compile CPU, and the floor rule 4 uses to call UDF time Critical.
+    private const int Rule35MinStatementElapsedMs = 1000;
+
     private static void Rule35_ExpensiveOperator(PlanNode node, PlanStatement stmt, AnalyzerConfig cfg)
     {
         // Rule 35: Expensive Operator — always show operators that take a significant
@@ -925,7 +932,7 @@ public static partial class PlanAnalyzer
         // elapsed. Only emits if no other warning is already on the node to avoid
         // doubling up. The benefit % is just the self-time share.
         if (!cfg.IsRuleDisabled(35) && node.HasActualStats && node.Warnings.Count == 0
-            && stmt.QueryTimeStats != null && stmt.QueryTimeStats.ElapsedTimeMs > 0)
+            && stmt.QueryTimeStats != null && stmt.QueryTimeStats.ElapsedTimeMs >= Rule35MinStatementElapsedMs)
         {
             var selfMs = GetOperatorOwnElapsedMs(node);
             var pct = (double)selfMs / stmt.QueryTimeStats.ElapsedTimeMs * 100;

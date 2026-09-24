@@ -1179,6 +1179,57 @@ public class PlanAnalyzerTests
         Assert.All(warnings, w => Assert.Equal(PlanWarningSeverity.Warning, w.Severity));
     }
 
+    // ---------------------------------------------------------------
+    // Rule 35: Expensive Operator
+    // ---------------------------------------------------------------
+
+    [Fact]
+    public void Rule35_ExpensiveOperator_NotFiredWhenStatementUnderOneSecond()
+    {
+        // multi_index_update_plan: statement elapsed 1ms. Before #562, one operator
+        // dominating a sub-second statement always claimed most of the (tiny) elapsed
+        // time, so the share pointed at nothing.
+        var plan = PlanTestHelper.LoadAndAnalyze("multi_index_update_plan.sqlplan");
+        var warnings = PlanTestHelper.WarningsOfType(plan, "Expensive Operator");
+
+        Assert.Empty(warnings);
+    }
+
+    [Fact]
+    public void Rule35_ExpensiveOperator_FiredWhenStatementAtOneSecond()
+    {
+        // parallel_row_over_batch_plan: statement elapsed is exactly 1,000ms, pinning
+        // the #562 floor as >= rather than >.
+        var plan = PlanTestHelper.LoadAndAnalyze("parallel_row_over_batch_plan.sqlplan");
+        var warnings = PlanTestHelper.WarningsOfType(plan, "Expensive Operator");
+
+        Assert.Single(warnings);
+        Assert.Equal(PlanWarningSeverity.Critical, warnings[0].Severity);
+        Assert.Contains("Hash Match", warnings[0].Message);
+    }
+
+    [Fact]
+    public void Rule35_ExpensiveOperator_NotFiredJustUnderOneSecondFloor()
+    {
+        // Same plan as above, statement elapsed forced to 999ms — one ms under the
+        // #562 floor. The Hash Match operator's own share of statement time is still
+        // ~90%, so this isolates the floor from the 20%-share threshold.
+        var plan = PlanTestHelper.LoadAndAnalyzeWithElapsedTimeMs("parallel_row_over_batch_plan.sqlplan", 999);
+        var warnings = PlanTestHelper.WarningsOfType(plan, "Expensive Operator");
+
+        Assert.Empty(warnings);
+    }
+
+    [Fact]
+    public void Rule35_ExpensiveOperator_FiredAtOneSecondFloorExactly()
+    {
+        // Same plan, statement elapsed forced to 1,000ms — exactly the #562 floor.
+        var plan = PlanTestHelper.LoadAndAnalyzeWithElapsedTimeMs("parallel_row_over_batch_plan.sqlplan", 1000);
+        var warnings = PlanTestHelper.WarningsOfType(plan, "Expensive Operator");
+
+        Assert.Single(warnings);
+    }
+
     #region Rule 38 — Standard Edition DOP Limitation
 
     private static PlanStatement BuildBatchModeDop2Statement()
