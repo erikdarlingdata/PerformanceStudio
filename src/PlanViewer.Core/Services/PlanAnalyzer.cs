@@ -31,12 +31,29 @@ public static partial class PlanAnalyzer
     /* A column reference in a ScalarString is multi-part bracket-qualified ([schema].[table]).
        A variable is a single bracket pair with an @ prefix ([@0]) and no dotted part after it —
        the "].[" sequence is what separates the two, NOT the @. The first cut of this pattern also
-       excluded @ from the first part, which read as belt-and-braces but was actually a hole: a
-       TABLE-variable column renders as [@tv].[col], so a genuine column-side CONVERT_IMPLICIT on
-       one failed the match and the Non-SARGable warning silently vanished. A bare [@p] still
-       cannot match, because nothing dotted follows it. */
+       excluded @ from the first part, which read as belt-and-braces but was actually a hole: an
+       ALIASED table-variable column renders dotted, through the alias — SELECT v.X FROM @tv AS v
+       WHERE ABS(v.X) = 1 gives "abs(@tv.[X] as [v].[X])=(1)" — so a genuine column-side
+       CONVERT_IMPLICIT on one failed the match and the Non-SARGable warning silently vanished. A
+       bare [@p] still cannot match, because nothing dotted follows it.
+
+       An UNALIASED table-variable column renders as a bare bracketed name with no dotted
+       qualifier at all — SELECT X FROM @tv WHERE ABS(X) = 1 gives "abs([X])=(1)". Confirmed on
+       SQL Server 2016, 2017, 2019, 2022 and 2025: no version renders [@tv].[col], and that shape
+       never occurs. This regex alone cannot see a bare name as a column, since the same shape
+       could just as easily be a parameter or an expression on an ordinary scan. IsColumnReference
+       (#561) adds that reading only when the caller has already confirmed the scan is on a table
+       variable. */
     private static readonly Regex ColumnReferenceRegex = new(
         @"\[[^\]]+\]\.\[",
+        RegexOptions.Compiled);
+
+    /* An optimizer-generated expression name in a ScalarString ([Expr1003]) — a computed value,
+       never an actual column, even on a table variable scan where a bare name is otherwise read
+       as a column (#561). Matched against BracketedNameRegex's whole name group, so it only ever
+       sees a single bracket part or a dotted chain, never raw predicate text. */
+    private static readonly Regex ExpressionColumnRegex = new(
+        @"^\[Expr\d+\]$",
         RegexOptions.Compiled);
 
     /* The operator a comparison turns on in a ScalarString: >=, <=, <>, !=, >, <, = or like.
