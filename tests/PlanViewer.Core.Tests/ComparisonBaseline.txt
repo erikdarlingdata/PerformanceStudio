@@ -752,6 +752,163 @@ SELECT * FROM dbo.Users WHERE Reputation > @rep OPTION (OPTIMIZE FOR UNKNOWN)
   Warnings:           1 -> 1  (no change)
 
 
+##### outer_reference_function_aliased_plan.sqlplan vs outer_reference_function_aliased_plan.sqlplan
+=== Plan Comparison ===
+Plan A: outer_reference_function_aliased_plan.sqlplan
+Plan B: outer_reference_function_aliased_plan.sqlplan
+
+--- Statement 1 ---
+SELECT o.a, i.X FROM dbo.O AS o CROSS APPLY (SELECT TOP (1) i.X FROM dbo.I AS i WHERE i.X = ABS(o.a)) AS i
+
+  Estimated cost:     0.0067 -> 0.0067  (0.0% costlier)
+  Estimated rows:     3 -> 3  (0.0% more)
+  Logical reads:      4 -> 4  (0.0% more)
+  DOP:                1 -> 1
+
+
+##### outer_reference_function_on_scanned_column_plan.sqlplan vs outer_reference_function_on_scanned_column_plan.sqlplan
+=== Plan Comparison ===
+Plan A: outer_reference_function_on_scanned_column_plan.sqlplan
+Plan B: outer_reference_function_on_scanned_column_plan.sqlplan
+
+--- Statement 1 ---
+SELECT o.a, i.X FROM dbo.O AS o CROSS APPLY (SELECT TOP (1) i.X FROM dbo.I AS i WHERE ABS(i.X) = o.a) AS i
+
+  Estimated cost:     0.0067 -> 0.0067  (0.0% costlier)
+  Estimated rows:     3 -> 3  (0.0% more)
+  Logical reads:      4 -> 4  (0.0% more)
+  DOP:                1 -> 1
+
+
+##### outer_reference_function_self_join_plan.sqlplan vs outer_reference_function_self_join_plan.sqlplan
+=== Plan Comparison ===
+Plan A: outer_reference_function_self_join_plan.sqlplan
+Plan B: outer_reference_function_self_join_plan.sqlplan
+
+--- Statement 1 ---
+SELECT i1.X, x.X FROM dbo.I AS i1 CROSS APPLY (SELECT TOP (1) i2.X FROM dbo.I AS i2 WHERE i2.X = ABS(i1.X)) AS x
+
+  Estimated cost:     0.0067 -> 0.0067  (0.0% costlier)
+  Estimated rows:     2 -> 2  (0.0% more)
+  Logical reads:      3 -> 3  (0.0% more)
+  DOP:                1 -> 1
+
+
+##### outer_reference_function_unaliased_plan.sqlplan vs outer_reference_function_unaliased_plan.sqlplan
+=== Plan Comparison ===
+Plan A: outer_reference_function_unaliased_plan.sqlplan
+Plan B: outer_reference_function_unaliased_plan.sqlplan
+
+--- Statement 1 ---
+SELECT O.a, x.X FROM dbo.O CROSS APPLY (SELECT TOP (1) I.X FROM dbo.I WHERE I.X = ABS(O.a)) AS x
+
+  Estimated cost:     0.0067 -> 0.0067  (0.0% costlier)
+  Estimated rows:     3 -> 3  (0.0% more)
+  Logical reads:      4 -> 4  (0.0% more)
+  DOP:                1 -> 1
+
+
+##### outer_reference_implicit_conversion_plan.sqlplan vs outer_reference_implicit_conversion_plan.sqlplan
+=== Plan Comparison ===
+Plan A: outer_reference_implicit_conversion_plan.sqlplan
+Plan B: outer_reference_implicit_conversion_plan.sqlplan
+
+--- Statement 1 ---
+SELECT o.a, i.X FROM dbo.O AS o CROSS APPLY (SELECT TOP (1) i.X FROM dbo.I AS i WHERE i.S = o.N) AS i
+
+  Estimated cost:     0.0067 -> 0.0067  (0.0% costlier)
+  Estimated rows:     3 -> 3  (0.0% more)
+  Logical reads:      4 -> 4  (0.0% more)
+  DOP:                1 -> 1
+
+
+##### outer_reference_isnull_plan.sqlplan vs outer_reference_isnull_plan.sqlplan
+=== Plan Comparison ===
+Plan A: outer_reference_isnull_plan.sqlplan
+Plan B: outer_reference_isnull_plan.sqlplan
+
+--- Statement 1 ---
+SELECT o.a, i.X FROM dbo.O AS o CROSS APPLY (SELECT TOP (1) i.X FROM dbo.I AS i WHERE i.X = ISNULL(o.a, 0)) AS i
+
+  Estimated cost:     0.0067 -> 0.0067  (0.0% costlier)
+  Estimated rows:     3 -> 3  (0.0% more)
+  Logical reads:      4 -> 4  (0.0% more)
+  DOP:                1 -> 1
+
+
+##### outer_reference_outer_side_scan_plan.sqlplan vs outer_reference_outer_side_scan_plan.sqlplan
+=== Plan Comparison ===
+Plan A: outer_reference_outer_side_scan_plan.sqlplan
+Plan B: outer_reference_outer_side_scan_plan.sqlplan
+
+--- Statement 1 ---
+SELECT A, x.Y FROM @a CROSS APPLY (SELECT TOP (1) Y FROM @b WHERE Y = A) AS x WHERE ABS(A) = 1
+
+  Estimated cost:     0.0066 -> 0.0066  (0.0% costlier)
+  Estimated rows:     2 -> 2  (0.0% more)
+  Logical reads:      2 -> 2  (0.0% more)
+  DOP:                1 -> 1
+  Warnings:           1 -> 1  (no change)
+
+
+##### outer_reference_self_join_unaliased_inner_plan.sqlplan vs outer_reference_self_join_unaliased_inner_plan.sqlplan
+=== Plan Comparison ===
+Plan A: outer_reference_self_join_unaliased_inner_plan.sqlplan
+Plan B: outer_reference_self_join_unaliased_inner_plan.sqlplan
+
+--- Statement 1 ---
+SELECT i1.X, x.X FROM dbo.I AS i1 CROSS APPLY (SELECT TOP (1) I.X FROM dbo.I WHERE I.X = ABS(i1.X)) AS x
+
+  Estimated cost:     0.0068 -> 0.0068  (0.0% costlier)
+  Estimated rows:     3 -> 3  (0.0% more)
+  Logical reads:      4 -> 4  (0.0% more)
+  DOP:                1 -> 1
+
+
+##### outer_reference_table_variable_aliased_plan.sqlplan vs outer_reference_table_variable_aliased_plan.sqlplan
+=== Plan Comparison ===
+Plan A: outer_reference_table_variable_aliased_plan.sqlplan
+Plan B: outer_reference_table_variable_aliased_plan.sqlplan
+
+--- Statement 1 ---
+SELECT a.A, x.Y FROM @a AS a CROSS APPLY (SELECT TOP (1) b.Y FROM @b AS b WHERE b.Y = ABS(a.A)) AS x
+
+  Estimated cost:     0.0067 -> 0.0067  (0.0% costlier)
+  Estimated rows:     3 -> 3  (0.0% more)
+  Logical reads:      4 -> 4  (0.0% more)
+  DOP:                1 -> 1
+  Warnings:           1 -> 1  (no change)
+
+
+##### outer_reference_table_variable_unaliased_plan.sqlplan vs outer_reference_table_variable_unaliased_plan.sqlplan
+=== Plan Comparison ===
+Plan A: outer_reference_table_variable_unaliased_plan.sqlplan
+Plan B: outer_reference_table_variable_unaliased_plan.sqlplan
+
+--- Statement 1 ---
+SELECT A, x.Y FROM @a CROSS APPLY (SELECT TOP (1) Y FROM @b WHERE Y = ABS(A)) AS x
+
+  Estimated cost:     0.0067 -> 0.0067  (0.0% costlier)
+  Estimated rows:     3 -> 3  (0.0% more)
+  Logical reads:      4 -> 4  (0.0% more)
+  DOP:                1 -> 1
+  Warnings:           1 -> 1  (no change)
+
+
+##### outer_reference_temp_table_plan.sqlplan vs outer_reference_temp_table_plan.sqlplan
+=== Plan Comparison ===
+Plan A: outer_reference_temp_table_plan.sqlplan
+Plan B: outer_reference_temp_table_plan.sqlplan
+
+--- Statement 1 ---
+SELECT #t.a, x.X FROM #t CROSS APPLY (SELECT TOP (1) #u.X FROM #u WHERE #u.X = ABS(#t.a)) AS x
+
+  Estimated cost:     0.0067 -> 0.0067  (0.0% costlier)
+  Estimated rows:     3 -> 3  (0.0% more)
+  Logical reads:      4 -> 4  (0.0% more)
+  DOP:                1 -> 1
+
+
 ##### parallel-skew.sqlplan vs parallel-skew.sqlplan
 === Plan Comparison ===
 Plan A: parallel-skew.sqlplan
@@ -1999,24 +2156,186 @@ SELECT COUNT(*) FROM dbo.Posts WHERE YEAR(CreationDate) = 2013
       - HTDELETE 1ms
 
 
-##### optimize_for_unknown_plan.sqlplan vs parallel-skew.sqlplan
+##### optimize_for_unknown_plan.sqlplan vs outer_reference_function_aliased_plan.sqlplan
 === Plan Comparison ===
 Plan A: optimize_for_unknown_plan.sqlplan
-Plan B: parallel-skew.sqlplan
+Plan B: outer_reference_function_aliased_plan.sqlplan
 
 Note: Plan A is an estimated plan. Runtime metrics only available for the actual plan.
 
 --- Statement 1 ---
 SELECT * FROM dbo.Users WHERE Reputation > @rep OPTION (OPTIMIZE FOR UNKNOWN)
 
-  Estimated cost:     1 -> 6,729.7  (9,999% costlier)
-  Estimated rows:     1,000 -> 2,982,900  (9,999% more)
-  Runtime:            N/A -> 9.4s
-  CPU time:           N/A -> 28.6s
-  Logical reads:      0 -> 4,947,424  (new)
+  Estimated cost:     1 -> 0.0067  (99.3% cheaper)
+  Estimated rows:     1,000 -> 3  (99.7% fewer)
+  Runtime:            N/A -> 0ms
+  CPU time:           N/A -> 0ms
+  Logical reads:      0 -> 4  (new)
+  DOP:                0 -> 1
+  Warnings:           1 -> 0  (1 resolved)
+
+
+##### outer_reference_function_aliased_plan.sqlplan vs outer_reference_function_on_scanned_column_plan.sqlplan
+=== Plan Comparison ===
+Plan A: outer_reference_function_aliased_plan.sqlplan
+Plan B: outer_reference_function_on_scanned_column_plan.sqlplan
+
+--- Statement 1 ---
+SELECT o.a, i.X FROM dbo.O AS o CROSS APPLY (SELECT TOP (1) i.X FROM dbo.I AS i WHERE i.X = ABS(o.a)) AS i
+
+  Estimated cost:     0.0067 -> 0.0067  (0.0% costlier)
+  Estimated rows:     3 -> 3  (0.0% more)
+  Logical reads:      4 -> 4  (0.0% more)
+  DOP:                1 -> 1
+
+
+##### outer_reference_function_on_scanned_column_plan.sqlplan vs outer_reference_function_self_join_plan.sqlplan
+=== Plan Comparison ===
+Plan A: outer_reference_function_on_scanned_column_plan.sqlplan
+Plan B: outer_reference_function_self_join_plan.sqlplan
+
+--- Statement 1 ---
+SELECT o.a, i.X FROM dbo.O AS o CROSS APPLY (SELECT TOP (1) i.X FROM dbo.I AS i WHERE ABS(i.X) = o.a) AS i
+
+  Estimated cost:     0.0067 -> 0.0067  (1.3% cheaper)
+  Estimated rows:     3 -> 2  (33.3% fewer)
+  Logical reads:      4 -> 3  (25.0% fewer)
+  DOP:                1 -> 1
+
+
+##### outer_reference_function_self_join_plan.sqlplan vs outer_reference_function_unaliased_plan.sqlplan
+=== Plan Comparison ===
+Plan A: outer_reference_function_self_join_plan.sqlplan
+Plan B: outer_reference_function_unaliased_plan.sqlplan
+
+--- Statement 1 ---
+SELECT i1.X, x.X FROM dbo.I AS i1 CROSS APPLY (SELECT TOP (1) i2.X FROM dbo.I AS i2 WHERE i2.X = ABS(i1.X)) AS x
+
+  Estimated cost:     0.0067 -> 0.0067  (1.3% costlier)
+  Estimated rows:     2 -> 3  (50.0% more)
+  Logical reads:      3 -> 4  (33.3% more)
+  DOP:                1 -> 1
+
+
+##### outer_reference_function_unaliased_plan.sqlplan vs outer_reference_implicit_conversion_plan.sqlplan
+=== Plan Comparison ===
+Plan A: outer_reference_function_unaliased_plan.sqlplan
+Plan B: outer_reference_implicit_conversion_plan.sqlplan
+
+--- Statement 1 ---
+SELECT O.a, x.X FROM dbo.O CROSS APPLY (SELECT TOP (1) I.X FROM dbo.I WHERE I.X = ABS(O.a)) AS x
+
+  Estimated cost:     0.0067 -> 0.0067  (0.0% costlier)
+  Estimated rows:     3 -> 3  (0.0% more)
+  Logical reads:      4 -> 4  (0.0% more)
+  DOP:                1 -> 1
+
+
+##### outer_reference_implicit_conversion_plan.sqlplan vs outer_reference_isnull_plan.sqlplan
+=== Plan Comparison ===
+Plan A: outer_reference_implicit_conversion_plan.sqlplan
+Plan B: outer_reference_isnull_plan.sqlplan
+
+--- Statement 1 ---
+SELECT o.a, i.X FROM dbo.O AS o CROSS APPLY (SELECT TOP (1) i.X FROM dbo.I AS i WHERE i.S = o.N) AS i
+
+  Estimated cost:     0.0067 -> 0.0067  (0.0% costlier)
+  Estimated rows:     3 -> 3  (0.0% more)
+  Logical reads:      4 -> 4  (0.0% more)
+  DOP:                1 -> 1
+
+
+##### outer_reference_isnull_plan.sqlplan vs outer_reference_outer_side_scan_plan.sqlplan
+=== Plan Comparison ===
+Plan A: outer_reference_isnull_plan.sqlplan
+Plan B: outer_reference_outer_side_scan_plan.sqlplan
+
+--- Statement 1 ---
+SELECT o.a, i.X FROM dbo.O AS o CROSS APPLY (SELECT TOP (1) i.X FROM dbo.I AS i WHERE i.X = ISNULL(o.a, 0)) AS i
+
+  Estimated cost:     0.0067 -> 0.0066  (1.6% cheaper)
+  Estimated rows:     3 -> 2  (42.3% fewer)
+  Logical reads:      4 -> 2  (50.0% fewer)
+  DOP:                1 -> 1
+  Warnings:           0 -> 1  (1 new)
+
+
+##### outer_reference_outer_side_scan_plan.sqlplan vs outer_reference_self_join_unaliased_inner_plan.sqlplan
+=== Plan Comparison ===
+Plan A: outer_reference_outer_side_scan_plan.sqlplan
+Plan B: outer_reference_self_join_unaliased_inner_plan.sqlplan
+
+--- Statement 1 ---
+SELECT A, x.Y FROM @a CROSS APPLY (SELECT TOP (1) Y FROM @b WHERE Y = A) AS x WHERE ABS(A) = 1
+
+  Estimated cost:     0.0066 -> 0.0068  (1.7% costlier)
+  Estimated rows:     2 -> 3  (73.2% more)
+  Logical reads:      2 -> 4  (100% more)
+  DOP:                1 -> 1
+  Warnings:           1 -> 0  (1 resolved)
+
+
+##### outer_reference_self_join_unaliased_inner_plan.sqlplan vs outer_reference_table_variable_aliased_plan.sqlplan
+=== Plan Comparison ===
+Plan A: outer_reference_self_join_unaliased_inner_plan.sqlplan
+Plan B: outer_reference_table_variable_aliased_plan.sqlplan
+
+--- Statement 1 ---
+SELECT i1.X, x.X FROM dbo.I AS i1 CROSS APPLY (SELECT TOP (1) I.X FROM dbo.I WHERE I.X = ABS(i1.X)) AS x
+
+  Estimated cost:     0.0068 -> 0.0067  (0.1% cheaper)
+  Estimated rows:     3 -> 3  (0.0% more)
+  Logical reads:      4 -> 4  (0.0% more)
+  DOP:                1 -> 1
+  Warnings:           0 -> 1  (1 new)
+
+
+##### outer_reference_table_variable_aliased_plan.sqlplan vs outer_reference_table_variable_unaliased_plan.sqlplan
+=== Plan Comparison ===
+Plan A: outer_reference_table_variable_aliased_plan.sqlplan
+Plan B: outer_reference_table_variable_unaliased_plan.sqlplan
+
+--- Statement 1 ---
+SELECT a.A, x.Y FROM @a AS a CROSS APPLY (SELECT TOP (1) b.Y FROM @b AS b WHERE b.Y = ABS(a.A)) AS x
+
+  Estimated cost:     0.0067 -> 0.0067  (0.0% costlier)
+  Estimated rows:     3 -> 3  (0.0% more)
+  Logical reads:      4 -> 4  (0.0% more)
+  DOP:                1 -> 1
+  Warnings:           1 -> 1  (no change)
+
+
+##### outer_reference_table_variable_unaliased_plan.sqlplan vs outer_reference_temp_table_plan.sqlplan
+=== Plan Comparison ===
+Plan A: outer_reference_table_variable_unaliased_plan.sqlplan
+Plan B: outer_reference_temp_table_plan.sqlplan
+
+--- Statement 1 ---
+SELECT A, x.Y FROM @a CROSS APPLY (SELECT TOP (1) Y FROM @b WHERE Y = ABS(A)) AS x
+
+  Estimated cost:     0.0067 -> 0.0067  (0.0% costlier)
+  Estimated rows:     3 -> 3  (0.0% more)
+  Logical reads:      4 -> 4  (0.0% more)
+  DOP:                1 -> 1
+  Warnings:           1 -> 0  (1 resolved)
+
+
+##### outer_reference_temp_table_plan.sqlplan vs parallel-skew.sqlplan
+=== Plan Comparison ===
+Plan A: outer_reference_temp_table_plan.sqlplan
+Plan B: parallel-skew.sqlplan
+
+--- Statement 1 ---
+SELECT #t.a, x.X FROM #t CROSS APPLY (SELECT TOP (1) #u.X FROM #u WHERE #u.X = ABS(#t.a)) AS x
+
+  Estimated cost:     0.0067 -> 6,729.7  (9,999% costlier)
+  Estimated rows:     3 -> 2,982,900  (9,999% more)
+  Runtime:            0ms -> 9.4s  (new)
+  CPU time:           0ms -> 28.6s  (new)
+  Logical reads:      4 -> 4,947,424  (9,999% more)
   Memory grant:       0.0 MB -> 360.2 MB  (new)
-  DOP:                0 -> 4
-  Warnings:           1 -> 11  (10 new)
+  DOP:                1 -> 4
+  Warnings:           0 -> 11  (11 new)
   Missing indexes:    0 -> 1  (1 new)
 
   Wait stats:

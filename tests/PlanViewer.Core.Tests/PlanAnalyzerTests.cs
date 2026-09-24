@@ -310,11 +310,20 @@ public class PlanAnalyzerTests
     // ---------------------------------------------------------------
 
     /// <summary>
+    /// Builds a <see cref="ScanIdentity"/> for these string-level tests, without loading a fixture
+    /// plan. <paramref name="bareOuterReferences"/> defaults to none, matching a scan with no
+    /// Nested Loops ancestor passing it anything (#561, #564).
+    /// </summary>
+    private static ScanIdentity Identity(string? alias, string? table, bool isTableVariable = false,
+        params string[] bareOuterReferences) =>
+        new(alias, table, isTableVariable, new HashSet<string>(bareOuterReferences, StringComparer.OrdinalIgnoreCase));
+
+    /// <summary>
     /// An ALIASED table-variable column renders dotted, through the alias: SELECT v.X FROM @tv AS
     /// v WHERE ABS(v.X) = 1 gives "abs(@tv.[X] as [v].[X])=(1)". Confirmed on SQL Server 2016,
     /// 2017, 2019, 2022 and 2025 — no version renders [@tv].[col], and that shape never occurs.
     /// The "].[" sequence through the alias is what a bare parameter can never have, so
-    /// ColumnReferenceRegex catches this case on its own, with no table-variable flag needed.
+    /// ColumnReferenceRegex catches this case on its own, with no identity needed.
     /// </summary>
     [Fact]
     public void Rule12f_NonSargable_AliasedTableVariableColumnConversion_IsFlagged()
@@ -326,20 +335,20 @@ public class PlanAnalyzerTests
     /// <summary>
     /// An UNALIASED table-variable column has no dotted qualifier at all: SELECT X FROM @tv WHERE
     /// S = @n (S varchar, @n nvarchar) gives "CONVERT_IMPLICIT(nvarchar(20),[S],0)=[@n]". Bare
-    /// [S] cannot match ColumnReferenceRegex, so the caller must say this scan reads a table
-    /// variable before a bare name is read as a column (#561).
+    /// [S] cannot match ColumnReferenceRegex, so the caller must identify this scan as an
+    /// unaliased table variable before a bare name is read as a column (#561).
     /// </summary>
     [Fact]
     public void Rule12f_NonSargable_UnaliasedTableVariableColumnConversion_IsFlaggedWithTableVariableFlag()
     {
         Assert.True(PlanAnalyzer.ConvertImplicitWrapsColumn(
-            "CONVERT_IMPLICIT(nvarchar(20),[S],0)=[@n]", isTableVariableScan: true));
+            "CONVERT_IMPLICIT(nvarchar(20),[S],0)=[@n]", Identity(alias: null, table: "@tv", isTableVariable: true)));
     }
 
     /// <summary>
-    /// The same bare-name shape, off a scan the caller has not identified as a table variable.
+    /// The same bare-name shape, off a scan the caller has not identified at all.
     /// [S] alone could just as easily be a parameter or an expression, so it is not read as a
-    /// column without the flag.
+    /// column without an identity.
     /// </summary>
     [Fact]
     public void Rule12f_NonSargable_UnaliasedTableVariableColumnConversion_NotFlaggedWithoutTableVariableFlag()
@@ -356,7 +365,7 @@ public class PlanAnalyzerTests
     public void Rule12f_NonSargable_UnaliasedTableVariableParameterSideConversion_IsNotFlagged()
     {
         Assert.False(PlanAnalyzer.ConvertImplicitWrapsColumn(
-            "[S]=CONVERT_IMPLICIT(nvarchar(20),[@n],0)", isTableVariableScan: true));
+            "[S]=CONVERT_IMPLICIT(nvarchar(20),[@n],0)", Identity(alias: null, table: "@tv", isTableVariable: true)));
     }
 
     // ---------------------------------------------------------------
@@ -367,21 +376,21 @@ public class PlanAnalyzerTests
     public void Rule12h_NonSargable_BareColumnFunction_IsFlaggedWithTableVariableFlag()
     {
         Assert.Equal("Function call (ABS) on column", PlanAnalyzer.DetectNonSargablePattern(
-            "abs([X])=(1)", isTableVariableScan: true));
+            "abs([X])=(1)", Identity(alias: null, table: "@tv", isTableVariable: true)));
     }
 
     [Fact]
     public void Rule12h_NonSargable_BareColumnImplicitConversion_IsFlaggedWithTableVariableFlag()
     {
         Assert.Equal("Implicit conversion (CONVERT_IMPLICIT)", PlanAnalyzer.DetectNonSargablePattern(
-            "CONVERT_IMPLICIT(nvarchar(20),[S],0)=[@n]", isTableVariableScan: true));
+            "CONVERT_IMPLICIT(nvarchar(20),[S],0)=[@n]", Identity(alias: null, table: "@tv", isTableVariable: true)));
     }
 
     [Fact]
     public void Rule12h_NonSargable_FunctionOnParameterSide_NotFlaggedEvenWithTableVariableFlag()
     {
         Assert.Null(PlanAnalyzer.DetectNonSargablePattern(
-            "[X]=abs([@i])", isTableVariableScan: true));
+            "[X]=abs([@i])", Identity(alias: null, table: "@tv", isTableVariable: true)));
     }
 
     /// <summary>
@@ -391,7 +400,7 @@ public class PlanAnalyzerTests
     public void Rule12h_NonSargable_FunctionOnExpressionColumn_NotFlaggedEvenWithTableVariableFlag()
     {
         Assert.Null(PlanAnalyzer.DetectNonSargablePattern(
-            "abs([Expr1003])=(1)", isTableVariableScan: true));
+            "abs([Expr1003])=(1)", Identity(alias: null, table: "@tv", isTableVariable: true)));
     }
 
     /// <summary>
@@ -402,7 +411,7 @@ public class PlanAnalyzerTests
     public void Rule12h_NonSargable_FunctionOnStringLiteral_NotFlaggedEvenWithTableVariableFlag()
     {
         Assert.Null(PlanAnalyzer.DetectNonSargablePattern(
-            "[X]=upper('[Y]')", isTableVariableScan: true));
+            "[X]=upper('[Y]')", Identity(alias: null, table: "@tv", isTableVariable: true)));
     }
 
     [Fact]
@@ -446,6 +455,279 @@ public class PlanAnalyzerTests
         Assert.Single(nonSargable);
         Assert.Contains("Function call (ABS)", nonSargable[0].Message);
         Assert.Empty(PlanTestHelper.WarningsOfType(plan, "Scan With Predicate"));
+    }
+
+    // ---------------------------------------------------------------
+    // Rule 12: Non-SARGable Predicate — outer references (#564)
+    // ---------------------------------------------------------------
+    //
+    // A Nested Loops join passes an outer reference to its inner input one row at a time, so a
+    // function or conversion wrapping only an outer reference never costs the scanned table a seek
+    // — the value was already going to be re-evaluated every row regardless. These test
+    // IsColumnReference's ownership check directly, with a hand-built ScanIdentity. The fixture
+    // tests further down cover CollectBareOuterReferences, the tree walk that finds bare outer
+    // references off a real plan, which a hand-built identity bypasses.
+
+    /// <summary>
+    /// A self join's other instance of the same table: the table name "I" matches, but its alias is
+    /// "o", not this scan's own "i". Ownership has to be decided by alias, not table, or a self join
+    /// could never tell its own column from the other instance's.
+    /// </summary>
+    [Fact]
+    public void Rule12i_NonSargable_AliasedOtherInstanceOfSameTable_NotFlagged()
+    {
+        var identity = Identity(alias: "i", table: "I");
+        Assert.Null(PlanAnalyzer.DetectNonSargablePattern(
+            "abs([db].[dbo].[I].[X] as [o].[X])=(1)", identity));
+    }
+
+    /// <summary>
+    /// Deliberately different strings for alias and table, so confusing the aliased form's owner
+    /// check with the unaliased form's changes the answer — a self join's alias and table are
+    /// usually just different letter-casings of each other and cannot tell the two checks apart.
+    /// </summary>
+    [Fact]
+    public void Rule12i_NonSargable_AliasedForm_ComparesAgainstAliasNotTable()
+    {
+        var identity = Identity(alias: "i", table: "SomeOtherTable");
+        Assert.Equal("Function call (ABS) on column", PlanAnalyzer.DetectNonSargablePattern(
+            "abs([db].[dbo].[SomeOtherTable].[X] as [i].[X])=(1)", identity));
+    }
+
+    /// <summary>
+    /// The part of an aliased reference before " as " is not a reference of its own — here it names
+    /// the same table this unaliased scan reads, which would otherwise false-positive as this
+    /// scan's own column through the ordinary unaliased-dotted-form check.
+    /// </summary>
+    [Fact]
+    public void Rule12i_NonSargable_PrefixBeforeAs_IsNotItsOwnReference()
+    {
+        var identity = Identity(alias: null, table: "I");
+        Assert.Null(PlanAnalyzer.DetectNonSargablePattern(
+            "abs([db].[dbo].[I].[X] as [i1].[X])=(1)", identity));
+    }
+
+    [Fact]
+    public void Rule12i_NonSargable_UnaliasedOwnColumn_IsFlagged()
+    {
+        var identity = Identity(alias: null, table: "I");
+        Assert.Equal("Function call (ABS) on column", PlanAnalyzer.DetectNonSargablePattern(
+            "abs([db].[dbo].[I].[X])=(1)", identity));
+    }
+
+    [Fact]
+    public void Rule12i_NonSargable_UnaliasedAnotherTable_NotFlagged()
+    {
+        var identity = Identity(alias: null, table: "I");
+        Assert.Null(PlanAnalyzer.DetectNonSargablePattern(
+            "abs([db].[dbo].[O].[a])=(1)", identity));
+    }
+
+    [Fact]
+    public void Rule12i_NonSargable_TempTableOwnColumn_IsFlagged()
+    {
+        var identity = Identity(alias: null, table: "#u");
+        Assert.Equal("Function call (ABS) on column", PlanAnalyzer.DetectNonSargablePattern(
+            "abs([#u].[X])=(1)", identity));
+    }
+
+    [Fact]
+    public void Rule12i_NonSargable_TempTableAnotherTempTable_NotFlagged()
+    {
+        var identity = Identity(alias: null, table: "#u");
+        Assert.Null(PlanAnalyzer.DetectNonSargablePattern(
+            "abs([#t].[a])=(1)", identity));
+    }
+
+    /// <summary>
+    /// A plan can name a temp table by its full tempdb name: the name, underscores, then a hex
+    /// suffix. The parser cleans the scan's own name to #u, so the predicate's name must be
+    /// cleaned the same way before the two are compared.
+    /// </summary>
+    [Fact]
+    public void Rule12i_NonSargable_TempTableOwnColumnWithFullTempdbName_IsFlagged()
+    {
+        var identity = Identity(alias: null, table: "#u");
+        var fullName = "#u" + new string('_', 110) + "000000000004";
+        Assert.Equal("Function call (ABS) on column", PlanAnalyzer.DetectNonSargablePattern(
+            $"abs([tempdb].[dbo].[{fullName}].[X])=(1)", identity));
+    }
+
+    [Fact]
+    public void Rule12i_NonSargable_TempTableAnotherTempTableWithFullTempdbName_NotFlagged()
+    {
+        var identity = Identity(alias: null, table: "#u");
+        var fullName = "#t" + new string('_', 110) + "000000000003";
+        Assert.Null(PlanAnalyzer.DetectNonSargablePattern(
+            $"abs([tempdb].[dbo].[{fullName}].[a])=(1)", identity));
+    }
+
+    [Fact]
+    public void Rule12i_NonSargable_UnaliasedTableVariableBareOwnColumn_IsFlagged()
+    {
+        var identity = Identity(alias: null, table: "@b", isTableVariable: true, bareOuterReferences: "A");
+        Assert.Equal("Function call (ABS) on column", PlanAnalyzer.DetectNonSargablePattern(
+            "abs([Y])=(1)", identity));
+    }
+
+    /// <summary>
+    /// "A" is listed as a bare outer reference, so it is not read as this scan's own column even
+    /// though it has the identical bare-bracketed shape as one (#561, #564).
+    /// </summary>
+    [Fact]
+    public void Rule12i_NonSargable_UnaliasedTableVariableBareOuterReference_NotFlagged()
+    {
+        var identity = Identity(alias: null, table: "@b", isTableVariable: true, bareOuterReferences: "A");
+        Assert.Null(PlanAnalyzer.DetectNonSargablePattern("abs([A])=(1)", identity));
+    }
+
+    /// <summary>
+    /// An aliased table variable's own column always renders through its alias (#561) — a bare name
+    /// here can only be some other, unaliased table variable's, own column or outer reference, never
+    /// this scan's.
+    /// </summary>
+    [Fact]
+    public void Rule12i_NonSargable_AliasedTableVariableBareName_NotFlagged()
+    {
+        var identity = Identity(alias: "b", table: "@b", isTableVariable: true);
+        Assert.Null(PlanAnalyzer.DetectNonSargablePattern("abs([Y])=(1)", identity));
+    }
+
+    /// <summary>
+    /// No identity means the caller has not identified a scan — every existing caller of
+    /// DetectNonSargablePattern and ConvertImplicitWrapsColumn with no identity argument keeps this
+    /// coarser behavior: any dotted name counts as a column, whoever it actually belongs to.
+    /// </summary>
+    [Fact]
+    public void Rule12i_NonSargable_NoIdentity_AnyDottedNameStillCountsAsColumn()
+    {
+        Assert.Equal("Function call (ABS) on column", PlanAnalyzer.DetectNonSargablePattern(
+            "abs([db].[dbo].[O].[a] as [o].[a])=(1)"));
+    }
+
+    // ---------------------------------------------------------------
+    // Rule 12: Non-SARGable Predicate — outer reference fixtures (#564)
+    // ---------------------------------------------------------------
+    //
+    // Each fixture is a CROSS APPLY with TOP (1) over a heap, so the inner side is a Table Scan
+    // carrying the predicate under test. Asserted per scan node, not per plan: Rule 11 stands down
+    // once Rule 12 has already flagged the same scan, so Non-SARGable and Scan With Predicate are
+    // mutually exclusive on any one node — checking one node at a time is what actually pins down
+    // which scan the fix does, and does not, change.
+
+    private static void AssertScanWarnings(ParsedPlan plan, int nodeId, bool expectNonSargable, string? messageContains = null)
+    {
+        var stmt = PlanTestHelper.FirstStatement(plan);
+        Assert.NotNull(stmt.RootNode);
+        var node = PlanTestHelper.FindNode(stmt.RootNode, nodeId);
+        Assert.NotNull(node);
+
+        var nonSargable = node!.Warnings.Where(w => w.WarningType == "Non-SARGable Predicate").ToList();
+        var scanWithPredicate = node.Warnings.Where(w => w.WarningType == "Scan With Predicate").ToList();
+
+        if (expectNonSargable)
+        {
+            Assert.Single(nonSargable);
+            if (messageContains != null)
+                Assert.Contains(messageContains, nonSargable[0].Message);
+            Assert.Empty(scanWithPredicate);
+        }
+        else
+        {
+            Assert.Empty(nonSargable);
+            Assert.Single(scanWithPredicate);
+        }
+    }
+
+    /// <summary>abs() wraps the outer reference (o.a); i.X, the scanned column, is compared bare.</summary>
+    [Fact]
+    public void Rule12j_NonSargable_OuterReferenceFunctionAliased_GetsScanWithPredicate()
+    {
+        var plan = PlanTestHelper.LoadAndAnalyze("outer_reference_function_aliased_plan.sqlplan");
+        AssertScanWarnings(plan, nodeId: 3, expectNonSargable: false);
+    }
+
+    /// <summary>abs() wraps i.X, the scanned column itself — must still be flagged.</summary>
+    [Fact]
+    public void Rule12j_NonSargable_OuterReferenceFunctionOnScannedColumn_StaysNonSargable()
+    {
+        var plan = PlanTestHelper.LoadAndAnalyze("outer_reference_function_on_scanned_column_plan.sqlplan");
+        AssertScanWarnings(plan, nodeId: 4, expectNonSargable: true, messageContains: "Function call (ABS)");
+    }
+
+    [Fact]
+    public void Rule12j_NonSargable_OuterReferenceFunctionUnaliased_GetsScanWithPredicate()
+    {
+        var plan = PlanTestHelper.LoadAndAnalyze("outer_reference_function_unaliased_plan.sqlplan");
+        AssertScanWarnings(plan, nodeId: 3, expectNonSargable: false);
+    }
+
+    /// <summary>Self join: abs() wraps the OTHER instance (i1), aliased differently from this scan (i2).</summary>
+    [Fact]
+    public void Rule12j_NonSargable_OuterReferenceFunctionSelfJoin_GetsScanWithPredicate()
+    {
+        var plan = PlanTestHelper.LoadAndAnalyze("outer_reference_function_self_join_plan.sqlplan");
+        AssertScanWarnings(plan, nodeId: 3, expectNonSargable: false);
+    }
+
+    /// <summary>Self join, inner scan unaliased: the wrapped reference is the other, aliased instance.</summary>
+    [Fact]
+    public void Rule12j_NonSargable_OuterReferenceSelfJoinUnaliasedInner_GetsScanWithPredicate()
+    {
+        var plan = PlanTestHelper.LoadAndAnalyze("outer_reference_self_join_unaliased_inner_plan.sqlplan");
+        AssertScanWarnings(plan, nodeId: 3, expectNonSargable: false);
+    }
+
+    [Fact]
+    public void Rule12j_NonSargable_OuterReferenceImplicitConversion_GetsScanWithPredicate()
+    {
+        var plan = PlanTestHelper.LoadAndAnalyze("outer_reference_implicit_conversion_plan.sqlplan");
+        AssertScanWarnings(plan, nodeId: 3, expectNonSargable: false);
+    }
+
+    [Fact]
+    public void Rule12j_NonSargable_OuterReferenceIsnull_GetsScanWithPredicate()
+    {
+        var plan = PlanTestHelper.LoadAndAnalyze("outer_reference_isnull_plan.sqlplan");
+        AssertScanWarnings(plan, nodeId: 3, expectNonSargable: false);
+    }
+
+    [Fact]
+    public void Rule12j_NonSargable_OuterReferenceTempTable_GetsScanWithPredicate()
+    {
+        var plan = PlanTestHelper.LoadAndAnalyze("outer_reference_temp_table_plan.sqlplan");
+        AssertScanWarnings(plan, nodeId: 3, expectNonSargable: false);
+    }
+
+    [Fact]
+    public void Rule12j_NonSargable_OuterReferenceTableVariableAliased_GetsScanWithPredicate()
+    {
+        var plan = PlanTestHelper.LoadAndAnalyze("outer_reference_table_variable_aliased_plan.sqlplan");
+        AssertScanWarnings(plan, nodeId: 3, expectNonSargable: false);
+    }
+
+    /// <summary>
+    /// The bare-name case the tree walk exists for: Y (own) and A (outer reference) are both bare,
+    /// and only CollectBareOuterReferences — not the text shape alone — tells them apart.
+    /// </summary>
+    [Fact]
+    public void Rule12j_NonSargable_OuterReferenceTableVariableUnaliased_GetsScanWithPredicate()
+    {
+        var plan = PlanTestHelper.LoadAndAnalyze("outer_reference_table_variable_unaliased_plan.sqlplan");
+        AssertScanWarnings(plan, nodeId: 3, expectNonSargable: false);
+    }
+
+    /// <summary>
+    /// The same OuterReferences entry ("A") read from both sides of the join it belongs to: the
+    /// OUTER scan of @a, where abs(A) wraps @a's own column and must stay flagged, and the INNER
+    /// scan of @b, whose Y = A comparison has no function at all and was never in question.
+    /// </summary>
+    [Fact]
+    public void Rule12j_NonSargable_OuterReferenceOuterSideScan_OuterScanStaysNonSargable_InnerScanUnaffected()
+    {
+        var plan = PlanTestHelper.LoadAndAnalyze("outer_reference_outer_side_scan_plan.sqlplan");
+        AssertScanWarnings(plan, nodeId: 2, expectNonSargable: true, messageContains: "Function call (ABS)");
+        AssertScanWarnings(plan, nodeId: 4, expectNonSargable: false);
     }
 
     // ---------------------------------------------------------------
