@@ -310,29 +310,142 @@ public class PlanAnalyzerTests
     // ---------------------------------------------------------------
 
     /// <summary>
-    /// A table-variable COLUMN renders as [@tv].[col] in a ScalarString — the @ belongs to the
-    /// table's name, not to a scalar variable. The old column pattern excluded @ from the first
-    /// bracket part to keep [@p] out, which also kept [@tv].[col] out: a genuine column-side
-    /// CONVERT_IMPLICIT on one lost its Non-SARGable warning. The "].[" sequence is what a bare
-    /// variable can never have, so it alone draws the line.
+    /// An ALIASED table-variable column renders dotted, through the alias: SELECT v.X FROM @tv AS
+    /// v WHERE ABS(v.X) = 1 gives "abs(@tv.[X] as [v].[X])=(1)". Confirmed on SQL Server 2016,
+    /// 2017, 2019, 2022 and 2025 — no version renders [@tv].[col], and that shape never occurs.
+    /// The "].[" sequence through the alias is what a bare parameter can never have, so
+    /// ColumnReferenceRegex catches this case on its own, with no table-variable flag needed.
     /// </summary>
     [Fact]
-    public void Rule12f_NonSargable_TableVariableColumnConversion_IsFlagged()
+    public void Rule12f_NonSargable_AliasedTableVariableColumnConversion_IsFlagged()
     {
         Assert.True(PlanAnalyzer.ConvertImplicitWrapsColumn(
-            "CONVERT_IMPLICIT(nvarchar(40),[@tv].[col],0)=[@p]"));
+            "CONVERT_IMPLICIT(nvarchar(40),@tv.[col] as [v].[col],0)=[@p]"));
     }
 
     /// <summary>
-    /// The parameter-side mirror of the case above, and the #436 rule restated: converting the
-    /// parameter up to the column's type costs nothing, table variable or not, so widening the
-    /// column pattern must not start flagging it.
+    /// An UNALIASED table-variable column has no dotted qualifier at all: SELECT X FROM @tv WHERE
+    /// S = @n (S varchar, @n nvarchar) gives "CONVERT_IMPLICIT(nvarchar(20),[S],0)=[@n]". Bare
+    /// [S] cannot match ColumnReferenceRegex, so the caller must say this scan reads a table
+    /// variable before a bare name is read as a column (#561).
     /// </summary>
     [Fact]
-    public void Rule12f_NonSargable_TableVariableParameterSideConversion_IsNotFlagged()
+    public void Rule12f_NonSargable_UnaliasedTableVariableColumnConversion_IsFlaggedWithTableVariableFlag()
+    {
+        Assert.True(PlanAnalyzer.ConvertImplicitWrapsColumn(
+            "CONVERT_IMPLICIT(nvarchar(20),[S],0)=[@n]", isTableVariableScan: true));
+    }
+
+    /// <summary>
+    /// The same bare-name shape, off a scan the caller has not identified as a table variable.
+    /// [S] alone could just as easily be a parameter or an expression, so it is not read as a
+    /// column without the flag.
+    /// </summary>
+    [Fact]
+    public void Rule12f_NonSargable_UnaliasedTableVariableColumnConversion_NotFlaggedWithoutTableVariableFlag()
     {
         Assert.False(PlanAnalyzer.ConvertImplicitWrapsColumn(
-            "[@tv].[col]=CONVERT_IMPLICIT(nvarchar(40),[@p],0)"));
+            "CONVERT_IMPLICIT(nvarchar(20),[S],0)=[@n]"));
+    }
+
+    /// <summary>
+    /// The parameter-side mirror, and the #436 rule restated: converting the parameter up to the
+    /// column's type costs nothing, bare unaliased table-variable column or not.
+    /// </summary>
+    [Fact]
+    public void Rule12f_NonSargable_UnaliasedTableVariableParameterSideConversion_IsNotFlagged()
+    {
+        Assert.False(PlanAnalyzer.ConvertImplicitWrapsColumn(
+            "[S]=CONVERT_IMPLICIT(nvarchar(20),[@n],0)", isTableVariableScan: true));
+    }
+
+    // ---------------------------------------------------------------
+    // Rule 12: Non-SARGable Predicate — bare columns on a table variable scan (#561)
+    // ---------------------------------------------------------------
+
+    [Fact]
+    public void Rule12h_NonSargable_BareColumnFunction_IsFlaggedWithTableVariableFlag()
+    {
+        Assert.Equal("Function call (ABS) on column", PlanAnalyzer.DetectNonSargablePattern(
+            "abs([X])=(1)", isTableVariableScan: true));
+    }
+
+    [Fact]
+    public void Rule12h_NonSargable_BareColumnImplicitConversion_IsFlaggedWithTableVariableFlag()
+    {
+        Assert.Equal("Implicit conversion (CONVERT_IMPLICIT)", PlanAnalyzer.DetectNonSargablePattern(
+            "CONVERT_IMPLICIT(nvarchar(20),[S],0)=[@n]", isTableVariableScan: true));
+    }
+
+    [Fact]
+    public void Rule12h_NonSargable_FunctionOnParameterSide_NotFlaggedEvenWithTableVariableFlag()
+    {
+        Assert.Null(PlanAnalyzer.DetectNonSargablePattern(
+            "[X]=abs([@i])", isTableVariableScan: true));
+    }
+
+    /// <summary>
+    /// [Expr1003] is an optimizer-generated expression name, not a column of the table variable.
+    /// </summary>
+    [Fact]
+    public void Rule12h_NonSargable_FunctionOnExpressionColumn_NotFlaggedEvenWithTableVariableFlag()
+    {
+        Assert.Null(PlanAnalyzer.DetectNonSargablePattern(
+            "abs([Expr1003])=(1)", isTableVariableScan: true));
+    }
+
+    /// <summary>
+    /// '[Y]' is a string literal that happens to look like a bracketed name. The literal
+    /// alternative in BracketedNameRegex has to win before the name group is even tried.
+    /// </summary>
+    [Fact]
+    public void Rule12h_NonSargable_FunctionOnStringLiteral_NotFlaggedEvenWithTableVariableFlag()
+    {
+        Assert.Null(PlanAnalyzer.DetectNonSargablePattern(
+            "[X]=upper('[Y]')", isTableVariableScan: true));
+    }
+
+    [Fact]
+    public void Rule12h_NonSargable_BareColumnFunction_NotFlaggedWithoutTableVariableFlag()
+    {
+        Assert.Null(PlanAnalyzer.DetectNonSargablePattern("abs([X])=(1)"));
+    }
+
+    [Fact]
+    public void Rule12h_NonSargable_UnaliasedFunctionPlan_GetsNonSargableNotScanWithPredicate()
+    {
+        var plan = PlanTestHelper.LoadAndAnalyze("table_variable_unaliased_function_plan.sqlplan");
+
+        var nonSargable = PlanTestHelper.WarningsOfType(plan, "Non-SARGable Predicate");
+        Assert.Single(nonSargable);
+        Assert.Contains("Function call (ABS)", nonSargable[0].Message);
+        Assert.Empty(PlanTestHelper.WarningsOfType(plan, "Scan With Predicate"));
+    }
+
+    [Fact]
+    public void Rule12h_NonSargable_ImplicitConversionPlan_GetsNonSargableNotScanWithPredicate()
+    {
+        var plan = PlanTestHelper.LoadAndAnalyze("table_variable_implicit_conversion_plan.sqlplan");
+
+        var nonSargable = PlanTestHelper.WarningsOfType(plan, "Non-SARGable Predicate");
+        Assert.Single(nonSargable);
+        Assert.Contains("Implicit conversion (CONVERT_IMPLICIT)", nonSargable[0].Message);
+        Assert.Empty(PlanTestHelper.WarningsOfType(plan, "Scan With Predicate"));
+    }
+
+    /// <summary>
+    /// The aliased case already worked before #561, since the alias makes the column dotted
+    /// ("abs(@tv.[X] as [v].[X])=(1)"). This fixture's warnings must not change.
+    /// </summary>
+    [Fact]
+    public void Rule12h_NonSargable_AliasedFunctionPlan_UnchangedByTableVariableFlag()
+    {
+        var plan = PlanTestHelper.LoadAndAnalyze("table_variable_aliased_function_plan.sqlplan");
+
+        var nonSargable = PlanTestHelper.WarningsOfType(plan, "Non-SARGable Predicate");
+        Assert.Single(nonSargable);
+        Assert.Contains("Function call (ABS)", nonSargable[0].Message);
+        Assert.Empty(PlanTestHelper.WarningsOfType(plan, "Scan With Predicate"));
     }
 
     // ---------------------------------------------------------------

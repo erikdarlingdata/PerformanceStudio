@@ -332,8 +332,23 @@ Sort Spill | Critical | Sort spill level 1, 8 thread(s) — Granted: 10,815,552 
 Expensive Operator | Warning | Parallelism took 12,362ms (46.1% of statement elapsed) but no specific rule identified a fix. Worth investigating: is the row volume necessary? Are upstream estimates driving this operator harder than it should be?
 Scan With Predicate | Warning | Scan with residual predicate — SQL Server is reading every row and filtering after the fact. Check that you have appropriate indexes.\nPredicate: [StackOverflow2013].[dbo].[Posts].[PostTypeId] as [p].[PostTypeId]=(2) AND [StackOverflow2013].[dbo].[Posts].[Score] as [p].[Score]>(0)
 
+### table_variable_aliased_function_plan.sqlplan
+Table Variable | Warning | Table variable detected. Table variables lack column-level statistics, which causes bad row estimates, join choices, and memory grant decisions. Replace with a #temp table.
+Non-SARGable Predicate | Warning | Function call (ABS) on column prevents an index seek. Remove the function from the column side — apply it to the parameter instead, or create a computed column with the expression and index that.\nPredicate: abs(@tv.[X] as [v].[X])=(1)
+Table Variable | Warning | Table variable detected. Table variables lack column-level statistics, which causes bad row estimates, join choices, and memory grant decisions. Replace with a #temp table.
+
+### table_variable_implicit_conversion_plan.sqlplan
+Table Variable | Warning | Table variable detected. Table variables lack column-level statistics, which causes bad row estimates, join choices, and memory grant decisions. Replace with a #temp table.
+Non-SARGable Predicate | Warning | Implicit conversion (CONVERT_IMPLICIT) prevents an index seek. Match the parameter or variable data type to the column data type.\nPredicate: CONVERT_IMPLICIT(nvarchar(20),[S],0)=[@n]
+Table Variable | Warning | Table variable detected. Table variables lack column-level statistics, which causes bad row estimates, join choices, and memory grant decisions. Replace with a #temp table.
+
 ### table_variable_plan.sqlplan
 Table Variable | Warning | Table variable detected. Table variables lack column-level statistics, which causes bad row estimates, join choices, and memory grant decisions. Replace with a #temp table.
+Table Variable | Warning | Table variable detected. Table variables lack column-level statistics, which causes bad row estimates, join choices, and memory grant decisions. Replace with a #temp table.
+
+### table_variable_unaliased_function_plan.sqlplan
+Table Variable | Warning | Table variable detected. Table variables lack column-level statistics, which causes bad row estimates, join choices, and memory grant decisions. Replace with a #temp table.
+Non-SARGable Predicate | Warning | Function call (ABS) on column prevents an index seek. Remove the function from the column side — apply it to the parameter instead, or create a computed column with the expression and index that.\nPredicate: abs([X])=(1)
 Table Variable | Warning | Table variable detected. Table variables lack column-level statistics, which causes bad row estimates, join choices, and memory grant decisions. Replace with a #temp table.
 
 ### top_above_scan_plan.sqlplan

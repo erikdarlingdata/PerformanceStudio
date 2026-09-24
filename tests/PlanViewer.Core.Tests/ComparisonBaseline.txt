@@ -1037,6 +1037,36 @@ SELECT      u.DisplayName,      p.Score      , p.Title      , p.Tags      , p.Bo
       - SOS_SCHEDULER_YIELD 83ms
 
 
+##### table_variable_aliased_function_plan.sqlplan vs table_variable_aliased_function_plan.sqlplan
+=== Plan Comparison ===
+Plan A: table_variable_aliased_function_plan.sqlplan
+Plan B: table_variable_aliased_function_plan.sqlplan
+
+--- Statement 1 ---
+SELECT v.X FROM @tv AS v WHERE ABS(v.X) = 1
+
+  Estimated cost:     0.0033 -> 0.0033  (0.0% costlier)
+  Estimated rows:     1 -> 1  (0.0% more)
+  Logical reads:      1 -> 1  (0.0% more)
+  DOP:                1 -> 1
+  Warnings:           1 -> 1  (no change)
+
+
+##### table_variable_implicit_conversion_plan.sqlplan vs table_variable_implicit_conversion_plan.sqlplan
+=== Plan Comparison ===
+Plan A: table_variable_implicit_conversion_plan.sqlplan
+Plan B: table_variable_implicit_conversion_plan.sqlplan
+
+--- Statement 1 ---
+SELECT X FROM @tv WHERE S = N'a'
+
+  Estimated cost:     0.0033 -> 0.0033  (0.0% costlier)
+  Estimated rows:     1 -> 1  (0.0% more)
+  Logical reads:      1 -> 1  (0.0% more)
+  DOP:                1 -> 1
+  Warnings:           1 -> 1  (no change)
+
+
 ##### table_variable_plan.sqlplan vs table_variable_plan.sqlplan
 === Plan Comparison ===
 Plan A: table_variable_plan.sqlplan
@@ -1048,6 +1078,23 @@ SELECT t.Id FROM @t AS t
   Estimated cost:     0.0033 -> 0.0033  (0.0% costlier)
   Estimated rows:     3 -> 3  (0.0% more)
   Logical reads:      2 -> 2  (0.0% more)
+  DOP:                1 -> 1
+  Warnings:           1 -> 1  (no change)
+
+
+##### table_variable_unaliased_function_plan.sqlplan vs table_variable_unaliased_function_plan.sqlplan
+=== Plan Comparison ===
+Plan A: table_variable_unaliased_function_plan.sqlplan
+Plan B: table_variable_unaliased_function_plan.sqlplan
+
+--- Statement 1 ---
+SELECT X FROM @tv WHERE ABS(X) = 1
+
+  Estimated cost:     0.0033 -> 0.0033  (0.0% costlier)
+  Estimated rows:     1 -> 1  (0.0% more)
+  Runtime:            21ms -> 21ms  (0.0% slower)
+  CPU time:           21ms -> 21ms  (0.0% slower)
+  Logical reads:      1 -> 1  (0.0% more)
   DOP:                1 -> 1
   Warnings:           1 -> 1  (no change)
 
@@ -2256,19 +2303,19 @@ SELECT       p.Id,      p.Score,      v.VoteTypeId  FROM dbo.Posts AS p  CROSS A
       - SOS_SCHEDULER_YIELD 83ms
 
 
-##### spill_plan.sqlplan vs table_variable_plan.sqlplan
+##### spill_plan.sqlplan vs table_variable_aliased_function_plan.sqlplan
 === Plan Comparison ===
 Plan A: spill_plan.sqlplan
-Plan B: table_variable_plan.sqlplan
+Plan B: table_variable_aliased_function_plan.sqlplan
 
 --- Statement 1 ---
 SELECT      u.DisplayName,      p.Score      , p.Title      , p.Tags      , p.Body  FROM dbo.Users AS u  LEFT JOIN  (      SELECT          p.*,          n = ROW_NUMBER() OVER              (                  PARTITION BY                      p.OwnerUserId                  ORDER BY                      p.Score DESC              )      FROM dbo.Posts AS p      WHERE p.PostTypeId = 2      AND   p.Score > 0  ) AS p    ON  p.OwnerUserId = u.Id    AND p.n = 1  WHERE u.Reputation >= 20000  ORDER BY     ...
 
   Estimated cost:     16,976.5 -> 0.0033  (99.9% cheaper)
-  Estimated rows:     482,677 -> 3  (99.9% fewer)
+  Estimated rows:     482,677 -> 1  (99.9% fewer)
   Runtime:            26.8s -> 0ms  (eliminated)
   CPU time:           1m 16s -> 0ms  (eliminated)
-  Logical reads:      4,229,245 -> 2  (99.9% fewer)
+  Logical reads:      4,229,245 -> 1  (99.9% fewer)
   Memory grant:       10,597.0 MB -> 0.0 MB  (eliminated)
   DOP:                8 -> 1
   Warnings:           12 -> 1  (11 resolved)
@@ -2288,19 +2335,66 @@ SELECT      u.DisplayName,      p.Score      , p.Title      , p.Tags      , p.Bo
       - SOS_SCHEDULER_YIELD 83ms
 
 
-##### table_variable_plan.sqlplan vs top_above_scan_plan.sqlplan
+##### table_variable_aliased_function_plan.sqlplan vs table_variable_implicit_conversion_plan.sqlplan
+=== Plan Comparison ===
+Plan A: table_variable_aliased_function_plan.sqlplan
+Plan B: table_variable_implicit_conversion_plan.sqlplan
+
+--- Statement 1 ---
+SELECT v.X FROM @tv AS v WHERE ABS(v.X) = 1
+
+  Estimated cost:     0.0033 -> 0.0033  (0.0% costlier)
+  Estimated rows:     1 -> 1  (0.0% more)
+  Logical reads:      1 -> 1  (0.0% more)
+  DOP:                1 -> 1
+  Warnings:           1 -> 1  (no change)
+
+
+##### table_variable_implicit_conversion_plan.sqlplan vs table_variable_plan.sqlplan
+=== Plan Comparison ===
+Plan A: table_variable_implicit_conversion_plan.sqlplan
+Plan B: table_variable_plan.sqlplan
+
+--- Statement 1 ---
+SELECT X FROM @tv WHERE S = N'a'
+
+  Estimated cost:     0.0033 -> 0.0033  (0.0% costlier)
+  Estimated rows:     1 -> 3  (200% more)
+  Logical reads:      1 -> 2  (100% more)
+  DOP:                1 -> 1
+  Warnings:           1 -> 1  (no change)
+
+
+##### table_variable_plan.sqlplan vs table_variable_unaliased_function_plan.sqlplan
 === Plan Comparison ===
 Plan A: table_variable_plan.sqlplan
-Plan B: top_above_scan_plan.sqlplan
+Plan B: table_variable_unaliased_function_plan.sqlplan
 
 --- Statement 1 ---
 SELECT t.Id FROM @t AS t
 
-  Estimated cost:     0.0033 -> 4.8408  (9,999% costlier)
+  Estimated cost:     0.0033 -> 0.0033  (0.0% cheaper)
   Estimated rows:     3 -> 1  (66.7% fewer)
-  Runtime:            0ms -> 5.1s  (new)
-  CPU time:           0ms -> 5.1s  (new)
-  Logical reads:      2 -> 88,341  (9,999% more)
+  Runtime:            0ms -> 21ms  (new)
+  CPU time:           0ms -> 21ms  (new)
+  Logical reads:      2 -> 1  (50.0% fewer)
+  DOP:                1 -> 1
+  Warnings:           1 -> 1  (no change)
+
+
+##### table_variable_unaliased_function_plan.sqlplan vs top_above_scan_plan.sqlplan
+=== Plan Comparison ===
+Plan A: table_variable_unaliased_function_plan.sqlplan
+Plan B: top_above_scan_plan.sqlplan
+
+--- Statement 1 ---
+SELECT X FROM @tv WHERE ABS(X) = 1
+
+  Estimated cost:     0.0033 -> 4.8408  (9,999% costlier)
+  Estimated rows:     1 -> 1  (0.0% more)
+  Runtime:            21ms -> 5.1s  (9,999% slower)
+  CPU time:           21ms -> 5.1s  (9,999% slower)
+  Logical reads:      1 -> 88,341  (9,999% more)
   DOP:                1 -> 1
   Warnings:           1 -> 1  (no change)
   Missing indexes:    0 -> 1  (1 new)

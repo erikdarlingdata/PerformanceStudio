@@ -21,6 +21,14 @@ public static partial class PlanAnalyzer
         return false;
     }
 
+    /// <summary>
+    /// True when a node scans or modifies a table variable rather than a real table. The scan's
+    /// Object element renders a table variable's name as "[@tv]", where a real table always has a
+    /// schema: "[db].[dbo].[t]" — so the leading @ alone tells them apart.
+    /// </summary>
+    private static bool IsTableVariable(PlanNode node) =>
+        !string.IsNullOrEmpty(node.ObjectName) && node.ObjectName.StartsWith("@");
+
     /* #440: collects the operators it found, because this walk already knows exactly which ones
        touched a table variable and used to throw that away. Two lists rather than one, since the
        two warnings this feeds are about different operators: every operator referencing a table
@@ -29,7 +37,7 @@ public static partial class PlanAnalyzer
         ref bool hasTableVar, ref bool modifiesTableVar,
         List<int>? referencingNodeIds = null, List<int>? modifyingNodeIds = null)
     {
-        if (!string.IsNullOrEmpty(node.ObjectName) && node.ObjectName.StartsWith("@"))
+        if (IsTableVariable(node))
         {
             hasTableVar = true;
             referencingNodeIds?.Add(node.NodeId);
@@ -158,7 +166,7 @@ public static partial class PlanAnalyzer
         if (!IsRowstoreScan(node))
             return null;
 
-        return DetectNonSargablePattern(node.Predicate);
+        return DetectNonSargablePattern(node.Predicate, IsTableVariable(node));
     }
 
     /// <summary>
@@ -169,8 +177,14 @@ public static partial class PlanAnalyzer
     /// (compound AND/OR predicates, date ranges, parenthesized groups, AND inside a literal or a
     /// bracketed name) outnumber any sensible set of plan fixtures, and every one of them is
     /// decided entirely in this method and the helpers it calls.</para>
+    ///
+    /// <para><paramref name="isTableVariableScan"/> is true only when the caller has confirmed the
+    /// scan reads a table variable (#561). A real table always renders a column dotted, at minimum
+    /// [table].[col], but a table variable with no alias renders one as a bare name with no dotted
+    /// qualifier at all — see <see cref="ColumnReferenceRegex"/>. Defaults to false so every
+    /// existing caller keeps today's behavior unchanged.</para>
     /// </summary>
-    internal static string? DetectNonSargablePattern(string predicate)
+    internal static string? DetectNonSargablePattern(string predicate, bool isTableVariableScan = false)
     {
         // CASE expression in predicate — check first because CASE bodies
         // often contain CONVERT_IMPLICIT that isn't the root cause
@@ -179,7 +193,7 @@ public static partial class PlanAnalyzer
 
         // CONVERT_IMPLICIT — most common non-SARGable pattern, but only when it converts the
         // COLUMN. Converting the parameter up to the column's type costs nothing (#436).
-        if (ConvertImplicitWrapsColumn(predicate))
+        if (ConvertImplicitWrapsColumn(predicate, isTableVariableScan))
             return "Implicit conversion (CONVERT_IMPLICIT)";
 
         // ISNULL / COALESCE wrapping column — on the column side only. ISNULL(@p, 0) on the
@@ -188,7 +202,7 @@ public static partial class PlanAnalyzer
         // because the column sits inside the function, on its side of the comparison.
         foreach (Match isnullMatch in IsnullCoalesceRegex.Matches(predicate))
         {
-            if (IsFunctionOnColumnSide(predicate, isnullMatch))
+            if (IsFunctionOnColumnSide(predicate, isnullMatch, isTableVariableScan))
                 return "ISNULL/COALESCE wrapping column";
         }
 
@@ -201,7 +215,7 @@ public static partial class PlanAnalyzer
         foreach (Match funcMatch in FunctionInPredicateRegex.Matches(predicate))
         {
             var funcName = funcMatch.Groups[1].Value.ToUpperInvariant();
-            if (funcName != "CONVERT_IMPLICIT" && IsFunctionOnColumnSide(predicate, funcMatch))
+            if (funcName != "CONVERT_IMPLICIT" && IsFunctionOnColumnSide(predicate, funcMatch, isTableVariableScan))
                 return $"Function call ({funcName}) on column";
         }
 
@@ -231,10 +245,12 @@ public static partial class PlanAnalyzer
     /// type and carries no brackets; a column reference in the remainder is the conversion input.</para>
     ///
     /// <para>Internal so the column-vs-variable line can be tested against raw predicate strings in
-    /// showplan shape — the table-variable case ([@tv].[col] IS a column) has no committed plan
-    /// fixture, and the distinction lives entirely in this method and the regex it shares.</para>
+    /// showplan shape. <paramref name="isTableVariableScan"/> covers the unaliased table-variable
+    /// case — a bare name with no dotted qualifier, e.g. <c>CONVERT_IMPLICIT(nvarchar(20),[S],0)=[@n]</c>
+    /// — which this method cannot tell from a parameter or an expression on its own; see
+    /// <see cref="IsColumnReference"/> (#561).</para>
     /// </summary>
-    internal static bool ConvertImplicitWrapsColumn(string predicate)
+    internal static bool ConvertImplicitWrapsColumn(string predicate, bool isTableVariableScan = false)
     {
         foreach (Match match in ConvertImplicitRegex.Matches(predicate))
         {
@@ -243,8 +259,47 @@ public static partial class PlanAnalyzer
 
             // Unparseable means we cannot tell what is being converted. Assume the worst, matching
             // IsFunctionOnColumnSide, rather than silently dropping a real conversion.
-            if (arguments == null || ColumnReferenceRegex.IsMatch(arguments))
+            if (arguments == null || IsColumnReference(arguments, isTableVariableScan))
                 return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Whether <paramref name="text"/> names a column. A real table always renders a column
+    /// dotted, at minimum <c>[table].[col]</c>, so <see cref="ColumnReferenceRegex"/> alone is
+    /// enough there. An unaliased table-variable column has no dotted qualifier to match — it
+    /// renders as a bare bracketed name identical in shape to a parameter or an expression column
+    /// (#561). <paramref name="isTableVariableScan"/> is the caller's proof the scan is on a table
+    /// variable, so a bare name here is read as a column too, unless it is a parameter
+    /// or variable (<c>[@p1]</c>), an optimizer expression (<c>[Expr1003]</c>), or the name of a
+    /// function call (followed by <c>(</c>) rather than a reference. A string literal that looks
+    /// bracketed (<c>'[Y]'</c>) is never read as a name at all — see <see cref="BracketedNameRegex"/>.
+    /// An outer reference from another unaliased table variable is bare too, and is still read as
+    /// a column here (#564).
+    /// </summary>
+    private static bool IsColumnReference(string text, bool isTableVariableScan)
+    {
+        if (ColumnReferenceRegex.IsMatch(text))
+            return true;
+
+        if (!isTableVariableScan)
+            return false;
+
+        foreach (Match match in BracketedNameRegex.Matches(text))
+        {
+            if (!match.Groups["name"].Success || match.Groups["call"].Success)
+                continue; // a string literal, or the name of a function
+
+            var name = match.Groups["name"].Value;
+            if (name.StartsWith("[@", StringComparison.Ordinal))
+                continue; // a parameter or a variable: [@p1]
+
+            if (ExpressionColumnRegex.IsMatch(name))
+                continue; // an optimizer-generated expression, not an actual column: [Expr1003]
+
+            return true; // a bare name — a column on this table-variable scan
         }
 
         return false;
@@ -286,8 +341,12 @@ public static partial class PlanAnalyzer
     /// column and all, on the function's side: in <c>[t].[A]=[@1] AND [t].[B]=CONVERT(tinyint,[@2],0)</c>
     /// the CONVERT looked like it shared a side with [t].[B], and so did the dateadd in the
     /// everyday range <c>[t].[d]&gt;=dateadd(day,(-7),getdate()) AND [t].[d]&lt;getdate()</c>.</para>
+    ///
+    /// <para><paramref name="isTableVariableScan"/> is passed straight to
+    /// <see cref="IsColumnReference"/> to cover the unaliased table-variable case, e.g.
+    /// <c>abs([X])=(1)</c> (#561).</para>
     /// </summary>
-    private static bool IsFunctionOnColumnSide(string predicate, Match funcMatch)
+    private static bool IsFunctionOnColumnSide(string predicate, Match funcMatch, bool isTableVariableScan = false)
     {
         var comparison = ComparisonContaining(predicate, funcMatch.Index, out var offset);
 
@@ -304,8 +363,8 @@ public static partial class PlanAnalyzer
             : comparison[(compPos + compMatch.Length)..];
 
         // Same column-vs-variable distinction ConvertImplicitWrapsColumn needs, so it shares the
-        // one regex rather than keeping a second copy of the pattern in sync by hand.
-        return ColumnReferenceRegex.IsMatch(side);
+        // one helper rather than keeping a second copy of the logic in sync by hand.
+        return IsColumnReference(side, isTableVariableScan);
     }
 
     /// <summary>

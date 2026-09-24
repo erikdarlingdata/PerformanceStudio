@@ -30,13 +30,25 @@ public static partial class PlanAnalyzer
 
     /* A column reference in a ScalarString is multi-part bracket-qualified ([schema].[table]).
        A variable is a single bracket pair with an @ prefix ([@0]) and no dotted part after it —
-       the "].[" sequence is what separates the two, NOT the @. The first cut of this pattern also
-       excluded @ from the first part, which read as belt-and-braces but was actually a hole: a
-       TABLE-variable column renders as [@tv].[col], so a genuine column-side CONVERT_IMPLICIT on
-       one failed the match and the Non-SARGable warning silently vanished. A bare [@p] still
-       cannot match, because nothing dotted follows it. */
+       the "].[" sequence is what separates the two, NOT the @. A bare [@p] cannot match, because
+       nothing dotted follows it.
+
+       A table-variable column is dotted only through its alias: SELECT v.X FROM @tv AS v WHERE
+       ABS(v.X) = 1 gives "abs(@tv.[X] as [v].[X])=(1)", and [v].[X] matches. With no alias it is
+       a bare name: SELECT X FROM @tv WHERE ABS(X) = 1 gives "abs([X])=(1)". Checked on SQL Server
+       2016, 2017, 2019, 2022 and 2025, and none of them renders [@tv].[col]. A bare name has the
+       same shape as a parameter or an expression, so this regex never reads one as a column.
+       IsColumnReference (#561) does, but only on a scan of a table variable. */
     private static readonly Regex ColumnReferenceRegex = new(
         @"\[[^\]]+\]\.\[",
+        RegexOptions.Compiled);
+
+    /* An optimizer-generated expression name in a ScalarString ([Expr1003]) — a computed value,
+       never an actual column, even on a table variable scan where a bare name is otherwise read
+       as a column (#561). Matched against BracketedNameRegex's whole name group, so it only ever
+       sees a single bracket part or a dotted chain, never raw predicate text. */
+    private static readonly Regex ExpressionColumnRegex = new(
+        @"^\[Expr\d+\]$",
         RegexOptions.Compiled);
 
     /* The operator a comparison turns on in a ScalarString: >=, <=, <>, !=, >, <, = or like.
