@@ -38,7 +38,10 @@ public static partial class PlanAnalyzer
        a bare name: SELECT X FROM @tv WHERE ABS(X) = 1 gives "abs([X])=(1)". Checked on SQL Server
        2016, 2017, 2019, 2022 and 2025, and none of them renders [@tv].[col]. A bare name has the
        same shape as a parameter or an expression, so this regex never reads one as a column.
-       IsColumnReference (#561) does, but only on a scan of a table variable. */
+       IsColumnReference (#561) can, when the caller has identified the scan: a bare name on an
+       unaliased table variable's own scan is a column, unless it is a bare outer reference passed
+       in from another unaliased table variable one row at a time (#564) — that one looks exactly
+       the same and this regex could never have told the two apart either. */
     private static readonly Regex ColumnReferenceRegex = new(
         @"\[[^\]]+\]\.\[",
         RegexOptions.Compiled);
@@ -49,6 +52,15 @@ public static partial class PlanAnalyzer
        sees a single bracket part or a dotted chain, never raw predicate text. */
     private static readonly Regex ExpressionColumnRegex = new(
         @"^\[Expr\d+\]$",
+        RegexOptions.Compiled);
+
+    /* One bracket part of a name BracketedNameRegex already matched whole — [schema], [table],
+       [col], each on its own — so IsColumnReference (#564) can split "[db].[schema].[table].[col]"
+       or "[alias].[col]" into parts and read off the one right before the column, the owner. Reused
+       rather than a plain Split on "].[", so an identifier carrying an escaped "]]" still splits in
+       the right place. */
+    private static readonly Regex NamePartRegex = new(
+        @"\[(?:[^\]]|\]\])*\]",
         RegexOptions.Compiled);
 
     /* The operator a comparison turns on in a ScalarString: >=, <=, <>, !=, >, <, = or like.

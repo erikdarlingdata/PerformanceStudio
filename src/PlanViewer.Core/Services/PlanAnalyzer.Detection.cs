@@ -6,6 +6,33 @@ using PlanViewer.Core.Models;
 
 namespace PlanViewer.Core.Services;
 
+/// <summary>
+/// Identity of the object a scan or seek predicate belongs to — enough to tell its own columns
+/// apart from a column on another table, or an outer reference a Nested Loops join passed it one
+/// row at a time (#564). Built once in <see cref="PlanAnalyzer"/>'s
+/// <c>DetectNonSargablePredicate</c> and threaded down through <c>DetectNonSargablePattern</c> in
+/// place of the old <c>isTableVariableScan</c> flag (#561). Internal, not private, so string-level
+/// tests can build one directly instead of loading a fixture plan.
+/// </summary>
+/// <param name="Alias">The scan's alias, or null when it has none. The parser strips brackets.</param>
+/// <param name="Table">
+/// The last part of the scan's object name — a real table's bare name, a temp table cleaned to
+/// <c>#t</c>, or a table variable's own <c>@tv</c> (its ObjectName never carries a schema, so this
+/// is the whole name).
+/// </param>
+/// <param name="IsTableVariable">Mirrors <c>PlanAnalyzer.IsTableVariable(node)</c>.</param>
+/// <param name="BareOuterReferences">
+/// Bare column names — never a real table's or a temp table's, always another unaliased table
+/// variable's — that reach this scan as an outer reference rather than one of its own columns. Only
+/// populated by ancestor Nested Loops whose INNER input holds this scan; see
+/// <c>PlanAnalyzer.CollectBareOuterReferences</c>.
+/// </param>
+internal readonly record struct ScanIdentity(
+    string? Alias,
+    string? Table,
+    bool IsTableVariable,
+    IReadOnlySet<string> BareOuterReferences);
+
 public static partial class PlanAnalyzer
 {
     private static bool HasBatchModeNode(PlanNode node)
@@ -166,7 +193,65 @@ public static partial class PlanAnalyzer
         if (!IsRowstoreScan(node))
             return null;
 
-        return DetectNonSargablePattern(node.Predicate, IsTableVariable(node));
+        return DetectNonSargablePattern(node.Predicate, BuildScanIdentity(node));
+    }
+
+    /// <summary>
+    /// The <see cref="ScanIdentity"/> for a scan node, or null when it has no Object element at
+    /// all — DetectNonSargablePattern falls back to its old, coarser behavior in that case rather
+    /// than trying to match ownership against an identity with nothing in it.
+    /// </summary>
+    private static ScanIdentity? BuildScanIdentity(PlanNode node)
+    {
+        if (string.IsNullOrEmpty(node.ObjectName))
+            return null;
+
+        // ObjectName is "schema.table" (a table variable's has no schema, so it's just "@tv");
+        // the owner a predicate names is always the bare table, never schema-qualified (#564).
+        var dot = node.ObjectName.LastIndexOf('.');
+        var table = dot >= 0 ? node.ObjectName[(dot + 1)..] : node.ObjectName;
+
+        return new ScanIdentity(node.ObjectAlias, table, IsTableVariable(node), CollectBareOuterReferences(node));
+    }
+
+    /// <summary>
+    /// Bare column names (#564) that reach <paramref name="node"/> as an outer reference from
+    /// another unaliased table variable, rather than one of node's own columns — the two look
+    /// identical once rendered bare (#561), so a predicate can't tell them apart by text alone.
+    ///
+    /// <para>Walks up through every Nested Loops ancestor whose INNER input (second child) holds
+    /// node, the same as the plan diagram's own outer-vs-inner split, and keeps the OuterReferences
+    /// entries with no ".". FormatColumnRef (ShowPlanParser.Helpers.cs) renders a table-qualified
+    /// outer reference as "Table.Column" — that always names a different table than node's own bare
+    /// columns, so only a dot-free entry can ever collide with one. A Nested Loops whose OUTER input
+    /// holds node contributes nothing: that input is where the reference comes from, not where it is
+    /// consumed, so node is not the one reading it.</para>
+    /// </summary>
+    private static HashSet<string> CollectBareOuterReferences(PlanNode node)
+    {
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var child = node;
+        var ancestor = node.Parent;
+
+        while (ancestor != null)
+        {
+            if (ancestor.PhysicalOp == "Nested Loops" &&
+                !string.IsNullOrEmpty(ancestor.OuterReferences) &&
+                ancestor.Children.Count > 1 &&
+                ancestor.Children[1] == child)
+            {
+                foreach (var reference in ancestor.OuterReferences.Split(", "))
+                {
+                    if (!reference.Contains('.'))
+                        names.Add(reference);
+                }
+            }
+
+            child = ancestor;
+            ancestor = ancestor.Parent;
+        }
+
+        return names;
     }
 
     /// <summary>
@@ -178,13 +263,14 @@ public static partial class PlanAnalyzer
     /// bracketed name) outnumber any sensible set of plan fixtures, and every one of them is
     /// decided entirely in this method and the helpers it calls.</para>
     ///
-    /// <para><paramref name="isTableVariableScan"/> is true only when the caller has confirmed the
-    /// scan reads a table variable (#561). A real table always renders a column dotted, at minimum
-    /// [table].[col], but a table variable with no alias renders one as a bare name with no dotted
-    /// qualifier at all — see <see cref="ColumnReferenceRegex"/>. Defaults to false so every
-    /// existing caller keeps today's behavior unchanged.</para>
+    /// <para><paramref name="identity"/> is the scanned object the caller has confirmed the predicate
+    /// belongs to (#561, #564) — null keeps today's coarser behavior unchanged for every existing
+    /// caller: any dotted name counts as a column, and no bare name does. A real table or an aliased
+    /// table variable always renders its own column dotted, at minimum [table].[col] or
+    /// [alias].[col], but an unaliased table variable's own column has no dotted qualifier at all —
+    /// see <see cref="ColumnReferenceRegex"/> and <see cref="IsColumnReference"/>.</para>
     /// </summary>
-    internal static string? DetectNonSargablePattern(string predicate, bool isTableVariableScan = false)
+    internal static string? DetectNonSargablePattern(string predicate, ScanIdentity? identity = null)
     {
         // CASE expression in predicate — check first because CASE bodies
         // often contain CONVERT_IMPLICIT that isn't the root cause
@@ -193,7 +279,7 @@ public static partial class PlanAnalyzer
 
         // CONVERT_IMPLICIT — most common non-SARGable pattern, but only when it converts the
         // COLUMN. Converting the parameter up to the column's type costs nothing (#436).
-        if (ConvertImplicitWrapsColumn(predicate, isTableVariableScan))
+        if (ConvertImplicitWrapsColumn(predicate, identity))
             return "Implicit conversion (CONVERT_IMPLICIT)";
 
         // ISNULL / COALESCE wrapping column — on the column side only. ISNULL(@p, 0) on the
@@ -202,7 +288,7 @@ public static partial class PlanAnalyzer
         // because the column sits inside the function, on its side of the comparison.
         foreach (Match isnullMatch in IsnullCoalesceRegex.Matches(predicate))
         {
-            if (IsFunctionOnColumnSide(predicate, isnullMatch, isTableVariableScan))
+            if (IsFunctionOnColumnSide(predicate, isnullMatch, identity))
                 return "ISNULL/COALESCE wrapping column";
         }
 
@@ -215,7 +301,7 @@ public static partial class PlanAnalyzer
         foreach (Match funcMatch in FunctionInPredicateRegex.Matches(predicate))
         {
             var funcName = funcMatch.Groups[1].Value.ToUpperInvariant();
-            if (funcName != "CONVERT_IMPLICIT" && IsFunctionOnColumnSide(predicate, funcMatch, isTableVariableScan))
+            if (funcName != "CONVERT_IMPLICIT" && IsFunctionOnColumnSide(predicate, funcMatch, identity))
                 return $"Function call ({funcName}) on column";
         }
 
@@ -245,12 +331,13 @@ public static partial class PlanAnalyzer
     /// type and carries no brackets; a column reference in the remainder is the conversion input.</para>
     ///
     /// <para>Internal so the column-vs-variable line can be tested against raw predicate strings in
-    /// showplan shape. <paramref name="isTableVariableScan"/> covers the unaliased table-variable
-    /// case — a bare name with no dotted qualifier, e.g. <c>CONVERT_IMPLICIT(nvarchar(20),[S],0)=[@n]</c>
-    /// — which this method cannot tell from a parameter or an expression on its own; see
+    /// showplan shape. <paramref name="identity"/> covers the unaliased table-variable case — a bare
+    /// name with no dotted qualifier, e.g. <c>CONVERT_IMPLICIT(nvarchar(20),[S],0)=[@n]</c> — which
+    /// this method cannot tell from a parameter or an expression on its own, and tells that scan's
+    /// own bare columns apart from a bare outer reference off a different one (#564); see
     /// <see cref="IsColumnReference"/> (#561).</para>
     /// </summary>
-    internal static bool ConvertImplicitWrapsColumn(string predicate, bool isTableVariableScan = false)
+    internal static bool ConvertImplicitWrapsColumn(string predicate, ScanIdentity? identity = null)
     {
         foreach (Match match in ConvertImplicitRegex.Matches(predicate))
         {
@@ -259,7 +346,7 @@ public static partial class PlanAnalyzer
 
             // Unparseable means we cannot tell what is being converted. Assume the worst, matching
             // IsFunctionOnColumnSide, rather than silently dropping a real conversion.
-            if (arguments == null || IsColumnReference(arguments, isTableVariableScan))
+            if (arguments == null || IsColumnReference(arguments, identity))
                 return true;
         }
 
@@ -267,25 +354,50 @@ public static partial class PlanAnalyzer
     }
 
     /// <summary>
-    /// Whether <paramref name="text"/> names a column. A real table always renders a column
-    /// dotted, at minimum <c>[table].[col]</c>, so <see cref="ColumnReferenceRegex"/> alone is
-    /// enough there. An unaliased table-variable column has no dotted qualifier to match — it
-    /// renders as a bare bracketed name identical in shape to a parameter or an expression column
-    /// (#561). <paramref name="isTableVariableScan"/> is the caller's proof the scan is on a table
-    /// variable, so a bare name here is read as a column too, unless it is a parameter
-    /// or variable (<c>[@p1]</c>), an optimizer expression (<c>[Expr1003]</c>), or the name of a
-    /// function call (followed by <c>(</c>) rather than a reference. A string literal that looks
-    /// bracketed (<c>'[Y]'</c>) is never read as a name at all — see <see cref="BracketedNameRegex"/>.
-    /// An outer reference from another unaliased table variable is bare too, and is still read as
-    /// a column here (#564).
+    /// Whether <paramref name="text"/> names a column belonging to <paramref name="identity"/> —
+    /// the scanned object, not a column on some other table, or an outer reference a Nested Loops
+    /// join passed it in one row at a time (#564). A wrapped column stops an index seek only when it
+    /// is actually the scanned table's own column: an outer reference already varies one row at a
+    /// time no matter what wraps it, so it costs nothing extra, and a column on some other table was
+    /// never going to seek this one anyway.
+    ///
+    /// <para>Null <paramref name="identity"/> means the caller has not identified a scan, and keeps
+    /// this method's old, coarser behavior: <see cref="ColumnReferenceRegex"/> alone, so any dotted
+    /// name counts as a column and no bare name does. That regex is still every non-null identity's
+    /// first check too — a real table or an aliased table variable always renders its own column
+    /// dotted, at minimum <c>[table].[col]</c> (<see cref="ColumnReferenceRegex"/>'s own comment has
+    /// the full shape) — but there it is followed by an ownership check: an outer reference and a
+    /// column on another table are dotted too, and the fix is telling them apart, not giving up on
+    /// dotted names altogether.</para>
+    ///
+    /// <para>Un-owned dotted names are read with <see cref="BracketedNameRegex"/>, one at a time:</para>
+    /// <list type="bullet">
+    /// <item>A run of two or more bracket parts right after literal <c> as </c> is the aliased form —
+    /// <c>[..].[I].[X] as [i].[X]</c> or <c>@tv.[col] as [v].[col]</c> — and it owns the scan only when
+    /// the scan has an alias and it matches the LAST-BUT-ONE part, the alias right before the column
+    /// (case-insensitively). The part before <c> as </c> is not a reference of its own — in a self
+    /// join it names the OTHER instance of the same table, under its own alias — so it is skipped
+    /// outright rather than read as a second, competing reference.</item>
+    /// <item>A run of two or more bracket parts with no <c> as </c> before it is the unaliased dotted
+    /// form — <c>[db].[schema].[table].[col]</c>, or <c>[#t].[col]</c> for a temp table — and it owns
+    /// the scan only when the scan has NO alias and its table matches the LAST-BUT-ONE part
+    /// (case-insensitively). A scan with an alias always renders its own column through that alias,
+    /// so an unaliased dotted reference elsewhere in the same predicate names a different object.</item>
+    /// <item>A single bracket part is the bare form (#561) — read as a column only on an unaliased
+    /// table variable, unless it is a parameter or variable (<c>[@p1]</c>), an optimizer expression
+    /// (<c>[Expr1003]</c>), the name of a function call (followed by <c>(</c>) rather than a
+    /// reference, or a name <see cref="ScanIdentity.BareOuterReferences"/> lists as another unaliased
+    /// table variable's outer reference rather than this one's own column (#564). A string literal
+    /// that looks bracketed (<c>'[Y]'</c>) is never read as a name at all — see
+    /// <see cref="BracketedNameRegex"/>.</item>
+    /// </list>
     /// </summary>
-    private static bool IsColumnReference(string text, bool isTableVariableScan)
+    private static bool IsColumnReference(string text, ScanIdentity? identity)
     {
-        if (ColumnReferenceRegex.IsMatch(text))
-            return true;
+        if (identity == null)
+            return ColumnReferenceRegex.IsMatch(text);
 
-        if (!isTableVariableScan)
-            return false;
+        var scan = identity.Value;
 
         foreach (Match match in BracketedNameRegex.Matches(text))
         {
@@ -293,17 +405,76 @@ public static partial class PlanAnalyzer
                 continue; // a string literal, or the name of a function
 
             var name = match.Groups["name"].Value;
+
+            // "<prefix> as [alias].[col]" — the prefix is not a reference of its own; the real
+            // reference is the [alias].[col] pair that follows, matched separately on its own turn
+            // through this loop (#564).
+            if (FollowedByAsBracket(text, match.Index + match.Length))
+                continue;
+
+            var parts = NamePartRegex.Matches(name);
+            if (parts.Count >= 2)
+            {
+                var owner = StripBrackets(parts[^2].Value);
+
+                if (PrecededByAs(text, match.Index))
+                {
+                    // Aliased: [alias].[col]. Owned only through a matching alias.
+                    if (!string.IsNullOrEmpty(scan.Alias) &&
+                        string.Equals(owner, scan.Alias, StringComparison.OrdinalIgnoreCase))
+                        return true;
+                }
+                else
+                {
+                    // Unaliased dotted: [..].[table].[col]. An aliased scan's own column never
+                    // renders this way, so this can only own the scan when the scan has none.
+                    if (string.IsNullOrEmpty(scan.Alias) && !string.IsNullOrEmpty(scan.Table) &&
+                        string.Equals(owner, scan.Table, StringComparison.OrdinalIgnoreCase))
+                        return true;
+                }
+
+                continue;
+            }
+
+            // A single bracketed part.
             if (name.StartsWith("[@", StringComparison.Ordinal))
                 continue; // a parameter or a variable: [@p1]
 
             if (ExpressionColumnRegex.IsMatch(name))
                 continue; // an optimizer-generated expression, not an actual column: [Expr1003]
 
-            return true; // a bare name — a column on this table-variable scan
+            if (scan.IsTableVariable && string.IsNullOrEmpty(scan.Alias) &&
+                !scan.BareOuterReferences.Contains(StripBrackets(name)))
+                return true; // a bare name — this unaliased table variable's own column (#561)
         }
 
         return false;
     }
+
+    /// <summary>
+    /// True when <paramref name="text"/>[<paramref name="index"/>..] starts with the literal
+    /// <c> as [</c> — the start of the <c>[alias].[col]</c> half of the aliased column-reference
+    /// form, which follows the part that is not a reference of its own (#564).
+    /// </summary>
+    private static bool FollowedByAsBracket(string text, int index) =>
+        index >= 0 && index + 5 <= text.Length &&
+        text.AsSpan(index, 5).Equals(" as [", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// True when <paramref name="text"/>[..<paramref name="index"/>] ends with the literal
+    /// <c> as </c> — <paramref name="index"/> is a match's own start, so this reads the four
+    /// characters right before it (#564).
+    /// </summary>
+    private static bool PrecededByAs(string text, int index) =>
+        index >= 4 && text.AsSpan(index - 4, 4).Equals(" as ", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Strips the brackets off one bracket part matched by <see cref="NamePartRegex"/> — never a
+    /// whole dotted chain, so a plain Replace is enough; a "]]"-escaped literal bracket (which
+    /// FormatColumnRef, elsewhere, does not unescape either) passes through unchanged.
+    /// </summary>
+    private static string StripBrackets(string bracketPart) =>
+        bracketPart.Replace("[", "").Replace("]", "");
 
     /// <summary>
     /// Returns the text between the parenthesis at <paramref name="openParenIndex"/> and its match,
@@ -342,11 +513,13 @@ public static partial class PlanAnalyzer
     /// the CONVERT looked like it shared a side with [t].[B], and so did the dateadd in the
     /// everyday range <c>[t].[d]&gt;=dateadd(day,(-7),getdate()) AND [t].[d]&lt;getdate()</c>.</para>
     ///
-    /// <para><paramref name="isTableVariableScan"/> is passed straight to
-    /// <see cref="IsColumnReference"/> to cover the unaliased table-variable case, e.g.
-    /// <c>abs([X])=(1)</c> (#561).</para>
+    /// <para><paramref name="identity"/> is passed straight to <see cref="IsColumnReference"/> to
+    /// cover the unaliased table-variable case, e.g. <c>abs([X])=(1)</c> (#561), and to tell that
+    /// scan's own bare column apart from another unaliased table variable's outer reference in the
+    /// same shape, e.g. <c>abs([A])</c> where A is an outer reference and only X is this scan's own
+    /// column in <c>[X]=abs([A])</c> (#564).</para>
     /// </summary>
-    private static bool IsFunctionOnColumnSide(string predicate, Match funcMatch, bool isTableVariableScan = false)
+    private static bool IsFunctionOnColumnSide(string predicate, Match funcMatch, ScanIdentity? identity = null)
     {
         var comparison = ComparisonContaining(predicate, funcMatch.Index, out var offset);
 
@@ -364,7 +537,7 @@ public static partial class PlanAnalyzer
 
         // Same column-vs-variable distinction ConvertImplicitWrapsColumn needs, so it shares the
         // one helper rather than keeping a second copy of the logic in sync by hand.
-        return IsColumnReference(side, isTableVariableScan);
+        return IsColumnReference(side, identity);
     }
 
     /// <summary>
