@@ -390,4 +390,70 @@ public class ParameterSubstitutionTests
         Assert.Contains("like 'kexin%'", result.Text);
         Assert.DoesNotContain("@", result.Text);
     }
+
+    [Fact]
+    public void DeclarationList_IsLeftOutAndNotSubstituted()
+    {
+        /* A plan from the plan cache or Query Store keeps an sp_executesql statement's declaration
+           list in front of it. Substituted like the rest, "(@p1 int, @p2 int)" became
+           "(10 int, 20 int)", which is neither the plan's text nor runnable. */
+        var result = ParameterSubstitution.Apply(
+            "(@p1 int, @p2 int)SELECT t.Id FROM dbo.T AS t WHERE t.A IN (@p1, @p2)",
+            new List<PlanParameter> { Param("@p1", "(10)"), Param("@p2", "(20)") });
+
+        Assert.Equal("SELECT t.Id FROM dbo.T AS t WHERE t.A IN (10, 20)", result.Text);
+        Assert.Equal(2, result.SubstitutionCount);
+    }
+
+    [Fact]
+    public void DeclarationListWithParenthesizedTypes_EndsAtItsOwnClosingParenthesis()
+    {
+        /* The comma inside decimal(18,2) and the parentheses of both types are part of the list.
+           Stopping at the first closing parenthesis would leave ",@b nvarchar(50))" in the text. */
+        var result = ParameterSubstitution.Apply(
+            "(@a decimal(18,2),@b nvarchar(50))SELECT * FROM t WHERE x = @a AND y = @b",
+            new List<PlanParameter> { Param("@a", "(1.50)"), Param("@b", "N'abc'") });
+
+        Assert.Equal("SELECT * FROM t WHERE x = 1.50 AND y = N'abc'", result.Text);
+    }
+
+    [Fact]
+    public void DeclarationList_StaysWhenNothingIsSubstituted()
+    {
+        /* With no value to put back, the text is shown as the plan recorded it, list included. */
+        const string text = "(@p1 int)SELECT 1";
+        var result = ParameterSubstitution.Apply(text, new List<PlanParameter> { Param("@p1", "(10)") });
+
+        Assert.Equal(text, result.Text);
+        Assert.Equal(0, result.SubstitutionCount);
+    }
+
+    [Fact]
+    public void DeclarationListCutOffByTruncation_IsLeftAsItIs()
+    {
+        /* A plan cuts statement text off at 4,000 characters, and the declarations for a long IN
+           list can fill all of them. Then the text is only declarations, with no statement after
+           them, and putting values into it would make "(1 int,2 int,…" again. */
+        const string text = "(@p0 int,@p1 int,@p2 in";
+        var result = ParameterSubstitution.Apply(
+            text, new List<PlanParameter> { Param("@p0", "(1)"), Param("@p1", "(2)") });
+
+        Assert.Equal(text, result.Text);
+        Assert.Equal(0, result.SubstitutionCount);
+    }
+
+    [Fact]
+    public void AutoParameterizedPlan_LosesItsDeclarationList()
+    {
+        /* The #556 reproduction, an auto-parameterized plan: its text starts with
+           "(@1 tinyint,@2 int)", and the comparison report printed "(52 tinyint,2 int)SELECT". */
+        var plan = PlanTestHelper.LoadAndAnalyze("non_sargable_compound_predicate_plan.sqlplan");
+        var statement = PlanTestHelper.FirstStatement(plan);
+        Assert.StartsWith("(@1 tinyint,@2 int)", statement.StatementText);
+
+        var result = ParameterSubstitution.Apply(statement.StatementText, statement.Parameters);
+
+        Assert.StartsWith("SELECT COUNT(*) FROM [dbo].[T] [t] WHERE [t].[A]=52", result.Text);
+        Assert.DoesNotContain("@", result.Text);
+    }
 }

@@ -30,13 +30,64 @@ public static partial class PlanAnalyzer
 
     /* A column reference in a ScalarString is multi-part bracket-qualified ([schema].[table]).
        A variable is a single bracket pair with an @ prefix ([@0]) and no dotted part after it —
-       the "].[" sequence is what separates the two, NOT the @. The first cut of this pattern also
-       excluded @ from the first part, which read as belt-and-braces but was actually a hole: a
-       TABLE-variable column renders as [@tv].[col], so a genuine column-side CONVERT_IMPLICIT on
-       one failed the match and the Non-SARGable warning silently vanished. A bare [@p] still
-       cannot match, because nothing dotted follows it. */
+       the "].[" sequence is what separates the two, NOT the @. A bare [@p] cannot match, because
+       nothing dotted follows it.
+
+       A table-variable column is dotted only through its alias: SELECT v.X FROM @tv AS v WHERE
+       ABS(v.X) = 1 gives "abs(@tv.[X] as [v].[X])=(1)", and [v].[X] matches. With no alias it is
+       a bare name: SELECT X FROM @tv WHERE ABS(X) = 1 gives "abs([X])=(1)". Checked on SQL Server
+       2016, 2017, 2019, 2022 and 2025, and none of them renders [@tv].[col]. A bare name has the
+       same shape as a parameter or an expression, so this regex never reads one as a column.
+       IsColumnReference (#561) can, when the caller has identified the scan: a bare name on an
+       unaliased table variable's own scan is a column, unless it is a bare outer reference passed
+       in from another unaliased table variable one row at a time (#564) — that one looks exactly
+       the same and this regex could never have told the two apart either. */
     private static readonly Regex ColumnReferenceRegex = new(
         @"\[[^\]]+\]\.\[",
+        RegexOptions.Compiled);
+
+    /* An optimizer-generated expression name in a ScalarString ([Expr1003]) — a computed value,
+       never an actual column, even on a table variable scan where a bare name is otherwise read
+       as a column (#561). Matched against BracketedNameRegex's whole name group, so it only ever
+       sees a single bracket part or a dotted chain, never raw predicate text. */
+    private static readonly Regex ExpressionColumnRegex = new(
+        @"^\[Expr\d+\]$",
+        RegexOptions.Compiled);
+
+    /* One bracket part of a name BracketedNameRegex already matched whole — [schema], [table],
+       [col], each on its own — so IsColumnReference (#564) can split "[db].[schema].[table].[col]"
+       or "[alias].[col]" into parts and read off the one right before the column, the owner. Reused
+       rather than a plain Split on "].[", so an identifier carrying an escaped "]]" still splits in
+       the right place. */
+    private static readonly Regex NamePartRegex = new(
+        @"\[(?:[^\]]|\]\])*\]",
+        RegexOptions.Compiled);
+
+    /* The operator a comparison turns on in a ScalarString: >=, <=, <>, !=, >, <, = or like.
+       Without like, [col] like upper([@p]) had no operator at all, fell to the assume-the-worst
+       default, and a function on the pattern was reported as a function on the column. */
+    private static readonly Regex ComparisonOperatorRegex = new(
+        @"(?<![<>])([<>=!]{1,2})(?![<>=])|\s(like)\s",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    /* What joins one comparison to the next in a compound predicate. String literals and
+       bracketed identifiers are matched first, so an AND inside one of them (N'Tom AND Jerry',
+       [Terms and Conditions]) is consumed whole and never reaches the capture group. Only a
+       Groups[1] match is a real operator. */
+    private static readonly Regex LogicalOperatorRegex = new(
+        @"'(?:[^']|'')*'|\[(?:[^\]]|\]\])*\]|\s(AND|OR)\s",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private static readonly Regex IsnullCoalesceRegex = new(
+        @"\b(isnull|coalesce)\s*\(",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    /* A name in a ScalarString: one bracketed part or a dotted chain of them ([@p1], [Expr1003],
+       [db].[dbo].[T].[c]). A name followed by ( is a function call. String literals are matched
+       first, so a bracket inside one ('[x]') is never read as a name. Only a match with the
+       name group is a name. */
+    private static readonly Regex BracketedNameRegex = new(
+        @"'(?:[^']|'')*'|(?<name>\[(?:[^\]]|\]\])*\](?:\.\[(?:[^\]]|\]\])*\])*)(?<call>\s*\()?",
         RegexOptions.Compiled);
 
     public static void Analyze(ParsedPlan plan, AnalyzerConfig? config = null, ServerMetadata? serverMetadata = null) =>

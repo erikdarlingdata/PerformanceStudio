@@ -35,7 +35,7 @@ public static class DataGridBehaviors
         {
             // Mirror the built-in copy's exact gate: platform command modifier
             // (Ctrl; Cmd on macOS), no Shift, no Alt.
-            var commandModifiers = TopLevel.GetTopLevel(grid)?.PlatformSettings?.HotkeyConfiguration.CommandModifiers
+            var commandModifiers = grid.GetPlatformSettings()?.HotkeyConfiguration.CommandModifiers
                 ?? KeyModifiers.Control;
             if (e.Key is not (Key.C or Key.Insert)
                 || !e.KeyModifiers.HasFlag(commandModifiers)

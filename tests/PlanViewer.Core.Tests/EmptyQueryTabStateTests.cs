@@ -72,6 +72,34 @@ public class EmptyQueryTabStateTests
     }
 
     /// <summary>
+    /// #540: connect to a server from a fresh tab and the overlay stayed, opaque over the
+    /// editor, still offering "Connect to a server" — the app looked broken, because nothing
+    /// else the user would think to do (they came to type a query, not open a plan) would
+    /// take it down. A connected session is in use even with nothing typed: the editor is
+    /// the offer now, and it stays the offer when the buffer is emptied back out.
+    /// </summary>
+    [Fact]
+    public void AConnectedSessionNeverShowsTheEmptyState_EvenWithAnEmptiedBuffer()
+    {
+        HeadlessUi.Run(() =>
+        {
+            var window = new MainWindow();
+            var session = NewSession(window);
+
+            Assert.True(Overlay(session).IsVisible, "a fresh tab, before the connection");
+
+            SessionHarness.PretendConnected(session);
+            SessionHarness.RefreshEmptyState(session);
+            Assert.False(Overlay(session).IsVisible, "this session has a server to run queries on");
+
+            session.QueryEditor.Text = "select 1;";
+            session.QueryEditor.Text = "";
+            Assert.False(Overlay(session).IsVisible,
+                "deleting every character on a connected session must not cover the editor again");
+        });
+    }
+
+    /// <summary>
     /// Every row is clickable across its whole width, not just where its glyphs happen to fall.
     /// A control with a null background hit-tests only what it draws, so a press in the gap
     /// between two words would sail past the row and land on the panel behind it.

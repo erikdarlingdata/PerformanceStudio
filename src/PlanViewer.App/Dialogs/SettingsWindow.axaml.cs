@@ -375,7 +375,7 @@ internal partial class SettingsWindow : Window
 
 		/* The stored proxy password is deliberately not put into the TextBox. PasswordChar only
 		   masks the glyph — the cleartext still sits in the visual and accessibility trees. The
-		   watermark says it is saved, and an empty box at save time means "keep what is there". */
+		   placeholder says it is saved, and an empty box at save time means "keep what is there". */
 		var proxy = ProxySettings.Load();
 		_hasStoredProxyPassword = !string.IsNullOrEmpty(proxy.Password);
 		_proxyMode = proxy.Mode;
@@ -506,10 +506,10 @@ internal partial class SettingsWindow : Window
 		return panel;
 	}
 
-	private static TextBox CreateProxyInput(string text, string watermark) => new()
+	private static TextBox CreateProxyInput(string text, string placeholder) => new()
 	{
 		Text = text,
-		Watermark = watermark,
+		PlaceholderText = placeholder,
 		FontSize = 13,
 		Height = 32,
 		Padding = new Thickness(6, 2)
@@ -582,7 +582,7 @@ internal partial class SettingsWindow : Window
 
 		/* This is the only way to delete a stored proxy password, because an empty password box
 		   always means "keep what is there" — otherwise anyone who edited the proxy address would
-		   have to retype the password. Clearing the flag too stops the watermark claiming a
+		   have to retype the password. Clearing the flag too stops the placeholder claiming a
 		   password is saved after the reset has taken it away. */
 		_clearStoredProxyPassword = _hasStoredProxyPassword;
 		_hasStoredProxyPassword = false;

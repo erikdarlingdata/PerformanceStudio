@@ -475,6 +475,8 @@ public partial class MainWindow : Window
             Height = 4,
             Margin = new Avalonia.Thickness(0, 0, 0, 12)
         };
+        // This loading tab detaches whenever the user switches top-level tabs mid-capture.
+        Helpers.ProgressBarBehaviors.SetRestartOnReattach(progressBar, true);
 
         var statusText = new TextBlock
         {
@@ -561,7 +563,10 @@ public partial class MainWindow : Window
             // new plan tab.
             actualViewer.ConnectionString = connectionString;
             actualViewer.SetConnectionServices(_credentialService, _connectionStore);
-            actualViewer.SetConnectionStatus(dialog.ResultConnection.ServerName, database);
+            /* Adopt, not just paint: this tab's toolbar is visible, and status alone left the
+               database picker disabled and empty under a green server label. The dialog already
+               enumerated the databases this login can see. */
+            actualViewer.AdoptConnection(dialog.ResultConnection, database, dialog.ResultDatabases);
             actualViewer.LoadPlan(actualPlanXml, "Actual Plan", queryText);
 
             tab.Content = CreatePlanTabContent(actualViewer);

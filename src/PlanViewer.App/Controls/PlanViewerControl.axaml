@@ -525,7 +525,7 @@
                             Background="{DynamicResource BackgroundBrush}"
                             BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
                         <TextBox x:Name="PropertiesFilterBox"
-                                 Watermark="Filter properties..."
+                                 PlaceholderText="Filter properties..."
                                  FontSize="11" Height="24" MinHeight="0" Padding="6,1"
                                  VerticalContentAlignment="Center"
                                  TextChanged="PropertiesFilter_TextChanged"

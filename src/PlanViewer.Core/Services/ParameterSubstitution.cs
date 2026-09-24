@@ -47,46 +47,60 @@ public static class ParameterSubstitution
         if (values.Count == 0)
             return new ParameterSubstitutionResult(statementText, 0);
 
+        /* A plan from the plan cache or Query Store keeps an sp_executesql statement's declaration
+           list in front of it: "(@p1 int, @p2 int)SELECT …". The names in that list declare the
+           parameters, they do not read them. Substituted, they became "(10 int, 20 int)SELECT …",
+           which is neither the plan's text nor runnable. So only the statement after the list gets
+           values, and when it gets any, the list is dropped: this text is meant to run, and a
+           declaration list is not T-SQL on its own. Nothing substituted leaves the text as it was.
+           A list that never closes is text the plan cut off at 4,000 characters inside the list,
+           so there is no statement to put values into. */
+        var bodyStart = DeclarationListEnd(statementText);
+        if (bodyStart < 0)
+            return new ParameterSubstitutionResult(statementText, 0);
+
+        var text = bodyStart == 0 ? statementText : statementText[bodyStart..].TrimStart();
+
         /* One fact about the whole statement, settled up front: inside an EXEC statement, every
            token sitting to the left of an "=" is an assignment target — the return-status variable
            or a named argument's name — because EXEC grammar has no other use for "=" at all. A
            per-token back-scan cannot see this for the FIRST named argument (what precedes it is
            the procedure name, not a keyword), which is how "EXEC dbo.p @debug = @debug" got its
            left-hand side substituted into "EXEC dbo.p 1 = @debug". */
-        var assignsThroughEquals = StatementLeadsWithExec(statementText);
+        var assignsThroughEquals = StatementLeadsWithExec(text);
 
-        var sb = new StringBuilder(statementText.Length);
+        var sb = new StringBuilder(text.Length);
         var substitutions = 0;
         var i = 0;
 
-        while (i < statementText.Length)
+        while (i < text.Length)
         {
-            var c = statementText[i];
+            var c = text[i];
 
             /* Regions where an @name is text, not a parameter. A string literal is the case that
                matters in practice — LIKE 'kexin%' sits right next to the parameters in the #466
                repro — but a delimited identifier can hold anything, and a comment is not code. */
             if (c == '\'' || c == '"')
             {
-                i = CopyDelimited(statementText, i, c, c, sb);
+                i = CopyDelimited(text, i, c, c, sb);
                 continue;
             }
 
             if (c == '[')
             {
-                i = CopyDelimited(statementText, i, '[', ']', sb);
+                i = CopyDelimited(text, i, '[', ']', sb);
                 continue;
             }
 
-            if (c == '-' && i + 1 < statementText.Length && statementText[i + 1] == '-')
+            if (c == '-' && i + 1 < text.Length && text[i + 1] == '-')
             {
-                i = CopyLineComment(statementText, i, sb);
+                i = CopyLineComment(text, i, sb);
                 continue;
             }
 
-            if (c == '/' && i + 1 < statementText.Length && statementText[i + 1] == '*')
+            if (c == '/' && i + 1 < text.Length && text[i + 1] == '*')
             {
-                i = CopyBlockComment(statementText, i, sb);
+                i = CopyBlockComment(text, i, sb);
                 continue;
             }
 
@@ -94,15 +108,15 @@ public static class ParameterSubstitution
                tail of an identifier such as "t@0" is part of that identifier. The scan below claims
                the longest run of identifier characters, which handles the first; the preceding
                character is checked here, which handles the second. */
-            if (c == '@' && !IsIdentifierPart(i > 0 ? statementText[i - 1] : '\0'))
+            if (c == '@' && !IsIdentifierPart(i > 0 ? text[i - 1] : '\0'))
             {
                 var end = i + 1;
-                while (end < statementText.Length && IsIdentifierPart(statementText[end]))
+                while (end < text.Length && IsIdentifierPart(text[end]))
                     end++;
 
-                var token = statementText[i..end];
+                var token = text[i..end];
                 if (values.TryGetValue(token, out var value)
-                    && !IsAssignmentTarget(statementText, i, end, assignsThroughEquals))
+                    && !IsAssignmentTarget(text, i, end, assignsThroughEquals))
                 {
                     sb.Append(value);
                     substitutions++;
@@ -123,6 +137,37 @@ public static class ParameterSubstitution
         return substitutions == 0
             ? new ParameterSubstitutionResult(statementText, 0)
             : new ParameterSubstitutionResult(sb.ToString(), substitutions);
+    }
+
+    /// <summary>
+    /// Where the statement starts in text that opens with an <c>sp_executesql</c> declaration list,
+    /// such as <c>(@p1 int, @p2 decimal(18,2))SELECT …</c>. Returns 0 when the text has no list,
+    /// and -1 when the list never closes: a plan cuts statement text off at 4,000 characters, and
+    /// the declarations for a long IN list can fill all of them. The list ends at the parenthesis
+    /// that closes its first one, so the parentheses of a type are counted, not taken for the end.
+    /// A statement cannot begin with <c>(@</c>, so that opening always means a list.
+    /// <c>ReproScriptBuilder</c> strips the list with this too. (The web project compiles this
+    /// file without it, so the name is not a cref.)
+    /// </summary>
+    internal static int DeclarationListEnd(string text)
+    {
+        var i = 0;
+        while (i < text.Length && char.IsWhiteSpace(text[i]))
+            i++;
+
+        if (i + 1 >= text.Length || text[i] != '(' || text[i + 1] != '@')
+            return 0;
+
+        var depth = 0;
+        for (; i < text.Length; i++)
+        {
+            if (text[i] == '(')
+                depth++;
+            else if (text[i] == ')' && --depth == 0)
+                return i + 1;
+        }
+
+        return -1; // the list never closes: the text was cut off inside it
     }
 
     /// <summary>

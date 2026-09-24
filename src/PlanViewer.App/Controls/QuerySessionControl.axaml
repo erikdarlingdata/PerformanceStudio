@@ -338,11 +338,11 @@
                                Padding="4"/>
 
                 <!-- Empty state. Over the editor only while this session is completely
-                     empty — nothing typed and no document open — so a new Query tab
-                     offers its primary actions instead of a blank wall. It never traps
-                     typing: the editor keeps focus underneath, a click on the background
-                     hands focus back to it, and the overlay leaves the moment there is any
-                     text or any document (RefreshEmptyState). -->
+                     empty — nothing typed, no document open, no server connected — so a
+                     new Query tab offers its primary actions instead of a blank wall. It
+                     never traps typing: the editor keeps focus underneath, a click on the
+                     background hands focus back to it, and the overlay leaves the moment
+                     there is any text, any document, or a connection (RefreshEmptyState). -->
                 <Border x:Name="EmptyStateOverlay"
                         Background="{DynamicResource BackgroundBrush}"
                         IsVisible="False"

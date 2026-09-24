@@ -642,16 +642,21 @@ public static partial class PlanAnalyzer
         if (!cfg.IsRuleDisabled(15) && node.PhysicalOp == "Concatenation")
         {
             var constantScanBranches = node.Children
-                .Count(c => c.PhysicalOp == "Constant Scan" ||
+                .Where(c => c.PhysicalOp == "Constant Scan" ||
                             (c.PhysicalOp == "Compute Scalar" &&
-                             c.Children.Any(gc => gc.PhysicalOp == "Constant Scan")));
+                             c.Children.Any(gc => gc.PhysicalOp == "Constant Scan")))
+                .ToList();
 
-            if (constantScanBranches >= 2 && IsOrExpansionChain(node))
+            /* #558: WHERE t.A IN (@p1, @p2) builds the same operator chain, as a dynamic seek over
+               the parameter values, and there is no join to rewrite. Only a lookup that takes its
+               value from another input's row makes the OR a join OR. */
+            if (constantScanBranches.Count >= 2 && IsOrExpansionChain(node) &&
+                constantScanBranches.Any(LookupReadsAnotherInput))
             {
                 node.Warnings.Add(new PlanWarning
                 {
                     WarningType = "Join OR Clause",
-                    Message = $"OR in a join predicate. SQL Server rewrote the OR as {constantScanBranches} separate lookups, each evaluated independently — this multiplies the work on the inner side. Rewrite as separate queries joined with UNION ALL. For example, change \"FROM a JOIN b ON a.x = b.x OR a.y = b.y\" to \"FROM a JOIN b ON a.x = b.x UNION ALL FROM a JOIN b ON a.y = b.y\".",
+                    Message = $"OR in a join predicate. SQL Server rewrote the OR as {constantScanBranches.Count} separate lookups, each evaluated independently — this multiplies the work on the inner side. Rewrite as separate queries joined with UNION ALL. For example, change \"FROM a JOIN b ON a.x = b.x OR a.y = b.y\" to \"FROM a JOIN b ON a.x = b.x UNION ALL FROM a JOIN b ON a.y = b.y\".",
                     Severity = PlanWarningSeverity.Warning
                 });
             }
@@ -911,6 +916,13 @@ public static partial class PlanAnalyzer
 
     }
 
+    // Rule 35 needs the statement itself to have run long enough that a 20% share
+    // means something. Under this floor, a statement of a few ms is dominated by
+    // one or two operators just because there's almost nothing else to divide the
+    // time among, so the share points at nothing (#562). Same floor rule 19 uses
+    // to fire on compile CPU, and the floor rule 4 uses to call UDF time Critical.
+    private const int Rule35MinStatementElapsedMs = 1000;
+
     private static void Rule35_ExpensiveOperator(PlanNode node, PlanStatement stmt, AnalyzerConfig cfg)
     {
         // Rule 35: Expensive Operator — always show operators that take a significant
@@ -920,7 +932,7 @@ public static partial class PlanAnalyzer
         // elapsed. Only emits if no other warning is already on the node to avoid
         // doubling up. The benefit % is just the self-time share.
         if (!cfg.IsRuleDisabled(35) && node.HasActualStats && node.Warnings.Count == 0
-            && stmt.QueryTimeStats != null && stmt.QueryTimeStats.ElapsedTimeMs > 0)
+            && stmt.QueryTimeStats != null && stmt.QueryTimeStats.ElapsedTimeMs >= Rule35MinStatementElapsedMs)
         {
             var selfMs = GetOperatorOwnElapsedMs(node);
             var pct = (double)selfMs / stmt.QueryTimeStats.ElapsedTimeMs * 100;

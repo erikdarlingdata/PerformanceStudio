@@ -365,39 +365,13 @@ public static class ReproScriptBuilder
     /// <summary>
     /// Strips the parameter declaration prefix from query text captured via sp_executesql.
     /// Query text like "(@p1 int, @p2 nvarchar(50))SELECT ..." becomes "SELECT ...".
-    /// Uses same approach as sp_QueryReproBuilder: find the closing ) followed by non-comma.
+    /// The list is found by the same parser that keeps parameter substitution out of it.
     /// </summary>
     private static string StripParameterPrefix(string queryText)
     {
-        if (!queryText.StartsWith("(@", StringComparison.Ordinal))
-        {
-            return queryText;
-        }
-
-        /* Find the closing parenthesis that ends the parameter list.
-           Look for ) followed by a character that's not a comma (which would indicate
-           we're still inside nested parentheses in a type like decimal(18,2)). */
-        int depth = 0;
-        for (int i = 0; i < queryText.Length; i++)
-        {
-            char c = queryText[i];
-            if (c == '(')
-            {
-                depth++;
-            }
-            else if (c == ')')
-            {
-                depth--;
-                if (depth == 0)
-                {
-                    /* Found the closing paren — return everything after it, trimmed */
-                    return queryText[(i + 1)..].TrimStart();
-                }
-            }
-        }
-
-        /* Couldn't find balanced parens — return original */
-        return queryText;
+        /* No list (0), or a list that never closes (-1): the text stays as it is, as before. */
+        var bodyStart = ParameterSubstitution.DeclarationListEnd(queryText);
+        return bodyStart <= 0 ? queryText : queryText[bodyStart..].TrimStart();
     }
 
     /// <summary>

@@ -3,21 +3,13 @@ name: CI
 on:
   push:
     branches: [main]
+  # No paths-ignore here, deliberately. A required status check has to REPORT on every
+  # PR, and a workflow skipped by a path filter reports nothing at all -- GitHub then
+  # shows the check as forever pending and the PR can never merge. A docs-only PR would
+  # deadlock. The filtering moved into the job below, where the steps are skipped but the
+  # job still finishes and reports success. Same shape PerformanceMonitor's build.yml uses.
   pull_request:
     branches: [main, dev]
-    paths-ignore:
-      - '**.md'
-      - 'LICENSE'
-      - '.gitattributes'
-      - '.gitignore'
-      - 'CITATION.cff'
-      - 'llms.txt'
-      - '.github/ISSUE_TEMPLATE/**'
-      - 'docs/**'
-      - 'screenshots/**'
-      - 'server/**'
-      - 'src/PlanViewer.Ssms/**'
-      - 'src/PlanViewer.Ssms.Installer/**'
 
 permissions:
   contents: read
@@ -29,7 +21,31 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # What used to be the workflow's paths-ignore list. Anything NOT matched here is
+      # code, and only then is there anything to build.
+      - name: Classify changed paths
+        uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          # Positive list, not negations. paths-filter ORs the patterns in a filter, so a
+          # stack of '!' patterns matches whenever a file fails ANY one of them, which for
+          # a docs-only change is always true. Listing what IS code keeps the OR honest.
+          # PlanViewer.Ssms and PlanViewer.Ssms.Installer stay out: they are not in the
+          # solution and ci.yml never built them.
+          filters: |
+            code:
+              - 'src/PlanViewer.App/**'
+              - 'src/PlanViewer.Cli/**'
+              - 'src/PlanViewer.Core/**'
+              - 'src/PlanViewer.Web/**'
+              - 'src/Directory.Build.props'
+              - 'tests/**'
+              - 'PlanViewer.sln'
+              - 'global.json'
+              - '.github/workflows/ci.yml'
+
       - name: Setup .NET 10.0
+        if: steps.filter.outputs.code == 'true'
         uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 10.0.x
@@ -37,13 +53,17 @@ jobs:
           cache-dependency-path: '**/*.csproj'
 
       - name: Install WASM workload
+        if: steps.filter.outputs.code == 'true'
         run: dotnet workload install wasm-tools
 
       - name: Restore solution
+        if: steps.filter.outputs.code == 'true'
         run: dotnet restore PlanViewer.sln
 
       - name: Build solution
+        if: steps.filter.outputs.code == 'true'
         run: dotnet build PlanViewer.sln -c Release --no-restore
 
       - name: Run tests
+        if: steps.filter.outputs.code == 'true'
         run: dotnet test tests/PlanViewer.Core.Tests/PlanViewer.Core.Tests.csproj -c Release --no-build --verbosity normal -- --hangdump --hangdump-timeout 5m --hangdump-type none

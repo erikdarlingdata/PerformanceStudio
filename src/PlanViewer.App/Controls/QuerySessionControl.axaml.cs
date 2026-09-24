@@ -14,6 +14,7 @@ using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Threading;
 using AvaloniaEdit;
 using AvaloniaEdit.CodeCompletion;
 using AvaloniaEdit.TextMate;
@@ -215,7 +216,13 @@ public partial class QuerySessionControl : UserControl
             if (_textMateInstallation == null)
                 SetupSyntaxHighlighting();
 
-            FocusEditor();
+            /* Posted rather than called: while this event runs, the tab strip and window are
+               still arbitrating focus, and whatever runs after this handler wins — a synchronous
+               claim here loses, and the first keystrokes after Ctrl+N land nowhere (#551; the
+               same in a real window on Avalonia 11 and 12, invisible headlessly because no
+               arbitration runs there). One Loaded-priority hop later the layout pass is done and
+               the editor's claim sticks. */
+            Dispatcher.UIThread.Post(FocusEditor, DispatcherPriority.Loaded);
 
             /* The empty state's recent plans come off the owning window, which a session built
                moments ago cannot see yet. Attaching is when it can. */

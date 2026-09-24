@@ -92,6 +92,8 @@ Table Variable | Warning | Table variable detected. Table variables lack column-
 Implicit Conversion | Critical | Implicit conversion prevented an index seek, forcing a scan instead. Fix the data type mismatch: ensure the parameter or variable type matches the column type exactly. Seek Plan: CONVERT_IMPLICIT(nvarchar(40),[TestDB].[dbo].[Users].[DisplayName],0)=[@d]
 Bare Scan | Warning | Clustered index scan reads the full table with no predicate, outputting 1 column(s): Users.Id. Consider a nonclustered index on the output columns (as key or INCLUDE) so SQL Server can read a narrower structure. For analytical workloads, a columnstore index may be a better fit.
 
+### in_list_dynamic_seek_plan.sqlplan
+
 ### isnull_plan.sqlplan
 Serial Plan | Warning | Query running serially: MAXDOP is set to 1 using a query hint.
 Wait: PAGEIOLATCH_SH | Info | PAGEIOLATCH_SH Observed 500 ms across 405 waits. Effective latency: 1.2 ms per wait.
@@ -115,6 +117,12 @@ Nested Loops High Executions | Critical | Nested Loops inner side executed 30,70
 Expensive Operator | Critical | Sort took 18,580ms (56.2% of statement elapsed) but no specific rule identified a fix. Worth investigating: is the row volume necessary? Are upstream estimates driving this operator harder than it should be?
 Join OR Clause | Warning | OR in a join predicate. SQL Server rewrote the OR as 2 separate lookups, each evaluated independently — this multiplies the work on the inner side. Rewrite as separate queries joined with UNION ALL. For example, change "FROM a JOIN b ON a.x = b.x OR a.y = b.y" to "FROM a JOIN b ON a.x = b.x UNION ALL FROM a JOIN b ON a.y = b.y".
 Expensive Operator | Warning | Clustered Index Seek took 14,355ms (43.4% of statement elapsed) but no specific rule identified a fix. Worth investigating: is the row volume necessary? Are upstream estimates driving this operator harder than it should be?
+
+### join_or_expression_plan.sqlplan
+Join OR Clause | Warning | OR in a join predicate. SQL Server rewrote the OR as 2 separate lookups, each evaluated independently — this multiplies the work on the inner side. Rewrite as separate queries joined with UNION ALL. For example, change "FROM a JOIN b ON a.x = b.x OR a.y = b.y" to "FROM a JOIN b ON a.x = b.x UNION ALL FROM a JOIN b ON a.y = b.y".
+
+### join_or_mixed_parameter_plan.sqlplan
+Join OR Clause | Warning | OR in a join predicate. SQL Server rewrote the OR as 2 separate lookups, each evaluated independently — this multiplies the work on the inner side. Rewrite as separate queries joined with UNION ALL. For example, change "FROM a JOIN b ON a.x = b.x OR a.y = b.y" to "FROM a JOIN b ON a.x = b.x UNION ALL FROM a JOIN b ON a.y = b.y".
 
 ### key_lookup_plan.sqlplan
 Key Lookup | Critical | Key Lookup — SQL Server found rows via a nonclustered index but had to go back to the clustered index for additional columns.\nColumns fetched: Users.AboutMe, Users.Age, Users.CreationDate, Users.DisplayName, Users.DownVotes, Users.EmailHash, Users.LastAccessDate, Users.Location, Users.UpVotes, Users.Views, Users.WebsiteUrl, Users.AccountId\nResidual predicate (filtered 116 rows): [StackOverflow2013].[dbo].[Users].[DisplayName] as [u].[DisplayName]=N'Eggs McLaren'\nTo eliminate the lookup, consider adding the needed columns as INCLUDE columns on the nonclustered index. This widens the index, so weigh the read benefit against write and storage overhead.
@@ -194,7 +202,9 @@ Scan With Predicate | Critical | Scan with residual predicate — SQL Server is 
 ### multi_index_insert_plan.sqlplan
 
 ### multi_index_update_plan.sqlplan
-Expensive Operator | Critical | Clustered Index Update took 1ms (100.0% of statement elapsed) but no specific rule identified a fix. Worth investigating: is the row volume necessary? Are upstream estimates driving this operator harder than it should be?
+
+### non_sargable_compound_predicate_plan.sqlplan
+Scan With Predicate | Critical | Scan with residual predicate — SQL Server is reading every row and filtering after the fact. This scan is 100% of the plan cost. Check that you have appropriate indexes.\nPredicate: [Repro].[dbo].[T].[A] as [t].[A]=CONVERT_IMPLICIT(int,[@1],0) AND [Repro].[dbo].[T].[B] as [t].[B]=CONVERT(tinyint,[@2],0)
 
 ### non_sargable_function_plan.sqlplan
 Wait: LATCH_EX | Info | LATCH_EX Observed 22 ms across 121 waits.
@@ -207,6 +217,60 @@ Non-SARGable Predicate | Warning | Function call (DATEPART) on column prevents a
 ### optimize_for_unknown_plan.sqlplan
 Optimize For Unknown | Warning | OPTIMIZE FOR UNKNOWN uses average density estimates instead of sniffed parameter values. This can help when parameter sniffing causes plan instability, but may produce suboptimal plans for skewed data distributions.
 Bare Scan | Warning | Clustered index scan reads the full table with no predicate, outputting 1 column(s): Users.Id. Consider a nonclustered index on the output columns (as key or INCLUDE) so SQL Server can read a narrower structure. For analytical workloads, a columnstore index may be a better fit.
+
+### outer_reference_function_aliased_plan.sqlplan
+Top Above Scan | Critical | Top reads from Table Scan on ReproOuterRef.dbo.I (Node 3). This is on the inner side of Nested Loops (Node 0), so the scan repeats for every outer row. The scan has a residual predicate, so it may read many rows before the Top is satisfied. An index on the ORDER BY columns could eliminate the scan and sort entirely.
+Scan With Predicate | Warning | Scan with residual predicate — SQL Server is reading every row and filtering after the fact. This scan is 51% of the plan cost. Check that you have appropriate indexes.\nPredicate: [ReproOuterRef].[dbo].[I].[X] as [i].[X]=abs([ReproOuterRef].[dbo].[O].[a] as [o].[a])
+
+### outer_reference_function_on_scanned_column_plan.sqlplan
+Top Above Scan | Critical | Top reads from Table Scan on ReproOuterRef.dbo.I (Node 4). This is on the inner side of Nested Loops (Node 0), so the scan repeats for every outer row. The scan has a residual predicate, so it may read many rows before the Top is satisfied. An index on the ORDER BY columns could eliminate the scan and sort entirely.
+Non-SARGable Predicate | Warning | Function call (ABS) on column prevents an index seek. Remove the function from the column side — apply it to the parameter instead, or create a computed column with the expression and index that.\nPredicate: abs([ReproOuterRef].[dbo].[I].[X] as [i].[X])=[ReproOuterRef].[dbo].[O].[a] as [o].[a]
+
+### outer_reference_function_self_join_plan.sqlplan
+Top Above Scan | Critical | Top reads from Table Scan on ReproOuterRef.dbo.I (Node 3). This is on the inner side of Nested Loops (Node 0), so the scan repeats for every outer row. The scan has a residual predicate, so it may read many rows before the Top is satisfied. An index on the ORDER BY columns could eliminate the scan and sort entirely.
+Scan With Predicate | Warning | Scan with residual predicate — SQL Server is reading every row and filtering after the fact. This scan is 51% of the plan cost. Check that you have appropriate indexes.\nPredicate: [ReproOuterRef].[dbo].[I].[X] as [i2].[X]=abs([ReproOuterRef].[dbo].[I].[X] as [i1].[X])
+
+### outer_reference_function_unaliased_plan.sqlplan
+Top Above Scan | Critical | Top reads from Table Scan on ReproOuterRef.dbo.I (Node 3). This is on the inner side of Nested Loops (Node 0), so the scan repeats for every outer row. The scan has a residual predicate, so it may read many rows before the Top is satisfied. An index on the ORDER BY columns could eliminate the scan and sort entirely.
+Scan With Predicate | Warning | Scan with residual predicate — SQL Server is reading every row and filtering after the fact. This scan is 51% of the plan cost. Check that you have appropriate indexes.\nPredicate: [ReproOuterRef].[dbo].[I].[X]=abs([ReproOuterRef].[dbo].[O].[a])
+
+### outer_reference_implicit_conversion_plan.sqlplan
+Top Above Scan | Critical | Top reads from Table Scan on ReproOuterRef.dbo.I (Node 3). This is on the inner side of Nested Loops (Node 0), so the scan repeats for every outer row. The scan has a residual predicate, so it may read many rows before the Top is satisfied. An index on the ORDER BY columns could eliminate the scan and sort entirely.
+Scan With Predicate | Warning | Scan with residual predicate — SQL Server is reading every row and filtering after the fact. This scan is 51% of the plan cost. Check that you have appropriate indexes.\nPredicate: [ReproOuterRef].[dbo].[I].[S] as [i].[S]=CONVERT_IMPLICIT(nvarchar(20),[ReproOuterRef].[dbo].[O].[N] as [o].[N],0)
+
+### outer_reference_isnull_plan.sqlplan
+Top Above Scan | Critical | Top reads from Table Scan on ReproOuterRef.dbo.I (Node 3). This is on the inner side of Nested Loops (Node 0), so the scan repeats for every outer row. The scan has a residual predicate, so it may read many rows before the Top is satisfied. An index on the ORDER BY columns could eliminate the scan and sort entirely.
+Scan With Predicate | Warning | Scan with residual predicate — SQL Server is reading every row and filtering after the fact. This scan is 51% of the plan cost. Check that you have appropriate indexes.\nPredicate: [ReproOuterRef].[dbo].[I].[X] as [i].[X]=isnull([ReproOuterRef].[dbo].[O].[a] as [o].[a],(0))
+
+### outer_reference_outer_side_scan_plan.sqlplan
+Table Variable | Warning | Table variable detected. Table variables lack column-level statistics, which causes bad row estimates, join choices, and memory grant decisions. Replace with a #temp table.
+Non-SARGable Predicate | Warning | Function call (ABS) on column prevents an index seek. Remove the function from the column side — apply it to the parameter instead, or create a computed column with the expression and index that.\nPredicate: abs([A])=(1)
+Table Variable | Warning | Table variable detected. Table variables lack column-level statistics, which causes bad row estimates, join choices, and memory grant decisions. Replace with a #temp table.
+Top Above Scan | Critical | Top reads from Table Scan on @b (Node 4). This is on the inner side of Nested Loops (Node 0), so the scan repeats for every outer row. The scan has a residual predicate, so it may read many rows before the Top is satisfied. An index on the ORDER BY columns could eliminate the scan and sort entirely.
+Scan With Predicate | Warning | Scan with residual predicate — SQL Server is reading every row and filtering after the fact. This scan is 50% of the plan cost. Only 0.000% of rows survived filtering (0 of 2). Check that you have appropriate indexes.\nPredicate: [Y]=[A]
+Table Variable | Warning | Table variable detected. Table variables lack column-level statistics, which causes bad row estimates, join choices, and memory grant decisions. Replace with a #temp table.
+
+### outer_reference_self_join_unaliased_inner_plan.sqlplan
+Top Above Scan | Critical | Top reads from Table Scan on ReproOuterRef.dbo.I (Node 3). This is on the inner side of Nested Loops (Node 0), so the scan repeats for every outer row. The scan has a residual predicate, so it may read many rows before the Top is satisfied. An index on the ORDER BY columns could eliminate the scan and sort entirely.
+Scan With Predicate | Warning | Scan with residual predicate — SQL Server is reading every row and filtering after the fact. This scan is 51% of the plan cost. Check that you have appropriate indexes.\nPredicate: [ReproOuterRef].[dbo].[I].[X]=abs([ReproOuterRef].[dbo].[I].[X] as [i1].[X])
+
+### outer_reference_table_variable_aliased_plan.sqlplan
+Table Variable | Warning | Table variable detected. Table variables lack column-level statistics, which causes bad row estimates, join choices, and memory grant decisions. Replace with a #temp table.
+Table Variable | Warning | Table variable detected. Table variables lack column-level statistics, which causes bad row estimates, join choices, and memory grant decisions. Replace with a #temp table.
+Top Above Scan | Critical | Top reads from Table Scan on @b (Node 3). This is on the inner side of Nested Loops (Node 0), so the scan repeats for every outer row. The scan has a residual predicate, so it may read many rows before the Top is satisfied. An index on the ORDER BY columns could eliminate the scan and sort entirely.
+Scan With Predicate | Warning | Scan with residual predicate — SQL Server is reading every row and filtering after the fact. This scan is 51% of the plan cost. Check that you have appropriate indexes.\nPredicate: @b.[Y] as [b].[Y]=abs(@a.[A] as [a].[A])
+Table Variable | Warning | Table variable detected. Table variables lack column-level statistics, which causes bad row estimates, join choices, and memory grant decisions. Replace with a #temp table.
+
+### outer_reference_table_variable_unaliased_plan.sqlplan
+Table Variable | Warning | Table variable detected. Table variables lack column-level statistics, which causes bad row estimates, join choices, and memory grant decisions. Replace with a #temp table.
+Table Variable | Warning | Table variable detected. Table variables lack column-level statistics, which causes bad row estimates, join choices, and memory grant decisions. Replace with a #temp table.
+Top Above Scan | Critical | Top reads from Table Scan on @b (Node 3). This is on the inner side of Nested Loops (Node 0), so the scan repeats for every outer row. The scan has a residual predicate, so it may read many rows before the Top is satisfied. An index on the ORDER BY columns could eliminate the scan and sort entirely.
+Scan With Predicate | Warning | Scan with residual predicate — SQL Server is reading every row and filtering after the fact. This scan is 51% of the plan cost. Check that you have appropriate indexes.\nPredicate: [Y]=abs([A])
+Table Variable | Warning | Table variable detected. Table variables lack column-level statistics, which causes bad row estimates, join choices, and memory grant decisions. Replace with a #temp table.
+
+### outer_reference_temp_table_plan.sqlplan
+Top Above Scan | Critical | Top reads from Table Scan on tempdb.dbo.#u (Node 3). This is on the inner side of Nested Loops (Node 0), so the scan repeats for every outer row. The scan has a residual predicate, so it may read many rows before the Top is satisfied. An index on the ORDER BY columns could eliminate the scan and sort entirely.
+Scan With Predicate | Warning | Scan with residual predicate — SQL Server is reading every row and filtering after the fact. This scan is 51% of the plan cost. Check that you have appropriate indexes.\nPredicate: [#u].[X]=abs([#t].[a])
 
 ### parallel-skew.sqlplan
 Wide Index Suggestion | Warning | Missing index suggestion for Posts has 17 INCLUDE columns. This is a "kitchen sink" index — SQL Server suggests covering every column the query touches, but the resulting index would be very wide and expensive to maintain. Evaluate which columns are actually needed, or consider a narrower index with fewer includes.
@@ -322,8 +386,23 @@ Sort Spill | Critical | Sort spill level 1, 8 thread(s) — Granted: 10,815,552 
 Expensive Operator | Warning | Parallelism took 12,362ms (46.1% of statement elapsed) but no specific rule identified a fix. Worth investigating: is the row volume necessary? Are upstream estimates driving this operator harder than it should be?
 Scan With Predicate | Warning | Scan with residual predicate — SQL Server is reading every row and filtering after the fact. Check that you have appropriate indexes.\nPredicate: [StackOverflow2013].[dbo].[Posts].[PostTypeId] as [p].[PostTypeId]=(2) AND [StackOverflow2013].[dbo].[Posts].[Score] as [p].[Score]>(0)
 
+### table_variable_aliased_function_plan.sqlplan
+Table Variable | Warning | Table variable detected. Table variables lack column-level statistics, which causes bad row estimates, join choices, and memory grant decisions. Replace with a #temp table.
+Non-SARGable Predicate | Warning | Function call (ABS) on column prevents an index seek. Remove the function from the column side — apply it to the parameter instead, or create a computed column with the expression and index that.\nPredicate: abs(@tv.[X] as [v].[X])=(1)
+Table Variable | Warning | Table variable detected. Table variables lack column-level statistics, which causes bad row estimates, join choices, and memory grant decisions. Replace with a #temp table.
+
+### table_variable_implicit_conversion_plan.sqlplan
+Table Variable | Warning | Table variable detected. Table variables lack column-level statistics, which causes bad row estimates, join choices, and memory grant decisions. Replace with a #temp table.
+Non-SARGable Predicate | Warning | Implicit conversion (CONVERT_IMPLICIT) prevents an index seek. Match the parameter or variable data type to the column data type.\nPredicate: CONVERT_IMPLICIT(nvarchar(20),[S],0)=[@n]
+Table Variable | Warning | Table variable detected. Table variables lack column-level statistics, which causes bad row estimates, join choices, and memory grant decisions. Replace with a #temp table.
+
 ### table_variable_plan.sqlplan
 Table Variable | Warning | Table variable detected. Table variables lack column-level statistics, which causes bad row estimates, join choices, and memory grant decisions. Replace with a #temp table.
+Table Variable | Warning | Table variable detected. Table variables lack column-level statistics, which causes bad row estimates, join choices, and memory grant decisions. Replace with a #temp table.
+
+### table_variable_unaliased_function_plan.sqlplan
+Table Variable | Warning | Table variable detected. Table variables lack column-level statistics, which causes bad row estimates, join choices, and memory grant decisions. Replace with a #temp table.
+Non-SARGable Predicate | Warning | Function call (ABS) on column prevents an index seek. Remove the function from the column side — apply it to the parameter instead, or create a computed column with the expression and index that.\nPredicate: abs([X])=(1)
 Table Variable | Warning | Table variable detected. Table variables lack column-level statistics, which causes bad row estimates, join choices, and memory grant decisions. Replace with a #temp table.
 
 ### top_above_scan_plan.sqlplan

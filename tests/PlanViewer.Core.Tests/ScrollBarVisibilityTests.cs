@@ -137,29 +137,43 @@ public class ScrollBarVisibilityTests
     /// Two selectors are needed in App.axaml, not one, and that is the whole reason this case is
     /// asserted separately. A ScrollViewer rule alone looks like it covers the app and does not:
     /// DataGrid does not scroll through a ScrollViewer, its template hosts PART_HorizontalScrollbar
-    /// and PART_VerticalScrollbar as bare <see cref="ScrollBar"/>s, and it assigns their
-    /// <c>AllowAutoHide</c> in code from the ATTACHED ScrollViewer property it reads off itself —
-    /// where a local value outranks any style. A style that compiles is not a style that matches.
+    /// and PART_VerticalScrollbar as bare <see cref="ScrollBar"/>s, and it binds their
+    /// <c>AllowAutoHide</c> to the ATTACHED ScrollViewer property on the grid — which nothing sets
+    /// unless this rule does. A style that compiles is not a style that matches.
     ///
-    /// <para><b>Why only the flag is checked here.</b> A DataGrid decides it overflows by measuring
-    /// its rows, rows measure their text, and text needs a font — which this suite has no Skia for,
-    /// so headlessly the rows come out zero-high, the grid concludes it fits, and both bars stay
-    /// <c>IsVisible=false</c> with no template and no thumb to measure. The rail thickness is not
-    /// DataGrid-specific anyway: it comes from app-level resources on the shared ScrollBar
-    /// ControlTheme, and the ScrollViewer cases above prove those resources land.</para>
+    /// <para><b>Why only the flag is checked here.</b> Nothing in this grid overflows, so neither
+    /// bar ever applies its template: measured under 12, both stay <c>IsVisible=false</c> with no
+    /// thumb to measure, which is why only <c>AllowAutoHide</c> is asserted and why asserting it on
+    /// an untemplated bar is still meaningful — the value is bound, not assigned during
+    /// <c>OnApplyTemplate</c>. The reason the grid does not overflow is worth stating because the
+    /// obvious guess is wrong: it is not that text measures short in this harness — under 12 it
+    /// measures against a real font with real metrics — it is that the grid generates no columns
+    /// for its 50 rows, so no row is ever realized. The rail thickness is not DataGrid-specific
+    /// anyway: it comes from app-level resources on the shared ScrollBar ControlTheme, and the
+    /// ScrollViewer cases above prove those resources land.</para>
     /// </summary>
     [Fact]
     public void ADataGridsOwnScrollBarsFollowTheSameContract()
     {
         HeadlessUi.Run(() =>
         {
-            /* The grid needs columns and rows before its template puts scrollbars in the tree,
-               so this is a real grid rather than an empty one. */
+            /* No columns on purpose — the summary above explains that nothing realizes here, so
+               what this case pins is the BOUND flag on untemplated bars, not geometry. The
+               columns-bearing sibling below is where bars realize. */
             var grid = new DataGrid
             {
                 ItemsSource = Enumerable.Range(0, 50).Select(i => new { Value = i }).ToList()
             };
             Show(grid);
+
+            /* A shown grid is also the only place the suite can falsify the Avalonia 12 migration
+               of DataGridBehaviors.AttachCopyGuard, which moved off the removed
+               TopLevel.PlatformSettings onto Visual.GetPlatformSettings(). Pressing Ctrl+C by hand
+               on Windows cannot falsify it: the guard falls back to KeyModifiers.Control when the
+               lookup yields nothing, and Control is exactly what Windows reports anyway, so a dead
+               lookup and a live one behave identically under the fingers. An attached grid has
+               platform settings, so this asserts the lookup itself rather than its fallback. */
+            Assert.NotNull(grid.GetPlatformSettings());
 
             var bars = grid.GetVisualDescendants().OfType<ScrollBar>().ToList();
 
@@ -170,6 +184,56 @@ public class ScrollBarVisibilityTests
                 "attached property on the grid, so they need their own rule and their own check"));
         });
     }
+
+    /// <summary>
+    /// The columns-bearing sibling of the contract above (#548). With real columns the rows
+    /// realize, the grid overflows both ways, and the PART_ bars apply their templates — the
+    /// state every grid in the app actually runs in, and the state the columns-less case above
+    /// structurally cannot reach. Pinned here: templated bars exist at all (zero of them realize
+    /// without columns), every one keeps <c>AllowAutoHide</c> from the attached property the
+    /// App.axaml rule sets (12 binds it in-template; upstream PR #241), and the vertical bar
+    /// reports visible, because fifty realized rows cannot fit a 250px grid.
+    /// </summary>
+    [Fact]
+    public void AGridWithColumnsRealizesItsBarsAndKeepsAllowAutoHide()
+    {
+        HeadlessUi.Run(() =>
+        {
+            var grid = new DataGrid
+            {
+                Width = 350,
+                Height = 250,
+                ItemsSource = Enumerable.Range(0, 50).Select(i => new BarRow(i, $"row {i}")).ToList()
+            };
+            grid.Columns.Add(new DataGridTextColumn
+            {
+                Header = "Value",
+                Binding = new Avalonia.Data.Binding(nameof(BarRow.Value))
+            });
+            /* Wider than the grid on purpose, so the horizontal bar has a reason to exist too. */
+            grid.Columns.Add(new DataGridTextColumn
+            {
+                Header = "Name",
+                Binding = new Avalonia.Data.Binding(nameof(BarRow.Name)),
+                Width = new DataGridLength(400)
+            });
+            Show(grid);
+
+            var templated = ScrollBarsOf(grid);
+
+            Assert.NotEmpty(templated);
+            Assert.All(templated, bar => Assert.True(
+                bar.AllowAutoHide,
+                "a realized DataGrid bar takes AllowAutoHide from the attached property on the " +
+                "grid via its template binding — losing it here means the slim-rail contract " +
+                "silently died on the grids people actually scroll"));
+            Assert.True(
+                templated.First(bar => bar.Orientation == Orientation.Vertical).IsVisible,
+                "fifty realized rows cannot fit a 250px grid");
+        });
+    }
+
+    private sealed record BarRow(int Value, string Name);
 
     /// <summary>
     /// How much of the bar is actually painted while it is idle.

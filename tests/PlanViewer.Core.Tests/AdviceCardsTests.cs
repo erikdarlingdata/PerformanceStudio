@@ -206,6 +206,69 @@ public class AdviceCardsTests
     }
 
     /// <summary>
+    /// #540: the context facts are labelled rows, not chips. A user held the pane against the
+    /// old report and named this section as the readable one — seven neutral facts in identical
+    /// pills gave the reader a row to decode where the report had a block to scan. Pinned here:
+    /// the facts read as label-and-value rows, and the only pills left from the context are the
+    /// settings that deviate, because popping out of a row is the one job a pill has.
+    /// </summary>
+    [Fact]
+    public void TheContextFactsAreLabelledRowsAndOnlyOutliersStayChips()
+    {
+        var result = Analyze(GoldenPlan);
+        // Small numbers on purpose: N0 grouping is culture-dependent and this test is not
+        // about separators.
+        result.ServerContext = new ServerContextResult
+        {
+            ServerName = "ASIDELL",
+            Edition = "Developer Edition (64-bit)",
+            ProductVersion = "16.0.4135.4",
+            CpuCount = 16,
+            PhysicalMemoryMB = 512,
+            MaxDop = 8,
+            CostThresholdForParallelism = 50,
+            MaxServerMemoryMB = 400,
+            Database = new DatabaseContextResult
+            {
+                Name = "StackOverflow",
+                CompatibilityLevel = 160,
+                CollationName = "SQL_Latin1_General_CP1_CI_AS",
+                ReadCommittedSnapshot = true,
+                AutoCreateStats = true,
+                AutoUpdateStats = true
+            }
+        };
+
+        HeadlessUi.Run(() =>
+        {
+            var panel = Show(AdviceContentBuilder.Build("", result));
+            var text = AllText(panel);
+
+            Assert.Contains("Hardware", text);
+            Assert.Contains("16 CPUs, 512 MB RAM", text);
+            Assert.Contains("MAXDOP 8, cost threshold 50, max memory 400 MB", text);
+            Assert.Contains("StackOverflow (compat 160, SQL_Latin1_General_CP1_CI_AS)", text);
+
+            /* Chips are the pane's only CornerRadius-10 Borders (cards and the strip are 6).
+               RCSI deviates, so it stays a pill; the neutral facts must not be in one. */
+            var chipTexts = panel.GetLogicalDescendants().OfType<Border>()
+                .Where(b => b.CornerRadius == new CornerRadius(10))
+                .Select(b => (b.Child as SelectableTextBlock)?.Text)
+                .ToList();
+            Assert.Contains("RCSI ON", chipTexts);
+            Assert.DoesNotContain(chipTexts, t => t != null && t.Contains("MAXDOP"));
+            Assert.DoesNotContain(chipTexts, t => t != null && t.Contains("compat"));
+
+            /* The press-anywhere test's fixture has no ServerContext, so these rows are the one
+               set of blocks it never sees — assert the backfilled background here or the pane's
+               documented glyph-only hit-test trap re-opens exactly where this test looks. */
+            Assert.All(
+                panel.GetLogicalDescendants().OfType<SelectableTextBlock>(),
+                b => Assert.NotNull(b.Background));
+        });
+    }
+
+    /// <summary>
     /// The statement keeps the pane's SQL colouring inside the card — the same highlighter, not a
     /// second one — and stays one selectable block, so a drag still takes the whole query (#503).
     /// </summary>
