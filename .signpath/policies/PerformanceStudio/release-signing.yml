@@ -9,6 +9,12 @@
 # other branch it is inert, so changes here do nothing until they are merged to
 # main via the usual dev -> main release merge.
 #
+# Since release.yml moved to v3 of signpath/github-action-submit-signing-request
+# (SignPath's Pipeline Connector), SignPath reads this file only if the signing
+# policy references it as a Pipeline Policy in the SignPath dashboard (SignPath
+# changelog, Pipeline Connector 0.8.0, 2026-09-09). Without that reference the
+# runner rule below is not enforced.
+#
 # What this file does NOT do: it does not enable automatic approval. Approval mode
 # lives on the signing policy in the SignPath dashboard. This file adds constraints
 # that SignPath enforces on a build before it is willing to sign it.
@@ -24,17 +30,16 @@ github-policies:
 # repository change, or releases will start failing to sign:
 #
 #   build.disallow_reruns: true
-#     Blocks signing any build produced by a workflow re-run. A re-run is
-#     currently the documented recovery path for this repo: `gh release create`
-#     runs before signing, so a signing failure leaves a published-but-empty
-#     release that is fixed by re-running (all uploads use --clobber). v1.17.0
-#     was recovered exactly this way. Enabling this would make that recovery
-#     impossible. Revisit only if release.yml is restructured so a failed
-#     signing never publishes anything.
+#     Blocks signing any build produced by a workflow re-run. A re-run is the
+#     recovery path when signing fails for a temporary reason (for example an
+#     approval that timed out). release.yml creates the release only after
+#     signing succeeds, so a failed run has published nothing and a re-run is
+#     safe. SignPath limits this on its side anyway: it signs only a run's first
+#     3 attempts, and after that a fresh run (a new dev -> main merge) is needed.
 #
 #   branch_rulesets:
-#     Requires the protections it lists to actually exist on the branch. `main`
-#     currently has NO branch protection configured at all, so any ruleset
-#     requirement here would reject every signing request. Add protection to
-#     `main` first (e.g. block force pushes, require PRs), then encode the same
-#     rules here so SignPath verifies they were in force.
+#     Requires the protections it lists to actually exist on the branch, or
+#     every signing request is rejected. When this file was written `main` had
+#     no protection. It now has the "Protect main" ruleset (pull request
+#     required, no force pushes, no deletion), so those rules could be listed
+#     here.

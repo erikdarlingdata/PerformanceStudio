@@ -129,6 +129,12 @@ jobs:
           name: App-unsigned
           path: publish/win-x64/
 
+      # v3 of this action talks to SignPath's Pipeline Connector, which needs the
+      # SignPath GitHub App installed on this repository (v2's connector did not).
+      # Without it every attempt fails with "Failed to retrieve GitHub App token".
+      # SignPath signs only a run's first 3 attempts: if signing keeps failing,
+      # fix the cause and start a fresh run (a new dev -> main merge) instead of
+      # re-running the same one.
       - name: Sign Windows build
         uses: signpath/github-action-submit-signing-request@v3
         with:
@@ -141,10 +147,11 @@ jobs:
           wait-for-completion: true
           output-artifact-directory: 'signed/win-x64'
           # The action's 600s default means a signing policy that requires manual
-          # approval has to be approved inside a 10-minute window or the release
-          # fails partway, leaving a published release with no app assets (this
-          # happened on v1.17.0). 30 minutes is enough to notice the mail and
-          # approve. Irrelevant once approval is automatic, but harmless.
+          # approval has to be approved inside a 10-minute window or the job
+          # fails. Before the release was moved after signing, that left a
+          # published release with no app assets (v1.17.0). 30 minutes is enough
+          # to notice the mail and approve. Irrelevant once approval is automatic,
+          # but harmless.
           wait-for-completion-timeout-in-seconds: 1800
 
       - name: Replace unsigned Windows build with signed
