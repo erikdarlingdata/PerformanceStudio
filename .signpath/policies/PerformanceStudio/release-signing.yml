@@ -5,19 +5,20 @@
 #   project-slug:        PerformanceStudio
 #   signing-policy-slug: release-signing
 #
-# This file only takes effect from the repository's DEFAULT branch (main). On any
-# other branch it is inert, so changes here do nothing until they are merged to
-# main via the usual dev -> main release merge.
-#
-# Since release.yml moved to v3 of signpath/github-action-submit-signing-request
-# (SignPath's Pipeline Connector), SignPath reads this file only if the signing
-# policy references it as a Pipeline Policy in the SignPath dashboard (SignPath
-# changelog, Pipeline Connector 0.8.0, 2026-09-09). Without that reference the
-# runner rule below is not enforced.
+# NOT ENFORCED. Since release.yml moved to v3 of
+# signpath/github-action-submit-signing-request (SignPath's Pipeline Connector),
+# SignPath reads this file only if the signing policy references it as a
+# Pipeline Policy (SignPath changelog, Pipeline Connector 0.8.0, 2026-09-09).
+# This organization is on SignPath's OSS subscription, and its dashboard shows
+# no Pipeline Policy setting (checked 2026-09-25), so nothing references this
+# file and SignPath does not check the rule below. The file records the intended
+# rule in case that setting becomes available. The v2 connector read this file
+# automatically, but only from the repository's default branch (main).
 #
 # What this file does NOT do: it does not enable automatic approval. Approval mode
-# lives on the signing policy in the SignPath dashboard. This file adds constraints
-# that SignPath enforces on a build before it is willing to sign it.
+# lives on the signing policy in the SignPath dashboard, next to the checks that
+# do apply today: trusted build system, origin verification and allowed branch
+# names.
 
 github-policies:
   runners:
