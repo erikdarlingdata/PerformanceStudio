@@ -39,6 +39,7 @@ jobs:
               - 'src/PlanViewer.Core/**'
               - 'src/PlanViewer.Web/**'
               - 'src/Directory.Build.props'
+              - 'Directory.Packages.props'
               - 'tests/**'
               - 'PlanViewer.sln'
               - 'global.json'
@@ -50,7 +51,9 @@ jobs:
         with:
           dotnet-version: 10.0.x
           cache: true
-          cache-dependency-path: '**/*.csproj'
+          cache-dependency-path: |
+            **/*.csproj
+            Directory.Packages.props
 
       - name: Install WASM workload
         if: steps.filter.outputs.code == 'true'

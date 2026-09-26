@@ -7,6 +7,7 @@ on:
       - 'src/PlanViewer.Core/**'
       - 'src/PlanViewer.Web/**'
       - 'src/Directory.Build.props'
+      - 'Directory.Packages.props'
       - '.github/workflows/deploy-web.yml'
   workflow_dispatch:
 
