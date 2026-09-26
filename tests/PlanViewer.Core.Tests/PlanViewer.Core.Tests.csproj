@@ -32,12 +32,12 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Avalonia.Headless" Version="12.1.2" />
-    <PackageReference Include="coverlet.collector" Version="10.0.1" />
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
-    <PackageReference Include="Microsoft.Testing.Extensions.HangDump" Version="2.4.1" />
-    <PackageReference Include="Repl.Testing" Version="0.11.0" />
-    <PackageReference Include="xunit.v3" Version="4.0.1" />
+    <PackageReference Include="Avalonia.Headless" />
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="Microsoft.Testing.Extensions.HangDump" />
+    <PackageReference Include="Repl.Testing" />
+    <PackageReference Include="xunit.v3" />
   </ItemGroup>
 
   <ItemGroup>

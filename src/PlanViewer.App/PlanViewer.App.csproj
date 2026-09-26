@@ -9,21 +9,21 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Avalonia" Version="12.1.2" />
-    <PackageReference Include="Avalonia.AvaloniaEdit" Version="12.0.0" />
-    <PackageReference Include="Avalonia.Controls.DataGrid" Version="12.1.2" />
-    <PackageReference Include="ScottPlot.Avalonia" Version="5.1.59" />
-    <PackageReference Include="Avalonia.Desktop" Version="12.1.2" />
-    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.2" />
-    <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.2" />
-    <PackageReference Include="AvaloniaEdit.TextMate" Version="12.0.0" />
-    <PackageReference Include="BlackwellSystems.Gcf" Version="1.0.0" />
-    <PackageReference Include="Meziantou.Framework.Win32.CredentialManager" Version="3.0.4" />
-    <PackageReference Include="ModelContextProtocol" Version="2.2.0" />
-    <PackageReference Include="ModelContextProtocol.AspNetCore" Version="2.2.0" />
-    <PackageReference Include="TextMateSharp.Grammars" Version="2.0.4" />
-    <PackageReference Include="Microsoft.SqlServer.TransactSql.ScriptDom" Version="180.107.0" />
-    <PackageReference Include="Velopack" Version="1.2.0" />
+    <PackageReference Include="Avalonia" />
+    <PackageReference Include="Avalonia.AvaloniaEdit" />
+    <PackageReference Include="Avalonia.Controls.DataGrid" />
+    <PackageReference Include="ScottPlot.Avalonia" />
+    <PackageReference Include="Avalonia.Desktop" />
+    <PackageReference Include="Avalonia.Themes.Fluent" />
+    <PackageReference Include="Avalonia.Fonts.Inter" />
+    <PackageReference Include="AvaloniaEdit.TextMate" />
+    <PackageReference Include="BlackwellSystems.Gcf" />
+    <PackageReference Include="Meziantou.Framework.Win32.CredentialManager" />
+    <PackageReference Include="ModelContextProtocol" />
+    <PackageReference Include="ModelContextProtocol.AspNetCore" />
+    <PackageReference Include="TextMateSharp.Grammars" />
+    <PackageReference Include="Microsoft.SqlServer.TransactSql.ScriptDom" />
+    <PackageReference Include="Velopack" />
 
     <!-- This pin is inert under Avalonia 12 and kept anyway. Avalonia.Skia 12.1.2 already
          requires SkiaSharp and SkiaSharp.NativeAssets.Linux 3.119.4 itself, so the pin no
@@ -37,7 +37,7 @@
          from the NoDependencies one, so the pairing with managed SkiaSharp 3.119.4 is
          intact. The pin stays because the underlying collision is unresolved and removing it
          is out of the scope of that migration, not because it prevents anything. -->
-    <PackageReference Include="SkiaSharp.NativeAssets.Linux" Version="3.119.4" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux" />
   </ItemGroup>
 
   <ItemGroup>
