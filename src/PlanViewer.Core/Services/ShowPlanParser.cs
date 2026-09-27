@@ -159,12 +159,21 @@ public static partial class ShowPlanParser
 
         if (localName == "StmtCond")
         {
-            // IF/ELSE blocks — recurse into Condition, Then, Else
+            /* IF/ELSE blocks. #580: Condition never holds a Stmt* element. Per the XSD
+               (StmtCondType/Condition) it holds the condition's OWN QueryPlan (0 or 1) plus optional
+               UDF sub-plans, while that plan's statement-level facts (StatementType "COND WITH QUERY",
+               the hashes, StatementSetOptions) sit on the StmtCond itself. Recursing into Condition's
+               children handed the bare QueryPlan to ParseStatement as if it were a statement: an empty
+               "STATEMENT" placeholder, with the operator tree, hashes, missing indexes and warnings
+               dropped. So the StmtCond is parsed as the statement, and Condition is where its plan and
+               sub-plans are read from. A plain IF with neither stays out of the list, as before. */
             var condEl = stmtEl.Element(Ns + "Condition");
-            if (condEl != null)
+            if (condEl != null
+                && (condEl.Element(Ns + "QueryPlan") != null || condEl.Element(Ns + "UDF") != null))
             {
-                foreach (var child in condEl.Elements())
-                    results.AddRange(ParseStatementAndChildren(child, depth + 1, cancellationToken));
+                var condStmt = ParseStatement(stmtEl, depth, cancellationToken, planContainerEl: condEl);
+                if (condStmt != null)
+                    results.Add(condStmt);
             }
 
             var thenStmts = stmtEl.Element(Ns + "Then")?.Element(Ns + "Statements");
@@ -250,11 +259,14 @@ public static partial class ShowPlanParser
        ParseStatementAndChildren could never fire across StoredProc/UDF nesting - a crafted plan
        alternating StmtSimple > StoredProc > Statements a few thousand levels deep (about sixty
        bytes each) still reached the uncatchable StackOverflowException the guard exists to
-       prevent. Carrying the caller's depth through this method closes that reset. */
+       prevent. Carrying the caller's depth through this method closes that reset.
+       planContainerEl is where the QueryPlan and the UDF/StoredProc sub-plans are read from when
+       that is not the statement element itself: a StmtCond keeps them under Condition (#580). */
     private static PlanStatement? ParseStatement(
         XElement stmtEl,
         int depth = 0,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        XElement? planContainerEl = null)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var stmt = new PlanStatement
@@ -269,7 +281,8 @@ public static partial class ShowPlanParser
         if (stmtEl.Name.LocalName == "StmtUseDb")
             stmt.StmtUseDatabaseName = stmtEl.Attribute("Database")?.Value;
 
-        var queryPlanEl = stmtEl.Element(Ns + "QueryPlan");
+        var containerEl = planContainerEl ?? stmtEl;
+        var queryPlanEl = containerEl.Element(Ns + "QueryPlan");
 
         // XSD gap: Dispatcher/PSP (on StmtSimple, not inside QueryPlan)
         var dispatcherEl = stmtEl.Element(Ns + "Dispatcher");
@@ -314,10 +327,15 @@ public static partial class ShowPlanParser
            so it took that early return and never reached this code, seventy lines further down. The
            parser looked like it descended into procedures and in the one case that matters never
            did. The same was true of a UDF call whose statement carries no plan of its own. */
-        ParseSubPlans(stmt, stmtEl, depth, cancellationToken);
+        ParseSubPlans(stmt, containerEl, depth, cancellationToken);
 
         if (queryPlanEl == null)
         {
+            /* #580: the statement attributes (QueryHash, QueryPlanHash, StatementId and the rest)
+               sit on the statement element and never depended on a QueryPlan child, but they were
+               read only after this return, so a MULTIPLE PLAN statement lost the hashes it carries. */
+            ParseStmtAttributes(stmt, stmtEl);
+
             // Statements with no QueryPlan (e.g., DECLARE/ASSIGN) still get a synthetic
             // root node so they appear in the statement tab list.
             var stmtType = stmt.StatementType.Length > 0
