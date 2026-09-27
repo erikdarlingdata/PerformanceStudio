@@ -151,7 +151,11 @@ public static partial class PlanAnalyzer
         // - A parent join may have chosen the wrong strategy
         // - Root nodes with no parent to harm are skipped
         // - Nodes whose only parents are Parallelism/Top/Sort (no spill) are skipped
+        /* #577: an operator that never executed returned zero rows because it never ran, so its
+           zero is no evidence that the estimate was wrong. Rules 11, 12 and 29 skip such
+           operators the same way. */
         if (!cfg.IsRuleDisabled(5) && node.HasActualStats && node.EstimateRows > 0
+            && node.ActualExecutions > 0
             && !node.Lookup) // Key lookups are point lookups (1 row per execution) — per-execution estimate is misleading
         {
             if (node.ActualRows == 0)
@@ -173,7 +177,7 @@ public static partial class PlanAnalyzer
             else
             {
                 // Compare per-execution actuals to estimates (SQL Server estimates are per-execution)
-                var executions = node.ActualExecutions > 0 ? node.ActualExecutions : 1;
+                var executions = node.ActualExecutions;
                 var actualPerExec = (double)node.ActualRows / executions;
                 var ratio = actualPerExec / node.EstimateRows;
                 if (ratio >= 10.0 || ratio <= 0.1)
@@ -204,10 +208,15 @@ public static partial class PlanAnalyzer
         // Rule 6: Scalar UDF references (works on estimated plans too)
         // Suppress when Serial Plan warning is already firing for a UDF-related reason —
         // the Serial Plan warning already explains the issue, this would be redundant.
-        var serialPlanCoversUdf = stmt.NonParallelPlanReason is
-            "TSQLUserDefinedFunctionsNotParallelizable"
-            or "CLRUserDefinedFunctionRequiresDataAccess"
-            or "CouldNotGenerateValidParallelPlan";
+        /* #576: "already firing" has to be checked, not assumed from the reason. Rule 3 can be
+           disabled, and it skips statements that cost under 1, TRIVIAL plans and 0 ms runs, so
+           the UDF warning used to vanish with nothing in its place. Statement rules run before
+           node rules, so rule 3's finding is on the statement by now if it fired. */
+        var serialPlanCoversUdf =
+            (stmt.NonParallelPlanReason is "TSQLUserDefinedFunctionsNotParallelizable"
+                or "CLRUserDefinedFunctionRequiresDataAccess"
+                or "CouldNotGenerateValidParallelPlan")
+            && stmt.PlanWarnings.Any(w => w.WarningType == "Serial Plan");
         if (!cfg.IsRuleDisabled(6) && !serialPlanCoversUdf)
             foreach (var udf in node.ScalarUdfs)
             {

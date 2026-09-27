@@ -281,6 +281,91 @@ public static partial class PlanAnalyzer
         return $"{node.PhysicalOp} (Node {node.NodeId})";
     }
 
+    /* #579: the rules that look for a hint or a keyword in the query text (MAXDOP 1, MAXDOP 2,
+       RECOMPILE, OPTIMIZE FOR UNKNOWN, NOT IN, a cursor declaration, a row goal's cause) matched the raw
+       StatementText, so the words inside a string literal or a comment counted as code. This
+       blanks string-literal contents and whole comments with spaces, keeping every other character
+       where it was, so a match in the result is a match in the code. The scan follows
+       ParameterSubstitution's: '...' with doubled-quote escapes, -- to the end of the line, and
+       block comments, which nest in T-SQL. Delimited identifiers ("..." and [...]) are stepped
+       over unchanged, so a quote or a dash inside one does not start a string or a comment. */
+    internal static string MaskCommentsAndLiterals(string? text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return "";
+
+        var chars = text.ToCharArray();
+        var i = 0;
+        while (i < chars.Length)
+        {
+            var c = chars[i];
+            if (c == '\'' || c == '"' || c == '[')
+            {
+                var close = c == '[' ? ']' : c;
+                var end = i + 1;
+                while (end < chars.Length)
+                {
+                    if (chars[end] == close)
+                    {
+                        if (end + 1 < chars.Length && chars[end + 1] == close)
+                        {
+                            end += 2;
+                            continue;
+                        }
+                        break;
+                    }
+                    end++;
+                }
+                if (c == '\'')
+                {
+                    for (var k = i + 1; k < end && k < chars.Length; k++)
+                        chars[k] = ' ';
+                }
+                i = end + 1;
+                continue;
+            }
+
+            if (c == '-' && i + 1 < chars.Length && chars[i + 1] == '-')
+            {
+                while (i < chars.Length && chars[i] != '\n' && chars[i] != '\r')
+                    chars[i++] = ' ';
+                continue;
+            }
+
+            if (c == '/' && i + 1 < chars.Length && chars[i + 1] == '*')
+            {
+                var depth = 0;
+                while (i < chars.Length)
+                {
+                    if (chars[i] == '/' && i + 1 < chars.Length && chars[i + 1] == '*')
+                    {
+                        depth++;
+                        chars[i++] = ' ';
+                        chars[i++] = ' ';
+                        continue;
+                    }
+                    if (chars[i] == '*' && i + 1 < chars.Length && chars[i + 1] == '/')
+                    {
+                        depth--;
+                        chars[i++] = ' ';
+                        chars[i++] = ' ';
+                        if (depth == 0)
+                            break;
+                        continue;
+                    }
+                    if (chars[i] != '\n' && chars[i] != '\r')
+                        chars[i] = ' ';
+                    i++;
+                }
+                continue;
+            }
+
+            i++;
+        }
+
+        return new string(chars);
+    }
+
     /// <summary>
     /// Identifies the specific cause of a row goal from the statement text.
     /// Returns a specific cause when detectable, or a generic list as fallback.
@@ -290,7 +375,7 @@ public static partial class PlanAnalyzer
         if (string.IsNullOrEmpty(stmtText))
             return "TOP, EXISTS, IN, or FAST hint";
 
-        var text = stmtText.ToUpperInvariant();
+        var text = MaskCommentsAndLiterals(stmtText).ToUpperInvariant();
         var causes = new List<string>(4);
 
         if (Regex.IsMatch(text, @"\bTOP\b"))

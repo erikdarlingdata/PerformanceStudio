@@ -135,7 +135,7 @@ public static partial class PlanAnalyzer
             // SQL Server truncates StatementText at ~4,000 characters in plan XML.
             if (stmt.NonParallelPlanReason == "MaxDOPSetToOne")
             {
-                var text = stmt.StatementText ?? "";
+                var text = MaskCommentsAndLiterals(stmt.StatementText); // #579
                 var hasMaxdop1InText = Regex.IsMatch(text, @"MAXDOP\s+1\b", RegexOptions.IgnoreCase);
                 var isTruncated = stmt.IsTextTruncated;
 
@@ -306,7 +306,8 @@ public static partial class PlanAnalyzer
 
             if (unsnifffedParams.Count > 0)
             {
-                var hasRecompile = stmt.StatementText?.Contains("RECOMPILE", StringComparison.OrdinalIgnoreCase) == true;
+                var hasRecompile = MaskCommentsAndLiterals(stmt.StatementText) // #579
+                    .Contains("RECOMPILE", StringComparison.OrdinalIgnoreCase);
                 if (!hasRecompile)
                 {
                     var names = string.Join(", ", unsnifffedParams.Select(p => p.Name));
@@ -330,7 +331,7 @@ public static partial class PlanAnalyzer
     {
         // Rule 27: OPTIMIZE FOR UNKNOWN in statement text
         if (!cfg.IsRuleDisabled(27) && !string.IsNullOrEmpty(stmt.StatementText) &&
-            Regex.IsMatch(stmt.StatementText, @"OPTIMIZE\s+FOR\s+UNKNOWN", RegexOptions.IgnoreCase))
+            Regex.IsMatch(MaskCommentsAndLiterals(stmt.StatementText), @"OPTIMIZE\s+FOR\s+UNKNOWN", RegexOptions.IgnoreCase)) // #579
         {
             stmt.PlanWarnings.Add(new PlanWarning
             {
@@ -377,7 +378,7 @@ public static partial class PlanAnalyzer
             // the SELECT. Capturing tokens *before* CURSOR never sees LOCAL and would
             // fire on every cursor, including ones already declared LOCAL.
             var cursorDeclMatch = Regex.Match(
-                stmt.StatementText,
+                MaskCommentsAndLiterals(stmt.StatementText), // #579
                 @"\bDECLARE\s+\w+\s+(?:INSENSITIVE\s+|SCROLL\s+)*CURSOR\b(.*?)\bFOR\b",
                 RegexOptions.IgnoreCase | RegexOptions.Singleline);
             if (cursorDeclMatch.Success)
@@ -407,7 +408,7 @@ public static partial class PlanAnalyzer
             // Suppress when the user explicitly set MAXDOP 2 as a query hint — the DOP
             // cap is intentional, not the Standard Edition batch-mode limitation.
             var hasMaxdop2Hint = !string.IsNullOrEmpty(stmt.StatementText)
-                && Regex.IsMatch(stmt.StatementText, @"MAXDOP\s+2\b", RegexOptions.IgnoreCase);
+                && Regex.IsMatch(MaskCommentsAndLiterals(stmt.StatementText), @"MAXDOP\s+2\b", RegexOptions.IgnoreCase); // #579
 
             if (!hasMaxdop2Hint)
             {
@@ -451,8 +452,10 @@ public static partial class PlanAnalyzer
         if (!cfg.IsRuleDisabled(30))
         {
             // Detect duplicate suggestions for the same table
+            /* #578: the database is part of the key. dbo.T in database A and dbo.T in database B
+               are two tables, and their indexes cannot be consolidated into one. */
             var tableSuggestionCount = stmt.MissingIndexes
-                .GroupBy(mi => $"{mi.Schema}.{mi.Table}", StringComparer.OrdinalIgnoreCase)
+                .GroupBy(mi => $"{mi.Database}.{mi.Schema}.{mi.Table}", StringComparer.OrdinalIgnoreCase)
                 .Where(g => g.Count() > 1)
                 .ToDictionary(g => g.Key, g => g.Count(), StringComparer.OrdinalIgnoreCase);
 
@@ -460,7 +463,7 @@ public static partial class PlanAnalyzer
             {
                 var keyCount = mi.EqualityColumns.Count + mi.InequalityColumns.Count;
                 var includeCount = mi.IncludeColumns.Count;
-                var tableKey = $"{mi.Schema}.{mi.Table}";
+                var tableKey = $"{mi.Database}.{mi.Schema}.{mi.Table}";
 
                 // Low-impact suggestion (< 25% improvement)
                 if (mi.Impact < 25)

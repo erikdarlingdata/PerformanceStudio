@@ -93,7 +93,7 @@ public static partial class PlanAnalyzer
     {
         // Check statement text for NOT IN
         if (string.IsNullOrEmpty(stmt.StatementText) ||
-            !Regex.IsMatch(stmt.StatementText, @"\bNOT\s+IN\b", RegexOptions.IgnoreCase))
+            !Regex.IsMatch(MaskCommentsAndLiterals(stmt.StatementText), @"\bNOT\s+IN\b", RegexOptions.IgnoreCase)) // #579
             return false;
 
         // Walk up the tree checking ancestors and their children
