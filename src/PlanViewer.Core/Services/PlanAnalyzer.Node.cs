@@ -177,7 +177,7 @@ public static partial class PlanAnalyzer
             else
             {
                 // Compare per-execution actuals to estimates (SQL Server estimates are per-execution)
-                var executions = node.ActualExecutions > 0 ? node.ActualExecutions : 1;
+                var executions = node.ActualExecutions;
                 var actualPerExec = (double)node.ActualRows / executions;
                 var ratio = actualPerExec / node.EstimateRows;
                 if (ratio >= 10.0 || ratio <= 0.1)
