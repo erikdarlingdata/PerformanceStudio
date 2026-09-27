@@ -281,15 +281,15 @@ public static partial class PlanAnalyzer
         return $"{node.PhysicalOp} (Node {node.NodeId})";
     }
 
-    /* #579: the rules that look for a hint or a keyword in the query text (MAXDOP 1, RECOMPILE,
-       OPTIMIZE FOR UNKNOWN, NOT IN, a cursor declaration, a row goal's cause) matched the raw
+    /* #579: the rules that look for a hint or a keyword in the query text (MAXDOP 1, MAXDOP 2,
+       RECOMPILE, OPTIMIZE FOR UNKNOWN, NOT IN, a cursor declaration, a row goal's cause) matched the raw
        StatementText, so the words inside a string literal or a comment counted as code. This
        blanks string-literal contents and whole comments with spaces, keeping every other character
        where it was, so a match in the result is a match in the code. The scan follows
        ParameterSubstitution's: '...' with doubled-quote escapes, -- to the end of the line, and
        block comments, which nest in T-SQL. Delimited identifiers ("..." and [...]) are stepped
        over unchanged, so a quote or a dash inside one does not start a string or a comment. */
-    private static string MaskCommentsAndLiterals(string? text)
+    internal static string MaskCommentsAndLiterals(string? text)
     {
         if (string.IsNullOrEmpty(text))
             return "";

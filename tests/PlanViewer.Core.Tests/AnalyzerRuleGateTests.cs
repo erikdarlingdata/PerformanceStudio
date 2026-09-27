@@ -112,6 +112,21 @@ public class AnalyzerRuleGateTests
     // ---- #579: text inside string literals and comments is not code -------------------------
 
     [Theory]
+    // String contents and whole comments become spaces; code, quotes and [identifiers] stay put.
+    [InlineData("SELECT [it's] /* x */ 'y' -- z\nFROM t", "SELECT [it's]         ' '     \nFROM t")]
+    // Block comments nest in T-SQL: the first */ closes only the inner one.
+    [InlineData("a /* 1 /* 2 */ 3 */ b", "a                   b")]
+    // An unclosed string runs to the end, as SQL Server would read it.
+    [InlineData("SELECT 'abc", "SELECT '   ")]
+    public void MaskCommentsAndLiterals_BlanksOnlyLiteralsAndComments(string text, string expected)
+    {
+        var masked = PlanAnalyzer.MaskCommentsAndLiterals(text);
+
+        Assert.Equal(expected, masked);
+        Assert.Equal(text.Length, masked.Length);
+    }
+
+    [Theory]
     [InlineData("SELECT 'OPTIMIZE FOR UNKNOWN'")]
     [InlineData("SELECT N'it''s OPTIMIZE FOR UNKNOWN'")]
     [InlineData("SELECT a FROM dbo.t -- OPTION (OPTIMIZE FOR UNKNOWN)")]
@@ -156,6 +171,29 @@ public class AnalyzerRuleGateTests
         Analyze(stmt);
 
         Assert.Equal(expectWarning, Has(stmt, "Serial Plan"));
+    }
+
+    [Theory]
+    [InlineData("SELECT a FROM dbo.t -- OPTION (MAXDOP 2)", true)]
+    [InlineData("SELECT a FROM dbo.t OPTION (MAXDOP 2)", false)]
+    public void Rule38_Maxdop2InACommentDoesNotExplainTheDopCap(string text, bool expectWarning)
+    {
+        // A MAXDOP 2 hint makes DOP 2 intentional, so rule 38 stays quiet. A MAXDOP 2 that is
+        // only mentioned in a comment is not a hint. No server metadata: the edition is unknown.
+        var stmt = new PlanStatement
+        {
+            DegreeOfParallelism = 2,
+            StatementText = text,
+            RootNode = new PlanNode
+            {
+                PhysicalOp = "Hash Match",
+                LogicalOp = "Aggregate",
+                ActualExecutionMode = "Batch"
+            }
+        };
+        Analyze(stmt);
+
+        Assert.Equal(expectWarning, Has(stmt, "Standard Edition DOP Limitation"));
     }
 
     [Theory]

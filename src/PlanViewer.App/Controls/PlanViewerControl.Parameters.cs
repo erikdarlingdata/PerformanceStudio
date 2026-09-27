@@ -131,9 +131,11 @@ public partial class PlanViewerControl : UserControl
         // Annotations
         if (allCompiledNull && parameters.Count > 0)
         {
+            // #579: the phrase inside a string literal or a comment is not a hint.
             var hasOptimizeForUnknown = statement.StatementText
                 .Contains("OPTIMIZE", StringComparison.OrdinalIgnoreCase)
-                && Regex.IsMatch(statement.StatementText, @"OPTIMIZE\s+FOR\s+UNKNOWN", RegexOptions.IgnoreCase);
+                && Regex.IsMatch(PlanAnalyzer.MaskCommentsAndLiterals(statement.StatementText),
+                    @"OPTIMIZE\s+FOR\s+UNKNOWN", RegexOptions.IgnoreCase);
 
             if (hasOptimizeForUnknown)
             {

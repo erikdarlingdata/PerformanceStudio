@@ -408,7 +408,7 @@ public static partial class PlanAnalyzer
             // Suppress when the user explicitly set MAXDOP 2 as a query hint — the DOP
             // cap is intentional, not the Standard Edition batch-mode limitation.
             var hasMaxdop2Hint = !string.IsNullOrEmpty(stmt.StatementText)
-                && Regex.IsMatch(stmt.StatementText, @"MAXDOP\s+2\b", RegexOptions.IgnoreCase);
+                && Regex.IsMatch(MaskCommentsAndLiterals(stmt.StatementText), @"MAXDOP\s+2\b", RegexOptions.IgnoreCase); // #579
 
             if (!hasMaxdop2Hint)
             {
