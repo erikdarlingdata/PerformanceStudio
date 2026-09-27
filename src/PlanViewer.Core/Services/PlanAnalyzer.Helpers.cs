@@ -8,15 +8,15 @@ namespace PlanViewer.Core.Services;
 
 public static partial class PlanAnalyzer
 {
-    /* Both passes below match on WarningType alone, and a type name is not unique to us:
+    /* MarkLegacyWarnings matches on WarningType alone, and a type name is not unique to us:
        "Implicit Conversion" is rule 29's legacy-listed type AND what the parser stamps on the
        engine's own PlanAffectingConvert element (Source = SqlServer). Matching by name only
        therefore branded the ENGINE's record "[SQL Server] [legacy]" — a badge that exists to
-       flag our un-migrated rules on a warning that is not ours at all — and TryOverrideSeverity
-       routed a user's rule-number override onto engine warnings the rule never produced (the
-       Contains matching makes it worse: every engine Spill variant lands on rule 7, "Memory
-       Grant" on rule 9). Legacy status and rule severity are facts about OUR rules, so anything
-       the engine said is skipped by both. */
+       flag our un-migrated rules on a warning that is not ours at all. TryOverrideSeverity
+       matched by name too until #575, and routed a user's rule-number override onto engine
+       warnings the rule never produced (its Contains matching sent every engine Spill variant
+       to rule 7 and "Memory Grant" to rule 9). Legacy status and rule severity are facts about
+       OUR rules, so anything the engine said is skipped by both. */
     private static void MarkLegacyWarnings(PlanStatement stmt)
     {
         foreach (var w in stmt.PlanWarnings)
@@ -72,21 +72,14 @@ public static partial class PlanAnalyzer
         if (warning.Source == PlanWarningSource.SqlServer)
             return;
 
-        // Find the rule number for this warning type (partial match for flexibility)
-        int? ruleNumber = null;
-        foreach (var (rule, type) in RuleWarningTypes)
-        {
-            if (warning.WarningType.Contains(type, StringComparison.OrdinalIgnoreCase) ||
-                type.Contains(warning.WarningType, StringComparison.OrdinalIgnoreCase))
-            {
-                ruleNumber = rule;
-                break;
-            }
-        }
+        /* #575: the rule that emits a finding stamps its number on it. Overrides used to find the
+           rule by matching WarningType against a rule-to-name table, and that table had no entry
+           for rules 34-37 and 39, for two of rule 30's three finding types, or for rule 10's RID
+           Lookup, so an override for any of them was silently ignored. */
+        if (warning.RuleNumber is not int ruleNumber)
+            return;
 
-        if (ruleNumber == null) return;
-
-        var overrideSeverity = cfg.GetSeverityOverride(ruleNumber.Value);
+        var overrideSeverity = cfg.GetSeverityOverride(ruleNumber);
         if (overrideSeverity == null) return;
 
         if (Enum.TryParse<PlanWarningSeverity>(overrideSeverity, ignoreCase: true, out var severity))
