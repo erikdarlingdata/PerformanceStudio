@@ -413,6 +413,17 @@ public class PlanWarning
     public PlanWarningSource Source { get; set; } = PlanWarningSource.PerformanceStudio;
 
     /// <summary>
+    /// The analyzer rule that produced this finding, set where the rule emits it (#575). Null for
+    /// anything no numbered rule produced: the engine's own warnings and the wait-stats findings.
+    ///
+    /// <para>Severity overrides key on it. They used to map WarningType back to a rule through a
+    /// partial name match against a rule-to-name table, and that table had no entry for rules
+    /// 34-37 and 39, for two of rule 30's three finding types, or for rule 10's RID Lookup, so
+    /// overrides for those were silently ignored.</para>
+    /// </summary>
+    public int? RuleNumber { get; set; }
+
+    /// <summary>
     /// The operators this finding actually came from, so a reader can be taken to them (#440).
     ///
     /// <para>A LIST rather than a single id, because the three honest answers are genuinely
