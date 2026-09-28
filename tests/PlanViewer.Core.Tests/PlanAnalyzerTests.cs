@@ -89,6 +89,22 @@ public class PlanAnalyzerTests
         Assert.Empty(warnings);
     }
 
+    /// <summary>
+    /// #594: Node 1 is a DOP-8 Nested Loops join whose ActualExecutions (8) is a thread count,
+    /// not a real re-execution count — it is not on the inner side of any join. Its true
+    /// mismatch is 609 actual against an estimate of 2,983.02, a 4.9x overestimate, well inside
+    /// the 10x gate. The pre-fix bug divided by the thread count and reported this node as a 39x
+    /// overestimate instead.
+    /// </summary>
+    [Fact]
+    public void Rule05_EagerIndexSpoolPlan_Node1IsNotOverstatedByItsThreadCount()
+    {
+        var plan = PlanTestHelper.LoadAndAnalyze("eager_index_spool_plan.sqlplan");
+        var node1 = PlanTestHelper.FindNode(plan.Batches[0].Statements[0].RootNode!, 1)!;
+
+        Assert.DoesNotContain(node1.Warnings, w => w.WarningType == "Row Estimate Mismatch");
+    }
+
     // ---------------------------------------------------------------
     // Rule 6: Scalar UDF Reference
     // ---------------------------------------------------------------
