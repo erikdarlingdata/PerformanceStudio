@@ -290,4 +290,126 @@ public class AnalyzerRuleGateTests
 
         Assert.Single(stmt.PlanWarnings, w => w.WarningType == "Duplicate Index Suggestions");
     }
+
+    // ---- #594: rule 5 compares ActualRows to an execution-aware estimate — see RowEstimateHelper
+
+    [Fact]
+    public void Rule05_NonInnerSideNodeInParallelZone_IsNotOverstatedByThreadCount()
+    {
+        // Same shape as eager_index_spool_plan.sqlplan's Node 1: a Nested Loops join at DOP 8
+        // under a Gather Streams parent. ActualExecutions=8 there is a thread count (each thread
+        // ran the join once), not eight real re-executions. A 4.9x overestimate should not clear
+        // the 10x gate — the pre-fix bug divided by the thread count and read this as 39x.
+        var gatherStreams = new PlanNode { PhysicalOp = "Parallelism", LogicalOp = "Gather Streams" };
+        var node = new PlanNode
+        {
+            PhysicalOp = "Nested Loops",
+            LogicalOp = "Inner Join",
+            HasActualStats = true,
+            EstimateRows = 2983.02,
+            ActualRows = 609,
+            ActualExecutions = 8,
+            Parent = gatherStreams
+        };
+        gatherStreams.Children.Add(node);
+        Analyze(new PlanStatement { RootNode = gatherStreams });
+
+        Assert.False(Has(node, "Row Estimate Mismatch"));
+    }
+
+    [Fact]
+    public void Rule05_InnerSideNodeWithARealMismatch_StillFiresWithPerExecutionPhrasing()
+    {
+        // A node on the inner side of a Nested Loops join really does run once per outer row, so
+        // a genuine per-execution mismatch must still fire — the fix only changes what counts as
+        // "per execution", not whether inner-side nodes are checked at all.
+        var outer = new PlanNode { PhysicalOp = "Clustered Index Scan" };
+        var inner = new PlanNode
+        {
+            PhysicalOp = "Index Seek",
+            LogicalOp = "Index Seek",
+            HasActualStats = true,
+            EstimateRows = 1,
+            ActualRows = 50_000,
+            ActualExecutions = 1000
+        };
+        var nl = new PlanNode
+        {
+            PhysicalOp = "Nested Loops",
+            LogicalOp = "Inner Join",
+            Children = { outer, inner }
+        };
+        outer.Parent = nl;
+        inner.Parent = nl;
+        Analyze(new PlanStatement { RootNode = nl });
+
+        var warning = Assert.Single(inner.Warnings, w => w.WarningType == "Row Estimate Mismatch");
+        Assert.Contains("50x underestimated", warning.Message);
+        Assert.Contains("50 rows x 1,000 executions", warning.Message);
+    }
+
+    // ---- #594: rule 16's outer-side mismatch also has to compare like with like ---------------
+
+    [Fact]
+    public void Rule16_OuterChildNotInnerSideInParallelZone_UsesTotalActualRowsNotPerThread()
+    {
+        // outerChild is this join's own OUTER input — not inner-side of anything — but sits in a
+        // parallel zone where ActualExecutions (8) is a thread count, not real repeats. The
+        // pre-fix bug divided the real actual rows by that thread count unconditionally.
+        var outerChild = new PlanNode
+        {
+            PhysicalOp = "Clustered Index Scan",
+            HasActualStats = true,
+            EstimateRows = 100,
+            ActualRows = 100_000,
+            ActualExecutions = 8
+        };
+        var innerChild = new PlanNode
+        {
+            PhysicalOp = "Key Lookup",
+            HasActualStats = true,
+            ActualExecutions = 200_000
+        };
+        var nl = new PlanNode
+        {
+            PhysicalOp = "Nested Loops",
+            LogicalOp = "Inner Join",
+            Children = { outerChild, innerChild }
+        };
+        outerChild.Parent = nl;
+        innerChild.Parent = nl;
+
+        Analyze(new PlanStatement { RootNode = nl });
+
+        var warning = Assert.Single(nl.Warnings, w => w.WarningType == "Nested Loops High Executions");
+        // Pre-fix this read "actual 12,500 (125x underestimate)" — the real 100,000 rows divided
+        // by the 8-thread count instead of compared directly against the estimate.
+        Assert.Contains("Outer side: estimated 100 rows, actual 100,000 (1000x underestimate)", warning.Message);
+        Assert.DoesNotContain("12,500", warning.Message);
+    }
+
+    // ---- #594: rule 26's row-goal check also has to compare like with like --------------------
+
+    [Fact]
+    public void Rule26_NonInnerSideScanInParallelZone_RowGoalCheckUsesTotalActualRows()
+    {
+        // A scan that isn't inner-side but sits in a parallel zone where ActualExecutions (8) is
+        // a thread count. Pre-fix, dividing the real actual by that thread count could make a row
+        // goal that did NOT hold (the undivided actual exceeds the reduced estimate) look like it
+        // held, silently swallowing the warning.
+        var scan = new PlanNode
+        {
+            PhysicalOp = "Index Scan",
+            LogicalOp = "Index Scan",
+            HasActualStats = true,
+            EstimateRows = 100,
+            EstimateRowsWithoutRowGoal = 1000,
+            ActualRows = 500,
+            ActualExecutions = 8
+        };
+        Analyze(new PlanStatement { RootNode = scan });
+
+        var warning = Assert.Single(scan.Warnings, w => w.WarningType == "Row Goal");
+        Assert.Contains("estimate reduced from 1,000 to 100", warning.Message);
+    }
 }

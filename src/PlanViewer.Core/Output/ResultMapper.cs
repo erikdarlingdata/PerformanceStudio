@@ -366,6 +366,7 @@ public static class ResultMapper
         {
             result.ActualRows = node.ActualRows;
             result.ActualExecutions = node.ActualExecutions;
+            result.ExpectedRows = RowEstimateHelper.GetExpectedRows(node);
             result.ActualElapsedMs = node.ActualElapsedMs;
             result.ActualCpuMs = node.ActualCPUMs;
             result.ActualLogicalReads = node.ActualLogicalReads;
