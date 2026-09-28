@@ -81,6 +81,78 @@ public class McpHostServiceTests
     }
 
     /// <summary>
+    /// A taken port is the one way this server fails to start that a developer will actually
+    /// hit — Settings > Integrations lets two windows agree on the same port, or a leftover
+    /// process from a previous run never released it. Started has to name the reason, and the
+    /// reason has to name the port, or the menu item is just as unhelpful as Debug.WriteLine was.
+    /// </summary>
+    [Fact]
+    public async Task AnOccupiedPortResolvesStartedToTheReason()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var port = FreePort();
+
+        // Held open for the whole test, unlike FreePort()'s own listener, which is stopped
+        // before it returns — this one has to still be bound when McpHostService tries.
+        var occupier = new TcpListener(IPAddress.Loopback, port);
+        occupier.Start();
+
+        var service = new McpHostService(
+            new PlanSessionManager(), new ConnectionStore(), new InMemoryCredentialService(), port);
+        try
+        {
+            await service.StartAsync(cancellationToken);
+
+            var reason = await service.Started;
+
+            Assert.Equal($"port {port} is in use", reason);
+        }
+        finally
+        {
+            occupier.Stop();
+            await service.StopAsync(CancellationToken.None);
+            service.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// The success half of the same contract: Started resolves to null, not just "eventually
+    /// stops throwing". <see cref="AClientOnThisMachineCanListAndCallTools"/> already covers the
+    /// server actually working once up; this one is only about the signal that it got there.
+    /// </summary>
+    [Fact]
+    public async Task AFreePortResolvesStartedToNull()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        var port = FreePort();
+
+        var service = new McpHostService(
+            new PlanSessionManager(), new ConnectionStore(), new InMemoryCredentialService(), port);
+        try
+        {
+            await service.StartAsync(cancellationToken);
+
+            var reason = await service.Started;
+
+            Assert.Null(reason);
+        }
+        finally
+        {
+            await service.StopAsync(CancellationToken.None);
+            service.Dispose();
+        }
+    }
+
+    private static int FreePort()
+    {
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        listener.Stop();
+        return port;
+    }
+
+    /// <summary>
     /// One McpHostService on a free loopback port, stopped on dispose. It never saves the
     /// connection store and keeps credentials in memory, so no test touches the user's files.
     /// </summary>
@@ -123,18 +195,12 @@ public class McpHostServiceTests
             _service.Dispose();
         }
 
-        private static int FreePort()
-        {
-            var listener = new TcpListener(IPAddress.Loopback, 0);
-            listener.Start();
-            var port = ((IPEndPoint)listener.LocalEndpoint).Port;
-            listener.Stop();
-            return port;
-        }
-
         /// <summary>
-        /// The service starts its host in the background and reports a failure to start only
-        /// to the debugger, so the port is the one sign that it came up.
+        /// Accepting a real connection is a stronger signal than <see cref="McpHostService.Started"/>
+        /// resolving to null — Started only means Kestrel's own StartAsync returned, this means
+        /// the port actually answers. Kept as the readiness check for the tests that go on to
+        /// call tools over it; <see cref="AFreePortResolvesStartedToNull"/> and
+        /// <see cref="AnOccupiedPortResolvesStartedToTheReason"/> cover Started itself.
         /// </summary>
         private static async Task WaitUntilListeningAsync(int port, CancellationToken cancellationToken)
         {
