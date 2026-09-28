@@ -73,6 +73,7 @@ public class ReproScriptBuilderSafetyTests
         var sql = ReproScriptBuilder.BuildReproScript("SELECT 1", "db", plan, null);
 
         Assert.DoesNotContain("SHUTDOWN", sql);
+        Assert.Contains("1 parameter(s) omitted", sql);
     }
 
     [Fact]
@@ -138,6 +139,63 @@ public class ReproScriptBuilderSafetyTests
     }
 
     [Fact]
+    public void BuildReproScript_ParameterUsedByTwoStatements_IsDeclaredOnce()
+    {
+        /* A batch's plan lists each statement's parameters, so a parameter that two statements
+           use appears twice. Declaring it twice fails with "The variable name '@id' has already
+           been declared". The ParameterLists are copied from such a plan on SQL Server 2025. */
+        const string plan = """
+            <ShowPlanXML xmlns="http://schemas.microsoft.com/sqlserver/2004/07/showplan">
+              <BatchSequence><Batch><Statements>
+                <StmtSimple><QueryPlan><ParameterList>
+                  <ColumnReference Column="@id" ParameterDataType="int" ParameterCompiledValue="(1)" />
+                </ParameterList></QueryPlan></StmtSimple>
+                <StmtSimple><QueryPlan><ParameterList>
+                  <ColumnReference Column="@id" ParameterDataType="int" ParameterCompiledValue="(1)" />
+                </ParameterList></QueryPlan></StmtSimple>
+              </Statements></Batch></BatchSequence>
+            </ShowPlanXML>
+            """;
+        var sql = ReproScriptBuilder.BuildReproScript(
+            "(@id int)SELECT COUNT_BIG(*) AS a FROM dbo.T AS t WHERE t.id = @id\n; SELECT COUNT_BIG(*) AS b FROM dbo.T AS t WHERE t.id > @id",
+            "db", plan, null);
+
+        Assert.Contains("N'@id int',", sql);
+        Assert.Equal(1, sql.Split("@id = 1").Length - 1);
+        ParseScript(sql);
+    }
+
+    [Fact]
+    public void BuildReproScript_AutoParameterTypedDifferentlyByTwoStatements_IsLeftOut()
+    {
+        /* Each auto-parameterized statement numbers its own parameters and types them by its
+           literal, so a batch's estimated plan can list @1 smallint and @1 tinyint. Its
+           statement text is the literal text, which doesn't use @1, so the script runs the
+           batch as it is. The ParameterLists are copied from such a plan on SQL Server 2025. */
+        const string plan = """
+            <ShowPlanXML xmlns="http://schemas.microsoft.com/sqlserver/2004/07/showplan">
+              <BatchSequence><Batch><Statements>
+                <StmtSimple><QueryPlan><ParameterList>
+                  <ColumnReference Column="@1" ParameterDataType="smallint" ParameterCompiledValue="(22656)" />
+                </ParameterList></QueryPlan></StmtSimple>
+                <StmtSimple><QueryPlan><ParameterList>
+                  <ColumnReference Column="@1" ParameterDataType="tinyint" ParameterCompiledValue="(11)" />
+                </ParameterList></QueryPlan></StmtSimple>
+              </Statements></Batch></BatchSequence>
+            </ShowPlanXML>
+            """;
+        var sql = ReproScriptBuilder.BuildReproScript(
+            "SELECT t.id FROM dbo.T AS t WHERE t.id = 22656\n; SELECT t.v FROM dbo.T AS t WHERE t.id = 11",
+            "db", plan, null);
+
+        Assert.DoesNotContain("EXECUTE sys.sp_executesql", sql);
+        Assert.Contains("different data type in different statements (left out): @1.", sql);
+        Assert.Contains("SELECT t.v FROM dbo.T AS t WHERE t.id = 11", sql);
+        Assert.DoesNotContain("omitted", sql);
+        ParseScript(sql);
+    }
+
+    [Fact]
     public void BuildReproScript_ParameterNameEndingInALineBreak_IsDropped()
     {
         /* The XML parser turns a line break in an attribute into a space unless it is written
@@ -153,6 +211,16 @@ public class ReproScriptBuilderSafetyTests
     public void BuildReproScript_CompiledValueEndingInALineBreak_BecomesPlaceholder()
     {
         var plan = PlanWithParameter("@id", "int", "42&#10;");
+        var sql = ReproScriptBuilder.BuildReproScript("SELECT 1", "db", plan, null);
+
+        Assert.Contains("@id = ?", sql);
+    }
+
+    [Fact]
+    public void BuildReproScript_CompiledValueInAnotherScriptsDigits_BecomesPlaceholder()
+    {
+        /* \d matches these Arabic-Indic digits, but T-SQL doesn't read them as a number. */
+        var plan = PlanWithParameter("@id", "int", "٤٢");
         var sql = ReproScriptBuilder.BuildReproScript("SELECT 1", "db", plan, null);
 
         Assert.Contains("@id = ?", sql);
@@ -193,9 +261,13 @@ public class ReproScriptBuilderSafetyTests
     [InlineData("int&#10;")]                // ends in a line break
     [InlineData("a.b.c.d")]                 // four-part name
     [InlineData("vector(3,&#10;GO&#10;)")]  // GO on a line of its own
+    [InlineData("nvarchar(٤)")]        // an Arabic-Indic digit
+    [InlineData("nvarchar(４)")]        // a full-width digit
+    [InlineData("varchar(max,2)")]          // max takes no second part
     public void BuildReproScript_MalformedDataType_IsDropped(string dataType)
     {
-        /* The check before #590 was a list of characters, and the first four passed it. */
+        /* The check before #590 was a list of characters, and it passed every one of these but
+           the one with GO. */
         var plan = PlanWithParameter("@id", dataType, "(1)");
         var sql = ReproScriptBuilder.BuildReproScript("SELECT 1", "db", plan, null);
 

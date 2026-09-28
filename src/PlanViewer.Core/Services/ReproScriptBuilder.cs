@@ -63,8 +63,24 @@ public static class ReproScriptBuilder
            off ParameterList attributes. Drop parameters whose name or type isn't a
            plausible T-SQL token before anything is interpolated — the name lands in
            the warning comment and the sp_executesql assignment list. */
-        var safeParameters = parameters
+        var validParameters = parameters
             .Where(p => IsValidParameterName(p.Name) && IsValidDataType(p.DataType))
+            .ToList();
+
+        /* A batch's plan lists each statement's parameters: a parameter once for every
+           statement that uses it, and each auto-parameterized statement's own @0 or @1,
+           typed by that statement's literal. Declare each name once; a second declaration
+           fails the script. A name that the statements give different types can't be
+           declared once, so it is left out. Those statements are usually literal text
+           that doesn't use the name. */
+        var conflictingNames = validParameters
+            .GroupBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
+            .Where(g => g.Select(p => p.DataType).Distinct(StringComparer.OrdinalIgnoreCase).Count() > 1)
+            .Select(g => g.Key)
+            .ToList();
+        var safeParameters = validParameters
+            .Where(p => !conflictingNames.Contains(p.Name, StringComparer.OrdinalIgnoreCase))
+            .DistinctBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
         /* Check for temp tables and table variables in query text */
@@ -90,10 +106,15 @@ public static class ReproScriptBuilder
 
         /* Parameters dropped entirely because the plan's name or data type wasn't a
            plain T-SQL token — the script would be incomplete, so don't stay silent. */
-        var droppedCount = parameters.Count - safeParameters.Count;
+        var droppedCount = parameters.Count - validParameters.Count;
         if (droppedCount > 0)
         {
             warnings.Add($"{droppedCount} parameter(s) omitted — the plan's parameter name or data type was not a valid T-SQL identifier. Declare them manually before executing.");
+        }
+
+        if (conflictingNames.Count > 0)
+        {
+            warnings.Add($"Parameters with a different data type in different statements (left out): {string.Join(", ", conflictingNames)}. Declare them manually if the query uses them.");
         }
 
         /* Check for local variables: query has parameter prefix but plan has no/few parameters */
@@ -442,15 +463,16 @@ public static class ReproScriptBuilder
     /// (p,s) or (n,name) suffix, as in decimal(18,2), sys.geography or
     /// vector(3,float16). A type with anything else, such as text after the closing
     /// paren, is dropped with a warning rather than producing a script that fails.
-    /// Only plain spaces are allowed between the parts: no quotes, comment
-    /// characters or line breaks, so it can't disturb the sp_executesql declaration list.
+    /// Spaces are allowed only inside brackets and around the suffix's parts, and the
+    /// suffix's numbers use only the digits 0 to 9. No quotes, comment characters or
+    /// line breaks get through, so it can't disturb the sp_executesql declaration list.
     /// </summary>
     private static bool IsValidDataType(string dataType)
     {
         const string name = @"(?:\[[\p{L}\p{Nd}_ ]+\]|[\p{L}_][\p{L}\p{Nd}_]*)";
         return Regex.IsMatch(
             dataType,
-            $@"\A{name}(?:\.{name}){{0,2}}(?: *\( *(?:\d+|max) *(?:, *(?:\d+|{name}) *)?\))?\z",
+            $@"\A{name}(?:\.{name}){{0,2}}(?: *\( *(?:max|[0-9]+(?: *, *(?:[0-9]+|{name}))?) *\))?\z",
             RegexOptions.IgnoreCase);
     }
 
@@ -466,8 +488,9 @@ public static class ReproScriptBuilder
 
         /* \A and \z throughout: $ would also accept a value that ends in a line break. */
 
-        /* Integer/decimal/float/money forms: -12, 3.14, 1.5E+3, $9.99 */
-        if (Regex.IsMatch(value, @"\A-?\$?\d+(\.\d+)?([eE][+-]?\d+)?\z"))
+        /* Integer/decimal/float/money forms: -12, 3.14, 1.5E+3, $9.99. [0-9], not \d,
+           which also matches digits from other scripts that T-SQL doesn't read as numbers. */
+        if (Regex.IsMatch(value, @"\A-?\$?[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?\z"))
             return true;
 
         /* Binary literal */
