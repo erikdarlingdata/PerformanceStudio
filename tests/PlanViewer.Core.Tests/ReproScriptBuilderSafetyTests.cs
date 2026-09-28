@@ -1,3 +1,4 @@
+using Microsoft.SqlServer.TransactSql.ScriptDom;
 using PlanViewer.Core.Services;
 
 namespace PlanViewer.Core.Tests;
@@ -124,6 +125,67 @@ public class ReproScriptBuilderSafetyTests
 
         Assert.Contains($"@p = {expected}", sql);
         Assert.DoesNotContain("@p = ?", sql);
+    }
+
+    // The header comment shows the plan's database name. A crafted name must stay inside it:
+    // "*/" would close the comment, "/*" would open a nested one that swallows the script,
+    // and a line break could put GO on a line of its own. ScriptDom parses each script, so a
+    // statement the name smuggled out would show up as a PRINT or an extra batch.
+    //
+    // The USE line keeps the name as it is, line breaks included, on purpose. It doubles "]",
+    // and go-sqlcmd and ODBC sqlcmd do not split a batch inside a bracketed name. A client that
+    // splits at every GO line is out of scope: the statement text can hold such a line too.
+    [Theory]
+    [InlineData("master*/\nGO\nPRINT 'INJECTED';\nGO\n/*")]  // its own batch in a GO-aware client
+    [InlineData("master*/ PRINT 'INJECTED'; /*")]            // same batch, no GO needed
+    [InlineData("master\r\nGO\r\nPRINT 'INJECTED';\r\nGO")] // line breaks alone
+    [InlineData("master/*")]                                  // nested comment
+    [InlineData("master/*/")]                                 // delimiters that overlap
+    [InlineData("master*/*")]
+    [InlineData("master\vGO\fPRINT 'INJECTED';\u0085GO\u2028x\u2029y")] // VT, FF, NEL, LS, PS
+    public void BuildReproScript_HostileDatabaseName_StaysInTheHeaderComment(string databaseName)
+    {
+        var sql = ReproScriptBuilder.BuildReproScript("SELECT 1", databaseName, null, null);
+
+        var script = ParseScript(sql);
+        Assert.Single(script.Batches);
+        Assert.DoesNotContain(script.Batches[0].Statements, s => s is PrintStatement);
+
+        var header = HeaderComment(sql);
+        var databaseLine = Assert.Single(header.Split('\n'), line => line.StartsWith("Database: [", StringComparison.Ordinal));
+        Assert.StartsWith("Database: [master", databaseLine);
+        Assert.DoesNotMatch(@"[\p{Cc}\u2028\u2029]", databaseLine.TrimEnd('\r'));
+        Assert.DoesNotContain(header.Split('\n'), line => line.Trim() == "GO");
+    }
+
+    [Fact]
+    public void BuildReproScript_HostileSource_StaysInTheHeaderComment()
+    {
+        var sql = ReproScriptBuilder.BuildReproScript(
+            "SELECT 1", "db", null, null, source: "x*/ PRINT 'INJECTED'; /*");
+
+        var script = ParseScript(sql);
+        Assert.DoesNotContain(script.Batches.SelectMany(b => b.Statements), s => s is PrintStatement);
+        Assert.Contains("Source: x* / PRINT 'INJECTED'; / *", HeaderComment(sql));
+    }
+
+    private static TSqlScript ParseScript(string sql)
+    {
+        var fragment = new TSql160Parser(initialQuotedIdentifiers: true)
+            .Parse(new StringReader(sql), out var errors);
+        Assert.Empty(errors);
+        return (TSqlScript)fragment;
+    }
+
+    // Everything up to the first "*/", which must be the header's own closing line: a value
+    // that ended the comment early would put it somewhere else.
+    private static string HeaderComment(string sql)
+    {
+        Assert.StartsWith("/*", sql);
+        var end = sql.IndexOf("*/", StringComparison.Ordinal);
+        Assert.Equal('\n', sql[end - 1]);
+        Assert.DoesNotContain("/*", sql[2..end]);
+        return sql[..end];
     }
 
     [Fact]
