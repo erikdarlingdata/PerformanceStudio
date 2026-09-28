@@ -423,18 +423,12 @@ public partial class MainWindow : Window
             var xml = File.ReadAllText(filePath);
 
             /* A plan sent from SSMS arrives as a temp file that the extension wrote for this one
-               handoff. It holds the query text and any parameter values, and once read it has
-               done its job, so it is deleted now. The tab is then treated like a pasted plan,
-               with no file behind it: it goes on neither the recent list nor the tabs restored
-               at the next start. When the delete fails, the extension's own sweep of files
-               older than an hour removes it later. */
+               handoff. It holds the query text and any parameter values, so once the plan has
+               loaded, the file is deleted. The tab is then treated like a pasted plan, with no
+               file behind it: it goes on neither the recent list nor the tabs restored at the
+               next start. A file that fails to load, or to delete, is left for the extension's
+               own sweep of files older than an hour. */
             var ssmsHandoff = IsSsmsHandoffFile(fullPath);
-            if (ssmsHandoff)
-            {
-                try { File.Delete(fullPath); }
-                catch (IOException) { }
-                catch (UnauthorizedAccessException) { }
-            }
 
             // SSMS saves plans as UTF-16 with encoding="utf-16" in the XML declaration.
             // File.ReadAllText auto-detects the BOM, but the resulting C# string still
@@ -448,9 +442,15 @@ public partial class MainWindow : Window
 
             var viewer = new PlanViewerControl();
             viewer.SetConnectionServices(_credentialService, _connectionStore);
-            viewer.LoadPlan(xml, fileName);
+            var loaded = viewer.LoadPlan(xml, fileName);
             if (!ssmsHandoff)
                 viewer.SourceFilePath = filePath;
+            else if (loaded)
+            {
+                try { File.Delete(fullPath); }
+                catch (IOException) { }
+                catch (UnauthorizedAccessException) { }
+            }
 
             // Wrap viewer with advice toolbar
             var content = CreatePlanTabContent(viewer);
