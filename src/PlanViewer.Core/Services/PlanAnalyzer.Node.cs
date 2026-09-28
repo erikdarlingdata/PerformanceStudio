@@ -812,7 +812,13 @@ public static partial class PlanAnalyzer
     private static void Rule23_TableValuedFunctions(PlanNode node, PlanStatement stmt, AnalyzerConfig cfg)
     {
         // Rule 23: Table-valued functions
-        if (!cfg.IsRuleDisabled(23) && node.LogicalOp == "Table-valued function")
+        /* A function the engine supplies runs as the same operator: STRING_SPLIT, OPENJSON,
+           GENERATE_SERIES, and every DMV and DMF (sys.dm_exec_requests is SYSREQUESTS,
+           sys.dm_db_index_physical_stats is INDEXANALYSIS). Its Object names no database and no
+           schema, and a function a user wrote always has both. The advice below is about code
+           the user can rewrite, so the engine's own functions are skipped. */
+        var isEngineFunction = string.IsNullOrEmpty(node.DatabaseName) && string.IsNullOrEmpty(node.SchemaName);
+        if (!cfg.IsRuleDisabled(23) && node.LogicalOp == "Table-valued function" && !isEngineFunction)
         {
             var funcName = node.ObjectName ?? node.PhysicalOp;
             node.Warnings.Add(new PlanWarning
