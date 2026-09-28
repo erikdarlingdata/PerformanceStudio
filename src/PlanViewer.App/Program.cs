@@ -1,7 +1,6 @@
 using Avalonia;
 using System;
 using System.IO;
-using System.IO.Pipes;
 using System.Threading;
 using System.Threading.Tasks;
 using PlanViewer.App.Services;
@@ -182,7 +181,7 @@ class Program
 
             try
             {
-                using var client = new NamedPipeClientStream(".", SingleInstance.PipeName, PipeDirection.Out);
+                using var client = SingleInstance.CreatePipeClient();
                 // 500ms per attempt: a running instance's listener is idle and connects
                 // immediately, while Connect burns the full timeout when nothing is
                 // listening — so the single-attempt probe on a with-file launch adds at
@@ -196,8 +195,9 @@ class Program
             }
             catch
             {
-                // Not listening yet, or the single server slot was mid-conversation with
-                // another client — retry if the budget allows, otherwise report undelivered.
+                // Not listening yet, the single server slot was mid-conversation with
+                // another client, or the pipe belongs to another user — retry if the budget
+                // allows, otherwise report undelivered.
             }
         }
 

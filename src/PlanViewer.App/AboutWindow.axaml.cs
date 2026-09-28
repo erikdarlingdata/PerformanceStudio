@@ -235,16 +235,30 @@ public partial class AboutWindow : Window
 
     private void CloseButton_Click(object? sender, RoutedEventArgs e) => Close();
 
+    /// <summary>
+    /// The address as a web page to open, or null when it is not an absolute http or https
+    /// address. The update address comes from the release server's reply, and the shell
+    /// runs a program when it is handed a file path or another scheme.
+    /// </summary>
+    internal static Uri? WebPageAddress(string? url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out var uri)
+        && (uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeHttp)
+            ? uri
+            : null;
+
     private static void OpenUrl(string url)
     {
+        if (WebPageAddress(url) is not { } page)
+            return;
+
         try
         {
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                Process.Start(new ProcessStartInfo { FileName = url, UseShellExecute = true });
+                Process.Start(new ProcessStartInfo { FileName = page.AbsoluteUri, UseShellExecute = true });
             else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-                Process.Start("open", url);
+                Process.Start("open", page.AbsoluteUri);
             else
-                Process.Start("xdg-open", url);
+                Process.Start("xdg-open", page.AbsoluteUri);
         }
         catch
         {

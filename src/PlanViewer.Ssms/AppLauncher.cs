@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.IO.Pipes;
+using System.Security.Principal;
 using Microsoft.Win32;
 
 namespace PlanViewer.Ssms
@@ -113,6 +114,12 @@ namespace PlanViewer.Ssms
                 using (var client = new NamedPipeClientStream(".", PipeName, PipeDirection.Out))
                 {
                     client.Connect(1000); // 1 second timeout
+
+                    // A pipe of this name that another account created first must not get
+                    // the path. Returning false launches the app instead.
+                    if (!IsOwnedByCurrentUser(client))
+                        return false;
+
                     using (var writer = new StreamWriter(client))
                     {
                         writer.WriteLine(filePath);
@@ -125,6 +132,24 @@ namespace PlanViewer.Ssms
             {
                 // Pipe not available — app isn't running
                 return false;
+            }
+        }
+
+        /// <summary>
+        /// True when the pipe's owner is this user. The app creates its pipe with .NET's
+        /// CurrentUserOnly option, which makes the owner the creating token's owner: the
+        /// user, or the Administrators group when the app runs elevated. So the owner is
+        /// compared with this token's user and with its owner, and an elevated SSMS still
+        /// reaches an app that is not elevated. .NET Framework has no CurrentUserOnly
+        /// option on the client, so this is the same check done by hand.
+        /// </summary>
+        private static bool IsOwnedByCurrentUser(NamedPipeClientStream client)
+        {
+            var owner = client.GetAccessControl().GetOwner(typeof(SecurityIdentifier));
+            using (var identity = WindowsIdentity.GetCurrent())
+            {
+                return owner != null
+                    && (owner.Equals(identity.User) || owner.Equals(identity.Owner));
             }
         }
 
