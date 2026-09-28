@@ -34,6 +34,7 @@
   <ItemGroup>
     <PackageReference Include="Avalonia.Headless" Version="12.1.2" />
     <PackageReference Include="coverlet.collector" Version="10.0.1" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.12" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
     <PackageReference Include="Microsoft.Testing.Extensions.HangDump" Version="2.4.1" />
     <PackageReference Include="Repl.Testing" Version="0.11.0" />
@@ -47,6 +48,12 @@
     <!-- server/PlanShare is not in the solution and ci.yml never built it. Referencing it here builds
          it with the solution and lets the tests reach its internal classes (InternalsVisibleTo). -->
     <ProjectReference Include="..\..\server\PlanShare\PlanShare.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The web client's share service is plain C#. It is compiled here, as PlanViewer.Web itself
+         links Core sources, because the Blazor WASM project is not referenced by the tests. -->
+    <Compile Include="..\..\src\PlanViewer.Web\Services\PlanShareService.cs" Link="Web\PlanShareService.cs" />
   </ItemGroup>
 
   <ItemGroup>

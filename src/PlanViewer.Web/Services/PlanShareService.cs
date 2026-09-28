@@ -71,7 +71,7 @@ public sealed class PlanShareService : IPlanShareService
         var response = await _http.PostAsync($"{ApiBase}/api/share", content);
 
         if (!response.IsSuccessStatusCode)
-            throw new PlanShareException($"Share failed: server returned {(int)response.StatusCode}");
+            throw new PlanShareException(await ShareFailureMessageAsync(response));
 
         var json = await response.Content.ReadAsStringAsync();
         using var doc = JsonDocument.Parse(json);
@@ -80,9 +80,37 @@ public sealed class PlanShareService : IPlanShareService
         return new PlanShareResult(id, deleteToken);
     }
 
+    /* The server explains a refusal (store full, daily limit, bad request) as {"error": "..."} in
+       a message meant for the user, so show that text. A reply without it, such as an HTML error
+       page from the proxy in front of the server, gets the generic message with the status code. */
+    private static async Task<string> ShareFailureMessageAsync(HttpResponseMessage response)
+    {
+        try
+        {
+            var json = await response.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind == JsonValueKind.Object
+                && doc.RootElement.TryGetProperty("error", out var error)
+                && error.ValueKind == JsonValueKind.String
+                && !string.IsNullOrWhiteSpace(error.GetString()))
+            {
+                return error.GetString()!;
+            }
+        }
+        catch (JsonException)
+        {
+            // Not JSON, so there is no server text to show
+        }
+        return $"Share failed: server returned {(int)response.StatusCode}";
+    }
+
     public async Task DeleteAsync(string shareId, string deleteToken)
     {
-        var response = await _http.DeleteAsync($"{ApiBase}/api/plans/{Uri.EscapeDataString(shareId)}?token={Uri.EscapeDataString(deleteToken)}");
+        /* The token goes in a header, not the query string: the proxy writes every request URL to
+           its access log, and a ?token= there is a working delete link for anyone who reads the log. */
+        using var request = new HttpRequestMessage(HttpMethod.Delete, $"{ApiBase}/api/plans/{Uri.EscapeDataString(shareId)}");
+        request.Headers.Add("X-Delete-Token", deleteToken);
+        var response = await _http.SendAsync(request);
         if (!response.IsSuccessStatusCode)
             throw new PlanShareException("Failed to delete shared plan.");
     }
