@@ -34,4 +34,14 @@ public class TempTableNameTests
     {
         Assert.Equal(name, ShowPlanParser.CleanTempTableName(name));
     }
+
+    [Fact]
+    public void InternalNameWithNothingBeforeThePadding_IsNotCollapsedToAHash()
+    {
+        // Every character between the # and the hex suffix is an underscore, so no name is left
+        // once the padding is stripped. The name comes back whole instead of as a bare "#".
+        var internalName = "#".PadRight(116, '_') + "00000000000A";
+
+        Assert.Equal(internalName, ShowPlanParser.CleanTempTableName(internalName));
+    }
 }
