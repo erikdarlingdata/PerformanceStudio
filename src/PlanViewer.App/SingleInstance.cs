@@ -72,9 +72,10 @@ internal static class SingleInstance
     /// <para><b>What a secondary does instead.</b> It restores nothing (a file argument still
     /// opens; otherwise the usual new tab), never writes the list or a scratch buffer, never
     /// sweeps the buffer folder, and keeps the list already on disk when it saves settings
-    /// (see <c>AppSettingsService.Save</c>). It loses crash recovery for its own tabs and
-    /// nothing else: the unsaved-changes prompts do not depend on persistence and work
-    /// as they always have.</para>
+    /// (see <c>AppSettingsService.Save</c>). What it loses is session restore for its own
+    /// tabs: they are not reopened at the next start, whether it closed cleanly or crashed,
+    /// and its scratch tabs have no crash recovery. The unsaved-changes prompts do not depend
+    /// on persistence and work as they always have.</para>
     ///
     /// <para>Not set on the launch path where a non-owner runs fully after the pipe hand-off
     /// failed (see <c>Program.Main</c>): that launch never asked for a second window, so it
