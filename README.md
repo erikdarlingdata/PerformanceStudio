@@ -228,6 +228,12 @@ planview analyze ./queries/ --output-dir ./results/
 
 CLI arguments override `.env` values when both are provided.
 
+When the `.env` file supplies a setting, the CLI prints one line to stderr. The line names the file and those settings, and it never shows their values:
+
+```text
+Using settings from /work/.env: PLANVIEW_SERVER, PLANVIEW_TRUST_CERT
+```
+
 **Using the credential store** — for longer-term use, store credentials in your OS keychain:
 
 ```bash

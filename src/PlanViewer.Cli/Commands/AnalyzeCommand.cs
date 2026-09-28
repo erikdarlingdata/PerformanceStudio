@@ -155,22 +155,26 @@ public static class AnalyzeCommand
 
             // Load .env file if present (CLI args take precedence)
             var env = ConnectionHelper.LoadEnvFile();
-            server ??= env.GetValueOrDefault("PLANVIEW_SERVER");
-            database ??= env.GetValueOrDefault("PLANVIEW_DATABASE");
-            login ??= env.GetValueOrDefault("PLANVIEW_LOGIN");
-            if (!trustCert && env.GetValueOrDefault("PLANVIEW_TRUST_CERT")?.Equals("true", StringComparison.OrdinalIgnoreCase) == true)
+            server ??= env.Use("PLANVIEW_SERVER");
+            database ??= env.Use("PLANVIEW_DATABASE");
+            login ??= env.Use("PLANVIEW_LOGIN");
+            if (!trustCert && env.UseFlag("PLANVIEW_TRUST_CERT"))
                 trustCert = true;
 
             // Resolve password from --password-stdin, --password, or PLANVIEW_PASSWORD
             // (in that order). --stdin for plan XML conflicts with --password-stdin.
             if (!PasswordResolver.TryResolve(
                     passwordInline, passwordStdin, stdin,
-                    env.GetValueOrDefault("PLANVIEW_PASSWORD"),
+                    () => env.Use("PLANVIEW_PASSWORD"),
                     out var password))
             {
                 Environment.ExitCode = 1;
                 return;
             }
+
+            // A .env file can pick the server and turn off certificate validation, so say when it did.
+            if (env.Notice is { } envNotice)
+                Console.Error.WriteLine(envNotice);
 
             if (server != null)
             {

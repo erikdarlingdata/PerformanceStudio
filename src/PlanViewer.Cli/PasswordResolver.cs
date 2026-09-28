@@ -5,8 +5,8 @@ namespace PlanViewer.Cli;
 ///   1. --password-stdin (reads one line from redirected stdin)
 ///   2. --password      (inline CLI arg; emits a stderr warning because it's
 ///                       visible in process listings, shell history, and audit logs)
-///   3. PLANVIEW_PASSWORD environment variable (from the process environment or
-///                       a .env file, already looked up by the caller)
+///   3. PLANVIEW_PASSWORD from the .env file (asked for only when neither option
+///                       above gave a password, so the caller knows whether the file supplied it)
 /// </summary>
 internal static class PasswordResolver
 {
@@ -20,7 +20,7 @@ internal static class PasswordResolver
         string? inlinePassword,
         bool passwordFromStdin,
         bool stdinAlreadyClaimed,
-        string? envPassword,
+        Func<string?> envPassword,
         out string? password)
     {
         password = null;
@@ -52,12 +52,12 @@ internal static class PasswordResolver
         {
             Console.Error.WriteLine(
                 "Warning: --password is visible in process listings and shell history. " +
-                "Prefer --password-stdin, the PLANVIEW_PASSWORD env var, or the credential store.");
+                "Prefer --password-stdin, PLANVIEW_PASSWORD in a .env file, or the credential store.");
             password = inlinePassword;
             return true;
         }
 
-        password = envPassword;
+        password = envPassword();
         return true;
     }
 }
