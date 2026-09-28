@@ -250,10 +250,15 @@ public partial class QuerySessionControl : UserControl
             Format_Click(this, new RoutedEventArgs());
             e.Handled = true;
         }
-        // Escape → Cancel running query
-        else if (e.Key == Key.Escape && _executionCts != null && !_executionCts.IsCancellationRequested)
+        /* Escape → Cancel the running query, but only where that query is: in the editor it was
+           started from, or on the tab that is showing it. This handler hears every Escape in the
+           session, and cancelling the current run for all of them meant a keystroke on a finished
+           plan, a Query Store grid or the Overview reached past its own tab and stopped a capture
+           running somewhere else. */
+        else if (e.Key == Key.Escape && EscapeBelongsToCurrentRun()
+                 && _executionCts is { IsCancellationRequested: false } run)
         {
-            _executionCts.Cancel();
+            run.Cancel();
             e.Handled = true;
         }
         /* Ctrl+F4 → close the document being looked at.

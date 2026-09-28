@@ -511,6 +511,104 @@ public class TabCloseCleanupTests
         });
     }
 
+    /// <summary>
+    /// The session hears every Escape in it. One pressed on a finished plan reached the handler that
+    /// cancels the current run and stopped a capture running on another tab.
+    /// </summary>
+    [Fact]
+    public void EscapeOnAFinishedPlanDocumentDoesNotCancelARunningCapture()
+    {
+        HeadlessUi.Run(() =>
+        {
+            var (window, session) = SessionHarness.NewSession();
+            try
+            {
+                var finishedPlan = SessionHarness.OpenPlanDocuments(session, 1)[0];
+                SessionHarness.PretendConnected(session);
+                session.QueryEditor.Text = "select 1;";
+                StartCapture(session);
+                var run = CurrentRun(session);
+
+                SessionHarness.PressHeader(session, finishedPlan);
+                window.UpdateLayout();
+                Dispatcher.UIThread.RunJobs();
+                Assert.Same(finishedPlan.Content, SessionHarness.DocumentHost(session).Content);
+
+                PressEscape((Control)finishedPlan.Content!);
+
+                Assert.False(run.IsCancellationRequested,
+                    "Escape on a finished plan cancelled the capture running on another tab");
+            }
+            finally
+            {
+                SessionHarness.CancelExecution(session);
+                ChromeTestCleanup.PutAway(window);
+            }
+        });
+    }
+
+    /// <summary>
+    /// Escape in the editor is how a query started there is stopped, and it still is.
+    /// </summary>
+    [Fact]
+    public void EscapeInTheEditorStillCancelsTheRunningCapture()
+    {
+        HeadlessUi.Run(() =>
+        {
+            var (window, session) = SessionHarness.NewSession();
+            try
+            {
+                SessionHarness.PretendConnected(session);
+                session.QueryEditor.Text = "select 1;";
+                StartCapture(session);
+                var run = CurrentRun(session);
+
+                SessionHarness.EditorSegment(session).IsChecked = true;
+                window.UpdateLayout();
+                Assert.Equal(QuerySessionControl.SessionSurface.Editor, session.SelectedView);
+
+                PressEscape(session.QueryEditor);
+
+                Assert.True(run.IsCancellationRequested);
+            }
+            finally
+            {
+                SessionHarness.CancelExecution(session);
+                ChromeTestCleanup.PutAway(window);
+            }
+        });
+    }
+
+    /// <summary>
+    /// Escape with the focus somewhere in the session other than the spinner itself, while the
+    /// spinner's tab is the one showing, is still about that tab's run.
+    /// </summary>
+    [Fact]
+    public void EscapeAnywhereWhileTheLoadingTabIsShowingCancelsItsRun()
+    {
+        HeadlessUi.Run(() =>
+        {
+            var (window, session) = SessionHarness.NewSession();
+            try
+            {
+                SessionHarness.PretendConnected(session);
+                session.QueryEditor.Text = "select 1;";
+                StartCapture(session);
+                var run = CurrentRun(session);
+                window.UpdateLayout();
+
+                PressEscape(session.FindControl<Button>("ExecuteButton")!);
+
+                Assert.True(run.IsCancellationRequested);
+            }
+            finally
+            {
+                SessionHarness.CancelExecution(session);
+                ChromeTestCleanup.PutAway(window);
+            }
+        });
+    }
+
     // ---- helpers ------------------------------------------------------------------------------
 
     /// <summary>The .sqlplan the suite's other chrome tests open.</summary>

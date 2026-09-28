@@ -58,6 +58,17 @@ public partial class QuerySessionControl : UserControl
         return run;
     }
 
+    /// <summary>
+    /// Whether an Escape pressed right now is about the session's current run: the editor is what
+    /// is showing, which is where the run was started from, or the document showing is the tab
+    /// that owns it. Escape anywhere else belongs to whatever is there.
+    /// </summary>
+    private bool EscapeBelongsToCurrentRun() =>
+        _surface == SessionSurface.Editor
+        || (SelectedDocument is { } document
+            && _tabRuns.TryGetValue(document, out var run)
+            && ReferenceEquals(run, _executionCts));
+
     private async Task CaptureAndShowPlan(bool estimated, string? queryTextOverride = null)
     {
         if (_serverConnection == null || _selectedDatabase == null)
