@@ -226,6 +226,186 @@ public class TabCloseCleanupTests
         });
     }
 
+    // ---- E4: closing a tab cancels the work the tab owns --------------------------------------
+
+    /// <summary>
+    /// A capture or a query runs with no timeout, so a session closed while one is running used to
+    /// leave it running on the server until it finished by itself.
+    /// </summary>
+    [Fact]
+    public void ClosingAQuerySessionCancelsItsRunningCapture()
+    {
+        HeadlessUi.Run(() =>
+        {
+            var (window, session) = SessionHarness.NewSession();
+            try
+            {
+                SessionHarness.PretendConnected(session);
+                session.QueryEditor.Text = "select 1;";
+                // A session with typed text is asking to be saved before it closes. This test is
+                // about what happens once the close goes ahead, so it has nothing unsaved.
+                session.MarkClean();
+                StartCapture(session);
+
+                var run = CurrentRun(session);
+                Assert.False(run.IsCancellationRequested);
+
+                SessionHarness.CloseFromHeader(TabOf(window, session));
+                Dispatcher.UIThread.RunJobs();
+
+                Assert.True(run.IsCancellationRequested,
+                    "the session was closed and its capture carried on against the server");
+            }
+            finally
+            {
+                SessionHarness.CancelExecution(session);
+                ChromeTestCleanup.PutAway(window);
+            }
+        });
+    }
+
+    /// <summary>
+    /// The spinner tab is the run's only visible handle. Closing it is the user saying stop.
+    /// </summary>
+    [Fact]
+    public void ClosingALoadingTabCancelsTheRunItIsShowing()
+    {
+        HeadlessUi.Run(() =>
+        {
+            var (window, session) = SessionHarness.NewSession();
+            try
+            {
+                SessionHarness.PretendConnected(session);
+                session.QueryEditor.Text = "select 1;";
+                StartCapture(session);
+
+                var loadingTab = Assert.Single(SessionHarness.Documents(session));
+                var run = CurrentRun(session);
+                Assert.False(run.IsCancellationRequested);
+
+                SessionHarness.CloseFromHeader(loadingTab);
+
+                Assert.True(run.IsCancellationRequested,
+                    "the loading tab was closed and the query behind it carried on");
+                Assert.Empty(SessionHarness.Documents(session));
+
+                // The cancelled run then unwinds and removes its tab a second time. That has to be
+                // a no-op, not a second trip through the rules for where the user lands.
+                Dispatcher.UIThread.RunJobs();
+                Assert.Empty(SessionHarness.Documents(session));
+                Assert.Equal(QuerySessionControl.SessionSurface.Editor, session.SelectedView);
+            }
+            finally
+            {
+                SessionHarness.CancelExecution(session);
+                ChromeTestCleanup.PutAway(window);
+            }
+        });
+    }
+
+    /// <summary>
+    /// A Query Store grid fetches in the background. Its tab used to close without telling it.
+    /// </summary>
+    [Fact]
+    public void ClosingAQueryStoreGridDocumentCancelsItsFetchAndItsDatabaseCheck()
+    {
+        HeadlessUi.Run(() =>
+        {
+            var (window, session) = SessionHarness.NewSession();
+            try
+            {
+                var grid = NewGrid();
+                session.AddQueryStoreDocument(grid, "master");
+                var document = Assert.Single(SessionHarness.Documents(session));
+
+                // Stand-ins for a fetch and a picker check still waiting on a server.
+                var fetch = new CancellationTokenSource();
+                var check = new CancellationTokenSource();
+                SetField(grid, "_fetchCts", fetch);
+                SetField(grid, "_databaseCheckCts", check);
+
+                SessionHarness.CloseFromHeader(document);
+
+                Assert.True(fetch.IsCancellationRequested, "the grid's tab closed and its fetch kept going");
+                Assert.True(check.IsCancellationRequested, "the grid's tab closed and its database check kept going");
+
+                // Cancelled, never disposed: the fetch reads its token again when it wakes, and
+                // Token on a disposed source throws.
+                Assert.Null(Record.Exception(() => fetch.Token));
+                Assert.Null(Record.Exception(() => check.Token));
+
+                // The grid posted its first fetch when it was built and it has not run yet. It must
+                // not start now, on a grid that has been closed.
+                Dispatcher.UIThread.RunJobs();
+                Assert.Same(fetch, GetField(grid, "_fetchCts"));
+            }
+            finally
+            {
+                ChromeTestCleanup.PutAway(window);
+            }
+        });
+    }
+
+    /// <summary>
+    /// The History document already cancelled its fetch when closed. Its cancel moved into the
+    /// shared release with the other kinds, so it is pinned here.
+    /// </summary>
+    [Fact]
+    public void ClosingAHistoryDocumentStillCancelsItsFetch()
+    {
+        HeadlessUi.Run(() =>
+        {
+            var (window, session) = SessionHarness.NewSession();
+            try
+            {
+                var history = SessionHarness.NewHistory();
+                session.AddHistorySubTab("History", history);
+                var document = Assert.Single(SessionHarness.Documents(session));
+                var fetch = SessionHarness.PlantHistoryFetch(history);
+
+                SessionHarness.CloseFromHeader(document);
+
+                Assert.True(fetch.IsCancellationRequested);
+                Assert.Empty(SessionHarness.Documents(session));
+            }
+            finally
+            {
+                ChromeTestCleanup.PutAway(window);
+            }
+        });
+    }
+
+    /// <summary>
+    /// Get Actual Plan from a file opens a window-level tab that holds a spinner until the query
+    /// answers. Closing that tab has to stop the query.
+    /// </summary>
+    [Fact]
+    public void ClosingAWindowLevelLoadingTabCancelsItsRun()
+    {
+        HeadlessUi.Run(() =>
+        {
+            var (window, _) = SessionHarness.NewSession();
+            try
+            {
+                var run = new CancellationTokenSource();
+                var loadingTab = window.AddLoadingTab("Actual Plan", new Grid(), run);
+                Assert.False(run.IsCancellationRequested);
+
+                SessionHarness.CloseFromHeader(loadingTab);
+                Dispatcher.UIThread.RunJobs();
+
+                Assert.DoesNotContain(loadingTab, window.MainTabControl.Items.OfType<TabItem>());
+                Assert.True(run.IsCancellationRequested,
+                    "the Actual Plan tab was closed and its query carried on against the server");
+                Assert.Null(Record.Exception(() => run.Token));
+            }
+            finally
+            {
+                ChromeTestCleanup.PutAway(window);
+            }
+        });
+    }
+
     // ---- E8: Escape cancels the run its tab belongs to, and no other --------------------------
 
     /// <summary>

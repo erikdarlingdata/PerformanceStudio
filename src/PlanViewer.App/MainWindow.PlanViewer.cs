@@ -520,11 +520,7 @@ public partial class MainWindow : Window
             if (ke.Key == Avalonia.Input.Key.Escape) { cts.Cancel(); ke.Handled = true; }
         };
 
-        var tab = CreateTab("Actual Plan", loadingContainer);
-        MainTabControl.Items.Add(tab);
-        MainTabControl.SelectedItem = tab;
-        UpdateEmptyOverlay();
-        loadingContainer.Focus();
+        var tab = AddLoadingTab("Actual Plan", loadingContainer, cts);
 
         try
         {
@@ -549,6 +545,11 @@ public partial class MainWindow : Window
                 isAzureSqlDb: isAzure, timeoutSeconds: 0, cts.Token);
 
             sw.Stop();
+
+            /* Closing the tab cancels this run, but the answer can already be on its way back.
+               Building a viewer for a tab nobody can see would register a plan that nothing is
+               left to unregister. */
+            cts.Token.ThrowIfCancellationRequested();
 
             if (string.IsNullOrEmpty(actualPlanXml))
             {

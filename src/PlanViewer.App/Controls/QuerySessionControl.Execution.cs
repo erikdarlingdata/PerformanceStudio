@@ -151,6 +151,7 @@ public partial class QuerySessionControl : UserControl
         _planCounter++;
         var tabLabel = estimated ? $"Est Plan {_planCounter}" : $"Plan {_planCounter}";
         var loadingTab = NewPlanTab(tabLabel, loadingContainer);
+        _tabRuns.AddOrUpdate(loadingTab, runCts);
 
         AddDocument(loadingTab);
         SelectDocument(loadingTab);
@@ -180,6 +181,12 @@ public partial class QuerySessionControl : UserControl
             }
 
             sw.Stop();
+
+            /* The result can arrive after the run was cancelled: the tab was closed, or the next
+               query superseded this one, while the answer was already on its way back. Showing it
+               would put a plan viewer into a tab that is no longer in the strip, and it would stay
+               registered with the MCP session manager with nothing left to close it. */
+            ct.ThrowIfCancellationRequested();
 
             if (string.IsNullOrEmpty(planXml))
             {
@@ -409,6 +416,7 @@ public partial class QuerySessionControl : UserControl
         _planCounter++;
         var tabLabel = $"Plan {_planCounter}";
         var loadingTab = NewPlanTab(tabLabel, loadingContainer);
+        _tabRuns.AddOrUpdate(loadingTab, runCts);
 
         AddDocument(loadingTab);
         SelectDocument(loadingTab);
@@ -425,6 +433,9 @@ public partial class QuerySessionControl : UserControl
                 isAzureSqlDb: isAzure, timeoutSeconds: 0, ct);
 
             sw.Stop();
+
+            // Same as the capture path above: a cancelled run does not put its plan on screen.
+            ct.ThrowIfCancellationRequested();
 
             if (string.IsNullOrEmpty(actualPlanXml))
             {

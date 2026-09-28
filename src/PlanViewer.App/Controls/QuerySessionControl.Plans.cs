@@ -225,9 +225,9 @@ public partial class QuerySessionControl : UserControl
     /// Said once because there are four doors onto it — the header's ✕, the context menu's Close,
     /// its two bulk siblings, and Ctrl+F4 — and the release half is the half that goes missing.
     /// A plan viewer holds an MCP session registration that nothing else unregisters, so a close
-    /// that only removes the tab leaks it, invisibly and for the life of the process. The sub-tab
-    /// kinds built by <see cref="CreateSubTab"/> release themselves instead, on detach, which is
-    /// what removing them from the strip causes.
+    /// that only removes the tab leaks it, invisibly and for the life of the process. The ✕ that
+    /// <see cref="CreateSubTab"/> builds for Query Store and History documents goes through here
+    /// too, so what each kind gives up is decided in <see cref="ReleaseDocument"/> and nowhere else.
     /// </remarks>
     private void CloseDocument(TabItem tab)
     {
@@ -245,27 +245,58 @@ public partial class QuerySessionControl : UserControl
     /// the tab's content as it is NOW, so a tab that started as a spinner and had a plan swapped
     /// into it is released as the plan viewer it became.
     ///
-    /// <para>Safe to call twice on the same document: unregistering a plan that is already gone
-    /// does nothing.</para>
+    /// <para>What each kind holds: a plan viewer holds its MCP session registration, a Query Store
+    /// grid and a History document hold a fetch running on the server, and a loading tab holds the
+    /// run that will fill it. Closing the tab stops all of them, because none of them has anywhere
+    /// left to put what it was fetching.</para>
+    ///
+    /// <para>Safe to call twice on the same document: unregistering a plan that is already gone,
+    /// and cancelling a source that is already cancelled, both do nothing.</para>
     /// </remarks>
-    private static void ReleaseDocument(TabItem tab)
+    private void ReleaseDocument(TabItem tab)
     {
-        if (tab.Content is PlanViewerControl viewer)
-            viewer.Clear();
+        switch (tab.Content)
+        {
+            case PlanViewerControl viewer:
+                viewer.Clear();
+                break;
+
+            case QueryStoreGridControl grid:
+                grid.CancelFetch();
+                break;
+
+            case QueryStoreHistoryControl history:
+                history.CancelFetch();
+                break;
+        }
+
+        if (_tabRuns.TryGetValue(tab, out var run))
+            run.Cancel();
     }
 
     /// <summary>
-    /// The session's tab has been closed for good: releases every document it still holds.
+    /// The session's tab has been closed for good: releases every document it still holds, and
+    /// stops the work the session itself has running.
     /// </summary>
     /// <remarks>
     /// Called by the window that owns the tab, after the tab has left the strip or the detached
     /// window has closed. Not called on a detach or a re-dock, where the session moves and stays
-    /// open. Closing a session used to remove its tab and nothing else, so every plan viewer in
-    /// it stayed registered with the MCP session manager until the app exited, and the
-    /// <c>list_plans</c> tool kept listing plans nobody could see any more.
+    /// open. Closing a session used to remove its tab and nothing else: every plan viewer in it
+    /// stayed registered with the MCP session manager until the app exited, and a query or plan
+    /// capture (both run with no timeout) kept running on the server for a session nobody could
+    /// see any more.
+    ///
+    /// <para>The current run is cancelled here directly, as well as through the loading tab that
+    /// shows it: the session's current source is the one thing a close must never leave live,
+    /// whatever state its tab is in. Starting a run cancels the one before it, so it is also the
+    /// only source that can still be live. The metadata fetch behind the database picker belongs
+    /// to the session too.</para>
     /// </remarks>
     internal void ReleaseOnClose()
     {
+        _executionCts?.Cancel();
+        _databaseMetadataCts?.Cancel();
+
         foreach (var tab in DocumentTabs.ToList())
             ReleaseDocument(tab);
     }
