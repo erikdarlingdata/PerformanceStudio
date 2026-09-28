@@ -984,7 +984,13 @@ public static partial class PlanAnalyzer
         // to still surface as top items. Threshold: self-time >= 20% of statement
         // elapsed. Only emits if no other warning is already on the node to avoid
         // doubling up. The benefit % is just the self-time share.
+        // Exchanges (Parallelism) are skipped: their self-time is mostly time spent waiting on the
+        // operators that feed them and drain them, not work of their own. On a live plan an exchange
+        // feeding a spilling sort showed 21 s of elapsed time on 2.4 s of CPU per thread, and was
+        // named as the expensive operator while the sort beside it was the real problem. The text
+        // report's "Expensive operators" list skips exchanges for the same reason.
         if (!cfg.IsRuleDisabled(35) && node.HasActualStats && node.Warnings.Count == 0
+            && !NodeTimeAttribution.IsExchangeOperator(node)
             && stmt.QueryTimeStats != null && stmt.QueryTimeStats.ElapsedTimeMs >= Rule35MinStatementElapsedMs)
         {
             var selfMs = GetOperatorOwnElapsedMs(node);
