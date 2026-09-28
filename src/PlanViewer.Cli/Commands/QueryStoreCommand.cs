@@ -10,6 +10,13 @@ namespace PlanViewer.Cli.Commands;
 
 public static class QueryStoreCommand
 {
+    /// <summary>The --order-by values the Query Store query ranks by.</summary>
+    internal static readonly IReadOnlyList<string> OrderByValues = new[]
+    {
+        "cpu", "avg-cpu", "duration", "avg-duration", "reads", "avg-reads", "writes", "avg-writes",
+        "physical-reads", "avg-physical-reads", "memory", "avg-memory", "executions"
+    };
+
     /* #430: these two were built inline and never got the depth ceiling, so `querystore` still
        failed on a plan deeper than ~30 operators long after the crash was "fixed" — one ERROR row
        in summary.txt per deep plan, which is quieter than the crash and no more correct. */
@@ -39,9 +46,23 @@ public static class QueryStoreCommand
 
         var orderByOption = new Option<string>("--order-by")
         {
-            Description = "Ranking metric (total or avg): cpu, avg-cpu, duration, avg-duration, reads, avg-reads, writes, avg-writes, physical-reads, avg-physical-reads, memory, avg-memory, executions",
+            Description = $"Ranking metric (total or avg): {string.Join(", ", OrderByValues)}",
             DefaultValueFactory = _ => "cpu"
         };
+
+        /* The query lowercases the value and falls back to CPU order for one it does not know, so a
+           misspelled metric used to run to the end ranked by CPU, with the summary still saying "top
+           by <the misspelling>". Refuse it while the command line is parsed, as --output does. Any
+           letter case is accepted, because the query accepts it. */
+        orderByOption.Validators.Add(result =>
+        {
+            var value = result.GetValueOrDefault<string>();
+            if (value is not null && !OrderByValues.Contains(value.ToLowerInvariant()))
+            {
+                result.AddError(
+                    $"Argument '{value}' not recognized for --order-by. Must be one of: {string.Join(", ", OrderByValues)}");
+            }
+        });
 
         var hoursBackOption = new Option<int>("--hours-back")
         {
