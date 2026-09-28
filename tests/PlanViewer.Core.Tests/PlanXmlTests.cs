@@ -179,6 +179,21 @@ public class PlanXmlTests
         PlanXml.CheckAttributeCounts(xml);
     }
 
+    /// <summary>
+    /// The count steps over a declaration to its first "&gt;", so a quoted "&gt;" in a DOCTYPE's
+    /// internal subset ends the step early and the rest is read as text and tags. That can only
+    /// count more, never hide a tag, and the DTD is refused either way.
+    /// </summary>
+    [Theory]
+    [InlineData("<!DOCTYPE r [<!ENTITY e \"a>b\">]><r/>")]
+    [InlineData("<!DOCTYPE r [<!ENTITY e \"a> {0}\">]><r/>")]
+    public void ADoctypeWithAQuotedGreaterThanIsStillRefused(string format)
+    {
+        var xml = string.Format(format, WithAttributes(PlanXml.MaxAttributes + 1).Replace('"', '\''));
+
+        Assert.Throws<XmlException>(() => PlanXml.Parse(xml));
+    }
+
     [Fact]
     public void EveryFixturePlanPassesTheCount()
     {
