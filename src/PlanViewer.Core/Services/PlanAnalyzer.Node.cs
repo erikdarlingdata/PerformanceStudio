@@ -518,17 +518,20 @@ public static partial class PlanAnalyzer
     private static void Rule33_CeGuessDetection(PlanNode node, PlanStatement stmt, AnalyzerConfig cfg)
     {
         // Rule 33: Estimated plan CE guess detection — scans with telltale default selectivity
-        // When the optimizer uses a local variable or can't sniff, it falls back to density-based
-        // guesses: 30% (equality), 10% (inequality), 9% (LIKE/between), ~16.43% (sqrt(30%)),
-        // 1% (multi-inequality). On large tables, these guesses can hide the need for an index.
+        // When the optimizer has no statistics to use (a local variable it can't sniff, a column with
+        // no statistics, an expression), it falls back on fixed guesses: 30% for an inequality, 9%
+        // for BETWEEN or LIKE, ~16.4% for two inequalities, 10% for comparing two columns, and an
+        // equality guess that grows with the table. DetectCeGuess has the measured details and
+        // which estimator (CE 70 or 120+) each one belongs to. On large tables, these guesses can
+        // hide the need for an index.
         if (!cfg.IsRuleDisabled(33) && !node.HasActualStats && IsRowstoreScan(node)
-            && node.TableCardinality >= 100_000 && node.EstimateRows > 0
+            && node.TableCardinality >= CeGuessMinTableRows && node.EstimateRows > 0
             && !string.IsNullOrEmpty(node.Predicate))
         {
             var impact = BuildScanImpactDetails(node, stmt);
             if (impact.CostPct >= 50)
             {
-                var guessDesc = DetectCeGuess(node.EstimateRows, node.TableCardinality);
+                var guessDesc = DetectCeGuess(node.EstimateRows, node.TableCardinality, stmt.CardinalityEstimationModelVersion);
                 if (guessDesc != null)
                 {
                     node.Warnings.Add(new PlanWarning
@@ -981,7 +984,13 @@ public static partial class PlanAnalyzer
         // to still surface as top items. Threshold: self-time >= 20% of statement
         // elapsed. Only emits if no other warning is already on the node to avoid
         // doubling up. The benefit % is just the self-time share.
+        // Exchanges (Parallelism) are skipped: their self-time is mostly time spent waiting on the
+        // operators that feed them and drain them, not work of their own. On a live plan an exchange
+        // feeding a spilling sort showed 21 s of elapsed time on 2.4 s of CPU per thread, and was
+        // named as the expensive operator while the sort beside it was the real problem. The text
+        // report's "Expensive operators" list skips exchanges for the same reason.
         if (!cfg.IsRuleDisabled(35) && node.HasActualStats && node.Warnings.Count == 0
+            && !NodeTimeAttribution.IsExchangeOperator(node)
             && stmt.QueryTimeStats != null && stmt.QueryTimeStats.ElapsedTimeMs >= Rule35MinStatementElapsedMs)
         {
             var selfMs = GetOperatorOwnElapsedMs(node);
