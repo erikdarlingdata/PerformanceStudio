@@ -406,6 +406,36 @@ public static class QueryStoreCommand
         var outDir = outputDir?.FullName ?? Directory.GetCurrentDirectory();
         Directory.CreateDirectory(outDir);
 
+        var failed = await AnalyzePlansAsync(
+            plans, database, orderBy, hoursBack, outDir, outputFormat, compact, warningsOnly,
+            analyzerConfig, serverMetadata, Console.Error);
+
+        Console.Error.WriteLine();
+        if (plans.Count > 1)
+            Console.Error.WriteLine($"Processed {plans.Count} plans: {plans.Count - failed} succeeded, {failed} failed");
+        Console.Error.WriteLine($"Output: {outDir}");
+        Console.Error.WriteLine($"Summary: {Path.Combine(outDir, SummaryFileName)}");
+
+        /* Same as "analyze --server": the plans that worked keep their files and their rows in the
+           summary, and the exit code says the run was incomplete. It used to exit 0 no matter how
+           many plans failed, so a script or a CI job could not tell. */
+        if (failed > 0)
+            Environment.ExitCode = 1;
+    }
+
+    internal const string SummaryFileName = "summary.txt";
+
+    /// <summary>
+    /// Analyzes each fetched plan, writes its .sqlplan and analysis files, then writes summary.txt.
+    /// Returns how many plans failed. A failed plan gets an ERROR row in the summary and does not stop
+    /// the plans after it, so every plan that worked still has its files. Progress goes to
+    /// <paramref name="log"/>, which is stderr for the command.
+    /// </summary>
+    internal static async Task<int> AnalyzePlansAsync(
+        IReadOnlyList<QueryStorePlan> plans, string database, string orderBy, int hoursBack,
+        string outDir, string outputFormat, bool compact, bool warningsOnly,
+        AnalyzerConfig analyzerConfig, ServerMetadata? serverMetadata, TextWriter log)
+    {
         // Summary tracking — show the primary sort metric column
         var (metricHeader, metricFmt) = GetMetricFormatter(orderBy);
 
@@ -416,6 +446,7 @@ public static class QueryStoreCommand
             "#", "Query ID", "Plan ID", "Query Hash", "Module", metricHeader, "Executions", "Warns", "Crit"));
         summaryLines.Add(new string('-', 130));
 
+        var failed = 0;
         for (int i = 0; i < plans.Count; i++)
         {
             var qsPlan = plans[i];
@@ -423,7 +454,7 @@ public static class QueryStoreCommand
 
             try
             {
-                Console.Error.Write($"[{i + 1}/{plans.Count}] Query {qsPlan.QueryId} / Plan {qsPlan.PlanId}... ");
+                log.Write($"[{i + 1}/{plans.Count}] Query {qsPlan.QueryId} / Plan {qsPlan.PlanId}... ");
 
                 // Save .sqlplan
                 var planPath = Path.Combine(outDir, $"{label}.sqlplan");
@@ -450,11 +481,12 @@ public static class QueryStoreCommand
                     moduleName.Length > 18 ? moduleName[..18] + ".." : moduleName,
                     metricValue, qsPlan.CountExecutions, warnings, critical));
 
-                Console.Error.WriteLine($"OK ({warnings} warnings, {critical} critical)");
+                log.WriteLine($"OK ({warnings} warnings, {critical} critical)");
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"ERROR: {ex.Message}");
+                failed++;
+                log.WriteLine($"ERROR: {ex.Message}");
                 summaryLines.Add(string.Format(" {0,-4} {1,-10} {2,-10} {3,-20} {4,-20} ERROR: {5}",
                     i + 1, qsPlan.QueryId, qsPlan.PlanId, qsPlan.QueryHash, "", ex.Message));
             }
@@ -462,12 +494,9 @@ public static class QueryStoreCommand
 
         // Write summary
         summaryLines.Add("");
-        var summaryPath = Path.Combine(outDir, "summary.txt");
-        await File.WriteAllLinesAsync(summaryPath, summaryLines);
+        await File.WriteAllLinesAsync(Path.Combine(outDir, SummaryFileName), summaryLines);
 
-        Console.Error.WriteLine();
-        Console.Error.WriteLine($"Output: {outDir}");
-        Console.Error.WriteLine($"Summary: {summaryPath}");
+        return failed;
     }
 
     private static (string Header, Func<QueryStorePlan, string> Format) GetMetricFormatter(string orderBy)
