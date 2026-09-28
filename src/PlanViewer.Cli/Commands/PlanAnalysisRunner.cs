@@ -24,13 +24,17 @@ public static class PlanAnalysisRunner
         PlanAnalysisPipeline.Analyze(planXml, config, serverMetadata);
 
     /// <summary>
-    /// The message to show when the plan XML could not be parsed, or null when it parsed. The
-    /// pipeline skips analysis for such a plan, and whatever parsed before the failure is partial,
-    /// so writing it out would look like a clean result with no findings. A plan nested deeper
-    /// than MaxParseDepth is refused this way (#589).
+    /// The message to show when the plan XML could not be parsed into a plan with at least one
+    /// statement, or null when it could. The pipeline skips analysis for such a plan, and whatever
+    /// parsed before a failure is partial, so writing it out would look like a clean result with no
+    /// findings. A plan nested deeper than MaxParseDepth is refused this way (#589). So is XML that
+    /// parses but holds no statement, such as a file that is not a showplan: it used to be caught
+    /// only by the single-file path, and the live and Query Store paths wrote an empty result for it.
     /// </summary>
     public static string? ParseFailure(ParsedPlan plan) =>
-        string.IsNullOrWhiteSpace(plan.ParseError) ? null : $"Could not parse the plan XML: {plan.ParseError}";
+        !string.IsNullOrWhiteSpace(plan.ParseError)
+            ? $"Could not parse the plan XML: {plan.ParseError}"
+            : PlanStatements.NoStatementsMessage(plan);
 
     /// <summary>
     /// Serializes an analysis result, and says what went wrong when the operator tree is too

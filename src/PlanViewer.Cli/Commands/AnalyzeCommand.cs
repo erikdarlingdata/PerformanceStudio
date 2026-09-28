@@ -235,16 +235,10 @@ public static class AnalyzeCommand
 
         var plan = PlanAnalysisRunner.Analyze(planXml, analyzerConfig);
 
+        // Covers a plan that failed to parse and a plan with no statements, with the same messages as before.
         if (PlanAnalysisRunner.ParseFailure(plan) is { } parseFailure)
         {
             Console.Error.WriteLine(parseFailure);
-            Environment.ExitCode = 1;
-            return;
-        }
-
-        if (plan.Batches.Count == 0)
-        {
-            Console.Error.WriteLine("Could not parse any statements from the plan XML");
             Environment.ExitCode = 1;
             return;
         }
