@@ -131,11 +131,18 @@ public class ReproScriptBuilderSafetyTests
     // "*/" would close the comment, "/*" would open a nested one that swallows the script,
     // and a line break could put GO on a line of its own. ScriptDom parses each script, so a
     // statement the name smuggled out would show up as a PRINT or an extra batch.
+    //
+    // The USE line keeps the name as it is, line breaks included, on purpose. It doubles "]",
+    // and go-sqlcmd and ODBC sqlcmd do not split a batch inside a bracketed name. A client that
+    // splits at every GO line is out of scope: the statement text can hold such a line too.
     [Theory]
     [InlineData("master*/\nGO\nPRINT 'INJECTED';\nGO\n/*")]  // its own batch in a GO-aware client
     [InlineData("master*/ PRINT 'INJECTED'; /*")]            // same batch, no GO needed
     [InlineData("master\r\nGO\r\nPRINT 'INJECTED';\r\nGO")] // line breaks alone
     [InlineData("master/*")]                                  // nested comment
+    [InlineData("master/*/")]                                 // delimiters that overlap
+    [InlineData("master*/*")]
+    [InlineData("master\vGO\fPRINT 'INJECTED';\u0085GO\u2028x\u2029y")] // VT, FF, NEL, LS, PS
     public void BuildReproScript_HostileDatabaseName_StaysInTheHeaderComment(string databaseName)
     {
         var sql = ReproScriptBuilder.BuildReproScript("SELECT 1", databaseName, null, null);
@@ -145,7 +152,9 @@ public class ReproScriptBuilderSafetyTests
         Assert.DoesNotContain(script.Batches[0].Statements, s => s is PrintStatement);
 
         var header = HeaderComment(sql);
-        Assert.Contains("Database: [master", header);
+        var databaseLine = Assert.Single(header.Split('\n'), line => line.StartsWith("Database: [", StringComparison.Ordinal));
+        Assert.StartsWith("Database: [master", databaseLine);
+        Assert.DoesNotMatch(@"[\p{Cc}\u2028\u2029]", databaseLine.TrimEnd('\r'));
         Assert.DoesNotContain(header.Split('\n'), line => line.Trim() == "GO");
     }
 

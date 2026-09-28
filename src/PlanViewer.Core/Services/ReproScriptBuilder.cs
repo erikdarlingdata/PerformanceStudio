@@ -136,7 +136,8 @@ public static class ReproScriptBuilder
         sb.AppendLine();
 
         /* USE database (skip for Azure SQL DB — USE is invalid there).
-           Double any ']' in the identifier so names like 'cool]stuff' still parse. */
+           Double any ']' in the identifier so names like 'cool]stuff' still parse. Line breaks
+           in the name stay: a client that splits batches correctly never splits inside brackets. */
         if (!string.IsNullOrEmpty(databaseName) && !isAzureSqlDb)
         {
             sb.AppendLine($"USE [{databaseName.Replace("]", "]]")}];");
@@ -412,8 +413,8 @@ public static class ReproScriptBuilder
     /// <summary>
     /// Makes text safe inside the header's block comment. "*/" would close the comment and
     /// "/*" would open a nested one (T-SQL block comments nest), so both are split with a
-    /// space. Line breaks become spaces too, so a value stays on its own line and can never
-    /// put GO on a line by itself for a batch splitter that doesn't track comments.
+    /// space. Line breaks become spaces too, so each value stays on one line of the header
+    /// and cannot put GO on a line of its own there.
     /// </summary>
     private static string CommentSafe(string? text)
     {

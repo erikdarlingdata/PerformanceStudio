@@ -96,19 +96,34 @@ public class HtmlExporterTests
         Assert.Contains("<div class=\"warning-item info\">", html);
     }
 
-    private static string ExportWithSeverity(string? severity)
+    [Fact]
+    public void Export_CraftedSeverityWithoutMarkup_CannotAddAnAttribute()
     {
-        var result = new AnalysisResult
-        {
-            Statements =
-            {
-                new StatementResult
-                {
-                    StatementText = "SELECT 1",
-                    Warnings = { new WarningResult { Severity = severity!, Type = "demo", Message = "demo" } }
-                }
-            }
-        };
-        return HtmlExporter.Export(result, "demo");
+        var html = ExportWithSeverity("x\" onmouseover=\"alert(1)");
+
+        Assert.DoesNotContain("onmouseover=\"alert(1)\"", html);
+        Assert.Contains("<div class=\"warning-item info\">", html);
+    }
+
+    [Fact]
+    public void Export_CraftedSeverityOnAnOperator_IsMappedToo()
+    {
+        // Operator warnings reach the same list through the operator tree.
+        var html = ExportWithSeverity("\"><script>alert(1)</script><div class=\"", onOperator: true);
+
+        Assert.DoesNotContain("<script>alert(1)</script>", html);
+        Assert.Contains("<div class=\"warning-item info\">", html);
+    }
+
+    private static string ExportWithSeverity(string? severity, bool onOperator = false)
+    {
+        var warning = new WarningResult { Severity = severity!, Type = "demo", Message = "demo" };
+        var statement = new StatementResult { StatementText = "SELECT 1" };
+        if (onOperator)
+            statement.OperatorTree = new OperatorResult { Warnings = { warning } };
+        else
+            statement.Warnings.Add(warning);
+
+        return HtmlExporter.Export(new AnalysisResult { Statements = { statement } }, "demo");
     }
 }
