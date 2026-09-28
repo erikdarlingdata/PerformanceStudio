@@ -260,8 +260,10 @@ public class SingleInstanceTests
     public async Task ALineSentByTheClientReachesTheServer()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
-        // A unique name, for the same reason as the mutex self-test above.
-        var name = $"{SingleInstance.PipeName}_selftest_{Guid.NewGuid():N}";
+        // A unique name, for the same reason as the mutex self-test above. Kept short: off
+        // Windows the pipe is a socket file under the temp folder, and macOS allows 104 bytes for
+        // its whole path. A full GUID suffix made it 131 there; the app's own name makes it 89.
+        var name = $"{SingleInstance.PipeName}_{Guid.NewGuid().ToString("N")[..8]}";
 
         using var server = SingleInstance.CreatePipeServer(name);
         // Reading starts before the client writes: a write to the pipe can wait for its reader.
