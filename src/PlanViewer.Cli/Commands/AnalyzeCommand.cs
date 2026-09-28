@@ -31,11 +31,9 @@ public static class AnalyzeCommand
             Description = "Read plan XML from stdin"
         };
 
-        var outputOption = new Option<string>("--output", "-o")
-        {
-            Description = "Output format: json or text",
-            DefaultValueFactory = _ => "json"
-        };
+        var outputOption = PlanAnalysisRunner.CreateOutputOption(
+            "Output format. With --server, both writes a .json and a .txt file per plan. Without --server, both prints json",
+            defaultFormat: "json");
 
         var compactOption = new Option<bool>("--compact")
         {
@@ -134,7 +132,7 @@ public static class AnalyzeCommand
         {
             var file = parseResult.GetValue(fileArg);
             var stdin = parseResult.GetValue(stdinOption);
-            var output = parseResult.GetValue(outputOption) ?? "json";
+            var output = PlanAnalysisRunner.ReadOutputFormat(parseResult, outputOption, "json");
             var compact = parseResult.GetValue(compactOption);
             var warningsOnly = parseResult.GetValue(warningsOnlyOption);
             var server = parseResult.GetValue(serverOption);
@@ -235,16 +233,10 @@ public static class AnalyzeCommand
 
         var plan = PlanAnalysisRunner.Analyze(planXml, analyzerConfig);
 
+        // Covers a plan that failed to parse and a plan with no statements, with the same messages as before.
         if (PlanAnalysisRunner.ParseFailure(plan) is { } parseFailure)
         {
             Console.Error.WriteLine(parseFailure);
-            Environment.ExitCode = 1;
-            return;
-        }
-
-        if (plan.Batches.Count == 0)
-        {
-            Console.Error.WriteLine("Could not parse any statements from the plan XML");
             Environment.ExitCode = 1;
             return;
         }

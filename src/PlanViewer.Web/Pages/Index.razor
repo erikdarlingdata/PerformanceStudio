@@ -286,6 +286,16 @@ else
                 return;
             }
 
+            /* XML that parses but is not a showplan, or a showplan with no statements, gets this far
+               with nothing to show. The result view draws the active statement without checking that
+               there is one, so let it through and the page threw a NullReferenceException. */
+            if (PlanStatements.NoStatementsMessage(parsedPlan) is { } noStatements)
+            {
+                errorMessage = noStatements;
+                parsedPlan = null;
+                return;
+            }
+
             PlanAnalyzer.Analyze(parsedPlan);
             BenefitScorer.Score(parsedPlan);
 
@@ -417,6 +427,14 @@ else
         try
         {
             var shared = await ShareService.LoadAsync(id);
+
+            // The same guard as RunAnalysis: a stored result with no statements would fail the same way.
+            if (shared.Result is { } loaded && PlanStatements.NoStatementsMessage(loaded) is { } noStatements)
+            {
+                errorMessage = noStatements;
+                return;
+            }
+
             result = shared.Result;
             textOutput = shared.Text;
             sourceLabel = "shared plan";

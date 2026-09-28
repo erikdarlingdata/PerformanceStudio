@@ -475,7 +475,7 @@ Arguments:
 
 Options:
   --stdin                    Read plan XML from stdin
-  -o, --output <format>      json (default) or text
+  -o, --output <format>      json (default), text, or both (with --server, both writes .json and .txt files)
   --compact                  Compact JSON (no indentation)
   --warnings-only            Skip operator tree, only output warnings and indexes
   -s, --server <name>        SQL Server name (matches credential store key)
