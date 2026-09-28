@@ -47,6 +47,14 @@ public partial class QuerySessionControl : UserControl
             _selectedDatabase = dialog.ResultDatabase;
             _connectionString = _serverConnection.GetConnectionString(_credentialService, _selectedDatabase);
 
+            /* A new holder for a new connection, made here rather than at the fetch below so a
+               document opened while the fetch is still in flight already has the right one to
+               read, and handed to the fetch as a parameter so an offset that lands after ANOTHER
+               reconnect fills this connection's holder and not the newer one's (E5). The
+               connection string is captured for the same reason. */
+            var serverOffset = BeginServerConnection();
+            var offsetConnectionString = _connectionString;
+
             /* A database metadata fetch still running from before this reconnect was built from
                the previous server's connection string. Left alone it can land after
                FetchServerMetadataAsync below has replaced _serverMetadata, and write the old
@@ -81,7 +89,7 @@ public partial class QuerySessionControl : UserControl
             DatabaseBox.IsEnabled = true;
 
             await FetchServerMetadataAsync();
-            await FetchServerUtcOffset();
+            await FetchServerUtcOffset(offsetConnectionString, serverOffset);
 
             if (_selectedDatabase != null)
             {
@@ -159,18 +167,36 @@ public partial class QuerySessionControl : UserControl
         }
     }
 
-    private async Task FetchServerUtcOffset()
+    /// <summary>
+    /// Starts the offset holder for a new connection. A connect replaces the holder instead of
+    /// reusing it: documents already open keep the old one, because their data came from the old
+    /// server, and documents opened from here on get this one. Internal so a test can connect
+    /// without a server — the connect block calls this and nothing else makes a holder (E5).
+    /// </summary>
+    internal ServerUtcOffset BeginServerConnection()
     {
-        if (_connectionString == null) return;
+        _serverOffset = new ServerUtcOffset();
+        return _serverOffset;
+    }
+
+    /// <summary>
+    /// Asks the server it just connected to for its offset from UTC and fills
+    /// <paramref name="target"/> with it. Takes the connection string and the holder rather than
+    /// reading the session's fields, so the answer lands on the connection that asked even if the
+    /// session has reconnected in the meantime. A failed query leaves the holder at zero.
+    /// </summary>
+    private static async Task FetchServerUtcOffset(string? connectionString, ServerUtcOffset target)
+    {
+        if (connectionString == null) return;
         try
         {
-            await using var conn = new SqlConnection(_connectionString);
+            await using var conn = new SqlConnection(connectionString);
             await conn.OpenAsync();
             await using var cmd = new SqlCommand(
                 "SELECT DATEDIFF(MINUTE, GETUTCDATE(), GETDATE())", conn);
             var offset = await cmd.ExecuteScalarAsync();
             if (offset is int mins)
-                PlanViewer.Core.Services.TimeDisplayHelper.ServerUtcOffsetMinutes = mins;
+                target.Minutes = mins;
         }
         catch { }
     }

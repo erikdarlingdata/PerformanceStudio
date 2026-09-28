@@ -5,6 +5,7 @@ using Microsoft.Data.SqlClient;
 using PlanViewer.App.Controls;
 using PlanViewer.Core.Interfaces;
 using PlanViewer.Core.Models;
+using PlanViewer.Core.Services;
 
 namespace PlanViewer.Core.Tests;
 
@@ -104,6 +105,7 @@ public class DrillDownDatabaseTests
                 var grid = new QueryStoreGridControl(
                     new ServerConnection { ServerName = "tcp:127.0.0.1,1", DisplayName = "unit test" },
                     new NoCredentials(),
+                    new ServerUtcOffset(),
                     initialDatabase: "Sales",
                     databases: new List<string> { "master", "Sales" });
 

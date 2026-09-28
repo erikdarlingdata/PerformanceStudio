@@ -265,7 +265,8 @@ internal static class SessionHarness
     /// whatever is listening on the machine running the suite.
     /// </remarks>
     internal static QueryStoreHistoryControl NewHistory(string label = "0xABC") =>
-        new(connectionString: "", queryHash: label, queryText: "select 1;", database: "master");
+        new(connectionString: "", queryHash: label, queryText: "select 1;", database: "master",
+            serverOffset: new PlanViewer.Core.Services.ServerUtcOffset());
 
     /// <summary>
     /// Puts a live fetch token into a History control, standing in for a fetch still waiting on a

@@ -37,6 +37,7 @@ public class ServerFilterPanelPersistenceTests
             var grid = new QueryStoreGridControl(
                 new ServerConnection { ServerName = "tcp:127.0.0.1,1", DisplayName = "unit test" },
                 CredentialServiceFactory.Create(),
+                new ServerUtcOffset(),
                 initialDatabase: "master",
                 databases: new List<string> { "master" });
 

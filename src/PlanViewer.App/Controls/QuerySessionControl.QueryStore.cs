@@ -146,13 +146,22 @@ public partial class QuerySessionControl : UserControl
 
         var databases = DatabaseBox.Items.OfType<string>().ToList();
 
-        var grid = new QueryStoreGridControl(_serverConnection!, _credentialService,
-            database, databases, supportsWaitStats);
+        var grid = NewQueryStoreGrid(database, databases, supportsWaitStats);
         if (initialStartUtc.HasValue && initialEndUtc.HasValue)
             grid.SetInitialTimeRange(initialStartUtc.Value, initialEndUtc.Value);
 
         AddQueryStoreDocument(grid, database);
     }
+
+    /// <summary>
+    /// Builds a Query Store grid on the connection the session is on now, which is what gives it
+    /// that connection's offset holder to keep (E5). Said once because the toolbar's Query Store
+    /// button and the Overview's drill-down both build one, and a second copy of this line is a
+    /// second place to forget the holder. Internal so a test can build one without the server
+    /// check that comes before it in both callers.
+    /// </summary>
+    internal QueryStoreGridControl NewQueryStoreGrid(string database, List<string> databases, bool supportsWaitStats) =>
+        new(_serverConnection!, _credentialService, _serverOffset, database, databases, supportsWaitStats);
 
     /// <summary>
     /// Puts a Query Store grid into the strip as a document and shows it.
@@ -231,8 +240,7 @@ public partial class QuerySessionControl : UserControl
         // Build database list from the current DatabaseBox
         var databases = DatabaseBox.Items.OfType<string>().ToList();
 
-        var grid = new QueryStoreGridControl(_serverConnection!, _credentialService,
-            _selectedDatabase!, databases, supportsWaitStats);
+        var grid = NewQueryStoreGrid(_selectedDatabase!, databases, supportsWaitStats);
 
         AddQueryStoreDocument(grid, _selectedDatabase!);
     }

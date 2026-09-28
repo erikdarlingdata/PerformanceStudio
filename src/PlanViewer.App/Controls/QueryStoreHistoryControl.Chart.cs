@@ -49,7 +49,7 @@ public partial class QueryStoreHistoryControl : UserControl
 			var color = _planHashColorMap.GetValueOrDefault(planHash, PlanColors[0]);
 
 			var ordered = group.OrderBy(r => r.IntervalStartUtc).ToList();
-			var xs = ordered.Select(r => TimeDisplayHelper.ConvertForDisplay(r.IntervalStartUtc).ToOADate()).ToArray();
+			var xs = ordered.Select(r => TimeDisplayHelper.ConvertForDisplay(r.IntervalStartUtc, _serverOffset.Minutes).ToOADate()).ToArray();
 			var ys = ordered.Select(r => GetMetricValue(r, tag)).ToArray();
 
 			var scatter = HistoryChart.Plot.Add.Scatter(xs, ys);
@@ -158,7 +158,7 @@ public partial class QueryStoreHistoryControl : UserControl
 		foreach (var group in groups)
 		{
 			var color = _planHashColorMap.GetValueOrDefault(group.Key, PlanColors[0]);
-			var xs = group.Select(r => TimeDisplayHelper.ConvertForDisplay(r.IntervalStartUtc).ToOADate()).ToArray();
+			var xs = group.Select(r => TimeDisplayHelper.ConvertForDisplay(r.IntervalStartUtc, _serverOffset.Minutes).ToOADate()).ToArray();
 			var ys = group.Select(r => GetMetricValue(r, tag)).ToArray();
 
 			var highlight = HistoryChart.Plot.Add.Scatter(xs, ys);

@@ -13,6 +13,7 @@ using PlanViewer.App.Controls;
 using PlanViewer.App.Mcp;
 using PlanViewer.Core.Interfaces;
 using PlanViewer.Core.Models;
+using PlanViewer.Core.Services;
 using Xunit;
 
 namespace PlanViewer.Core.Tests;
@@ -657,6 +658,7 @@ public class TabCloseCleanupTests
     private static QueryStoreGridControl NewGrid() =>
         new(new ServerConnection { ServerName = "tcp:127.0.0.1,1", DisplayName = "unit test" },
             new NoCredentials(),
+            new ServerUtcOffset(),
             initialDatabase: "master",
             databases: new List<string> { "master" });
 

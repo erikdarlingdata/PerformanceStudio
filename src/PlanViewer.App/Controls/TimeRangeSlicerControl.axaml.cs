@@ -58,6 +58,13 @@ public partial class TimeRangeSlicerControl : UserControl
 
     public event EventHandler<TimeRangeChangedEventArgs>? RangeChanged;
 
+    /// <summary>
+    /// The offset holder of the connection whose data this slicer shows (E5). Assigned by the
+    /// owner right after InitializeComponent, before any data is loaded. A slicer nobody assigns
+    /// keeps a holder of its own at zero, which reads as UTC in Server mode.
+    /// </summary>
+    public ServerUtcOffset ServerOffset { get; set; } = new();
+
     public TimeRangeSlicerControl()
     {
         _activeFilterTag = AppSettingsService.Load().QueryStoreDefaultTimeRange;
@@ -321,8 +328,8 @@ public partial class TimeRangeSlicerControl : UserControl
     {
         if (_data.Count == 0) return;
 
-        var startDisplay = TimeDisplayHelper.ConvertForDisplay(GetDateTimeAtNorm(_rangeStart));
-        var endDisplay = TimeDisplayHelper.ConvertForDisplay(GetDateTimeAtNorm(_rangeEnd));
+        var startDisplay = TimeDisplayHelper.ConvertForDisplay(GetDateTimeAtNorm(_rangeStart), ServerOffset.Minutes);
+        var endDisplay = TimeDisplayHelper.ConvertForDisplay(GetDateTimeAtNorm(_rangeEnd), ServerOffset.Minutes);
 
         StartDatePicker.SelectedDate = startDisplay.Date;
         StartTimePicker.SelectedTime = startDisplay.TimeOfDay;
@@ -331,21 +338,26 @@ public partial class TimeRangeSlicerControl : UserControl
         EndTimePicker.SelectedTime = endDisplay.TimeOfDay;
 
         // Set display date range limits from data bounds
-        var firstDisplay = TimeDisplayHelper.ConvertForDisplay(_data[0].IntervalStartUtc);
-        var lastDisplay = TimeDisplayHelper.ConvertForDisplay(_data[^1].IntervalStartUtc.AddHours(1));
+        var firstDisplay = TimeDisplayHelper.ConvertForDisplay(_data[0].IntervalStartUtc, ServerOffset.Minutes);
+        var lastDisplay = TimeDisplayHelper.ConvertForDisplay(_data[^1].IntervalStartUtc.AddHours(1), ServerOffset.Minutes);
         StartDatePicker.DisplayDateStart = firstDisplay.Date;
         StartDatePicker.DisplayDateEnd = lastDisplay.Date;
         EndDatePicker.DisplayDateStart = firstDisplay.Date;
         EndDatePicker.DisplayDateEnd = lastDisplay.Date;
     }
 
-    private static DateTime ConvertFromDisplay(DateTime displayTime)
+    /// <summary>
+    /// The inverse of <see cref="TimeDisplayHelper.ConvertForDisplay(DateTime, int)"/>: what the
+    /// custom-range popup was typed in, back to UTC. Server mode subtracts this slicer's own
+    /// connection's offset (E5). Internal so a test can pin it without driving two pickers.
+    /// </summary>
+    internal DateTime ConvertFromDisplay(DateTime displayTime)
     {
         return TimeDisplayHelper.Current switch
         {
             TimeDisplayMode.Local => displayTime.ToUniversalTime(),
             TimeDisplayMode.Utc => DateTime.SpecifyKind(displayTime, DateTimeKind.Utc),
-            TimeDisplayMode.Server => displayTime.AddMinutes(-TimeDisplayHelper.ServerUtcOffsetMinutes),
+            TimeDisplayMode.Server => displayTime.AddMinutes(-ServerOffset.Minutes),
             _ => displayTime.ToUniversalTime()
         };
     }
@@ -464,7 +476,7 @@ public partial class TimeRangeSlicerControl : UserControl
         for (int i = 0; i < n; i += labelInterval)
         {
             var x = i * stepX + stepX / 2;
-            var dt = TimeDisplayHelper.ConvertForDisplay(_data[i].IntervalStartUtc);
+            var dt = TimeDisplayHelper.ConvertForDisplay(_data[i].IntervalStartUtc, ServerOffset.Minutes);
             var label = dt.ToString("MM/dd HH:mm");
             var tb = new TextBlock
             {
@@ -493,8 +505,8 @@ public partial class TimeRangeSlicerControl : UserControl
         var dayLineBrush = TryFindBrush("SlicerLabelBrush", FallbackDayLineBrush);
         for (int di = 1; di < n; di++)
         {
-            var prevDisplay = TimeDisplayHelper.ConvertForDisplay(_data[di - 1].IntervalStartUtc);
-            var curDisplay  = TimeDisplayHelper.ConvertForDisplay(_data[di].IntervalStartUtc);
+            var prevDisplay = TimeDisplayHelper.ConvertForDisplay(_data[di - 1].IntervalStartUtc, ServerOffset.Minutes);
+            var curDisplay  = TimeDisplayHelper.ConvertForDisplay(_data[di].IntervalStartUtc, ServerOffset.Minutes);
             if (curDisplay.Date != prevDisplay.Date)
             {
                 var xDay = di * stepX; // left edge of the bucket where the new day starts
@@ -651,7 +663,7 @@ public partial class TimeRangeSlicerControl : UserControl
         var dotBrush = TryFindBrush("SlicerChartLineBrush", FallbackChartLineBrush);
         for (int i = 0; i < n; i++)
         {
-            var bucketDisplay    = TimeDisplayHelper.ConvertForDisplay(_data[i].IntervalStartUtc);
+            var bucketDisplay    = TimeDisplayHelper.ConvertForDisplay(_data[i].IntervalStartUtc, ServerOffset.Minutes);
             var bucketDisplayEnd = bucketDisplay.AddHours(1);
             var val              = values[i];
             var valText          = _metric is "executions" ? $"{val:N0}" : $"{val:N2}";
@@ -1026,8 +1038,8 @@ public partial class TimeRangeSlicerControl : UserControl
             RangeLabel.Text = "";
             return;
         }
-        var start = TimeDisplayHelper.ConvertForDisplay(GetDateTimeAtNorm(_rangeStart));
-        var end = TimeDisplayHelper.ConvertForDisplay(GetDateTimeAtNorm(_rangeEnd));
+        var start = TimeDisplayHelper.ConvertForDisplay(GetDateTimeAtNorm(_rangeStart), ServerOffset.Minutes);
+        var end = TimeDisplayHelper.ConvertForDisplay(GetDateTimeAtNorm(_rangeEnd), ServerOffset.Minutes);
         var span = end - start;
         var spanText = span.TotalHours >= 48
             ? $"{span.TotalDays:F1}d"

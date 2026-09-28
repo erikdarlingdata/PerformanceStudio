@@ -24,6 +24,12 @@ public partial class QueryStoreGridControl : UserControl
 {
     private readonly ServerConnection _serverConnection;
     private readonly ICredentialService _credentialService;
+    /// <summary>
+    /// The offset holder of the connection this grid was opened on (E5). Kept for the grid's whole
+    /// life and handed to everything it builds — rows, slicer, ribbon, History — because they show
+    /// this server's data, whichever connection the session is on by the time they draw.
+    /// </summary>
+    private readonly ServerUtcOffset _serverOffset;
     private string _connectionString;
     private string _database;
     private CancellationTokenSource? _fetchCts;
@@ -62,10 +68,11 @@ public partial class QueryStoreGridControl : UserControl
     public string Database => _database;
 
     public QueryStoreGridControl(ServerConnection serverConnection, ICredentialService credentialService,
-        string initialDatabase, List<string> databases, bool supportsWaitStats = false)
+        ServerUtcOffset serverOffset, string initialDatabase, List<string> databases, bool supportsWaitStats = false)
     {
         _serverConnection = serverConnection;
         _credentialService = credentialService;
+        _serverOffset = serverOffset;
         _database = initialDatabase;
         _connectionString = serverConnection.GetConnectionString(credentialService, initialDatabase);
         _waitStatsSupported = supportsWaitStats;
@@ -74,6 +81,11 @@ public partial class QueryStoreGridControl : UserControl
         _slicerDaysBack = userSettings.QueryStoreSlicerDays;
 
         InitializeComponent();
+
+        // The slicer and the ribbon are declared in XAML, so they are handed the holder here,
+        // before any data reaches them.
+        TimeRangeSlicer.ServerOffset = serverOffset;
+        WaitStatsProfile.ServerOffset = serverOffset;
 
         // Apply user defaults to UI controls
         TopNBox.Value = userSettings.QueryStoreTopLimit;
@@ -85,6 +97,11 @@ public partial class QueryStoreGridControl : UserControl
             "None" => "none",
             _ => "query-hash"
         });
+
+        /* The time display mode is one setting for the whole app, so the box opens on the mode in
+           effect. It used to open on Local whatever the setting or another grid had chosen, and
+           could say Local beside times shown in Server mode. The tags are the mode names. */
+        SelectComboByTag(TimeDisplayBox, TimeDisplayHelper.Current.ToString());
 
         // Restore the server-filter panel's expanded state, then subscribe — restoring first
         // means the restore itself never triggers a save.
@@ -366,19 +383,26 @@ public class QueryStoreRow : INotifyPropertyChanged
     private bool _isExpanded;
     private int _indentLevel;
 
+    // The connection's offset holder (E5): read each time the row formats its time, so Server
+    // mode shows this row's own server's time whatever else the process is connected to.
+    private readonly ServerUtcOffset _serverOffset;
+
     /// <summary>Standard constructor for flat (ungrouped) rows.</summary>
-    public QueryStoreRow(QueryStorePlan plan)
+    public QueryStoreRow(QueryStorePlan plan, ServerUtcOffset serverOffset)
     {
         Plan = plan;
+        _serverOffset = serverOffset;
     }
 
     /// <summary>Constructor for grouped parent/intermediate rows (aggregated, no single plan).</summary>
-    public QueryStoreRow(QueryStorePlan syntheticPlan, int indentLevel, string groupLabel, List<QueryStoreRow> children)
+    public QueryStoreRow(QueryStorePlan syntheticPlan, int indentLevel, string groupLabel, List<QueryStoreRow> children,
+        ServerUtcOffset serverOffset)
     {
         Plan = syntheticPlan;
         _indentLevel = indentLevel;
         GroupLabel = groupLabel;
         Children = children;
+        _serverOffset = serverOffset;
     }
 
     public QueryStorePlan Plan { get; }
@@ -552,7 +576,7 @@ public class QueryStoreRow : INotifyPropertyChanged
     public long TotalMemSort => Plan.TotalMemoryGrantPages;
     public double AvgMemSort => Plan.AvgMemoryGrantPages;
 
-    public string LastExecutedLocal => TimeDisplayHelper.FormatForDisplay(Plan.LastExecutedUtc);
+    public string LastExecutedLocal => TimeDisplayHelper.FormatForDisplay(Plan.LastExecutedUtc, _serverOffset.Minutes);
 
     public void NotifyTimeDisplayChanged() => OnPropertyChanged(nameof(LastExecutedLocal));
 
