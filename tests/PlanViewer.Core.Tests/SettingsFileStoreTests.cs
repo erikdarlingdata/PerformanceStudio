@@ -65,7 +65,7 @@ public class SettingsFileStoreTests
     }
 
     [Fact]
-    public void UnreadableAppSettingsRefusesToSaveUntilALaterReadSucceeds()
+    public void UnreadableAppSettingsRefusesToSaveForTheRestOfTheProcess()
     {
         Assert.SkipUnless(OperatingSystem.IsWindows(),
             "Unix permissions don't reliably block a same-user read the way FileShare.None does on Windows.");
@@ -75,30 +75,40 @@ public class SettingsFileStoreTests
         File.WriteAllText(path, original);
         AppSettingsService.Invalidate();
 
-        AppSettings blocked;
-        using (new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None))
+        try
         {
-            blocked = AppSettingsService.Load();
-            Assert.Equal(30, blocked.QueryStoreSlicerDays); // couldn't read the real 12 — defaults
+            AppSettings blocked;
+            using (new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None))
+            {
+                blocked = AppSettingsService.Load();
+                Assert.Equal(30, blocked.QueryStoreSlicerDays); // couldn't read the real 12 — defaults
+            }
+
+            /* The lock is released before the save on purpose. While it is held, the rename onto the
+               locked file fails by itself, so a refusal seen there proves nothing about the block.
+               Now the file is readable again but nothing has read it successfully since, so only the
+               block stops this save from replacing the user's 12 with a guess. */
+            blocked.QueryStoreSlicerDays = 999;
+            AppSettingsService.Save(blocked); // must not throw, and must not touch the file
+            Assert.Equal(original, File.ReadAllText(path));
+
+            /* A later read succeeds, and callers that load now get the user's 12. Saves stay
+               refused: MainWindow still holds the defaults from the failed read, and saving them,
+               or the Settings window's clone of them, would replace the user's file. */
+            AppSettingsService.Invalidate();
+            var reloaded = AppSettingsService.Load();
+            Assert.Equal(12, reloaded.QueryStoreSlicerDays);
+
+            AppSettingsService.Save(blocked.Clone());
+            reloaded.QueryStoreSlicerDays = 88;
+            AppSettingsService.Save(reloaded);
+            Assert.Equal(original, File.ReadAllText(path));
         }
-
-        /* The lock is released before the save on purpose. While it is held, the rename onto the
-           locked file fails by itself, so a refusal seen there proves nothing about the block.
-           Now the file is readable again but nothing has read it successfully since, so only the
-           block stops this save from replacing the user's 12 with a guess. */
-        blocked.QueryStoreSlicerDays = 999;
-        AppSettingsService.Save(blocked); // must not throw, and must not touch the file
-        Assert.Equal(original, File.ReadAllText(path));
-
-        // A later read succeeds, the block clears, and saves resume.
-        AppSettingsService.Invalidate();
-        var reloaded = AppSettingsService.Load();
-        Assert.Equal(12, reloaded.QueryStoreSlicerDays);
-
-        reloaded.QueryStoreSlicerDays = 88;
-        AppSettingsService.Save(reloaded);
-        AppSettingsService.Invalidate();
-        Assert.Equal(88, AppSettingsService.Load().QueryStoreSlicerDays);
+        finally
+        {
+            // The block lasts for the process on purpose; the tests after this one need it gone.
+            AppSettingsService.RedirectStorageForTestHost(HeadlessUi.SettingsRedirectRoot);
+        }
     }
 
     // ── ConnectionStore ──────────────────────────────────────────────────

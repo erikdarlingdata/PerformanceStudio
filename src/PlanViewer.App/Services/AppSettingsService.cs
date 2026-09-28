@@ -29,9 +29,14 @@ internal sealed class AppSettingsService
     /// read (locked, permissions) — as opposed to missing, or present but unparseable, both of
     /// which are fine to overwrite. <see cref="Save"/> consults this so a transient read failure
     /// can never cost the user their file: it skips quietly, the same way it already does for a
-    /// write failure. Cleared by the next <see cref="Load"/> that manages to read the file (which
-    /// happens on every call while this is true, since a blocked Load never populates
-    /// <see cref="_cached"/> — see the "until a later read of it succeeds" contract on Load).
+    /// write failure.
+    ///
+    /// <para>It stays set for the rest of the process, even after a later <see cref="Load"/>
+    /// reads the file. That failed Load handed out defaults, and callers keep what they are
+    /// given: MainWindow holds its copy for the whole session and passes it to the Settings
+    /// window, which saves a clone of it. Once the block lifted, either save would write those
+    /// defaults over the user's file. So the session runs without saving, and the next start
+    /// reads the file again.</para>
     /// </summary>
     private static bool _saveBlocked;
 
@@ -111,8 +116,9 @@ internal sealed class AppSettingsService
     /// state; see <see cref="AppSettings.Clone"/> instead when the edit must stay a draft, e.g.
     /// the Settings dialog's Cancel button). A file that could not be read (as opposed to missing
     /// or unparseable — see <see cref="SettingsFileStore"/>) is never cached: every call keeps
-    /// retrying the disk until one succeeds, which is what lets <see cref="Save"/> resume once a
-    /// transient lock clears.
+    /// retrying the disk, so a caller that loads after a transient lock clears still gets the
+    /// user's settings. <see cref="Save"/> stays refused for the rest of the process, though;
+    /// see <see cref="_saveBlocked"/>.
     /// </remarks>
     public static AppSettings Load()
     {
@@ -127,9 +133,11 @@ internal sealed class AppSettingsService
                 json => JsonSerializer.Deserialize<AppSettings>(json, JsonOptions),
                 out var parsed);
 
-            _saveBlocked = outcome == SettingsFileStore.ReadOutcome.Unreadable;
             if (outcome == SettingsFileStore.ReadOutcome.Unreadable)
+            {
+                _saveBlocked = true;
                 return new AppSettings();
+            }
 
             var settings = parsed ?? new AppSettings();
 
