@@ -171,10 +171,28 @@ public partial class QuerySessionControl : UserControl
     private async Task FetchDatabaseMetadataAsync()
     {
         if (_connectionString == null || _serverMetadata == null) return;
+
+        /* The database picker can change again before this lands — Database_SelectionChanged
+           calls this on every pick, and nothing stopped an older fetch from landing after a
+           newer one and overwriting _serverMetadata.Database with the wrong database's rows
+           (E7). Same shape as the Query Store grid's own database check
+           (QueryStoreGridControl.QsDatabase_SelectionChanged). */
+        _databaseMetadataCts?.Cancel();
+        _databaseMetadataCts?.Dispose();
+        var cts = new CancellationTokenSource();
+        _databaseMetadataCts = cts;
+
         try
         {
-            _serverMetadata.Database = await ServerMetadataService.FetchDatabaseMetadataAsync(
-                _connectionString, _serverMetadata.SupportsScopedConfigs);
+            var database = await ServerMetadataService.FetchDatabaseMetadataAsync(
+                _connectionString, _serverMetadata.SupportsScopedConfigs, cts.Token);
+            if (cts.Token.IsCancellationRequested) return; // superseded — the newer pick owns this
+
+            _serverMetadata.Database = database;
+        }
+        catch (OperationCanceledException)
+        {
+            // superseded — the newer pick owns this
         }
         catch
         {
