@@ -1,13 +1,18 @@
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
 using PlanViewer.App;
 using PlanViewer.App.Controls;
 using PlanViewer.App.Mcp;
+using PlanViewer.Core.Interfaces;
+using PlanViewer.Core.Models;
 using Xunit;
 
 namespace PlanViewer.Core.Tests;
@@ -221,6 +226,111 @@ public class TabCloseCleanupTests
         });
     }
 
+    // ---- E8: Escape cancels the run its tab belongs to, and no other --------------------------
+
+    /// <summary>
+    /// The first run's tab is still on screen, superseded by the second. Escape pressed on it
+    /// cancelled whatever run was current, which is the second one.
+    /// </summary>
+    [Fact]
+    public void EscapeOnATabWhoseRunEndedDoesNotCancelANewerRun()
+    {
+        HeadlessUi.Run(() =>
+        {
+            var (window, session) = SessionHarness.NewSession();
+            try
+            {
+                SessionHarness.PretendConnected(session);
+                session.QueryEditor.Text = "select 1;";
+
+                StartCapture(session);
+                var older = Assert.Single(SessionHarness.Documents(session));
+                var olderRun = CurrentRun(session);
+
+                StartCapture(session);
+                var newerRun = CurrentRun(session);
+                Assert.NotSame(olderRun, newerRun);
+                Assert.True(olderRun.IsCancellationRequested, "starting a run supersedes the one before it");
+                Assert.False(newerRun.IsCancellationRequested);
+
+                PressEscape((Control)older.Content!);
+
+                Assert.False(newerRun.IsCancellationRequested,
+                    "Escape on the older run's tab reached past it and cancelled the newer run");
+            }
+            finally
+            {
+                SessionHarness.CancelExecution(session);
+                ChromeTestCleanup.PutAway(window);
+            }
+        });
+    }
+
+    /// <summary>
+    /// The tab's own Cancel button follows the same rule as its Escape key.
+    /// </summary>
+    [Fact]
+    public void TheCancelButtonOnATabWhoseRunEndedDoesNotCancelANewerRun()
+    {
+        HeadlessUi.Run(() =>
+        {
+            var (window, session) = SessionHarness.NewSession();
+            try
+            {
+                SessionHarness.PretendConnected(session);
+                session.QueryEditor.Text = "select 1;";
+
+                StartCapture(session);
+                var older = Assert.Single(SessionHarness.Documents(session));
+
+                StartCapture(session);
+                var newerRun = CurrentRun(session);
+
+                CancelButtonOf(older).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+
+                Assert.False(newerRun.IsCancellationRequested,
+                    "the older run's Cancel button cancelled the newer run");
+            }
+            finally
+            {
+                SessionHarness.CancelExecution(session);
+                ChromeTestCleanup.PutAway(window);
+            }
+        });
+    }
+
+    /// <summary>
+    /// Escape on a tab that is still running its own run stops it. The fix must not have made the
+    /// key do nothing.
+    /// </summary>
+    [Fact]
+    public void EscapeOnALoadingTabCancelsItsOwnRun()
+    {
+        HeadlessUi.Run(() =>
+        {
+            var (window, session) = SessionHarness.NewSession();
+            try
+            {
+                SessionHarness.PretendConnected(session);
+                session.QueryEditor.Text = "select 1;";
+                StartCapture(session);
+
+                var loadingTab = Assert.Single(SessionHarness.Documents(session));
+                var run = CurrentRun(session);
+                Assert.False(run.IsCancellationRequested);
+
+                PressEscape((Control)loadingTab.Content!);
+
+                Assert.True(run.IsCancellationRequested);
+            }
+            finally
+            {
+                SessionHarness.CancelExecution(session);
+                ChromeTestCleanup.PutAway(window);
+            }
+        });
+    }
+
     // ---- helpers ------------------------------------------------------------------------------
 
     /// <summary>The .sqlplan the suite's other chrome tests open.</summary>
@@ -260,5 +370,39 @@ public class TabCloseCleanupTests
         var capture = typeof(QuerySessionControl).GetMethod(
             "CaptureAndShowPlan", BindingFlags.NonPublic | BindingFlags.Instance)!;
         _ = (Task)capture.Invoke(session, new object?[] { false, null })!;
+    }
+
+    /// <summary>The source the session's most recent run is on, off the session's own field.</summary>
+    private static CancellationTokenSource CurrentRun(QuerySessionControl session) =>
+        (CancellationTokenSource)GetField(session, "_executionCts")!;
+
+    private static QueryStoreGridControl NewGrid() =>
+        new(new ServerConnection { ServerName = "tcp:127.0.0.1,1", DisplayName = "unit test" },
+            new NoCredentials(),
+            initialDatabase: "master",
+            databases: new List<string> { "master" });
+
+    /// <summary>The Cancel button on a loading tab: the last child of the panel inside its container.</summary>
+    private static Button CancelButtonOf(TabItem loadingTab) =>
+        ((Panel)loadingTab.Content!).Children.OfType<StackPanel>().Single()
+            .Children.OfType<Button>().Single();
+
+    private static void PressEscape(Control target) =>
+        SessionHarness.PressKey(target, Key.Escape, KeyModifiers.None);
+
+    private static object? GetField(object target, string name) =>
+        target.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(target);
+
+    private static void SetField(object target, string name, object? value) =>
+        target.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(target, value);
+
+    /// <summary>Windows-auth credentials so the grid's connection-string build asks for nothing.</summary>
+    private sealed class NoCredentials : ICredentialService
+    {
+        public bool SaveCredential(string serverId, string username, string password) => false;
+        public (string Username, string Password)? GetCredential(string serverId) => null;
+        public bool DeleteCredential(string serverId) => false;
+        public bool CredentialExists(string serverId) => false;
+        public bool UpdateCredential(string serverId, string username, string password) => false;
     }
 }

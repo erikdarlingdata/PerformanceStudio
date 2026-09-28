@@ -40,6 +40,24 @@ public partial class QuerySessionControl : UserControl
         await CaptureAndShowPlan(estimated: true);
     }
 
+    /// <summary>
+    /// Starts a run: cancels the one before it, and hands back the source the new one runs on.
+    /// </summary>
+    /// <remarks>
+    /// Cancelled, never disposed. The loading tab a run opens keeps a Cancel button and an Escape
+    /// handler that close over this source, and they outlive the run — a failed capture leaves its
+    /// tab on screen. Cancel on a disposed source throws, so a later run disposing this one would
+    /// turn that tab's Escape into an exception. Same rule as
+    /// <see cref="FetchDatabaseMetadataAsync"/> and the Overview's refresh.
+    /// </remarks>
+    private CancellationTokenSource BeginRun()
+    {
+        _executionCts?.Cancel();
+        var run = new CancellationTokenSource();
+        _executionCts = run;
+        return run;
+    }
+
     private async Task CaptureAndShowPlan(bool estimated, string? queryTextOverride = null)
     {
         if (_serverConnection == null || _selectedDatabase == null)
@@ -61,10 +79,8 @@ public partial class QuerySessionControl : UserControl
             return;
         }
 
-        _executionCts?.Cancel();
-        _executionCts?.Dispose();
-        _executionCts = new CancellationTokenSource();
-        var ct = _executionCts.Token;
+        var runCts = BeginRun();
+        var ct = runCts.Token;
 
         var planType = estimated ? "Estimated" : "Actual";
 
@@ -111,7 +127,7 @@ public partial class QuerySessionControl : UserControl
             VerticalContentAlignment = VerticalAlignment.Center,
             Theme = (Avalonia.Styling.ControlTheme)this.FindResource("AppButton")!
         };
-        cancelBtn.Click += (_, _) => _executionCts?.Cancel();
+        cancelBtn.Click += (_, _) => runCts.Cancel();
 
         loadingPanel.Children.Add(progressBar);
         loadingPanel.Children.Add(statusLabel);
@@ -123,9 +139,12 @@ public partial class QuerySessionControl : UserControl
             Focusable = true,
             Children = { loadingPanel }
         };
+        /* This run's own source, not the session's current one. The handler outlives the run: a
+           failed capture leaves this container on screen, still focusable, and Escape pressed on
+           it later must not reach past this tab and cancel whatever run is newer. */
         loadingContainer.KeyDown += (_, ke) =>
         {
-            if (ke.Key == Key.Escape) { _executionCts?.Cancel(); ke.Handled = true; }
+            if (ke.Key == Key.Escape) { runCts.Cancel(); ke.Handled = true; }
         };
 
         // Add loading tab and switch to it
@@ -323,10 +342,8 @@ public partial class QuerySessionControl : UserControl
 
         if (!confirmed) return;
 
-        _executionCts?.Cancel();
-        _executionCts?.Dispose();
-        _executionCts = new CancellationTokenSource();
-        var ct = _executionCts.Token;
+        var runCts = BeginRun();
+        var ct = runCts.Token;
 
         // Create loading tab with cancel button
         var loadingPanel = new StackPanel
@@ -369,7 +386,7 @@ public partial class QuerySessionControl : UserControl
             VerticalContentAlignment = VerticalAlignment.Center,
             Theme = (Avalonia.Styling.ControlTheme)this.FindResource("AppButton")!
         };
-        cancelBtn.Click += (_, _) => _executionCts?.Cancel();
+        cancelBtn.Click += (_, _) => runCts.Cancel();
 
         loadingPanel.Children.Add(progressBar);
         loadingPanel.Children.Add(statusLabel);
@@ -381,9 +398,12 @@ public partial class QuerySessionControl : UserControl
             Focusable = true,
             Children = { loadingPanel }
         };
+        /* This run's own source, not the session's current one. The handler outlives the run: a
+           failed capture leaves this container on screen, still focusable, and Escape pressed on
+           it later must not reach past this tab and cancel whatever run is newer. */
         loadingContainer.KeyDown += (_, ke) =>
         {
-            if (ke.Key == Key.Escape) { _executionCts?.Cancel(); ke.Handled = true; }
+            if (ke.Key == Key.Escape) { runCts.Cancel(); ke.Handled = true; }
         };
 
         _planCounter++;
