@@ -230,6 +230,30 @@ internal static class SessionHarness
         (CancellationTokenSource?)GetField(overview, "_cts");
 
     /// <summary>
+    /// The token the Overview counts as work running right now, or null when it counts none. Not
+    /// the same as <see cref="OverviewLoadToken"/>, which keeps pointing at a finished load's token
+    /// — this is what a detach reads to tell whether it interrupted something.
+    /// </summary>
+    internal static CancellationTokenSource? OverviewRunningToken(QueryStoreOverviewControl overview) =>
+        (CancellationTokenSource?)GetField(overview, "_runningCts");
+
+    /// <summary>
+    /// Stands in for the refresh a load hands the token to when it puts data on the time slicer:
+    /// cancels the load that is running, and installs a fresh token as both the current one and the
+    /// running one. Loading the slicer does this for real, but the refresh it starts goes on to a
+    /// server, and a test has no way to hold that open without one.
+    /// </summary>
+    internal static CancellationTokenSource PlantOverviewRefresh(QueryStoreOverviewControl overview)
+    {
+        ((CancellationTokenSource?)GetField(overview, "_cts"))?.Cancel();
+
+        var refresh = new CancellationTokenSource();
+        SetField(overview, "_cts", refresh);
+        SetField(overview, "_runningCts", refresh);
+        return refresh;
+    }
+
+    /// <summary>
     /// A History document, built the way the app builds one rather than through the designer's
     /// parameterless constructor.
     /// </summary>
