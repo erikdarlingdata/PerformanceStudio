@@ -121,6 +121,10 @@ internal static class HeadlessUi
         // Integrations writes. Redirected for the same reason as the line above.
         SettingsFile.RedirectForTestHost(SettingsRedirectRoot);
 
+        // The saved server list. Redirected for the same reason — #F1 added this seam; before
+        // it, ConnectionStore's path was a plain static readonly field under the real profile.
+        ConnectionStore.RedirectForTestHost(SettingsRedirectRoot);
+
         // And the third store. Proxy passwords live in the OS credential manager, not in either
         // JSON file, so redirecting those two still left a test able to read — or delete — the
         // developer's real saved credential.

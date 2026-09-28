@@ -24,6 +24,17 @@ internal sealed class AppSettingsService
 
     private static AppSettings? _cached;
 
+    /// <summary>
+    /// Set by <see cref="Load"/> when <see cref="SettingsPath"/> exists but could not even be
+    /// read (locked, permissions) — as opposed to missing, or present but unparseable, both of
+    /// which are fine to overwrite. <see cref="Save"/> consults this so a transient read failure
+    /// can never cost the user their file: it skips quietly, the same way it already does for a
+    /// write failure. Cleared by the next <see cref="Load"/> that manages to read the file (which
+    /// happens on every call while this is true, since a blocked Load never populates
+    /// <see cref="_cached"/> — see the "until a later read of it succeeds" contract on Load).
+    /// </summary>
+    private static bool _saveBlocked;
+
     static AppSettingsService()
     {
         SettingsDir = Path.Combine(
@@ -69,8 +80,10 @@ internal sealed class AppSettingsService
         ScratchDir = Path.Combine(directory, "scratch");
 
         // Anything cached was loaded from the old location; drop it so the first Load
-        // after the redirect reads the new one.
+        // after the redirect reads the new one. A block belongs to the old path too — the
+        // new one hasn't been read yet, let alone failed to read.
         _cached = null;
+        _saveBlocked = false;
     }
 
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -89,13 +102,17 @@ internal sealed class AppSettingsService
     };
 
     /// <summary>
-    /// Loads settings from disk. Returns default settings if the file is missing or corrupt.
-    /// Migrates legacy format settings from the old standalone file if present.
+    /// Loads settings from disk. Returns default settings if the file is missing, corrupt, or
+    /// unreadable. Migrates legacy format settings from the old standalone file if present.
     /// </summary>
     /// <remarks>
-    /// Returns the in-process cached instance — callers must not mutate it. Use
-    /// <see cref="AppSettings.Clone"/> if you need an editable copy, or <see cref="Save"/>
-    /// to persist new state (which also refreshes the cache).
+    /// Returns the in-process cached instance — callers must not mutate it without immediately
+    /// <see cref="Save"/>ing it back (mutate-then-Save is how the rest of this class persists
+    /// state; see <see cref="AppSettings.Clone"/> instead when the edit must stay a draft, e.g.
+    /// the Settings dialog's Cancel button). A file that could not be read (as opposed to missing
+    /// or unparseable — see <see cref="SettingsFileStore"/>) is never cached: every call keeps
+    /// retrying the disk until one succeeds, which is what lets <see cref="Save"/> resume once a
+    /// transient lock clears.
     /// </remarks>
     public static AppSettings Load()
     {
@@ -104,14 +121,17 @@ internal sealed class AppSettingsService
 
         try
         {
-            AppSettings settings;
-            if (!File.Exists(SettingsPath))
-                settings = new AppSettings();
-            else
-            {
-                var json = File.ReadAllText(SettingsPath);
-                settings = JsonSerializer.Deserialize<AppSettings>(json, JsonOptions) ?? new AppSettings();
-            }
+            var outcome = SettingsFileStore.Read<AppSettings>(
+                SettingsPath,
+                nameof(AppSettingsService),
+                json => JsonSerializer.Deserialize<AppSettings>(json, JsonOptions),
+                out var parsed);
+
+            _saveBlocked = outcome == SettingsFileStore.ReadOutcome.Unreadable;
+            if (outcome == SettingsFileStore.ReadOutcome.Unreadable)
+                return new AppSettings();
+
+            var settings = parsed ?? new AppSettings();
 
             // Settings written before the open-tab list held queries use the old key.
             // Ahead of MigrateFormatSettings, which can Save mid-load and would otherwise
@@ -149,10 +169,15 @@ internal sealed class AppSettingsService
     public static void Invalidate() => _cached = null;
 
     /// <summary>
-    /// Saves settings to disk. Silently ignores write failures.
+    /// Saves settings to disk. Silently ignores write failures — including a save attempted
+    /// while <see cref="Load"/> found the file unreadable, which would otherwise overwrite
+    /// content this process has never actually seen.
     /// </summary>
     public static void Save(AppSettings settings)
     {
+        if (_saveBlocked)
+            return;
+
         try
         {
             Directory.CreateDirectory(SettingsDir);
