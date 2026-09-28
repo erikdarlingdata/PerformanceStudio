@@ -140,6 +140,12 @@ class Program
     /// </list>
     /// Split from <see cref="Main"/> so the decision can be tested with a mutex name of the
     /// test's own; the harness cannot start a second app process to hold the real one.
+    ///
+    /// <para>Where named mutexes do not work at all, <see cref="TryBecomeSingleInstanceOwner"/>
+    /// answers true so that the launch still runs, and this launch then acts as an owner: it
+    /// restores the saved session even if another instance is running. That is how every
+    /// <c>--new-instance</c> launch behaved before, and it only happens where the mutex
+    /// machinery itself fails.</para>
     /// </summary>
     internal static void ClaimSlotForNewInstance(string mutexName = SingleInstance.MutexName) =>
         SingleInstance.IsSecondaryInstance = !TryBecomeSingleInstanceOwner(mutexName);
