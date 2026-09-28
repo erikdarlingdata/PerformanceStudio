@@ -54,7 +54,7 @@ public class PlanShareServiceTests
         Assert.Equal("abc12345", result.Id);
         Assert.Equal("0123abcd", result.DeleteToken);
         Assert.Equal(HttpMethod.Post, handler.Method);
-        Assert.Equal("https://stats.erikdarling.com/api/share", handler.Uri!.ToString());
+        Assert.Equal($"{PlanShareService.ApiBase}/api/share", handler.Uri!.ToString());
     }
 
     [Theory]
@@ -95,7 +95,7 @@ public class PlanShareServiceTests
         await service.DeleteAsync("abc12345", "0123456789abcdef0123456789abcdef");
 
         Assert.Equal(HttpMethod.Delete, handler.Method);
-        Assert.Equal("https://stats.erikdarling.com/api/plans/abc12345", handler.Uri!.ToString());
+        Assert.Equal($"{PlanShareService.ApiBase}/api/plans/abc12345", handler.Uri!.ToString());
         Assert.Equal("0123456789abcdef0123456789abcdef", handler.Headers["X-Delete-Token"]);
     }
 

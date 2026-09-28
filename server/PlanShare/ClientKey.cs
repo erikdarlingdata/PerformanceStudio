@@ -6,9 +6,9 @@ namespace PlanShare;
 /// <summary>
 /// The one key every per-client limit (share, analytics, read, upload budget) is counted under.
 /// An IPv4 address is its own key. An IPv4-mapped IPv6 address (how a dual-stack socket reports
-/// an IPv4 caller) becomes that IPv4 address, so one caller cannot hold two keys. Any other IPv6
-/// address becomes its /64 prefix: a single subscriber is normally handed a whole /64, so a
-/// limit per full IPv6 address would never be reached by a caller who rotates through it.
+/// an IPv4 caller) becomes that IPv4 address, so one caller has one key. Any other IPv6 address
+/// becomes its /64 prefix: a single subscriber is normally given a whole /64, so counting per /64
+/// makes one subscriber one client, however many addresses they use.
 /// </summary>
 internal static class ClientKey
 {
