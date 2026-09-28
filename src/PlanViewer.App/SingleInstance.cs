@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.IO.Pipes;
 using System.Linq;
 
 namespace PlanViewer.App;
@@ -58,6 +59,25 @@ internal static class SingleInstance
     /// class comment for why that property is the entire backward-compatibility story.
     /// </summary>
     internal const string ActivateSentinel = "::activate::";
+
+    /// <summary>
+    /// The receiver's end of the pipe. CurrentUserOnly gives the pipe an access list that
+    /// names only this user, so another account on the machine can neither send it a line
+    /// nor connect and hold its single server slot.
+    /// </summary>
+    internal static NamedPipeServerStream CreatePipeServer(string pipeName = PipeName) =>
+        new(pipeName, PipeDirection.In, 1, PipeTransmissionMode.Byte,
+            PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+
+    /// <summary>
+    /// A sender's end of the pipe. CurrentUserOnly makes Connect check that the pipe it
+    /// reached was created by this user, so a pipe of the same name that another account
+    /// created first never receives a path. On Windows the check also compares elevation:
+    /// an elevated launch does not hand its file to a running instance that is not
+    /// elevated, and opens its own window instead.
+    /// </summary>
+    internal static NamedPipeClientStream CreatePipeClient(string pipeName = PipeName) =>
+        new(".", pipeName, PipeDirection.Out, PipeOptions.CurrentUserOnly);
 
     /// <summary>What one received pipe line means. See <see cref="Classify"/>.</summary>
     internal enum PipeMessage

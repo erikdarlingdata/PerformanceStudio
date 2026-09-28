@@ -422,6 +422,14 @@ public partial class MainWindow : Window
 
             var xml = File.ReadAllText(filePath);
 
+            /* A plan sent from SSMS arrives as a temp file that the extension wrote for this one
+               handoff. It holds the query text and any parameter values, so once the plan has
+               loaded, the file is deleted. The tab is then treated like a pasted plan, with no
+               file behind it: it goes on neither the recent list nor the tabs restored at the
+               next start. A file that fails to load, or to delete, is left for the extension's
+               own sweep of files older than an hour. */
+            var ssmsHandoff = IsSsmsHandoffFile(fullPath);
+
             // SSMS saves plans as UTF-16 with encoding="utf-16" in the XML declaration.
             // File.ReadAllText auto-detects the BOM, but the resulting C# string still
             // contains encoding="utf-16" which causes XDocument.Parse to fail.
@@ -434,8 +442,15 @@ public partial class MainWindow : Window
 
             var viewer = new PlanViewerControl();
             viewer.SetConnectionServices(_credentialService, _connectionStore);
-            viewer.LoadPlan(xml, fileName);
-            viewer.SourceFilePath = filePath;
+            var loaded = viewer.LoadPlan(xml, fileName);
+            if (!ssmsHandoff)
+                viewer.SourceFilePath = filePath;
+            else if (loaded)
+            {
+                try { File.Delete(fullPath); }
+                catch (IOException) { }
+                catch (UnauthorizedAccessException) { }
+            }
 
             // Wrap viewer with advice toolbar
             var content = CreatePlanTabContent(viewer);
@@ -446,12 +461,32 @@ public partial class MainWindow : Window
             UpdateEmptyOverlay();
 
             // Track in recent plans list and persist
-            TrackRecentPlan(filePath);
+            if (!ssmsHandoff)
+                TrackRecentPlan(filePath);
         }
         catch (Exception ex)
         {
             ShowError($"Failed to open {Path.GetFileName(filePath)}:\n\n{ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// True for a plan file that the SSMS extension wrote to hand over one plan: named
+    /// ssms_plan_*.sqlplan, directly in this user's temp folder, on Windows (the only place
+    /// the extension runs). All three must hold, so a file of the user's own that matches
+    /// the name somewhere else is never deleted. The extension sweeps that same pattern
+    /// from the temp folder itself.
+    /// </summary>
+    internal static bool IsSsmsHandoffFile(string fullPath)
+    {
+        var name = Path.GetFileName(fullPath);
+        return OperatingSystem.IsWindows()
+            && name.StartsWith("ssms_plan_", StringComparison.OrdinalIgnoreCase)
+            && name.EndsWith(".sqlplan", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(
+                Path.GetDirectoryName(fullPath),
+                Path.TrimEndingDirectorySeparator(Path.GetFullPath(Path.GetTempPath())),
+                StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task PasteXmlAsync()

@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.IO.Pipes;
 using System.Linq;
 using System.Text.Json;
 using System.Threading;
@@ -242,9 +241,7 @@ public partial class MainWindow : Window
             {
                 try
                 {
-                    using var server = new NamedPipeServerStream(
-                        SingleInstance.PipeName, PipeDirection.In, 1,
-                        PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
+                    using var server = SingleInstance.CreatePipeServer();
 
                     await server.WaitForConnectionAsync(token);
 

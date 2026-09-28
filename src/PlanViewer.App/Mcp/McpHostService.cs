@@ -1,4 +1,5 @@
 using System;
+using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Builder;
@@ -43,7 +44,13 @@ public sealed class McpHostService : BackgroundService
     {
         try
         {
-            var builder = WebApplication.CreateBuilder();
+            /* An empty builder, not CreateBuilder. CreateBuilder also reads appsettings files
+               from the working directory and the process's environment variables, and a
+               Kestrel section in either one adds endpoints beside the loopback one set below.
+               This server takes its whole setup from this code. */
+            var builder = WebApplication.CreateEmptyBuilder(new WebApplicationOptions());
+            builder.WebHost.UseKestrelCore();
+            builder.Services.AddRoutingCore();
 
             builder.WebHost.ConfigureKestrel(options =>
             {
@@ -93,6 +100,14 @@ public sealed class McpHostService : BackgroundService
                loopback origin, before it can touch an MCP endpoint. */
             _app.Use(async (context, next) =>
             {
+                /* Only this machine may connect. Kestrel is bound to loopback, so this
+                   check is the second of two; it keeps holding if the binding ever changes. */
+                if (!IsLoopbackAddress(context.Connection.RemoteIpAddress))
+                {
+                    context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                    return;
+                }
+
                 if (!IsLoopbackHost(context.Request.Host.Host))
                 {
                     context.Response.StatusCode = StatusCodes.Status403Forbidden;
@@ -121,6 +136,15 @@ public sealed class McpHostService : BackgroundService
         {
             System.Diagnostics.Debug.WriteLine($"MCP server failed to start: {ex.Message}");
         }
+    }
+
+    internal static bool IsLoopbackAddress(IPAddress? address)
+    {
+        /* No address (a transport other than TCP) is refused, not trusted. */
+        if (address == null)
+            return false;
+
+        return IPAddress.IsLoopback(address.IsIPv4MappedToIPv6 ? address.MapToIPv4() : address);
     }
 
     private static bool IsLoopbackHost(string host)
