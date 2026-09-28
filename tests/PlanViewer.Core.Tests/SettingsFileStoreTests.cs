@@ -75,18 +75,22 @@ public class SettingsFileStoreTests
         File.WriteAllText(path, original);
         AppSettingsService.Invalidate();
 
+        AppSettings blocked;
         using (new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None))
         {
-            var blocked = AppSettingsService.Load();
+            blocked = AppSettingsService.Load();
             Assert.Equal(30, blocked.QueryStoreSlicerDays); // couldn't read the real 12 — defaults
-
-            blocked.QueryStoreSlicerDays = 999;
-            AppSettingsService.Save(blocked); // must not throw, must not touch the locked file
         }
 
+        /* The lock is released before the save on purpose. While it is held, the rename onto the
+           locked file fails by itself, so a refusal seen there proves nothing about the block.
+           Now the file is readable again but nothing has read it successfully since, so only the
+           block stops this save from replacing the user's 12 with a guess. */
+        blocked.QueryStoreSlicerDays = 999;
+        AppSettingsService.Save(blocked); // must not throw, and must not touch the file
         Assert.Equal(original, File.ReadAllText(path));
 
-        // The lock is gone — a later read succeeds, the block clears, and saves resume.
+        // A later read succeeds, the block clears, and saves resume.
         AppSettingsService.Invalidate();
         var reloaded = AppSettingsService.Load();
         Assert.Equal(12, reloaded.QueryStoreSlicerDays);
@@ -147,17 +151,20 @@ public class SettingsFileStoreTests
         using (new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None))
         {
             Assert.Empty(store.Load()); // couldn't read the real list — defaults
-
-            // ConnectionStore.Save throws rather than swallowing, so its callers (the connection
-            // dialog) hear about it instead of silently losing the saved server.
-            var ex = Assert.Throws<IOException>(
-                () => store.Save(new List<ServerConnection> { new() { ServerName = "guess" } }));
-            Assert.Contains(path, ex.Message);
         }
 
+        /* Released before the save on purpose: while the lock is held, the rename onto the file
+           fails by itself, so a refusal seen there proves nothing about the block. Now the file
+           is readable again but nothing has read it successfully since, so only the block can
+           stop this save. ConnectionStore.Save throws rather than swallowing, so its callers (the
+           connection dialog) hear about it instead of silently losing the saved server. */
+        var ex = Assert.Throws<IOException>(
+            () => store.Save(new List<ServerConnection> { new() { ServerName = "guess" } }));
+        Assert.Contains("could not be read on the last load", ex.Message);
+        Assert.Contains(path, ex.Message);
         Assert.Equal(original, File.ReadAllText(path));
 
-        // The lock is gone — a later read succeeds, the block clears, and saves resume.
+        // A later read succeeds, the block clears, and saves resume.
         var reloaded = store.Load();
         Assert.Single(reloaded);
         Assert.Equal("kept-server", reloaded[0].ServerName);
@@ -236,9 +243,14 @@ public class SettingsFileStoreTests
         {
             Assert.Empty(SettingsFile.Read()); // couldn't read the real value — defaults
 
-            // Update is read-modify-write; refusing here is what stops a blocked read from
-            // dropping every OTHER key (proxy settings included) on the next Update.
+            /* Update is read-modify-write, and it reads first, so its own read is what finds the
+               file unreadable. Refusing here is what stops a blocked read from dropping every
+               OTHER key (proxy settings included) on the next Update. Unlike the other two stores,
+               this can only be seen under the lock: once it is released, Update's own read
+               succeeds and the write is rightly allowed. The message is what tells this refusal
+               apart from the raw sharing violation the rename would hit anyway. */
             var ex = Assert.Throws<IOException>(() => SettingsFile.Update(o => o["mcp_port"] = 9999));
+            Assert.Contains("could not be read on the last load", ex.Message);
             Assert.Contains(path, ex.Message);
         }
 
