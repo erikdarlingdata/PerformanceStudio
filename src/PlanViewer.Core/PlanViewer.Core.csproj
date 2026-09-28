@@ -11,7 +11,7 @@
     <PackageReference Include="Microsoft.Data.SqlClient" Version="7.1.0" />
     <PackageReference Include="Meziantou.Framework.Win32.CredentialManager" Version="3.0.4" />
     <PackageReference Include="Microsoft.Data.SqlClient.Extensions.Azure" Version="7.1.0" />
-    <PackageReference Include="Microsoft.SqlServer.TransactSql.ScriptDom" Version="180.107.0" />
+    <PackageReference Include="Microsoft.SqlServer.TransactSql.ScriptDom" Version="180.117.0" />
   </ItemGroup>
 
   <ItemGroup>
