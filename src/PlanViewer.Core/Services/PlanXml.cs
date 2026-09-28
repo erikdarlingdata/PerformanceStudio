@@ -33,6 +33,23 @@ internal static class PlanXml
     /// </summary>
     internal const long MaxDepthSum = 1L << 29;
 
+    /// <summary>
+    /// The longest namespace URI that can be declared. XDocument looks a namespace up by its
+    /// whole URI each time the namespace changes from one name to the next, so a long URI used
+    /// by alternating names costs its length again at every change: a 1.4M-character document
+    /// took 25 seconds. Real plans use three namespaces, the longest 55 characters.
+    /// </summary>
+    internal const int MaxNamespaceLength = 256;
+
+    /// <summary>
+    /// The most attributes one element can have. Reading a start tag with a huge number of them
+    /// is slow even for XmlReader, so such a tag is refused after the first read instead of
+    /// being read a second time by XDocument. Real plans have at most 20 on one element.
+    /// </summary>
+    internal const int MaxAttributes = 1024;
+
+    private const string XmlnsNamespace = "http://www.w3.org/2000/xmlns/";
+
     internal static XDocument Parse(string xml)
     {
         CheckLimits(xml);
@@ -49,10 +66,13 @@ internal static class PlanXml
 
     /// <summary>
     /// Reads the XML once without building anything, which takes time in step with its length,
-    /// and throws before XDocument starts on XML that is too large or too deeply nested.
+    /// and throws before XDocument starts on XML that is too large, too deeply nested, or that
+    /// passes one of the limits on an element's attributes.
     /// </summary>
     private static void CheckLimits(string xml)
     {
+        ArgumentNullException.ThrowIfNull(xml);
+
         if (xml.Length > MaxCharacters)
             throw new XmlException(
                 $"Plan XML exceeds the supported size limit of {MaxCharacters.ToString("N0", CultureInfo.InvariantCulture)} characters.");
@@ -71,7 +91,26 @@ internal static class PlanXml
             depthSum += reader.Depth;
             if (depthSum > MaxDepthSum)
                 throw new XmlException("Plan XML has too many deeply nested elements.");
+
+            if (reader.NodeType == XmlNodeType.Element && reader.HasAttributes)
+                CheckAttributes(reader);
         }
+    }
+
+    private static void CheckAttributes(XmlReader reader)
+    {
+        if (reader.AttributeCount > MaxAttributes)
+            throw new XmlException(
+                $"Plan XML has an element with more than {MaxAttributes.ToString("N0", CultureInfo.InvariantCulture)} attributes.");
+
+        while (reader.MoveToNextAttribute())
+        {
+            if (reader.NamespaceURI == XmlnsNamespace && reader.Value.Length > MaxNamespaceLength)
+                throw new XmlException(
+                    $"Plan XML declares a namespace longer than {MaxNamespaceLength.ToString("N0", CultureInfo.InvariantCulture)} characters.");
+        }
+
+        reader.MoveToElement();
     }
 
     /// <summary>

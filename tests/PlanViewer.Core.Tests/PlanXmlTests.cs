@@ -77,6 +77,55 @@ public class PlanXmlTests
         Assert.Contains("deeply nested", error.Message);
     }
 
+    [Theory]
+    [InlineData("xmlns:a")]
+    [InlineData("xmlns")]
+    public void ANamespacePastTheLengthLimitIsRefused(string declaration)
+    {
+        var uri = "urn:" + new string('u', PlanXml.MaxNamespaceLength);
+
+        var error = Assert.Throws<XmlException>(() => PlanXml.Parse($"<r {declaration}=\"{uri}\"><x/></r>"));
+
+        Assert.Contains("namespace", error.Message);
+    }
+
+    [Fact]
+    public void ANamespaceAtTheLengthLimitLoads()
+    {
+        var uri = "urn:" + new string('u', PlanXml.MaxNamespaceLength - 4);
+
+        Assert.NotNull(PlanXml.Parse($"<r xmlns=\"{uri}\"><x/></r>").Root);
+    }
+
+    [Fact]
+    public void AnElementAtTheAttributeLimitLoads()
+    {
+        Assert.NotNull(PlanXml.Parse(WithAttributes(PlanXml.MaxAttributes)).Root);
+    }
+
+    [Fact]
+    public void AnElementPastTheAttributeLimitIsRefused()
+    {
+        var error = Assert.Throws<XmlException>(() => PlanXml.Parse(WithAttributes(PlanXml.MaxAttributes + 1)));
+
+        Assert.Contains("attributes", error.Message);
+    }
+
+    [Fact]
+    public void NullIsAnArgumentError()
+    {
+        Assert.Throws<ArgumentNullException>(() => PlanXml.Parse(null!));
+    }
+
+    /// <summary>One element with <paramref name="count"/> attributes.</summary>
+    private static string WithAttributes(int count)
+    {
+        var xml = new StringBuilder("<a");
+        for (var i = 0; i < count; i++)
+            xml.Append(" a").Append(i).Append("=\"\"");
+        return xml.Append("/>").ToString();
+    }
+
     /// <summary>XML whose deepest element is <paramref name="depth"/> levels below the root.</summary>
     private static string Nested(int depth)
     {

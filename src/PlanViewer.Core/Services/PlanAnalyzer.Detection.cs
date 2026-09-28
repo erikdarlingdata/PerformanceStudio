@@ -350,9 +350,11 @@ public static partial class PlanAnalyzer
 
         foreach (Match match in ConvertImplicitRegex.Matches(predicate))
         {
-            // A conversion nested inside one already read: its arguments are part of that one's,
-            // which held no column. Reading each nested list again took time in proportion to the
-            // square of the predicate's length when conversions were nested thousands deep.
+            // A conversion that starts inside the arguments of one already read is skipped. Those
+            // arguments were checked for a column as a whole, and a conversion written inside a
+            // string literal there is text, not a conversion. Reading each nested list again took
+            // time in proportion to the square of the predicate's length when conversions were
+            // nested thousands deep.
             if (match.Index < readUpTo)
                 continue;
 

@@ -387,6 +387,19 @@ public class PlanAnalyzerTests
     }
 
     /// <summary>
+    /// Conversion text inside a string literal is not a conversion. It sits inside the arguments
+    /// of the real conversion around it, so it is not read on its own.
+    /// </summary>
+    [Fact]
+    public void Rule12f_NonSargable_ConversionTextInsideAStringLiteral_IsNotRead()
+    {
+        var scan = new ScanIdentity(null, "T", false, new HashSet<string>());
+
+        Assert.False(PlanAnalyzer.ConvertImplicitWrapsColumn(
+            "CONVERT_IMPLICIT(nvarchar(50),N'x CONVERT_IMPLICIT(int,[T].[c],0)',0)=[@p]", scan));
+    }
+
+    /// <summary>
     /// Each side of a comparison is read once and remembered, so a call on the parameter side
     /// must not decide the answer for a call on the column side of the same comparison.
     /// </summary>
