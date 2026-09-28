@@ -31,13 +31,15 @@ jobs:
           # stack of '!' patterns matches whenever a file fails ANY one of them, which for
           # a docs-only change is always true. Listing what IS code keeps the OR honest.
           # PlanViewer.Ssms and PlanViewer.Ssms.Installer stay out: they are not in the
-          # solution and ci.yml never built them.
+          # solution and ci.yml never built them. server/PlanShare is in: the test project
+          # references it, so this job builds and tests it.
           filters: |
             code:
               - 'src/PlanViewer.App/**'
               - 'src/PlanViewer.Cli/**'
               - 'src/PlanViewer.Core/**'
               - 'src/PlanViewer.Web/**'
+              - 'server/PlanShare/**'
               - 'src/Directory.Build.props'
               - 'tests/**'
               - 'PlanViewer.sln'

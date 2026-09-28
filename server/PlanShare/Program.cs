@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Data.Sqlite;
+using PlanShare;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -14,8 +15,9 @@ builder.Services.AddCors(options =>
         policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader());
 });
 
-// Database path — data/ subdirectory relative to the binary
-var dataDir = Path.Combine(AppContext.BaseDirectory, "data");
+// Database path — data/ subdirectory relative to the binary. PlanShare:DataDir moves it
+// (the endpoint tests and local runs point it at a temp folder).
+var dataDir = builder.Configuration["PlanShare:DataDir"] ?? Path.Combine(AppContext.BaseDirectory, "data");
 Directory.CreateDirectory(dataDir);
 var dbPath = Path.Combine(dataDir, "plans.db");
 var connectionString = $"Data Source={dbPath}";
@@ -71,9 +73,24 @@ var analyticsRateLimiter = new RateLimiter(maxRequests: 30, windowSeconds: 60);
 // store; 120/min per IP is far above any human's browsing rate.
 var readRateLimiter = new RateLimiter(maxRequests: 120, windowSeconds: 60);
 
+// --- Storage limit and daily upload budget ---
+// The production disk is 40 GB. Stopping at 10 GB of used database pages leaves room for the OS,
+// logs, the SQLite journal and a VACUUM, and a full store turns shares away instead of filling
+// the disk. The budget caps one client key's stored plan data per UTC day; it is per key and not
+// global, so one heavy uploader cannot use up the space for everyone else in a single day.
+// PlanShare:MaxDatabaseBytes and PlanShare:DailyUploadBytes override the limits (tests and local runs).
+const long MaxDatabaseBytes = 10L * 1024 * 1024 * 1024;
+const long DailyUploadBytes = 100L * 1024 * 1024;
+var storageCheck = new StorageCheck(
+    connectionString,
+    builder.Configuration.GetValue<long?>("PlanShare:MaxDatabaseBytes") ?? MaxDatabaseBytes);
+var uploadBudget = new UploadBudget(
+    builder.Configuration.GetValue<long?>("PlanShare:DailyUploadBytes") ?? DailyUploadBytes);
+
 // Register the cleanup background service
 builder.Services.AddSingleton(new PlanDbConfig(connectionString));
 builder.Services.AddSingleton(new RateLimiters(rateLimiter, analyticsRateLimiter, readRateLimiter));
+builder.Services.AddSingleton(uploadBudget);
 builder.Services.AddHostedService<CleanupService>();
 
 // Request size limit (10 MB)
@@ -105,6 +122,9 @@ app.UseCors();
 
 const int MaxTtlDays = 365;
 
+// Longest page path an analytics event may carry. Real paths are a few characters.
+const int MaxEventPathLength = 512;
+
 // Depth ceiling for parsing an uploaded share, mirroring PlanViewer.Core's
 // AnalysisJson.MaxDepth — that class is the source of truth for how deep a serialized
 // AnalysisResult can go (#431: an operator costs two JSON levels, so the JsonDocument
@@ -121,11 +141,11 @@ app.MapGet("/health", () => Results.Content("OK", "text/plain"));
 
 app.MapPost("/api/share", async (HttpContext ctx) =>
 {
-    // Rate limit by IP
-    var ip = ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown";
-    if (!rateLimiter.IsAllowed(ip))
+    // Rate limit by client key (IPv4 address, or the /64 of an IPv6 address)
+    var client = ClientKey.From(ctx.Connection.RemoteIpAddress);
+    if (!rateLimiter.IsAllowed(client))
     {
-        return Results.StatusCode(429);
+        return Error(429, "Too many shares from your network. Please wait a minute and try again.");
     }
 
     // Read raw body
@@ -134,7 +154,7 @@ app.MapPost("/api/share", async (HttpContext ctx) =>
 
     if (string.IsNullOrWhiteSpace(body))
     {
-        return Results.BadRequest("Empty body");
+        return Error(400, "Empty body");
     }
 
     // Parse and extract ttl_days from the JSON. shareDocumentOptions, not defaults: this body
@@ -144,12 +164,31 @@ app.MapPost("/api/share", async (HttpContext ctx) =>
     try
     {
         using var doc = JsonDocument.Parse(body, shareDocumentOptions);
-        if (doc.RootElement.TryGetProperty("ttl_days", out var ttlProp) && ttlProp.TryGetInt32(out var t))
-            ttlDays = Math.Clamp(t, 1, MaxTtlDays);
+        // TryGetProperty and TryGetInt32 throw (a 500) on the wrong kind of element, so check the kind first
+        if (doc.RootElement.ValueKind != JsonValueKind.Object)
+            return Error(400, "The request body must be a JSON object.");
+        if (doc.RootElement.TryGetProperty("ttl_days", out var ttlProp) && ttlProp.ValueKind != JsonValueKind.Null)
+        {
+            if (ttlProp.ValueKind != JsonValueKind.Number)
+                return Error(400, "ttl_days must be a number.");
+            if (ttlProp.TryGetInt32(out var t))
+                ttlDays = Math.Clamp(t, 1, MaxTtlDays);
+        }
     }
     catch (JsonException)
     {
-        return Results.BadRequest("Invalid JSON");
+        return Error(400, "Invalid JSON");
+    }
+
+    if (storageCheck.IsFull())
+    {
+        return Error(507, "Plan sharing is full right now. Please try again later.");
+    }
+
+    // The stored size is the UTF-8 length of the body; ContentLength can be absent
+    if (!uploadBudget.TryCharge(client, Encoding.UTF8.GetByteCount(body)))
+    {
+        return Error(429, "Daily sharing limit reached for your network. Please try again tomorrow.");
     }
 
     var id = GenerateId();
@@ -175,8 +214,8 @@ app.MapPost("/api/share", async (HttpContext ctx) =>
 
 app.MapGet("/api/plans/{id}", (string id, HttpContext ctx) =>
 {
-    var readIp = ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown";
-    if (!readRateLimiter.IsAllowed(readIp))
+    var readClient = ClientKey.From(ctx.Connection.RemoteIpAddress);
+    if (!readRateLimiter.IsAllowed(readClient))
         return Results.StatusCode(429);
 
     using var conn = new SqliteConnection(connectionString);
@@ -199,9 +238,8 @@ app.MapGet("/api/plans/{id}", (string id, HttpContext ctx) =>
 
 app.MapPost("/api/event", async (HttpContext ctx) =>
 {
-    // Rate limit: 30 events/min per IP (generous — covers page nav + shares)
-    var ip = ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown";
-    if (!analyticsRateLimiter.IsAllowed(ip))
+    // Rate limit: 30 events/min per client key (generous — covers page nav + shares)
+    if (!analyticsRateLimiter.IsAllowed(ClientKey.From(ctx.Connection.RemoteIpAddress)))
         return Results.StatusCode(429);
 
     using var reader = new StreamReader(ctx.Request.Body);
@@ -212,15 +250,31 @@ app.MapPost("/api/event", async (HttpContext ctx) =>
     try
     {
         using var doc = JsonDocument.Parse(body);
-        if (doc.RootElement.TryGetProperty("path", out var p))
+        // GetString() throws (a 500) on a non-string element, so check the kind first.
+        // JSON null counts as "not sent", like a missing property.
+        if (doc.RootElement.ValueKind != JsonValueKind.Object)
+            return Error(400, "The request body must be a JSON object.");
+        if (doc.RootElement.TryGetProperty("path", out var p) && p.ValueKind != JsonValueKind.Null)
+        {
+            if (p.ValueKind != JsonValueKind.String)
+                return Error(400, "path must be a string.");
             path = p.GetString() ?? "/";
-        if (doc.RootElement.TryGetProperty("referrer", out var r))
+        }
+        if (doc.RootElement.TryGetProperty("referrer", out var r) && r.ValueKind != JsonValueKind.Null)
+        {
+            if (r.ValueKind != JsonValueKind.String)
+                return Error(400, "referrer must be a string.");
             referrer = r.GetString();
+        }
     }
-    catch (JsonException)
+    catch (Exception ex) when (ex is JsonException or InvalidOperationException)
     {
-        return Results.BadRequest("Invalid JSON");
+        // InvalidOperationException: GetString() on a string with a lone surrogate escape
+        return Error(400, "Invalid JSON");
     }
+
+    if (path.Length > MaxEventPathLength)
+        return Error(400, $"path must be {MaxEventPathLength} characters or fewer.");
 
     // Strip referrer to domain only (no full URLs with query params).
     // If it doesn't parse as an absolute URL, drop it — never persist raw
@@ -237,10 +291,17 @@ app.MapPost("/api/event", async (HttpContext ctx) =>
     // space (IPv4 = 2^32, guessable UA, known date) is small enough to brute
     // force straight back to the source IP, so an unsalted digest would still be
     // personal data despite looking like a hash.
+    // The hash takes the full address, not the client key: a /64 would count every host in
+    // it as one visitor.
+    var ip = ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown";
     var ua = ctx.Request.Headers.UserAgent.FirstOrDefault() ?? "";
     var day = DateTime.UtcNow.ToString("yyyy-MM-dd");
     var visitorHash = Convert.ToHexString(
         HMACSHA256.HashData(visitorSalt, Encoding.UTF8.GetBytes($"{ip}|{ua}|{day}"))).ToLower()[..16];
+
+    // A full store drops the event and still answers 200: analytics must never show an error
+    if (storageCheck.IsFull())
+        return Results.Ok();
 
     using var conn = new SqliteConnection(connectionString);
     conn.Open();
@@ -409,10 +470,14 @@ app.MapGet("/api/stats", (HttpContext ctx) =>
 
 app.MapDelete("/api/plans/{id}", (string id, HttpContext ctx) =>
 {
-    var token = ctx.Request.Query["token"].FirstOrDefault();
+    // Header first: a ?token= query string is written to the nginx access log. The query form
+    // stays for clients built before the header existed.
+    var token = ctx.Request.Headers["X-Delete-Token"].FirstOrDefault();
+    if (string.IsNullOrEmpty(token))
+        token = ctx.Request.Query["token"].FirstOrDefault();
     if (string.IsNullOrEmpty(token))
     {
-        return Results.BadRequest("Missing delete token");
+        return Error(400, "Missing delete token");
     }
 
     using var conn = new SqliteConnection(connectionString);
@@ -443,6 +508,12 @@ static string GenerateDeleteToken()
     return Convert.ToHexString(RandomNumberGenerator.GetBytes(16)).ToLower();
 }
 
+// A refusal the web client can show: it reads the "error" text out of the body.
+static IResult Error(int statusCode, string message)
+{
+    return Results.Json(new { error = message }, statusCode: statusCode);
+}
+
 // --- Supporting types ---
 
 record PlanDbConfig(string ConnectionString);
@@ -453,12 +524,14 @@ sealed class CleanupService : BackgroundService
 {
     private readonly PlanDbConfig _config;
     private readonly RateLimiters _rateLimiters;
+    private readonly UploadBudget _uploadBudget;
     private readonly ILogger<CleanupService> _logger;
 
-    public CleanupService(PlanDbConfig config, RateLimiters rateLimiters, ILogger<CleanupService> logger)
+    public CleanupService(PlanDbConfig config, RateLimiters rateLimiters, UploadBudget uploadBudget, ILogger<CleanupService> logger)
     {
         _config = config;
         _rateLimiters = rateLimiters;
+        _uploadBudget = uploadBudget;
         _logger = logger;
     }
 
@@ -503,14 +576,16 @@ sealed class CleanupService : BackgroundService
 
             // Evict stale rate-limiter keys so the dictionaries don't grow forever.
             // Every limiter must be swept here: an unswept one keeps a permanent
-            // entry per unique client IP for the lifetime of the process.
+            // entry per unique client IP for the lifetime of the process. The upload
+            // budget is swept the same way (its entries go stale at the UTC day change).
             var shareEvicted = _rateLimiters.Share.Sweep();
             var analyticsEvicted = _rateLimiters.Analytics.Sweep();
             var readEvicted = _rateLimiters.Read.Sweep();
-            if (shareEvicted + analyticsEvicted + readEvicted > 0)
+            var budgetEvicted = _uploadBudget.Sweep();
+            if (shareEvicted + analyticsEvicted + readEvicted + budgetEvicted > 0)
                 _logger.LogInformation(
-                    "Evicted {Share} share + {Analytics} analytics + {Read} read rate-limit keys",
-                    shareEvicted, analyticsEvicted, readEvicted);
+                    "Evicted {Share} share + {Analytics} analytics + {Read} read rate-limit keys and {Budget} upload-budget keys",
+                    shareEvicted, analyticsEvicted, readEvicted, budgetEvicted);
         }
         catch (Exception ex)
         {

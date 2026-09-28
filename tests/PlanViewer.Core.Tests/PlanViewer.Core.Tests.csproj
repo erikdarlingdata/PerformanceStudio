@@ -44,6 +44,9 @@
     <ProjectReference Include="..\..\src\PlanViewer.Core\PlanViewer.Core.csproj" />
     <ProjectReference Include="..\..\src\PlanViewer.Cli\PlanViewer.Cli.csproj" />
     <ProjectReference Include="..\..\src\PlanViewer.App\PlanViewer.App.csproj" />
+    <!-- server/PlanShare is not in the solution and ci.yml never built it. Referencing it here builds
+         it with the solution and lets the tests reach its internal classes (InternalsVisibleTo). -->
+    <ProjectReference Include="..\..\server\PlanShare\PlanShare.csproj" />
   </ItemGroup>
 
   <ItemGroup>
