@@ -100,13 +100,16 @@ namespace PlanViewer.Ssms.Installer
             if (File.Exists(candidate))
                 return candidate;
 
-            // 3. Look in common build output locations relative to exe
+#if DEBUG
+            // 3. Dev builds only: look in common build output locations relative
+            //    to exe. A release build uses only the argument or the exe's folder.
             foreach (var sub in new[] { ".", @"..\bin\Release", @"..\bin\Debug" })
             {
                 candidate = Path.GetFullPath(Path.Combine(exeDir, sub, "PlanViewer.Ssms.vsix"));
                 if (File.Exists(candidate))
                     return candidate;
             }
+#endif
 
             return null;
         }
