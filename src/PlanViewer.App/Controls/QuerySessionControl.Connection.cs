@@ -176,9 +176,9 @@ public partial class QuerySessionControl : UserControl
            calls this on every pick, and nothing stopped an older fetch from landing after a
            newer one and overwriting _serverMetadata.Database with the wrong database's rows
            (E7). Same shape as the Query Store grid's own database check
-           (QueryStoreGridControl.QsDatabase_SelectionChanged). */
+           (QueryStoreGridControl.QsDatabase_SelectionChanged). Cancelled, never disposed: the
+           older fetch reads its own token when it wakes, and Token on a disposed source throws. */
         _databaseMetadataCts?.Cancel();
-        _databaseMetadataCts?.Dispose();
         var cts = new CancellationTokenSource();
         _databaseMetadataCts = cts;
 

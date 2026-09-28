@@ -46,6 +46,12 @@ public class DatabaseMetadataFetchRaceTests
                 Assert.NotSame(firstFetch, secondFetch);
                 Assert.True(firstFetch.IsCancellationRequested,
                     "picking a second database left the first one's metadata fetch running alongside it");
+
+                // The superseded fetch reads its own token when it wakes, and Token on a disposed
+                // source throws — so the newer pick must cancel the older source and leave it alone.
+                var readingItAgain = Record.Exception(() => firstFetch.Token);
+                Assert.True(readingItAgain == null,
+                    "the newer pick disposed the older fetch's token source, which the older fetch still reads");
             }
             finally
             {

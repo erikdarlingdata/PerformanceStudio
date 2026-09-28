@@ -170,9 +170,12 @@ public partial class QueryStoreGridControl : UserControl
            (QuerySessionControl.Views.cs). This has to stay below the early-out above: a revert
            below re-fires this handler with the OLD database, which must hit that early-out and
            return before it ever reaches here — otherwise the revert's own re-entry would cancel
-           the very check that superseded it. */
+           the very check that superseded it.
+
+           Cancelled, never disposed: the superseded check is still awaiting and reads its own
+           token when it wakes, and Token on a disposed source throws — same rule as the
+           Overview's OnSlicerRangeChanged. */
         _databaseCheckCts?.Cancel();
-        _databaseCheckCts?.Dispose();
         var cts = new CancellationTokenSource();
         _databaseCheckCts = cts;
 

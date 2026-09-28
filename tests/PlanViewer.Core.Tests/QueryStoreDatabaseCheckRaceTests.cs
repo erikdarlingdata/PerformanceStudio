@@ -45,6 +45,13 @@ public class QueryStoreDatabaseCheckRaceTests
             Assert.NotSame(firstCheck, secondCheck);
             Assert.True(firstCheck.IsCancellationRequested,
                 "picking a second database left the first one's Query Store check running alongside it");
+
+            // The superseded check is still awaiting, and reads its own token when it wakes. Token
+            // on a disposed source throws, and nothing in that handler would be catching it, so the
+            // newer pick must cancel the older source and leave it alone.
+            var readingItAgain = Record.Exception(() => firstCheck.Token);
+            Assert.True(readingItAgain == null,
+                "the newer pick disposed the older check's token source, which the older check still reads");
         });
     }
 
