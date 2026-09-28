@@ -106,6 +106,7 @@ class Program
         }
         else
         {
+            // --new-instance: never handed to a running instance, but it still claims the slot.
             ClaimSlotForNewInstance();
         }
 

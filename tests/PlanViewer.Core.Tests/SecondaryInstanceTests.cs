@@ -49,6 +49,10 @@ public class SecondaryInstanceTests
     {
         AsSecondaryOverOwnerSession((window, owner) =>
         {
+            /* Starting up alone is enough to have touched them: an ordinary start clears the list
+               and saves it empty before it opens anything, then sweeps the buffer folder. */
+            AssertUnchanged(owner);
+
             var sessions = Sessions(window).ToList();
             Assert.DoesNotContain(sessions, s => s.SourceFilePath == owner.SqlPath);
             Assert.DoesNotContain(sessions, s => s.ScratchBufferId == owner.ScratchId);
@@ -299,8 +303,15 @@ public class SecondaryInstanceTests
 
     // ── plumbing ──────────────────────────────────────────────────────────
 
-    /// <summary>What a running owner leaves on disk, as far as these tests care.</summary>
-    private sealed record OwnerSession(string SqlPath, Guid ScratchId, Guid OrphanId);
+    /// <summary>
+    /// What a running owner leaves on disk, as far as these tests care, and the settings file and
+    /// buffer folder exactly as it left them (see <see cref="Snapshot"/>).
+    /// </summary>
+    private sealed record OwnerSession(
+        string SqlPath,
+        Guid ScratchId,
+        Guid OrphanId,
+        SortedDictionary<string, (byte[] Bytes, long Written)> OnDisk);
 
     /// <summary>
     /// The whole secondary scenario, through the same door production uses: a slot already held
@@ -318,8 +329,6 @@ public class SecondaryInstanceTests
             MainWindow? window = null;
             try
             {
-                var before = Snapshot();
-
                 var name = UniqueMutexName();
                 using var runningOwner = new Mutex(initiallyOwned: true, name, out var held);
                 Assert.True(held);
@@ -339,7 +348,7 @@ public class SecondaryInstanceTests
                 }
 
                 if (filesMustStay)
-                    AssertUnchanged(before);
+                    AssertUnchanged(owner);
             }
             finally
             {
@@ -404,7 +413,7 @@ public class SecondaryInstanceTests
         settings.OpenTabs.Add(ScratchBufferStore.EntryFor(scratchId));
         AppSettingsService.Save(settings);
 
-        return new OwnerSession(sqlPath, scratchId, orphanId);
+        return new OwnerSession(sqlPath, scratchId, orphanId, Snapshot());
     }
 
     /// <summary>Leaves nothing for the next test's window to restore or sweep.</summary>
@@ -450,12 +459,13 @@ public class SecondaryInstanceTests
         return snapshot;
     }
 
-    private static void AssertUnchanged(SortedDictionary<string, (byte[] Bytes, long Written)> before)
+    /// <summary>The settings file and buffer folder are exactly as the owner left them.</summary>
+    private static void AssertUnchanged(OwnerSession owner)
     {
         var after = Snapshot();
 
-        Assert.Equal(before.Keys.ToArray(), after.Keys.ToArray());
-        foreach (var (name, was) in before)
+        Assert.Equal(owner.OnDisk.Keys.ToArray(), after.Keys.ToArray());
+        foreach (var (name, was) in owner.OnDisk)
         {
             Assert.True(was.Bytes.AsSpan().SequenceEqual(after[name].Bytes), $"{name} changed");
             Assert.True(was.Written == after[name].Written, $"{name} was written to");

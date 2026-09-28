@@ -756,6 +756,11 @@ public partial class MainWindow : Window
     /// the poison defense wholesale — the entry is already off the cleared list before its
     /// buffer is read, and a buffer that fails to load is skipped, never re-added, and
     /// deleted (<see cref="TryRestoreScratchTab"/>).</para>
+    ///
+    /// <para><b>Never in a secondary instance.</b> Everything above is written for the one
+    /// instance that owns the saved session: the clear-and-save empties the owner's list on
+    /// disk, and the sweep deletes buffers the owner still needs. <see cref="OpenFromStartupArgs"/>
+    /// skips this method when <see cref="SingleInstance.IsSecondaryInstance"/> is set.</para>
     /// </summary>
     /// <param name="createFallbackTab">
     /// Whether an empty restore opens a fresh query tab. False when the caller is about to
