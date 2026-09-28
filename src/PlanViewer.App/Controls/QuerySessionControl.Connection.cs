@@ -47,6 +47,13 @@ public partial class QuerySessionControl : UserControl
             _selectedDatabase = dialog.ResultDatabase;
             _connectionString = _serverConnection.GetConnectionString(_credentialService, _selectedDatabase);
 
+            /* A database metadata fetch still running from before this reconnect was built from
+               the previous server's connection string. Left alone it can land after
+               FetchServerMetadataAsync below has replaced _serverMetadata, and write the old
+               server's database rows into the new server's metadata (E7). The fetch this block
+               makes itself is the newest pick and owns the result. */
+            _databaseMetadataCts?.Cancel();
+
             ServerLabel.Text = _serverConnection.ApplicationIntentReadOnly
                 ? $"{_serverConnection.ServerName} (Read-only)"
                 : _serverConnection.ServerName;
