@@ -100,14 +100,28 @@ internal static class SettingsFileStore
     /// Moves an unparseable file aside so the next save can start clean without losing the
     /// original bytes. Returns false (and leaves the file exactly where it was) if the move
     /// itself fails — the caller then treats this the same as <see cref="ReadOutcome.Unreadable"/>.
+    ///
+    /// <para>Two readers can find the same broken file at once (the UI thread and the MCP
+    /// server's). The name carries milliseconds and a counter, so they never collide on it, and
+    /// a reader that finds the file already gone counts it as moved aside: the other reader
+    /// moved it, and saving over the path is just as safe for both.</para>
     /// </summary>
-    private static bool Quarantine(string path, string logSource)
+    internal static bool Quarantine(string path, string logSource)
     {
         try
         {
-            var quarantined = $"{path}.bad-{DateTime.UtcNow:yyyyMMddHHmmss}";
+            var stamped = $"{path}.bad-{DateTime.UtcNow:yyyyMMddHHmmssfff}";
+            var quarantined = stamped;
+            for (var n = 1; File.Exists(quarantined); n++)
+                quarantined = $"{stamped}-{n}";
+
             File.Move(path, quarantined, overwrite: false);
             Debug.WriteLine($"{logSource}: moved unreadable {path} to {quarantined}");
+            return true;
+        }
+        catch (Exception ex) when (!File.Exists(path))
+        {
+            Debug.WriteLine($"{logSource}: {path} was already moved aside: {ex.Message}");
             return true;
         }
         catch (Exception ex)

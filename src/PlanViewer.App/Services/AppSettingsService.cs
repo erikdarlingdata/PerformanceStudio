@@ -177,9 +177,22 @@ internal sealed class AppSettingsService
     public static void Invalidate() => _cached = null;
 
     /// <summary>
+    /// True once a <see cref="Load"/> has found the settings file unreadable, which blocks every
+    /// save for the rest of the process (see <see cref="_saveBlocked"/>). The Settings window
+    /// checks it after saving, so it can say the save did not happen instead of closing as if
+    /// it had.
+    /// </summary>
+    internal static bool SaveBlocked => _saveBlocked;
+
+    /// <summary>What the Settings window shows when <see cref="SaveBlocked"/> is set.</summary>
+    internal static string SaveBlockedMessage =>
+        $"Settings were not saved. {SettingsPath} could not be read earlier in this session, and saving now could replace it with default settings. Restart Performance Studio, then save again.";
+
+    /// <summary>
     /// Saves settings to disk. Silently ignores write failures — including a save attempted
     /// while <see cref="Load"/> found the file unreadable, which would otherwise overwrite
-    /// content this process has never actually seen.
+    /// content this process has never actually seen. The Settings window reports that case
+    /// through <see cref="SaveBlocked"/>.
     /// </summary>
     public static void Save(AppSettings settings)
     {

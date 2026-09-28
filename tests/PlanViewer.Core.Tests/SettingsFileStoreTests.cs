@@ -273,10 +273,56 @@ public class SettingsFileStoreTests
         Assert.Equal(4322, SettingsFile.Read()["mcp_port"]!.GetValue<int>());
     }
 
+    // ── Quarantine ───────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Two readers can parse the same broken file at once, and the second finds it already moved
+    /// aside by the first. That is a moved-aside file, not an unreadable one: counting it as
+    /// unreadable would block saves (for app settings, until the app restarts) over a path that
+    /// is now safe to write.
+    /// </summary>
+    [Fact]
+    public void AFileAnotherReaderAlreadyMovedAsideCountsAsMovedAside()
+    {
+        var path = Path.Combine(HeadlessUi.SettingsRedirectRoot, "already-moved.json");
+        Assert.False(File.Exists(path));
+
+        Assert.True(SettingsFileStore.Quarantine(path, nameof(SettingsFileStoreTests)));
+    }
+
+    [Fact]
+    public void TwoQuarantinesOfTheSamePathKeepBothFiles()
+    {
+        var path = Path.Combine(HeadlessUi.SettingsRedirectRoot, "broken-twice.json");
+
+        File.WriteAllText(path, "first");
+        Assert.True(SettingsFileStore.Quarantine(path, nameof(SettingsFileStoreTests)));
+        File.WriteAllText(path, "second");
+        Assert.True(SettingsFileStore.Quarantine(path, nameof(SettingsFileStoreTests)));
+
+        var quarantined = FindQuarantineFiles(path);
+        Assert.Equal(2, quarantined.Length);
+        Assert.Equal(["first", "second"], quarantined.Select(File.ReadAllText).Order());
+
+        foreach (var file in quarantined)
+            File.Delete(file);
+    }
+
     // ── helpers ──────────────────────────────────────────────────────────
 
     private static string[] FindQuarantineFiles(string originalPath) =>
         Directory.GetFiles(
             Path.GetDirectoryName(originalPath)!,
             Path.GetFileName(originalPath) + ".bad-*");
+}
+
+/// <summary>
+/// The settings-file tests lock the redirected files and switch on process-wide save blocks.
+/// While a block is on, AppSettingsService.Save skips every write, so a test in another class
+/// that saves settings at that moment would fail for no reason of its own. This collection
+/// therefore runs on its own, after the parallel ones, instead of beside them.
+/// </summary>
+[CollectionDefinition("SettingsFileStore serial", DisableParallelization = true)]
+public class SettingsFileStoreSerialCollection
+{
 }

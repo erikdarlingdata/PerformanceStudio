@@ -1018,6 +1018,12 @@ internal partial class SettingsWindow : Window
 
 		AppSettingsService.Save(_settings);
 
+		/* Save skips the write, quietly, once the settings file could not be read earlier in
+		   this session (see AppSettingsService.SaveBlocked). Integrations live in a different
+		   file, so they are still saved below; then the window reports the skip and stays open
+		   and dirty, instead of closing as if the edits were kept. */
+		var error = AppSettingsService.SaveBlocked ? AppSettingsService.SaveBlockedMessage : null;
+
 		try
 		{
 			SaveIntegrations();
@@ -1025,11 +1031,15 @@ internal partial class SettingsWindow : Window
 		catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
 		{
 			// SaveIntegrations writes through SettingsFile.Update (MCP, directly at line ~605,
-			// and the proxy fields via ProxySettings.Save), either of which throws when the file
-			// could not be read on its last load rather than overwrite it — see SettingsFile.Update.
-			// The rest of the save (above) already landed; only Integrations failed, so the
-			// dialog stays open and dirty instead of losing that message on Close.
-			SaveErrorText.Text = ex.Message;
+			// and the proxy fields via ProxySettings.Save), either of which throws when its own
+			// read finds the file unreadable rather than overwrite it — see SettingsFile.Update.
+			error = error == null ? ex.Message : $"{error}\n{ex.Message}";
+		}
+
+		if (error != null)
+		{
+			// The dialog stays open and dirty instead of losing the message on Close.
+			SaveErrorText.Text = error;
 			SaveErrorText.IsVisible = true;
 			return;
 		}

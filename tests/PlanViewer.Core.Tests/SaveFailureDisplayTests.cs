@@ -115,6 +115,63 @@ public class SaveFailureDisplayTests
         Assert.Equal(original, File.ReadAllText(path));
     }
 
+    /// <summary>
+    /// Once a read of appsettings.json fails, AppSettingsService.Save skips every write for the
+    /// rest of the process, and it does so quietly. The Settings window is where the user expects
+    /// a save, so it has to say the save did not happen instead of closing as if it had.
+    /// </summary>
+    [Fact]
+    public void ABlockedAppSettingsSaveShowsItsMessageAndTheWindowStaysOpen()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(),
+            "Unix permissions don't reliably block a same-user read the way FileShare.None does on Windows.");
+
+        var path = AppSettingsService.SettingsFilePath;
+        const string original = """{"query_store_slicer_days": 12}""";
+        File.WriteAllText(path, original);
+        AppSettingsService.Invalidate();
+
+        try
+        {
+            using (new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None))
+                AppSettingsService.Load(); // unreadable: blocks saves for the rest of the process
+
+            HeadlessUi.Run(() =>
+            {
+                var window = new SettingsWindow(new AppSettings());
+                window.Show();
+                Dispatcher.UIThread.RunJobs();
+
+                // Any edit, so there is something to keep: the MCP toggle, as in the test above.
+                window.FindControl<ListBox>("SectionList")!.SelectedIndex = 3; // Integrations
+                Dispatcher.UIThread.RunJobs();
+                var detail = (Control)window.FindControl<ContentControl>("DetailPanel")!.Content!;
+                var mcpToggle = detail.GetLogicalDescendants().OfType<CheckBox>().First();
+                mcpToggle.IsChecked = mcpToggle.IsChecked != true;
+                Dispatcher.UIThread.RunJobs();
+
+                window.FindControl<Button>("SaveButton")!
+                      .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                Dispatcher.UIThread.RunJobs();
+
+                var errorText = window.FindControl<TextBlock>("SaveErrorText")!;
+                Assert.True(errorText.IsVisible, "the skipped save must be visible");
+                Assert.Contains(path, errorText.Text);
+                Assert.True(window.IsVisible, "the window must stay open when nothing was saved");
+                Assert.True(IsDirty(window), "a skipped save has not saved anything");
+
+                CloseWithoutPrompting(window);
+            });
+
+            Assert.Equal(original, File.ReadAllText(path));
+        }
+        finally
+        {
+            // The block lasts for the process on purpose; the tests after this one need it gone.
+            AppSettingsService.RedirectStorageForTestHost(HeadlessUi.SettingsRedirectRoot);
+        }
+    }
+
     private static bool IsDirty(SettingsWindow window) =>
         (bool)typeof(SettingsWindow)
             .GetField("_isDirty", BindingFlags.Instance | BindingFlags.NonPublic)!
