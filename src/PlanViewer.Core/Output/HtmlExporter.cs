@@ -572,7 +572,8 @@ pre.query-text, pre.text-output {
         // Rows
         if (node.ActualRows.HasValue)
         {
-            var est = node.EstimatedRows;
+            // #594: the same execution-aware estimate the plan viewer's node label shows.
+            var est = node.ExpectedRows ?? node.EstimatedRows;
             var ratio = est > 0 ? (double)node.ActualRows.Value / est : 0;
             var accuracy = est > 0 ? $" ({ratio * 100:F0}%)" : "";
             sb.Append($" <span class=\"op-rows\">{node.ActualRows.Value:N0} of {est:N0} rows{accuracy}</span>");

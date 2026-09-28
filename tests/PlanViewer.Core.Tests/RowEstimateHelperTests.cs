@@ -227,4 +227,23 @@ public class RowEstimateHelperTests
         Assert.Equal(8_042_005, node6.ActualRows);
         Assert.Equal(8_042_010, RowEstimateHelper.GetExpectedRows(node6), 6);
     }
+
+    /// <summary>
+    /// The HTML export (the web viewer's download) writes the same "N of M rows" line as the
+    /// node label, so it takes the same estimate: the join reads against its own estimate, the
+    /// inner-side spool against its estimate times its executions.
+    /// </summary>
+    [Fact]
+    public void EagerIndexSpoolPlan_HtmlExport_UsesTheExecutionAwareEstimate()
+    {
+        const string plan = "eager_index_spool_plan.sqlplan";
+        var result = PlanViewer.Core.Output.ResultMapper.Map(PlanTestHelper.LoadAndAnalyze(plan), plan);
+
+        var html = PlanViewer.Core.Output.HtmlExporter.Export(
+            result, PlanViewer.Core.Output.TextFormatter.Format(result));
+
+        Assert.Contains("609 of 2,983 rows (20%)", html);
+        Assert.Contains("609 of 613 rows (99%)", html);
+        Assert.DoesNotContain("609 of 1 rows", html);
+    }
 }

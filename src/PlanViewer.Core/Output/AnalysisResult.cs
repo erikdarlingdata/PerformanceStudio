@@ -405,6 +405,13 @@ public class OperatorResult
     [JsonPropertyName("actual_executions")]
     public long? ActualExecutions { get; set; }
 
+    /// <summary>
+    /// The estimate to set beside <see cref="ActualRows"/>: estimated rows times actual executions
+    /// on the inner side of a Nested Loops join, estimated rows everywhere else (#594).
+    /// </summary>
+    [JsonPropertyName("expected_rows")]
+    public double? ExpectedRows { get; set; }
+
     [JsonPropertyName("actual_elapsed_ms")]
     public long? ActualElapsedMs { get; set; }
 
