@@ -509,9 +509,11 @@ pre.query-text, pre.text-output {
 
         foreach (var w in sorted)
         {
-            var sevLower = w.Severity.ToLowerInvariant();
-            sb.AppendLine($"<div class=\"warning-item {sevLower}\">");
-            sb.AppendLine($"<span class=\"sev sev-{sevLower}\">{Encode(w.Severity)}</span>");
+            // A shared plan's analysis is caller-supplied JSON, so Severity can hold anything.
+            // Only a fixed class name goes into the attributes; the text itself is encoded.
+            var sevClass = SeverityClass(w.Severity);
+            sb.AppendLine($"<div class=\"warning-item {sevClass}\">");
+            sb.AppendLine($"<span class=\"sev sev-{sevClass}\">{Encode(w.Severity)}</span>");
             if (w.Operator != null)
                 sb.AppendLine($"<span class=\"warn-op\">{Encode(w.Operator)}</span>");
             sb.AppendLine($"<span class=\"warn-type\">{Encode(w.Type)}</span>");
@@ -619,4 +621,15 @@ pre.query-text, pre.text-output {
     }
 
     private static string Encode(string text) => HttpUtility.HtmlEncode(text);
+
+    /// <summary>
+    /// Maps a warning severity to one of the stylesheet's three class names. Any other value,
+    /// null included, gets "info", so severity text never reaches a class attribute.
+    /// </summary>
+    private static string SeverityClass(string? severity) => severity?.ToLowerInvariant() switch
+    {
+        "critical" => "critical",
+        "warning" => "warning",
+        _ => "info"
+    };
 }

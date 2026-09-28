@@ -63,4 +63,52 @@ public class HtmlExporterTests
         Assert.Contains("<!DOCTYPE html>", html);
         Assert.Contains("</html>", html);
     }
+
+    [Theory]
+    [InlineData("Critical", "critical")]
+    [InlineData("Warning", "warning")]
+    [InlineData("Info", "info")]
+    public void Export_KnownSeverity_KeepsItsClass(string severity, string cssClass)
+    {
+        var html = ExportWithSeverity(severity);
+
+        Assert.Contains($"<div class=\"warning-item {cssClass}\">", html);
+        Assert.Contains($"<span class=\"sev sev-{cssClass}\">{severity}</span>", html);
+    }
+
+    [Fact]
+    public void Export_CraftedSeverity_CannotLeaveTheClassAttribute()
+    {
+        // A shared plan's analysis is caller-supplied JSON, so severity can hold markup.
+        var html = ExportWithSeverity("\"><script>alert(1)</script><div class=\"");
+
+        Assert.DoesNotContain("<script>alert(1)</script>", html);
+        Assert.Contains("<div class=\"warning-item info\">", html);
+        Assert.Contains("&lt;script&gt;alert(1)&lt;/script&gt;", html);
+    }
+
+    [Fact]
+    public void Export_NullSeverity_ExportsAsInfo()
+    {
+        // JSON can send "severity": null, and the export used to throw on it.
+        var html = ExportWithSeverity(null);
+
+        Assert.Contains("<div class=\"warning-item info\">", html);
+    }
+
+    private static string ExportWithSeverity(string? severity)
+    {
+        var result = new AnalysisResult
+        {
+            Statements =
+            {
+                new StatementResult
+                {
+                    StatementText = "SELECT 1",
+                    Warnings = { new WarningResult { Severity = severity!, Type = "demo", Message = "demo" } }
+                }
+            }
+        };
+        return HtmlExporter.Export(result, "demo");
+    }
 }
