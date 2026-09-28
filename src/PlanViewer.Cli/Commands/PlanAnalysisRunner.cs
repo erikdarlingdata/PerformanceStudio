@@ -1,4 +1,5 @@
 using System;
+using System.CommandLine;
 using System.IO;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -54,15 +55,44 @@ public static class PlanAnalysisRunner
         }
     }
 
+    /// <summary>The values --output accepts.</summary>
+    public static readonly IReadOnlyList<string> OutputFormats = new[] { "json", "text", "both" };
+
+    /// <summary>
+    /// Builds the --output option for a command, so every command that takes it accepts the same
+    /// values and refuses anything else while the command line is parsed, before the command does
+    /// any work. An unknown value used to get through: the query-store command and "analyze
+    /// --server" wrote no files for it and exited 0, and "analyze &lt;file&gt;" printed json.
+    /// </summary>
+    public static Option<string> CreateOutputOption(string description, string defaultFormat)
+    {
+        var option = new Option<string>("--output", "-o")
+        {
+            Description = description,
+            DefaultValueFactory = _ => defaultFormat
+        };
+        option.AcceptOnlyFromAmong(OutputFormats.ToArray());
+        return option;
+    }
+
     /// <summary>
     /// Writes {label}.analysis.json and/or {label}.analysis.txt into outDir per
     /// outputFormat ("json", "text", or "both"), honoring warningsOnly (which
-    /// drops operator trees from the serialized output).
+    /// drops operator trees from the serialized output). Refuses any other format
+    /// before it writes anything or changes the result, so a caller that did not go
+    /// through <see cref="CreateOutputOption"/> cannot get an empty run that looks fine.
     /// </summary>
     public static async Task WriteResultFilesAsync(
         AnalysisResult result, string outDir, string label,
         string outputFormat, JsonSerializerOptions jsonOptions, bool warningsOnly)
     {
+        if (!OutputFormats.Contains(outputFormat))
+        {
+            throw new ArgumentException(
+                $"Unknown output format '{outputFormat}'. Use one of: {string.Join(", ", OutputFormats)}.",
+                nameof(outputFormat));
+        }
+
         if (warningsOnly)
         {
             foreach (var stmt in result.Statements)

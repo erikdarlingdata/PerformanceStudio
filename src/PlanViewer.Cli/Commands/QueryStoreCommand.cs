@@ -54,11 +54,9 @@ public static class QueryStoreCommand
             Description = "Directory for output files (default: current directory)"
         };
 
-        var outputOption = new Option<string>("--output", "-o")
-        {
-            Description = "Output format: json or text",
-            DefaultValueFactory = _ => "text"
-        };
+        var outputOption = PlanAnalysisRunner.CreateOutputOption(
+            "Output format for each plan's file. both writes a .json and a .txt file per plan",
+            defaultFormat: "text");
 
         var compactOption = new Option<bool>("--compact")
         {

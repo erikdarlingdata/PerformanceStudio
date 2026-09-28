@@ -31,11 +31,9 @@ public static class AnalyzeCommand
             Description = "Read plan XML from stdin"
         };
 
-        var outputOption = new Option<string>("--output", "-o")
-        {
-            Description = "Output format: json or text",
-            DefaultValueFactory = _ => "json"
-        };
+        var outputOption = PlanAnalysisRunner.CreateOutputOption(
+            "Output format. With --server, both writes a .json and a .txt file per plan. Without --server, both prints json",
+            defaultFormat: "json");
 
         var compactOption = new Option<bool>("--compact")
         {
