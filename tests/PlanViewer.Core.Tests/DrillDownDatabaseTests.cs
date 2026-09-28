@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using Avalonia.Controls;
+using Microsoft.Data.SqlClient;
 using PlanViewer.App.Controls;
 using PlanViewer.Core.Interfaces;
 using PlanViewer.Core.Models;
@@ -119,6 +120,8 @@ public class DrillDownDatabaseTests
 
                 var gridViewer = (PlanViewerControl)SessionHarness.Documents(session).Single().Content!;
                 Assert.Equal("Sales", gridViewer.SourceDatabase);
+                // Its schema lookups (Show Indexes, Show Table Definition) run on this.
+                Assert.Equal("Sales", new SqlConnectionStringBuilder(gridViewer.ConnectionString).InitialCatalog);
 
                 var (gridDatabase, gridConnectionString) = session.ResolveExecutionTarget(gridViewer);
                 Assert.Equal("Sales", gridDatabase);
@@ -130,10 +133,41 @@ public class DrillDownDatabaseTests
                 var pastedTab = SessionHarness.OpenPlanDocuments(session).Last();
                 var pastedViewer = (PlanViewerControl)pastedTab.Content!;
                 Assert.Null(pastedViewer.SourceDatabase);
+                Assert.Equal("master", new SqlConnectionStringBuilder(pastedViewer.ConnectionString).InitialCatalog);
 
                 var (pastedDatabase, pastedConnectionString) = session.ResolveExecutionTarget(pastedViewer);
                 Assert.Equal("master", pastedDatabase);
                 Assert.Contains("master", pastedConnectionString ?? "");
+            }
+            finally
+            {
+                ChromeTestCleanup.PutAway(window);
+            }
+        });
+    }
+
+    /// <summary>
+    /// Get Actual Plan on a grid plan lands through ShowCapturedPlan, in a tab of its own. That
+    /// tab keeps the grid's database, so a second Get Actual Plan and its schema lookups stay on it.
+    /// </summary>
+    [Fact]
+    public void ACapturedPlanKeepsItsSourceDatabase()
+    {
+        HeadlessUi.Run(() =>
+        {
+            var (window, session) = SessionHarness.NewSession();
+            try
+            {
+                SessionHarness.PretendConnected(session, database: "master");
+
+                var tab = new TabItem { Header = "Plan 1", Content = new Grid() };
+                session.ShowCapturedPlan(tab, SessionHarness.SamplePlanXml(), "Plan 1", "select 1;",
+                    sourceDatabase: "Sales");
+
+                var viewer = (PlanViewerControl)tab.Content!;
+                Assert.Equal("Sales", viewer.SourceDatabase);
+                Assert.Equal("Sales", new SqlConnectionStringBuilder(viewer.ConnectionString).InitialCatalog);
+                Assert.Equal("Sales", session.ResolveExecutionTarget(viewer).Database);
             }
             finally
             {

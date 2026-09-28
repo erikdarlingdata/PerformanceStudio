@@ -208,16 +208,14 @@ public partial class QuerySessionControl : UserControl
     /// needing a SQL Server to produce some. The half of these paths that reaches out to a server
     /// is above this; everything that decides what the user ends up looking at is here.</para>
     /// </summary>
-    internal void ShowCapturedPlan(TabItem planTab, string planXml, string tabLabel, string queryText)
+    internal void ShowCapturedPlan(TabItem planTab, string planXml, string tabLabel, string queryText,
+        string? sourceDatabase = null)
     {
         var viewer = new PlanViewerControl();
         // Sub-tab of this session: the session's toolbar above it owns the connection (#U5).
         viewer.HostedInSession = true;
         viewer.Metadata = _serverMetadata;
-        viewer.ConnectionString = _connectionString;
-        viewer.SetConnectionServices(_credentialService, _connectionStore);
-        if (_serverConnection != null)
-            viewer.SetConnectionStatus(_serverConnection.ServerName, _selectedDatabase);
+        ConnectViewer(viewer, sourceDatabase);
         viewer.OpenInEditorRequested += OnOpenInEditorRequested;
         viewer.LoadPlan(planXml, tabLabel, queryText);
         planTab.Content = viewer;
@@ -417,13 +415,11 @@ public partial class QuerySessionControl : UserControl
             }
 
             SetStatus($"Actual plan captured ({sw.Elapsed.TotalSeconds:F1}s)");
-            ShowCapturedPlan(loadingTab, actualPlanXml, tabLabel, queryText);
 
             // Carry the source database forward, so a second Get Actual Plan on THIS tab (the
             // one just captured) still runs where the first one did rather than reverting to
             // the toolbar's (E1). Null for a toolbar-sourced plan, same as its own viewer.
-            if (loadingTab.Content is PlanViewerControl recapturedViewer)
-                recapturedViewer.SourceDatabase = viewer.SourceDatabase;
+            ShowCapturedPlan(loadingTab, actualPlanXml, tabLabel, queryText, viewer.SourceDatabase);
         }
         catch (OperationCanceledException)
         {
