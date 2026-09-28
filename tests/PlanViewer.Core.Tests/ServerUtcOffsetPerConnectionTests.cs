@@ -341,6 +341,13 @@ public class ServerUtcOffsetPerConnectionTests
 
                 var history = Assert.IsType<QueryStoreHistoryControl>(SessionHarness.Documents(session).Last().Content);
                 Assert.Same(first, HolderOf(history));
+
+                // What that comes to on screen, in Server mode: each document its own server's time.
+                using var _ = new ServerMode();
+                var plan = new QueryStorePlan { LastExecutedUtc = Noon };
+                Assert.Equal("2026-09-28 14:00", new QueryStoreRow(plan, HolderOf(gridBefore)).LastExecutedLocal);
+                Assert.Equal("2026-09-28 14:00", HistoryRow(HolderOf(history)).IntervalStartLocal);
+                Assert.Equal("2026-09-28 07:00", new QueryStoreRow(plan, HolderOf(gridAfter)).LastExecutedLocal);
             }
             finally
             {
