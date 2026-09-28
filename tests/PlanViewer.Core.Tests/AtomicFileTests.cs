@@ -87,6 +87,37 @@ public class AtomicFileTests
         }
     }
 
+    /// <summary>
+    /// Whatever File.WriteAllText does with text that has no UTF-8 form (a lone surrogate), the
+    /// atomic version must do too. Its default encoding refuses such text rather than quietly
+    /// writing U+FFFD, and a save-in-place that succeeded where it used to fail would change a
+    /// character in the user's file without telling them.
+    /// </summary>
+    [Fact]
+    public void UnencodableTextIsHandledExactlyAsFileWriteAllTextHandlesIt()
+    {
+        const string broken = "SELECT '\uD800';";
+        var path = TempPath();
+        var expectedPath = TempPath();
+        try
+        {
+            var expected = Record.Exception(() => File.WriteAllText(expectedPath, broken));
+            var actual = Record.Exception(() => AtomicFile.WriteAllText(path, broken));
+
+            Assert.Equal(expected?.GetType(), actual?.GetType());
+            if (expected == null)
+                Assert.Equal(File.ReadAllBytes(expectedPath), File.ReadAllBytes(path));
+            else
+                Assert.False(File.Exists(path), "a refused write must not create the target");
+        }
+        finally
+        {
+            File.Delete(path);
+            File.Delete(path + ".tmp");
+            File.Delete(expectedPath);
+        }
+    }
+
     [Fact]
     public void OverwritingAnExistingFileStillRoundTrips()
     {

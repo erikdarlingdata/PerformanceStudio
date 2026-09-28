@@ -11,11 +11,13 @@ namespace PlanViewer.App.Services;
 internal static class AtomicFile
 {
     /// <summary>
-    /// Matches File.WriteAllText's own default encoding: UTF-8, and — unlike the
-    /// <see cref="Encoding.UTF8"/> singleton — with an empty preamble, so passing no encoding
-    /// below writes no BOM, exactly as it always has.
+    /// Matches File.WriteAllText's own default encoding: UTF-8 with an empty preamble (unlike the
+    /// <see cref="Encoding.UTF8"/> singleton), so passing no encoding below writes no BOM, exactly
+    /// as it always has. It also throws on text with no UTF-8 form, such as a lone surrogate,
+    /// instead of quietly writing U+FFFD — the same refusal File.WriteAllText gives.
     /// </summary>
-    private static readonly UTF8Encoding DefaultEncoding = new(encoderShouldEmitUTF8Identifier: false);
+    private static readonly UTF8Encoding DefaultEncoding =
+        new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
 
     /// <summary>
     /// Writes <paramref name="contents"/> to <paramref name="path"/> atomically
