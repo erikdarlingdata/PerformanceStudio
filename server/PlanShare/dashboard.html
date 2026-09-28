@@ -235,7 +235,9 @@
         if (m) {
             var t = decodeURIComponent(m[1]);
             try { localStorage.setItem("planshare_stats_token", t); } catch (e) { /* private mode */ }
-            history.replaceState(null, "", window.location.pathname + window.location.search);
+            // window.history: a bare "history" here is the stats array declared at the top of this
+            // script, which has no replaceState, so the call threw and left #token= in the address bar.
+            window.history.replaceState(null, "", window.location.pathname + window.location.search);
             return t;
         }
         try { return localStorage.getItem("planshare_stats_token") || ""; } catch (e) { return ""; }

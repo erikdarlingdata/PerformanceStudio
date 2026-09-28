@@ -76,7 +76,16 @@ else
         <div class="modal-overlay" @onclick="HideShareDialog">
             <div class="modal" @onclick:stopPropagation="true">
                 <h3>Share Plan Analysis</h3>
-                <p>Your plan analysis will be uploaded and stored on a server. Anyone with the link can view the full analysis, including query text, operator details, and warnings.</p>
+                <p>Your plan analysis will be uploaded and stored on a server. Anyone with the link can read all of it. The upload includes:</p>
+                <ul>
+                    <li>The file name of the plan</li>
+                    <li>The query text</li>
+                    <li>The operator details and the warnings</li>
+                    <li>The compiled and runtime values of the parameters</li>
+                    <li>The missing index suggestions, with database, schema, and table names</li>
+                    <li>The full text report</li>
+                </ul>
+                <p>Query text and parameter values can contain private data. Check the analysis on this page before you share it.</p>
                 <div class="ttl-picker">
                     <label>Expire after:</label>
                     <select @bind="shareTtlDays">

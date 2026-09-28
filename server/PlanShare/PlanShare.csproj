@@ -18,4 +18,9 @@
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />
   </ItemGroup>
 
+  <!-- tests/PlanViewer.Core.Tests references this project so CI builds and tests the server -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="PlanViewer.Core.Tests" />
+  </ItemGroup>
+
 </Project>
