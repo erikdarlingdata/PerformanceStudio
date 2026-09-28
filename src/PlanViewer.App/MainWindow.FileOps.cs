@@ -583,9 +583,18 @@ public partial class MainWindow : Window
     /// <summary>
     /// Saves the restore entries of all currently open tabs — file paths, and since #496
     /// scratch buffer entries — docked and detached alike (#490).
+    ///
+    /// <para>Not in a secondary instance (<see cref="SingleInstance.IsSecondaryInstance"/>):
+    /// the list on disk is the owner's, and this is the one writer that would replace it
+    /// with the secondary's own tabs. Every write of the list comes through here — the
+    /// debounce, the final write in <see cref="OnClosed"/>, and the update restart — so the
+    /// one guard covers all three.</para>
     /// </summary>
     private void SaveOpenPlans()
     {
+        if (SingleInstance.IsSecondaryInstance)
+            return;
+
         _appSettings.OpenTabs.Clear();
         _appSettings.OpenTabs.AddRange(CollectOpenTabEntries());
 
@@ -625,6 +634,12 @@ public partial class MainWindow : Window
            detached windows, whose Forget calls land right back here). Nothing may re-arm the
            timer against a window being torn down. */
         if (IsShuttingDown)
+            return;
+
+        /* A secondary instance writes no session state (see SaveOpenPlans), so there is
+           nothing to schedule: no pending flag, and no timer that would tick just to find
+           the write refused. */
+        if (SingleInstance.IsSecondaryInstance)
             return;
 
         _sessionPersistPending = true;

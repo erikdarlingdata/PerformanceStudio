@@ -321,6 +321,10 @@ public class SettingsFileStoreTests
 /// While a block is on, AppSettingsService.Save skips every write, so a test in another class
 /// that saves settings at that moment would fail for no reason of its own. This collection
 /// therefore runs on its own, after the parallel ones, instead of beside them.
+///
+/// <para>SecondaryInstanceTests is in it for the same reason: while
+/// <c>SingleInstance.IsSecondaryInstance</c> is on, Save replaces the open-tab list with the one
+/// on disk.</para>
 /// </summary>
 [CollectionDefinition("SettingsFileStore serial", DisableParallelization = true)]
 public class SettingsFileStoreSerialCollection

@@ -224,7 +224,23 @@ public partial class MainWindow : Window
            way when a file is about to open — a stray empty scratch tab beside the file the
            user asked for is nobody's intent. */
         var hasFileArg = args.Length > 1 && File.Exists(args[1]);
-        RestoreOpenPlans(createFallbackTab: !hasFileArg);
+
+        if (SingleInstance.IsSecondaryInstance)
+        {
+            /* A secondary instance (--new-instance beside a running one) does not restore.
+               The saved list belongs to the instance that owns the slot, which rewrites it on
+               every tab change: restoring it here would open a copy of every one of its tabs
+               and share its scratch buffer ids. RestoreOpenPlans is skipped whole, not called
+               with a flag, because it also clears and saves the list and sweeps the buffer
+               folder — both of which would land on the owner's files. What is left is what a
+               launch with nothing to restore does: the file it was given, else a new tab. */
+            if (!hasFileArg)
+                NewQuery_Click(this, new RoutedEventArgs());
+        }
+        else
+        {
+            RestoreOpenPlans(createFallbackTab: !hasFileArg);
+        }
 
         if (hasFileArg)
             OpenFileByExtension(args[1]);

@@ -193,6 +193,16 @@ internal sealed class AppSettingsService
     /// while <see cref="Load"/> found the file unreadable, which would otherwise overwrite
     /// content this process has never actually seen. The Settings window reports that case
     /// through <see cref="SaveBlocked"/>.
+    ///
+    /// <para>In a secondary instance (<see cref="SingleInstance.IsSecondaryInstance"/>) the
+    /// saved open-tab list is kept as the disk has it. The whole file is written, so the
+    /// settings object's list goes with it — and a secondary's copy is the one it read at its
+    /// own startup, long out of date next to the list the owner rewrites on every tab change.
+    /// Recent plans, the Settings dialog and the server-filter toggle all save through here.
+    /// The list is taken off the disk first, so the write hands it back unchanged. Every other
+    /// setting stays last-write-wins, which is what two instances on purpose has always meant
+    /// (see Program.Main). If the file cannot be read there is no list to keep, so the save is
+    /// skipped rather than written with a guess.</para>
     /// </summary>
     public static void Save(AppSettings settings)
     {
@@ -201,6 +211,9 @@ internal sealed class AppSettingsService
 
         try
         {
+            if (SingleInstance.IsSecondaryInstance && !TryAdoptSavedOpenTabs(settings))
+                return;
+
             Directory.CreateDirectory(SettingsDir);
             var json = JsonSerializer.Serialize(settings, JsonOptions);
             AtomicFile.WriteAllText(SettingsPath, json);
@@ -210,6 +223,32 @@ internal sealed class AppSettingsService
         {
             // Best-effort persistence — don't crash the app
         }
+    }
+
+    /// <summary>
+    /// Puts the open-tab list that is on disk right now into <paramref name="settings"/>, for a
+    /// secondary instance about to write the whole file (see <see cref="Save"/>). Read the way
+    /// <see cref="Load"/> reads, so a file that will not parse is moved aside rather than
+    /// overwritten. False when the file exists but cannot be read — the caller must not write.
+    /// </summary>
+    private static bool TryAdoptSavedOpenTabs(AppSettings settings)
+    {
+        var outcome = SettingsFileStore.Read<AppSettings>(
+            SettingsPath,
+            nameof(AppSettingsService),
+            json => JsonSerializer.Deserialize<AppSettings>(json, JsonOptions),
+            out var onDisk);
+
+        if (outcome == SettingsFileStore.ReadOutcome.Unreadable)
+            return false;
+
+        if (onDisk != null)
+            MigrateOpenTabs(onDisk);
+
+        // Missing, or unparseable and just moved aside: there is no list on disk to keep, and
+        // an empty one is a truer thing to write than a stale one.
+        settings.OpenTabs = onDisk?.OpenTabs ?? new List<string>();
+        return true;
     }
 
     /// <summary>
