@@ -192,6 +192,63 @@ public class ReproScriptBuilderSafetyTests
         Assert.Contains("different data type in different statements (left out): @1.", sql);
         Assert.Contains("SELECT t.v FROM dbo.T AS t WHERE t.id = 11", sql);
         Assert.DoesNotContain("omitted", sql);
+        Assert.DoesNotContain("No parameters found in plan cache", sql);
+        Assert.Contains("/* No parameters declared: see the warnings above */", sql);
+        ParseScript(sql);
+    }
+
+    [Fact]
+    public void BuildReproScript_ParameterWithAValueOnlyInTheSecondStatement_UsesThatValue()
+    {
+        /* A statement compiled without sniffing lists the parameter with no compiled value.
+           Taking the first entry would set @id to ? although another statement has a value. */
+        const string plan = """
+            <ShowPlanXML xmlns="http://schemas.microsoft.com/sqlserver/2004/07/showplan">
+              <BatchSequence><Batch><Statements>
+                <StmtSimple><QueryPlan><ParameterList>
+                  <ColumnReference Column="@id" ParameterDataType="int" />
+                </ParameterList></QueryPlan></StmtSimple>
+                <StmtSimple><QueryPlan><ParameterList>
+                  <ColumnReference Column="@id" ParameterDataType="int" ParameterCompiledValue="(5)" />
+                </ParameterList></QueryPlan></StmtSimple>
+              </Statements></Batch></BatchSequence>
+            </ShowPlanXML>
+            """;
+        var sql = ReproScriptBuilder.BuildReproScript(
+            "(@id int)SELECT COUNT_BIG(*) AS a FROM dbo.T AS t WHERE t.id = @id\n; SELECT COUNT_BIG(*) AS b FROM dbo.T AS t WHERE t.id > @id",
+            "db", plan, null);
+
+        Assert.Contains("N'@id int',", sql);
+        Assert.Contains("@id = 5", sql);
+        Assert.DoesNotContain("missing values", sql);
+        Assert.DoesNotContain("different compiled value", sql);
+        ParseScript(sql);
+    }
+
+    [Fact]
+    public void BuildReproScript_ParameterWithDifferentValuesInTwoStatements_UsesTheFirstAndWarns()
+    {
+        /* Statements recompiled at different times sniff different values. The script can
+           only set one, so it uses the first and says the statements disagree. */
+        const string plan = """
+            <ShowPlanXML xmlns="http://schemas.microsoft.com/sqlserver/2004/07/showplan">
+              <BatchSequence><Batch><Statements>
+                <StmtSimple><QueryPlan><ParameterList>
+                  <ColumnReference Column="@id" ParameterDataType="int" ParameterCompiledValue="(1)" />
+                </ParameterList></QueryPlan></StmtSimple>
+                <StmtSimple><QueryPlan><ParameterList>
+                  <ColumnReference Column="@id" ParameterDataType="int" ParameterCompiledValue="(2)" />
+                </ParameterList></QueryPlan></StmtSimple>
+              </Statements></Batch></BatchSequence>
+            </ShowPlanXML>
+            """;
+        var sql = ReproScriptBuilder.BuildReproScript(
+            "(@id int)SELECT COUNT_BIG(*) AS a FROM dbo.T AS t WHERE t.id = @id\n; SELECT COUNT_BIG(*) AS b FROM dbo.T AS t WHERE t.id > @id",
+            "db", plan, null);
+
+        Assert.Contains("@id = 1", sql);
+        Assert.DoesNotContain("@id = 2", sql);
+        Assert.Contains("different compiled value in different statements (set to the first usable one): @id.", sql);
         ParseScript(sql);
     }
 

@@ -73,14 +73,26 @@ public static class ReproScriptBuilder
            fails the script. A name that the statements give different types can't be
            declared once, so it is left out. Those statements are usually literal text
            that doesn't use the name. */
-        var conflictingNames = validParameters
+        var parameterGroups = validParameters
             .GroupBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var conflictingNames = parameterGroups
             .Where(g => g.Select(p => p.DataType).Distinct(StringComparer.OrdinalIgnoreCase).Count() > 1)
             .Select(g => g.Key)
             .ToList();
-        var safeParameters = validParameters
-            .Where(p => !conflictingNames.Contains(p.Name, StringComparer.OrdinalIgnoreCase))
-            .DistinctBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
+        var declarableGroups = parameterGroups
+            .Where(g => !conflictingNames.Contains(g.Key, StringComparer.OrdinalIgnoreCase))
+            .ToList();
+
+        /* Statements recompiled at different times can carry different compiled values for
+           the same parameter, and some carry none. Use the first value that can go into
+           the script as it is, and say so when the statements disagree. */
+        var safeParameters = declarableGroups
+            .Select(g => g.FirstOrDefault(p => !string.IsNullOrEmpty(p.CompiledValue) && IsSafeLiteral(p.CompiledValue)) ?? g.First())
+            .ToList();
+        var differingValueNames = declarableGroups
+            .Where(g => g.Select(p => p.CompiledValue).Where(v => !string.IsNullOrEmpty(v)).Distinct(StringComparer.Ordinal).Count() > 1)
+            .Select(g => g.Key)
             .ToList();
 
         /* Check for temp tables and table variables in query text */
@@ -115,6 +127,11 @@ public static class ReproScriptBuilder
         if (conflictingNames.Count > 0)
         {
             warnings.Add($"Parameters with a different data type in different statements (left out): {string.Join(", ", conflictingNames)}. Declare them manually if the query uses them.");
+        }
+
+        if (differingValueNames.Count > 0)
+        {
+            warnings.Add($"Parameters with a different compiled value in different statements (set to the first usable one): {string.Join(", ", differingValueNames)}. Check the values before executing.");
         }
 
         /* Check for local variables: query has parameter prefix but plan has no/few parameters */
@@ -211,8 +228,11 @@ public static class ReproScriptBuilder
         }
         else if (!string.IsNullOrEmpty(planXml))
         {
-            /* Plan was available but had no parameters — query is not parameterized */
-            sb.AppendLine("/* No parameters found in plan cache */");
+            /* Plan was available but had no parameters — query is not parameterized —
+               or none of its parameters could be declared, and the warnings say why. */
+            sb.AppendLine(parameters.Count == 0
+                ? "/* No parameters found in plan cache */"
+                : "/* No parameters declared: see the warnings above */");
             sb.AppendLine(cleanedQuery);
             if (!cleanedQuery.EndsWith(';'))
             {
