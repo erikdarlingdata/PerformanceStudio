@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text;
@@ -1001,6 +1002,8 @@ internal partial class SettingsWindow : Window
 
 	private void Save_Click(object? sender, RoutedEventArgs e)
 	{
+		SaveErrorText.IsVisible = false;
+
 		/* Nothing is read back off the controls here. Every section writes its edits into
 		   _settings as they happen, so this method's job is to validate, apply and persist what
 		   is already there. Reading at save time was the shape that produced three separate bugs:
@@ -1014,7 +1017,23 @@ internal partial class SettingsWindow : Window
 			TimeDisplayHelper.Current = tdm;
 
 		AppSettingsService.Save(_settings);
-		SaveIntegrations();
+
+		try
+		{
+			SaveIntegrations();
+		}
+		catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+		{
+			// SaveIntegrations writes through SettingsFile.Update (MCP, directly at line ~605,
+			// and the proxy fields via ProxySettings.Save), either of which throws when the file
+			// could not be read on its last load rather than overwrite it — see SettingsFile.Update.
+			// The rest of the save (above) already landed; only Integrations failed, so the
+			// dialog stays open and dirty instead of losing that message on Close.
+			SaveErrorText.Text = ex.Message;
+			SaveErrorText.IsVisible = true;
+			return;
+		}
+
 		_isDirty = false;
 		SettingsSaved?.Invoke(_settings);
 		Close();
