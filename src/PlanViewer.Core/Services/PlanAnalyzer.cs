@@ -12,13 +12,21 @@ namespace PlanViewer.Core.Services;
 /// </summary>
 public static partial class PlanAnalyzer
 {
+    /* Plan XML can come from anywhere, so a predicate or a statement can be millions of characters
+       long. The patterns below marked NonBacktracking read up to a closing bracket, quote or
+       keyword. When that is missing, the default engine reads from every possible start to the
+       end of the text, which takes time in proportion to the square of its length. The
+       NonBacktracking engine finds the same matches in time that grows only in step with the
+       length. It has no lookarounds, so
+       ComparisonOperatorRegex keeps the default engine; its matches are at most two characters
+       long, so it is linear already. */
     private static readonly Regex FunctionInPredicateRegex = new(
         @"\b(CONVERT_IMPLICIT|CONVERT|CAST|isnull|coalesce|datepart|datediff|dateadd|year|month|day|upper|lower|ltrim|rtrim|trim|substring|left|right|charindex|replace|len|datalength|abs|floor|ceiling|round|reverse|stuff|format)\s*\(",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     private static readonly Regex LeadingWildcardLikeRegex = new(
         @"\blike\b[^'""]*?N?'%",
-        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        RegexOptions.IgnoreCase | RegexOptions.NonBacktracking);
 
     private static readonly Regex CaseInPredicateRegex = new(
         @"\bCASE\s+(WHEN\b|$)",
@@ -44,7 +52,7 @@ public static partial class PlanAnalyzer
        the same and this regex could never have told the two apart either. */
     private static readonly Regex ColumnReferenceRegex = new(
         @"\[[^\]]+\]\.\[",
-        RegexOptions.Compiled);
+        RegexOptions.NonBacktracking);
 
     /* An optimizer-generated expression name in a ScalarString ([Expr1003]) — a computed value,
        never an actual column, even on a table variable scan where a bare name is otherwise read
@@ -61,7 +69,7 @@ public static partial class PlanAnalyzer
        the right place. */
     private static readonly Regex NamePartRegex = new(
         @"\[(?:[^\]]|\]\])*\]",
-        RegexOptions.Compiled);
+        RegexOptions.NonBacktracking);
 
     /* The operator a comparison turns on in a ScalarString: >=, <=, <>, !=, >, <, = or like.
        Without like, [col] like upper([@p]) had no operator at all, fell to the assume-the-worst
@@ -76,7 +84,7 @@ public static partial class PlanAnalyzer
        Groups[1] match is a real operator. */
     private static readonly Regex LogicalOperatorRegex = new(
         @"'(?:[^']|'')*'|\[(?:[^\]]|\]\])*\]|\s(AND|OR)\s",
-        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        RegexOptions.IgnoreCase | RegexOptions.NonBacktracking);
 
     private static readonly Regex IsnullCoalesceRegex = new(
         @"\b(isnull|coalesce)\s*\(",
@@ -88,7 +96,7 @@ public static partial class PlanAnalyzer
        name group is a name. */
     private static readonly Regex BracketedNameRegex = new(
         @"'(?:[^']|'')*'|(?<name>\[(?:[^\]]|\]\])*\](?:\.\[(?:[^\]]|\]\])*\])*)(?<call>\s*\()?",
-        RegexOptions.Compiled);
+        RegexOptions.NonBacktracking);
 
     public static void Analyze(ParsedPlan plan, AnalyzerConfig? config = null, ServerMetadata? serverMetadata = null) =>
         AnalyzeCancellable(plan, config, serverMetadata, CancellationToken.None);

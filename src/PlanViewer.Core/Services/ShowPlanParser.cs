@@ -1,10 +1,8 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Linq;
 using System.Runtime.ExceptionServices;
 using System.Runtime.Versioning;
-using System.Xml;
 using System.Xml.Linq;
 using PlanViewer.Core.Models;
 
@@ -19,7 +17,7 @@ public static partial class ShowPlanParser
     // StackOverflowException that takes the whole process down.
     // Internal so tests can pin behavior just past each limit without hardcoding the values.
     internal const int MaxParseDepth = 1000;
-    internal const int MaxParseCharacters = 16 * 1024 * 1024;
+    internal const int MaxParseCharacters = PlanXml.MaxCharacters;
 
     /* #589: the tree walk recurses once per nested operator, and its frames are large. On a 1 MB
        caller thread (the UI thread, the CLI's main thread) the process died with an uncatchable
@@ -34,15 +32,9 @@ public static partial class ShowPlanParser
         XDocument document;
         try
         {
-            /* Same ceiling ParseAsync enforces through XmlReaderSettings.MaxCharactersInDocument,
-               which this synchronous path (PlanViewerControl, the web viewer, the analysis
-               pipeline) never had - it went straight to XDocument.Parse with no limit at all.
-               The input is already an in-memory string here, so a length check is the equivalent
-               guard; like the reader setting, the limit is in characters, not bytes. */
-            if (xml.Length > MaxParseCharacters)
-                throw new InvalidOperationException(
-                    $"Plan XML exceeds the supported size limit of {MaxParseCharacters.ToString("N0", CultureInfo.InvariantCulture)} characters.");
-            document = XDocument.Parse(xml);
+            /* The same limits as ParseAsync: this synchronous path (PlanViewerControl, the web
+               viewer, the analysis pipeline) once went straight to XDocument.Parse with none. */
+            document = PlanXml.Parse(xml);
         }
         catch (Exception exception)
         {
@@ -74,18 +66,7 @@ public static partial class ShowPlanParser
         var plan = new ParsedPlan { RawXml = xml };
         try
         {
-            var settings = new XmlReaderSettings
-            {
-                Async = true,
-                DtdProcessing = DtdProcessing.Prohibit,
-                MaxCharactersInDocument = MaxParseCharacters,
-                XmlResolver = null
-            };
-            using var textReader = new StringReader(xml);
-            using var xmlReader = XmlReader.Create(textReader, settings);
-            var document = await XDocument
-                .LoadAsync(xmlReader, LoadOptions.None, cancellationToken)
-                .ConfigureAwait(false);
+            var document = await PlanXml.ParseAsync(xml, cancellationToken).ConfigureAwait(false);
 
             /* #589: after the await this runs on the calling thread or a thread-pool thread, and
                neither holds MaxParseDepth levels. The join blocks this thread for as long as the

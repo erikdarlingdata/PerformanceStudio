@@ -368,6 +368,35 @@ public class PlanAnalyzerTests
             "[S]=CONVERT_IMPLICIT(nvarchar(20),[@n],0)", Identity(alias: null, table: "@tv", isTableVariable: true)));
     }
 
+    /// <summary>
+    /// A conversion nested inside another is not read on its own: its arguments are part of the
+    /// outer one's, which were read already. Conversions after the outer one still are.
+    /// </summary>
+    [Fact]
+    public void Rule12f_NonSargable_NestedConversionsAroundAParameter_AreNotFlagged()
+    {
+        Assert.False(PlanAnalyzer.ConvertImplicitWrapsColumn(
+            "[db].[dbo].[t].[c]=CONVERT_IMPLICIT(int,CONVERT_IMPLICIT(smallint,[@p],0),0)"));
+    }
+
+    [Fact]
+    public void Rule12f_NonSargable_ConversionAfterNestedParameterConversions_IsStillRead()
+    {
+        Assert.True(PlanAnalyzer.ConvertImplicitWrapsColumn(
+            "CONVERT_IMPLICIT(int,CONVERT_IMPLICIT(smallint,[@p],0),0)=(1) AND CONVERT_IMPLICIT(int,[db].[dbo].[t].[c],0)=[@q]"));
+    }
+
+    /// <summary>
+    /// Each side of a comparison is read once and remembered, so a call on the parameter side
+    /// must not decide the answer for a call on the column side of the same comparison.
+    /// </summary>
+    [Fact]
+    public void Rule12_NonSargable_FunctionsOnBothSidesOfOneComparison_TheColumnSideIsFlagged()
+    {
+        Assert.Equal("Function call (ABS) on column", PlanAnalyzer.DetectNonSargablePattern(
+            "abs([@p])=abs([db].[dbo].[t].[c])"));
+    }
+
     // ---------------------------------------------------------------
     // Rule 12: Non-SARGable Predicate — bare columns on a table variable scan (#561)
     // ---------------------------------------------------------------

@@ -390,10 +390,12 @@ public static partial class PlanAnalyzer
             // qualifier must be looked for between CURSOR and the FOR that introduces
             // the SELECT. Capturing tokens *before* CURSOR never sees LOCAL and would
             // fire on every cursor, including ones already declared LOCAL.
+            // NonBacktracking: with no FOR after them, a long run of DECLARE ... CURSOR took time
+            // in proportion to the square of the statement's length (see PlanAnalyzer.cs).
             var cursorDeclMatch = Regex.Match(
                 MaskCommentsAndLiterals(stmt.StatementText), // #579
                 @"\bDECLARE\s+\w+\s+(?:INSENSITIVE\s+|SCROLL\s+)*CURSOR\b(.*?)\bFOR\b",
-                RegexOptions.IgnoreCase | RegexOptions.Singleline);
+                RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.NonBacktracking);
             if (cursorDeclMatch.Success)
             {
                 var qualifiers = cursorDeclMatch.Groups[1].Value;
