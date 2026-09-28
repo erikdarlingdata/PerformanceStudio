@@ -407,7 +407,7 @@ public partial class MainWindow : Window
 
         try
         {
-            var doc = XDocument.Parse(planXml);
+            var doc = PlanXml.Parse(planXml);
             XNamespace ns = "http://schemas.microsoft.com/sqlserver/2004/07/showplan";
             var stmt = doc.Descendants(ns + "StmtSimple").FirstOrDefault();
             var dbContext = stmt?.Attribute("DatabaseContext")?.Value;

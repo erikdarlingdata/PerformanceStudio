@@ -483,7 +483,7 @@ public partial class MainWindow : Window
     {
         try
         {
-            var doc = XDocument.Parse(xml);
+            var doc = PlanXml.Parse(xml);
             XNamespace ns = "http://schemas.microsoft.com/sqlserver/2004/07/showplan";
             if (doc.Root?.Name.LocalName != "ShowPlanXML" &&
                 doc.Descendants(ns + "ShowPlanXML").FirstOrDefault() == null)

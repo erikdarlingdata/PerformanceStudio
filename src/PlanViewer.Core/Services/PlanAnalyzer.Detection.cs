@@ -282,13 +282,18 @@ public static partial class PlanAnalyzer
         if (ConvertImplicitWrapsColumn(predicate, identity))
             return "Implicit conversion (CONVERT_IMPLICIT)";
 
+        // Both loops below ask which side of its comparison each function call is on. A
+        // predicate can hold thousands of calls, so the comparisons are found once and each
+        // side is read once.
+        var comparisons = new PredicateComparisons(predicate, identity);
+
         // ISNULL / COALESCE wrapping column — on the column side only. ISNULL(@p, 0) on the
         // parameter side is a runtime constant and seeks fine; flagging it contradicted this
         // warning's own "wrapping a column" message. col = ISNULL(@p, col) is still caught,
         // because the column sits inside the function, on its side of the comparison.
         foreach (Match isnullMatch in IsnullCoalesceRegex.Matches(predicate))
         {
-            if (IsFunctionOnColumnSide(predicate, isnullMatch, identity))
+            if (comparisons.IsFunctionOnColumnSide(isnullMatch.Index))
                 return "ISNULL/COALESCE wrapping column";
         }
 
@@ -301,7 +306,7 @@ public static partial class PlanAnalyzer
         foreach (Match funcMatch in FunctionInPredicateRegex.Matches(predicate))
         {
             var funcName = funcMatch.Groups[1].Value.ToUpperInvariant();
-            if (funcName != "CONVERT_IMPLICIT" && IsFunctionOnColumnSide(predicate, funcMatch, identity))
+            if (funcName != "CONVERT_IMPLICIT" && comparisons.IsFunctionOnColumnSide(funcMatch.Index))
                 return $"Function call ({funcName}) on column";
         }
 
@@ -327,8 +332,9 @@ public static partial class PlanAnalyzer
     ///
     /// <para>So the question is not whether a conversion is present but what is inside it, which is
     /// why this reads the CONVERT_IMPLICIT argument list rather than splitting on the comparison
-    /// operator the way <see cref="IsFunctionOnColumnSide"/> does. The first argument is the target
-    /// type and carries no brackets; a column reference in the remainder is the conversion input.</para>
+    /// operator the way <see cref="PredicateComparisons.IsFunctionOnColumnSide"/> does. The first
+    /// argument is the target type and carries no brackets; a column reference in the remainder is
+    /// the conversion input.</para>
     ///
     /// <para>Internal so the column-vs-variable line can be tested against raw predicate strings in
     /// showplan shape. <paramref name="identity"/> covers the unaliased table-variable case — a bare
@@ -339,15 +345,29 @@ public static partial class PlanAnalyzer
     /// </summary>
     internal static bool ConvertImplicitWrapsColumn(string predicate, ScanIdentity? identity = null)
     {
+        // Where the argument list of the last conversion read ends.
+        var readUpTo = 0;
+
         foreach (Match match in ConvertImplicitRegex.Matches(predicate))
         {
+            // A conversion that starts inside the arguments of one already read is skipped. Those
+            // arguments were checked for a column as a whole, and a conversion written inside a
+            // string literal there is text, not a conversion. Reading each nested list again took
+            // time in proportion to the square of the predicate's length when conversions were
+            // nested thousands deep.
+            if (match.Index < readUpTo)
+                continue;
+
             // The regex ends at the opening paren, so its last character is where the args start.
-            var arguments = ExtractBalancedArguments(predicate, match.Index + match.Length - 1);
+            var openParenIndex = match.Index + match.Length - 1;
+            var arguments = ExtractBalancedArguments(predicate, openParenIndex);
 
             // Unparseable means we cannot tell what is being converted. Assume the worst, matching
             // IsFunctionOnColumnSide, rather than silently dropping a real conversion.
             if (arguments == null || IsColumnReference(arguments, identity))
                 return true;
+
+            readUpTo = openParenIndex + arguments.Length + 1;
         }
 
         return false;
@@ -505,78 +525,120 @@ public static partial class PlanAnalyzer
     }
 
     /// <summary>
-    /// Checks whether a function call in a predicate is on the column side of the comparison.
-    /// Predicate ScalarStrings look like: [db].[schema].[table].[col]>dateadd(day,(0),[@var])
-    /// If the function is only on the parameter/literal side, it's still SARGable.
-    ///
-    /// <para><b>Only the function's own comparison is read (#556).</b> A compound predicate is
-    /// several comparisons joined by AND/OR, and the function belongs to exactly one of them.
-    /// Splitting the whole predicate at its FIRST operator instead put every later comparison,
-    /// column and all, on the function's side: in <c>[t].[A]=[@1] AND [t].[B]=CONVERT(tinyint,[@2],0)</c>
-    /// the CONVERT looked like it shared a side with [t].[B], and so did the dateadd in the
-    /// everyday range <c>[t].[d]&gt;=dateadd(day,(-7),getdate()) AND [t].[d]&lt;getdate()</c>.</para>
-    ///
-    /// <para><paramref name="identity"/> is passed straight to <see cref="IsColumnReference"/> to
-    /// cover the unaliased table-variable case, e.g. <c>abs([X])=(1)</c> (#561), and to tell that
-    /// scan's own bare column apart from another unaliased table variable's outer reference in the
-    /// same shape, e.g. <c>abs([A])</c> where A is an outer reference and only X is this scan's own
-    /// column in <c>[X]=abs([A])</c> (#564).</para>
+    /// The comparisons in one predicate, for <see cref="DetectNonSargablePattern"/> to ask which
+    /// side of its comparison each function call is on. The AND/OR operators are found once, and
+    /// each side of a comparison is read once, however many calls it holds. Finding and reading
+    /// them again for every call took time in proportion to the square of the predicate's length.
     /// </summary>
-    private static bool IsFunctionOnColumnSide(string predicate, Match funcMatch, ScanIdentity? identity = null)
+    private sealed class PredicateComparisons(string predicate, ScanIdentity? identity)
     {
-        var comparison = ComparisonContaining(predicate, funcMatch.Index, out var offset);
+        /// <summary>Where each AND/OR between two comparisons starts and ends, in order.</summary>
+        private List<(int Start, int End)>? _logicalOperators;
 
-        var compMatch = ComparisonOperatorRegex.Match(comparison);
-        if (!compMatch.Success)
-            return true; // No comparison found — can't determine side, assume worst case
+        /// <summary>Each comparison read so far, by where it starts in the predicate.</summary>
+        private readonly Dictionary<int, (string Text, Match Operator)> _comparisons = new();
 
-        var compPos = compMatch.Index;
-        var funcPos = funcMatch.Index - offset;
+        /// <summary>Whether a column is on one side of a comparison, by where the comparison
+        /// starts and whether the side is the one before its operator.</summary>
+        private readonly Dictionary<(int Start, bool BeforeOperator), bool> _sideHasColumn = new();
 
-        // The side of this comparison the function is on, and whether a column shares it
-        string side = funcPos < compPos
-            ? comparison[..compPos]
-            : comparison[(compPos + compMatch.Length)..];
-
-        // Same column-vs-variable distinction ConvertImplicitWrapsColumn needs, so it shares the
-        // one helper rather than keeping a second copy of the logic in sync by hand.
-        return IsColumnReference(side, identity);
-    }
-
-    /// <summary>
-    /// The single comparison around <paramref name="position"/>: the text between the nearest
-    /// AND/OR before it and the nearest after it. <paramref name="offset"/> is where that text
-    /// starts in <paramref name="predicate"/>, so positions can be translated into it.
-    ///
-    /// <para>Operators are split on at every depth, not just the top level: a parenthesized group
-    /// like <c>[t].[A]=(1) AND ([t].[B]=f([@p]) OR [t].[C]=(3))</c> has to come apart into its
-    /// three comparisons, or the group would be read as one. The leftover grouping parentheses
-    /// cannot move a comparison operator or add a column, so they are harmless. No function in a
-    /// ScalarString takes AND/OR inside its arguments; CASE does, and it is caught earlier.</para>
-    /// </summary>
-    private static string ComparisonContaining(string predicate, int position, out int offset)
-    {
-        var start = 0;
-        var end = predicate.Length;
-
-        foreach (Match match in LogicalOperatorRegex.Matches(predicate))
+        /// <summary>
+        /// Checks whether the function call at <paramref name="functionIndex"/> is on the column
+        /// side of its comparison. Predicate ScalarStrings look like:
+        /// [db].[schema].[table].[col]>dateadd(day,(0),[@var])
+        /// If the function is only on the parameter/literal side, it's still SARGable.
+        ///
+        /// <para><b>Only the function's own comparison is read (#556).</b> A compound predicate is
+        /// several comparisons joined by AND/OR, and the function belongs to exactly one of them.
+        /// Splitting the whole predicate at its FIRST operator instead put every later comparison,
+        /// column and all, on the function's side: in <c>[t].[A]=[@1] AND [t].[B]=CONVERT(tinyint,[@2],0)</c>
+        /// the CONVERT looked like it shared a side with [t].[B], and so did the dateadd in the
+        /// everyday range <c>[t].[d]&gt;=dateadd(day,(-7),getdate()) AND [t].[d]&lt;getdate()</c>.</para>
+        ///
+        /// <para>The scan identity is passed straight to <see cref="IsColumnReference"/> to cover
+        /// the unaliased table-variable case, e.g. <c>abs([X])=(1)</c> (#561), and to tell that
+        /// scan's own bare column apart from another unaliased table variable's outer reference in
+        /// the same shape, e.g. <c>abs([A])</c> where A is an outer reference and only X is this
+        /// scan's own column in <c>[X]=abs([A])</c> (#564).</para>
+        /// </summary>
+        public bool IsFunctionOnColumnSide(int functionIndex)
         {
-            if (!match.Groups[1].Success)
-                continue; // a string literal or bracketed name, skipped whole
+            var (start, end) = ComparisonAround(functionIndex);
+            if (!_comparisons.TryGetValue(start, out var comparison))
+            {
+                var text = predicate[start..end];
+                comparison = (text, ComparisonOperatorRegex.Match(text));
+                _comparisons.Add(start, comparison);
+            }
 
-            if (match.Index + match.Length <= position)
+            var compMatch = comparison.Operator;
+            if (!compMatch.Success)
+                return true; // No comparison found — can't determine side, assume worst case
+
+            // The side of this comparison the function is on, and whether a column shares it
+            var beforeOperator = functionIndex - start < compMatch.Index;
+            if (!_sideHasColumn.TryGetValue((start, beforeOperator), out var hasColumn))
             {
-                start = match.Index + match.Length;
+                var side = beforeOperator
+                    ? comparison.Text[..compMatch.Index]
+                    : comparison.Text[(compMatch.Index + compMatch.Length)..];
+
+                // Same column-vs-variable distinction ConvertImplicitWrapsColumn needs, so it
+                // shares the one helper rather than keeping a second copy of the logic in sync.
+                hasColumn = IsColumnReference(side, identity);
+                _sideHasColumn.Add((start, beforeOperator), hasColumn);
             }
-            else
-            {
-                end = match.Index;
-                break;
-            }
+
+            return hasColumn;
         }
 
-        offset = start;
-        return predicate[start..end];
+        /// <summary>
+        /// The single comparison around <paramref name="position"/>: the text between the nearest
+        /// AND/OR before it and the nearest after it, as where it starts and ends in the predicate.
+        ///
+        /// <para>Operators are split on at every depth, not just the top level: a parenthesized
+        /// group like <c>[t].[A]=(1) AND ([t].[B]=f([@p]) OR [t].[C]=(3))</c> has to come apart into
+        /// its three comparisons, or the group would be read as one. The leftover grouping
+        /// parentheses cannot move a comparison operator or add a column, so they are harmless. No
+        /// function in a ScalarString takes AND/OR inside its arguments; CASE does, and it is
+        /// caught earlier.</para>
+        /// </summary>
+        private (int Start, int End) ComparisonAround(int position)
+        {
+            _logicalOperators ??= FindLogicalOperators(predicate);
+
+            // The first operator that ends after position closes the comparison, and the one
+            // before it opens it. The operators are in order and never overlap, so their ends
+            // are in order too.
+            var low = 0;
+            var high = _logicalOperators.Count;
+            while (low < high)
+            {
+                var middle = (low + high) / 2;
+                if (_logicalOperators[middle].End <= position)
+                    low = middle + 1;
+                else
+                    high = middle;
+            }
+
+            var start = low > 0 ? _logicalOperators[low - 1].End : 0;
+            var end = low < _logicalOperators.Count ? _logicalOperators[low].Start : predicate.Length;
+            return (start, end);
+        }
+
+        private static List<(int Start, int End)> FindLogicalOperators(string predicate)
+        {
+            var operators = new List<(int Start, int End)>();
+            foreach (Match match in LogicalOperatorRegex.Matches(predicate))
+            {
+                if (!match.Groups[1].Success)
+                    continue; // a string literal or bracketed name, skipped whole
+
+                operators.Add((match.Index, match.Index + match.Length));
+            }
+
+            return operators;
+        }
     }
 
     /// <summary>

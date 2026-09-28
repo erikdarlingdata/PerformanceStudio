@@ -84,14 +84,14 @@ public static class EstimatedPlanExecutor
     internal static string MergeShowPlanXmls(List<string> planXmls)
     {
         XNamespace ns = "http://schemas.microsoft.com/sqlserver/2004/07/showplan";
-        var baseDoc = XDocument.Parse(planXmls[0]);
+        var baseDoc = PlanXml.Parse(planXmls[0]);
         var batchSequence = baseDoc.Root!.Element(ns + "BatchSequence");
         if (batchSequence == null)
             return planXmls[0];
 
         for (int i = 1; i < planXmls.Count; i++)
         {
-            var doc = XDocument.Parse(planXmls[i]);
+            var doc = PlanXml.Parse(planXmls[i]);
             var batches = doc.Root!.Element(ns + "BatchSequence")?.Elements(ns + "Batch");
             if (batches != null)
             {

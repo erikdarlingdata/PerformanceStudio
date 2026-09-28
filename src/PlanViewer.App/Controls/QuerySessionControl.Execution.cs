@@ -427,7 +427,7 @@ public partial class QuerySessionControl : UserControl
 
         try
         {
-            var doc = XDocument.Parse(planXml);
+            var doc = PlanXml.Parse(planXml);
             XNamespace ns = "http://schemas.microsoft.com/sqlserver/2004/07/showplan";
 
             /* Try StmtSimple first — most queries have this */

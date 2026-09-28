@@ -318,7 +318,7 @@ public static class ReproScriptBuilder
 
         try
         {
-            var doc = XDocument.Parse(planXml);
+            var doc = PlanXml.Parse(planXml);
             XNamespace ns = "http://schemas.microsoft.com/sqlserver/2004/07/showplan";
 
             /* Find all ColumnReference elements under ParameterList */
@@ -369,7 +369,7 @@ public static class ReproScriptBuilder
 
         try
         {
-            var doc = XDocument.Parse(planXml);
+            var doc = PlanXml.Parse(planXml);
             XNamespace ns = "http://schemas.microsoft.com/sqlserver/2004/07/showplan";
 
             var setOptsEl = doc.Descendants(ns + "StatementSetOptions").FirstOrDefault();
