@@ -105,6 +105,104 @@ public class ReproScriptBuilderSafetyTests
         Assert.Contains("1 parameter(s) omitted", sql);
     }
 
+    [Fact]
+    public void BuildReproScript_AutoParameterizedNames_AreDeclaredAndAssigned()
+    {
+        /* #590: simple and forced parameterization name their parameters @0, @1, ... .
+           These were dropped, so the script ran the statement without declaring them and
+           failed with "Must declare the scalar variable". The ParameterList is copied from
+           a forced-parameterization plan on SQL Server 2025, in its order. */
+        const string plan = """
+            <ShowPlanXML xmlns="http://schemas.microsoft.com/sqlserver/2004/07/showplan">
+              <BatchSequence><Batch><Statements>
+                <StmtSimple>
+                  <QueryPlan>
+                    <ParameterList>
+                      <ColumnReference Column="@1" ParameterDataType="int" ParameterCompiledValue="(0)" />
+                      <ColumnReference Column="@0" ParameterDataType="nvarchar(4000)" ParameterCompiledValue="N'b'" />
+                    </ParameterList>
+                  </QueryPlan>
+                </StmtSimple>
+              </Statements></Batch></BatchSequence>
+            </ShowPlanXML>
+            """;
+        var sql = ReproScriptBuilder.BuildReproScript(
+            "(@0 nvarchar(4000),@1 int)select t . id from dbo . T as t where t . v = @0 and t . id > @1",
+            "db", plan, null);
+
+        Assert.Contains("N'@1 int, @0 nvarchar(4000)'", sql);
+        Assert.Contains("@1 = 0", sql);
+        Assert.Contains("@0 = N'b'", sql);
+        Assert.DoesNotContain("omitted", sql);
+        ParseScript(sql);
+    }
+
+    [Fact]
+    public void BuildReproScript_ParameterNameEndingInALineBreak_IsDropped()
+    {
+        /* The XML parser turns a line break in an attribute into a space unless it is written
+           as a character reference. ^...$ let this name through, because $ also matches
+           before a final line break. */
+        var plan = PlanWithParameter("@id&#10;", "int", "(1)");
+        var sql = ReproScriptBuilder.BuildReproScript("SELECT 1", "db", plan, null);
+
+        Assert.Contains("1 parameter(s) omitted", sql);
+    }
+
+    [Fact]
+    public void BuildReproScript_CompiledValueEndingInALineBreak_BecomesPlaceholder()
+    {
+        var plan = PlanWithParameter("@id", "int", "42&#10;");
+        var sql = ReproScriptBuilder.BuildReproScript("SELECT 1", "db", plan, null);
+
+        Assert.Contains("@id = ?", sql);
+    }
+
+    [Theory]
+    [InlineData("tinyint")]
+    [InlineData("decimal(18,2)")]
+    [InlineData("nvarchar(max)")]
+    [InlineData("nvarchar(4000)")]
+    [InlineData("datetime2(7)")]
+    [InlineData("datetimeoffset(3)")]
+    [InlineData("time(0)")]
+    [InlineData("sys.geography")]
+    [InlineData("sys.hierarchyid")]
+    [InlineData("sql_variant")]
+    [InlineData("xml")]
+    [InlineData("json")]
+    [InlineData("vector(3)")]
+    [InlineData("vector(3,float16)")]
+    [InlineData("[dbo].[Amount]")]
+    public void BuildReproScript_DataTypesFromRealPlans_AreKept(string dataType)
+    {
+        /* Every type here but the last is a ParameterDataType that SQL Server 2025 wrote into
+           a plan. An alias type shows up as its base type, and a typed xml parameter as xml.
+           No plan here used brackets, but the check before #590 allowed them, so this keeps
+           them working. */
+        var plan = PlanWithParameter("@p", dataType, "NULL");
+        var sql = ReproScriptBuilder.BuildReproScript("SELECT @p", "db", plan, null);
+
+        Assert.Contains($"N'@p {dataType}'", sql);
+        Assert.DoesNotContain("omitted", sql);
+    }
+
+    [Theory]
+    [InlineData("int) SELECT 2 SELECT (1")] // text after the closing paren
+    [InlineData("decimal(18,2")]            // no closing paren
+    [InlineData("int&#10;")]                // ends in a line break
+    [InlineData("a.b.c.d")]                 // four-part name
+    [InlineData("vector(3,&#10;GO&#10;)")]  // GO on a line of its own
+    public void BuildReproScript_MalformedDataType_IsDropped(string dataType)
+    {
+        /* The check before #590 was a list of characters, and the first four passed it. */
+        var plan = PlanWithParameter("@id", dataType, "(1)");
+        var sql = ReproScriptBuilder.BuildReproScript("SELECT 1", "db", plan, null);
+
+        Assert.Contains("1 parameter(s) omitted", sql);
+        Assert.DoesNotContain("SELECT 2", sql);
+    }
+
     [Theory]
     [InlineData("int", "(42)", "42")]                                  // parenthesized integer
     [InlineData("int", "(-7)", "-7")]                                  // negative

@@ -426,22 +426,32 @@ public static class ReproScriptBuilder
     }
 
     /// <summary>
-    /// Validates a parameter name from plan XML as a plain @identifier.
-    /// Anything else is dropped from the generated script.
+    /// Validates a parameter name from plan XML as a plain @identifier. Simple and
+    /// forced parameterization name their parameters @0, @1, ..., so a digit may
+    /// come right after the @. Anything else is dropped from the generated script.
     /// </summary>
     private static bool IsValidParameterName(string name)
     {
-        return Regex.IsMatch(name, @"^@[\p{L}_@#$][\p{L}\p{Nd}_@#$]*$");
+        /* \A and \z, not ^ and $: $ also matches before a final line break. */
+        return Regex.IsMatch(name, @"\A@[\p{L}\p{Nd}_@#$]+\z");
     }
 
     /// <summary>
-    /// Validates a parameter data type from plan XML: type name with optional
-    /// schema prefix, brackets, and (size/precision) suffix. No quotes or comment
-    /// characters, so it can't disturb the sp_executesql declaration list.
+    /// Validates a parameter data type from plan XML by its shape: one to three
+    /// dot-separated names, each plain or in brackets, then an optional (n), (max),
+    /// (p,s) or (n,name) suffix, as in decimal(18,2), sys.geography or
+    /// vector(3,float16). A type with anything else, such as text after the closing
+    /// paren, is dropped with a warning rather than producing a script that fails.
+    /// Only plain spaces are allowed between the parts: no quotes, comment
+    /// characters or line breaks, so it can't disturb the sp_executesql declaration list.
     /// </summary>
     private static bool IsValidDataType(string dataType)
     {
-        return Regex.IsMatch(dataType, @"^[\p{L}\p{Nd}_\[\]., ()]+$");
+        const string name = @"(?:\[[\p{L}\p{Nd}_ ]+\]|[\p{L}_][\p{L}\p{Nd}_]*)";
+        return Regex.IsMatch(
+            dataType,
+            $@"\A{name}(?:\.{name}){{0,2}}(?: *\( *(?:\d+|max) *(?:, *(?:\d+|{name}) *)?\))?\z",
+            RegexOptions.IgnoreCase);
     }
 
     /// <summary>
@@ -454,16 +464,18 @@ public static class ReproScriptBuilder
         if (value.Equals("NULL", StringComparison.OrdinalIgnoreCase))
             return true;
 
+        /* \A and \z throughout: $ would also accept a value that ends in a line break. */
+
         /* Integer/decimal/float/money forms: -12, 3.14, 1.5E+3, $9.99 */
-        if (Regex.IsMatch(value, @"^-?\$?\d+(\.\d+)?([eE][+-]?\d+)?$"))
+        if (Regex.IsMatch(value, @"\A-?\$?\d+(\.\d+)?([eE][+-]?\d+)?\z"))
             return true;
 
         /* Binary literal */
-        if (Regex.IsMatch(value, @"^0x[0-9A-Fa-f]*$"))
+        if (Regex.IsMatch(value, @"\A0x[0-9A-Fa-f]*\z"))
             return true;
 
         /* One complete string literal — every embedded quote must be doubled */
-        if (Regex.IsMatch(value, @"^N?'([^']|'')*'$"))
+        if (Regex.IsMatch(value, @"\AN?'([^']|'')*'\z"))
             return true;
 
         return false;
