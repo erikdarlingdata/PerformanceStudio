@@ -63,8 +63,36 @@ public static class ReproScriptBuilder
            off ParameterList attributes. Drop parameters whose name or type isn't a
            plausible T-SQL token before anything is interpolated — the name lands in
            the warning comment and the sp_executesql assignment list. */
-        var safeParameters = parameters
+        var validParameters = parameters
             .Where(p => IsValidParameterName(p.Name) && IsValidDataType(p.DataType))
+            .ToList();
+
+        /* A batch's plan lists each statement's parameters: a parameter once for every
+           statement that uses it, and each auto-parameterized statement's own @0 or @1,
+           typed by that statement's literal. Declare each name once; a second declaration
+           fails the script. A name that the statements give different types can't be
+           declared once, so it is left out. Those statements are usually literal text
+           that doesn't use the name. */
+        var parameterGroups = validParameters
+            .GroupBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var conflictingNames = parameterGroups
+            .Where(g => g.Select(p => p.DataType).Distinct(StringComparer.OrdinalIgnoreCase).Count() > 1)
+            .Select(g => g.Key)
+            .ToList();
+        var declarableGroups = parameterGroups
+            .Where(g => !conflictingNames.Contains(g.Key, StringComparer.OrdinalIgnoreCase))
+            .ToList();
+
+        /* Statements recompiled at different times can carry different compiled values for
+           the same parameter, and some carry none. Use the first value that can go into
+           the script as it is, and say so when the statements disagree. */
+        var safeParameters = declarableGroups
+            .Select(g => g.FirstOrDefault(p => !string.IsNullOrEmpty(p.CompiledValue) && IsSafeLiteral(p.CompiledValue)) ?? g.First())
+            .ToList();
+        var differingValueNames = declarableGroups
+            .Where(g => g.Select(p => p.CompiledValue).Where(v => !string.IsNullOrEmpty(v)).Distinct(StringComparer.Ordinal).Count() > 1)
+            .Select(g => g.Key)
             .ToList();
 
         /* Check for temp tables and table variables in query text */
@@ -90,10 +118,20 @@ public static class ReproScriptBuilder
 
         /* Parameters dropped entirely because the plan's name or data type wasn't a
            plain T-SQL token — the script would be incomplete, so don't stay silent. */
-        var droppedCount = parameters.Count - safeParameters.Count;
+        var droppedCount = parameters.Count - validParameters.Count;
         if (droppedCount > 0)
         {
             warnings.Add($"{droppedCount} parameter(s) omitted — the plan's parameter name or data type was not a valid T-SQL identifier. Declare them manually before executing.");
+        }
+
+        if (conflictingNames.Count > 0)
+        {
+            warnings.Add($"Parameters with a different data type in different statements (left out): {string.Join(", ", conflictingNames)}. Declare them manually if the query uses them.");
+        }
+
+        if (differingValueNames.Count > 0)
+        {
+            warnings.Add($"Parameters with a different compiled value in different statements (set to the first usable one): {string.Join(", ", differingValueNames)}. Check the values before executing.");
         }
 
         /* Check for local variables: query has parameter prefix but plan has no/few parameters */
@@ -190,8 +228,11 @@ public static class ReproScriptBuilder
         }
         else if (!string.IsNullOrEmpty(planXml))
         {
-            /* Plan was available but had no parameters — query is not parameterized */
-            sb.AppendLine("/* No parameters found in plan cache */");
+            /* Plan was available but had no parameters — query is not parameterized —
+               or none of its parameters could be declared, and the warnings say why. */
+            sb.AppendLine(parameters.Count == 0
+                ? "/* No parameters found in plan cache */"
+                : "/* No parameters declared: see the warnings above */");
             sb.AppendLine(cleanedQuery);
             if (!cleanedQuery.EndsWith(';'))
             {
@@ -426,22 +467,33 @@ public static class ReproScriptBuilder
     }
 
     /// <summary>
-    /// Validates a parameter name from plan XML as a plain @identifier.
-    /// Anything else is dropped from the generated script.
+    /// Validates a parameter name from plan XML as a plain @identifier. Simple and
+    /// forced parameterization name their parameters @0, @1, ..., so a digit may
+    /// come right after the @. Anything else is dropped from the generated script.
     /// </summary>
     private static bool IsValidParameterName(string name)
     {
-        return Regex.IsMatch(name, @"^@[\p{L}_@#$][\p{L}\p{Nd}_@#$]*$");
+        /* \A and \z, not ^ and $: $ also matches before a final line break. */
+        return Regex.IsMatch(name, @"\A@[\p{L}\p{Nd}_@#$]+\z");
     }
 
     /// <summary>
-    /// Validates a parameter data type from plan XML: type name with optional
-    /// schema prefix, brackets, and (size/precision) suffix. No quotes or comment
-    /// characters, so it can't disturb the sp_executesql declaration list.
+    /// Validates a parameter data type from plan XML by its shape: one to three
+    /// dot-separated names, each plain or in brackets, then an optional (n), (max),
+    /// (p,s) or (n,name) suffix, as in decimal(18,2), sys.geography or
+    /// vector(3,float16). A type with anything else, such as text after the closing
+    /// paren, is dropped with a warning rather than producing a script that fails.
+    /// Spaces are allowed only inside brackets and around the suffix's parts, and the
+    /// suffix's numbers use only the digits 0 to 9. No quotes, comment characters or
+    /// line breaks get through, so it can't disturb the sp_executesql declaration list.
     /// </summary>
     private static bool IsValidDataType(string dataType)
     {
-        return Regex.IsMatch(dataType, @"^[\p{L}\p{Nd}_\[\]., ()]+$");
+        const string name = @"(?:\[[\p{L}\p{Nd}_ ]+\]|[\p{L}_][\p{L}\p{Nd}_]*)";
+        return Regex.IsMatch(
+            dataType,
+            $@"\A{name}(?:\.{name}){{0,2}}(?: *\( *(?:max|[0-9]+(?: *, *(?:[0-9]+|{name}))?) *\))?\z",
+            RegexOptions.IgnoreCase);
     }
 
     /// <summary>
@@ -454,16 +506,19 @@ public static class ReproScriptBuilder
         if (value.Equals("NULL", StringComparison.OrdinalIgnoreCase))
             return true;
 
-        /* Integer/decimal/float/money forms: -12, 3.14, 1.5E+3, $9.99 */
-        if (Regex.IsMatch(value, @"^-?\$?\d+(\.\d+)?([eE][+-]?\d+)?$"))
+        /* \A and \z throughout: $ would also accept a value that ends in a line break. */
+
+        /* Integer/decimal/float/money forms: -12, 3.14, 1.5E+3, $9.99. [0-9], not \d,
+           which also matches digits from other scripts that T-SQL doesn't read as numbers. */
+        if (Regex.IsMatch(value, @"\A-?\$?[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?\z"))
             return true;
 
         /* Binary literal */
-        if (Regex.IsMatch(value, @"^0x[0-9A-Fa-f]*$"))
+        if (Regex.IsMatch(value, @"\A0x[0-9A-Fa-f]*\z"))
             return true;
 
         /* One complete string literal — every embedded quote must be doubled */
-        if (Regex.IsMatch(value, @"^N?'([^']|'')*'$"))
+        if (Regex.IsMatch(value, @"\AN?'([^']|'')*'\z"))
             return true;
 
         return false;
