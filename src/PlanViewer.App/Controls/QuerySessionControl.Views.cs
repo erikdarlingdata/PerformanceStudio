@@ -191,9 +191,16 @@ public partial class QuerySessionControl : UserControl
 
         overview.DrillDownRequested += async (_, args) =>
         {
-            // Open a single-database Query Store tab directly (no connection dialog)
-            _selectedDatabase = args.Database;
-            _connectionString = _serverConnection!.GetConnectionString(_credentialService, args.Database);
+            /* The drill-down means switch this session to that database, not just open a tab
+               against it — going through the picker keeps DatabaseBox, _selectedDatabase and
+               _connectionString in agreement, instead of writing the last two here directly and
+               leaving the toolbar showing whatever database the session was on before (E1).
+               TrySelectDrilledDatabase runs Database_SelectionChanged exactly as a user's own
+               pick would, which is what actually sets both fields and refreshes the metadata. */
+            TrySelectDrilledDatabase(args.Database);
+
+            // Found or not, the Query Store tab opens on the drilled database either way — it
+            // builds its own connection string from args.Database directly.
             await OpenQueryStoreForDatabaseAsync(args.Database, args.StartUtc, args.EndUtc);
         };
 

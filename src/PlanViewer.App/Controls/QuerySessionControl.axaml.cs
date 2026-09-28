@@ -107,6 +107,12 @@ public partial class QuerySessionControl : UserControl
     private int _planCounter;
     private CancellationTokenSource? _executionCts;
     private ServerMetadata? _serverMetadata;
+    /// <summary>
+    /// Guards FetchDatabaseMetadataAsync's own stale-result race: the database picker can change
+    /// again before a fetch lands, and without this whichever fetch finished last used to
+    /// overwrite _serverMetadata.Database, even for a database already clicked past (E7).
+    /// </summary>
+    private CancellationTokenSource? _databaseMetadataCts;
 
     // TextMate installation for syntax highlighting
     private TextMate.Installation? _textMateInstallation;

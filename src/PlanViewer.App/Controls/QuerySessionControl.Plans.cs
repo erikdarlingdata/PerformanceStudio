@@ -33,9 +33,36 @@ namespace PlanViewer.App.Controls;
 public partial class QuerySessionControl : UserControl
 {
     private bool AddPlanTab(string planXml, string queryText, bool estimated, string? labelOverride = null)
-        => AddPlanTab(planXml, queryText, estimated, labelOverride, out _);
+        => AddPlanTab(planXml, queryText, estimated, labelOverride, sourceDatabase: null, out _);
 
     private bool AddPlanTab(string planXml, string queryText, bool estimated, string? labelOverride, out string? failure)
+        => AddPlanTab(planXml, queryText, estimated, labelOverride, sourceDatabase: null, out failure);
+
+    /// <summary>
+    /// Points a plan viewer hosted in this session at the database its plan came from:
+    /// <paramref name="sourceDatabase"/> when a Query Store grid supplied one, the toolbar's when
+    /// not. The viewer's schema lookups (Show Indexes, Show Table Definition) run on its
+    /// ConnectionString and its status label names the database, so both follow the plan rather
+    /// than whatever the toolbar shows (E1).
+    /// </summary>
+    private void ConnectViewer(PlanViewerControl viewer, string? sourceDatabase)
+    {
+        viewer.SourceDatabase = sourceDatabase;
+        viewer.ConnectionString = sourceDatabase != null && _serverConnection != null
+            ? _serverConnection.GetConnectionString(_credentialService, sourceDatabase)
+            : _connectionString;
+        viewer.SetConnectionServices(_credentialService, _connectionStore);
+        if (_serverConnection != null)
+            viewer.SetConnectionStatus(_serverConnection.ServerName, sourceDatabase ?? _selectedDatabase);
+    }
+
+    /// <param name="sourceDatabase">
+    /// The database this plan came from, when that is a Query Store grid's own picker rather
+    /// than the toolbar's — null for every other path. See <see cref="ConnectViewer"/> and
+    /// <see cref="PlanViewerControl.SourceDatabase"/> for why (E1).
+    /// </param>
+    private bool AddPlanTab(string planXml, string queryText, bool estimated, string? labelOverride,
+        string? sourceDatabase, out string? failure)
     {
         failure = null;
         _planCounter++;
@@ -45,10 +72,7 @@ public partial class QuerySessionControl : UserControl
         // Sub-tab of this session: the session's toolbar above it owns the connection (#U5).
         viewer.HostedInSession = true;
         viewer.Metadata = _serverMetadata;
-        viewer.ConnectionString = _connectionString;
-        viewer.SetConnectionServices(_credentialService, _connectionStore);
-        if (_serverConnection != null)
-            viewer.SetConnectionStatus(_serverConnection.ServerName, _selectedDatabase);
+        ConnectViewer(viewer, sourceDatabase);
         viewer.OpenInEditorRequested += OnOpenInEditorRequested;
 
         if (!viewer.LoadPlan(planXml, label, queryText))
