@@ -1153,6 +1153,47 @@ public class PlanAnalyzerTests
         Assert.Contains("GetTopPosts", warnings[0].Message);
     }
 
+    [Fact]
+    public void Rule23_EngineFunction_IsNotFlagged()
+    {
+        // sys.dm_db_index_physical_stats runs as the engine's INDEXANALYSIS function. Its Object
+        // names no database and no schema, and the multi-statement TVF advice does not apply.
+        var plan = PlanTestHelper.LoadAndAnalyze("eager_table_spool_plan.sqlplan");
+
+        static IEnumerable<PlanNode> Walk(PlanNode node) => node.Children.SelectMany(Walk).Prepend(node);
+        var tvf = Assert.Single(
+            PlanStatements.EnumerateAll(plan).Where(s => s.RootNode != null).SelectMany(s => Walk(s.RootNode!)),
+            n => n.LogicalOp == "Table-valued function");
+        Assert.Equal("INDEXANALYSIS", tvf.ObjectName);
+        Assert.Empty(PlanTestHelper.WarningsOfType(plan, "Table-Valued Function"));
+    }
+
+    [Theory]
+    // STRING_SPLIT, OPENJSON or a DMV: the engine's own function.
+    [InlineData(null, null, false)]
+    // A function a user wrote. Only an Object with neither part counts as the engine's.
+    [InlineData("StackOverflow2013", "dbo", true)]
+    [InlineData("StackOverflow2013", null, true)]
+    [InlineData(null, "dbo", true)]
+    public void Rule23_WarnsUnlessTheFunctionHasNoDatabaseAndNoSchema(
+        string? database, string? schema, bool expectWarning)
+    {
+        var node = new PlanNode
+        {
+            PhysicalOp = "Table-valued function",
+            LogicalOp = "Table-valued function",
+            DatabaseName = database,
+            SchemaName = schema,
+            ObjectName = "F"
+        };
+        PlanAnalyzer.Analyze(new ParsedPlan
+        {
+            Batches = [new PlanBatch { Statements = [new PlanStatement { RootNode = node }] }]
+        });
+
+        Assert.Equal(expectWarning, node.Warnings.Any(w => w.WarningType == "Table-Valued Function"));
+    }
+
     // ---------------------------------------------------------------
     // Rule 24: Top Above Scan
     // ---------------------------------------------------------------

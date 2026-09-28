@@ -44,7 +44,6 @@ Parallel Skew | Warning | Thread 3 processed 100% of rows (8,042,005/8,042,005).
 Bare Scan | Warning | Clustered index scan reads the full table with no predicate, outputting 2 column(s): Badges.Name, Badges.UserId. Consider a nonclustered index on the output columns (as key or INCLUDE) so SQL Server can read a narrower structure. For analytical workloads, a columnstore index may be a better fit.
 
 ### eager_table_spool_plan.sqlplan
-Table-Valued Function | Warning | Table-valued function: INDEXANALYSIS. Multi-statement TVFs have no statistics — SQL Server guesses 1 row (pre-2017) or 100 rows (2017+) regardless of actual size. Rewrite as an inline table-valued function if possible, or dump the function results into a #temp table and join to that instead.
 Data Type Mismatch | Warning | Mismatched data types between the column and the parameter/literal. SQL Server is converting every row to compare, preventing index seeks. Match your data types — don't pass nvarchar to a varchar column, or int to a bigint column.
 Filter Operator | Warning | Filter operator discarding rows late in the plan.\nPredicate: [Act1007]<>(1)
 Scan With Predicate | Warning | Scan with residual predicate — SQL Server is reading every row and filtering after the fact. Check that you have appropriate indexes.\nPredicate: [RebuildVsReorg].[dbo].[RealBigTest].[Sequence] as [R].[Sequence]>[@hkey] AND [RebuildVsReorg].[dbo].[RealBigTest].[Sequence] as [R].[Sequence]<=[@bmax]
