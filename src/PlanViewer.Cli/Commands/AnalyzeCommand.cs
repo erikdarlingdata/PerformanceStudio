@@ -155,17 +155,21 @@ public static class AnalyzeCommand
 
             // Load .env file if present (CLI args take precedence)
             var env = ConnectionHelper.LoadEnvFile();
-            server ??= env.Use("PLANVIEW_SERVER");
-            database ??= env.Use("PLANVIEW_DATABASE");
-            login ??= env.Use("PLANVIEW_LOGIN");
-            if (!trustCert && env.UseFlag("PLANVIEW_TRUST_CERT"))
-                trustCert = true;
+            if (env.Error is { } envError)
+            {
+                Console.Error.WriteLine(envError);
+                Environment.ExitCode = 1;
+                return;
+            }
+
+            var settings = env.Fill(new ConnectionSettings(server, database, login, trustCert));
+            (server, database, login, trustCert) = settings;
 
             // Resolve password from --password-stdin, --password, or PLANVIEW_PASSWORD
             // (in that order). --stdin for plan XML conflicts with --password-stdin.
             if (!PasswordResolver.TryResolve(
                     passwordInline, passwordStdin, stdin,
-                    () => env.Use("PLANVIEW_PASSWORD"),
+                    () => env.PasswordFor(settings),
                     out var password))
             {
                 Environment.ExitCode = 1;

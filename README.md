@@ -234,6 +234,13 @@ When the `.env` file supplies a setting, the CLI prints one line to stderr. The 
 Using settings from /work/.env: PLANVIEW_SERVER, PLANVIEW_TRUST_CERT
 ```
 
+The CLI takes a setting from the file only when the setting has an effect:
+
+- With no server from either place, `analyze` reads the plan file offline and takes nothing from the `.env` file.
+- `PLANVIEW_PASSWORD` is used only with a login.
+
+If a `PLANVIEW_` value holds a control character, the CLI stops and names the setting. The CLI prints the server and database names later. A control character in them moves the cursor and erases text, such as the `Using settings` line.
+
 **Using the credential store** — for longer-term use, store credentials in your OS keychain:
 
 ```bash
