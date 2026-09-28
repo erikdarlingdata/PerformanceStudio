@@ -227,19 +227,31 @@ public static class QueryStoreCommand
 
             // Load .env file if present (CLI args take precedence)
             var env = ConnectionHelper.LoadEnvFile();
-            login ??= env.GetValueOrDefault("PLANVIEW_LOGIN");
-            if (!trustCert && env.GetValueOrDefault("PLANVIEW_TRUST_CERT")?.Equals("true", StringComparison.OrdinalIgnoreCase) == true)
-                trustCert = true;
+            if (env.Error is { } envError)
+            {
+                Console.Error.WriteLine(envError);
+                Environment.ExitCode = 1;
+                return;
+            }
+
+            // --server and --database are required, so the file only fills the login and trust-cert.
+            var settings = env.Fill(new ConnectionSettings(server, database, login, trustCert));
+            login = settings.Login;
+            trustCert = settings.TrustCert;
 
             // Resolve password from --password-stdin, --password, or PLANVIEW_PASSWORD
             if (!PasswordResolver.TryResolve(
                     passwordInline, passwordStdin, stdinAlreadyClaimed: false,
-                    env.GetValueOrDefault("PLANVIEW_PASSWORD"),
+                    () => env.PasswordFor(settings),
                     out var password))
             {
                 Environment.ExitCode = 1;
                 return;
             }
+
+            // A .env file can turn off certificate validation, so say when it did.
+            if (env.Notice is { } envNotice)
+                Console.Error.WriteLine(envNotice);
 
             if (top < 1)
             {
