@@ -75,6 +75,8 @@ public static class PlanAnalysisRunner
             Description = description,
             DefaultValueFactory = _ => defaultFormat
         };
+        // Help shows <both|json|text> from these, and shell completion offers them.
+        option.CompletionSources.Add(OutputFormats.ToArray());
         option.Validators.Add(result =>
         {
             var value = result.GetValueOrDefault<string>();
