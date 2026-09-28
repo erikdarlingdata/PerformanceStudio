@@ -244,12 +244,18 @@ public partial class QuerySessionControl : UserControl
     /// </summary>
     internal void OnQueryStorePlansSelected(object? sender, List<QueryStorePlan> plans)
     {
+        /* The grid has its own database picker, independent of the toolbar's (E1) — remembered
+           here, off the sender, so Get Actual Plan can later run a plan from this batch back
+           against the database it actually came from rather than whatever the toolbar shows. */
+        var sourceDatabase = (sender as QueryStoreGridControl)?.Database;
+
         int loaded = 0;
         var failures = new List<string>();
         foreach (var qsPlan in plans)
         {
             var tabLabel = $"QS {qsPlan.QueryId} / {qsPlan.PlanId}";
-            if (AddPlanTab(qsPlan.PlanXml, qsPlan.QueryText, estimated: true, labelOverride: tabLabel, out var failure))
+            if (AddPlanTab(qsPlan.PlanXml, qsPlan.QueryText, estimated: true, labelOverride: tabLabel,
+                    sourceDatabase: sourceDatabase, out var failure))
                 loaded++;
             else if (failure != null)
                 failures.Add(failure);

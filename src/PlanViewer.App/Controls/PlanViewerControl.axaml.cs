@@ -286,6 +286,20 @@ public partial class PlanViewerControl : UserControl
     public string? ConnectionString { get; set; }
 
     /// <summary>
+    /// The database this plan came from, when that is a Query Store grid's own database picker
+    /// rather than the session's toolbar — null for every other plan tab (executed, pasted, or
+    /// opened from History), which all keep using the toolbar's database. A grid's picker is
+    /// independent of the toolbar's, so a plan pulled from one can be sitting on a different
+    /// database than DatabaseBox shows; Get Actual Plan (QuerySessionControl.Execution.cs) reads
+    /// this back to re-run such a plan against the database it actually came from, instead of
+    /// silently switching it to whatever the toolbar happens to show (E1). Set once, in
+    /// QuerySessionControl.AddPlanTab, from the grid's <c>Database</c> at the moment the plan was
+    /// opened — not kept in sync with the grid afterward, the same way <see cref="ConnectionString"/>
+    /// is a snapshot rather than a live link back to the session.
+    /// </summary>
+    public string? SourceDatabase { get; set; }
+
+    /// <summary>
     /// Whether this viewer is living as a sub-tab inside a query session, rather than as a
     /// top-level tab of its own.
     ///

@@ -33,9 +33,18 @@ namespace PlanViewer.App.Controls;
 public partial class QuerySessionControl : UserControl
 {
     private bool AddPlanTab(string planXml, string queryText, bool estimated, string? labelOverride = null)
-        => AddPlanTab(planXml, queryText, estimated, labelOverride, out _);
+        => AddPlanTab(planXml, queryText, estimated, labelOverride, sourceDatabase: null, out _);
 
     private bool AddPlanTab(string planXml, string queryText, bool estimated, string? labelOverride, out string? failure)
+        => AddPlanTab(planXml, queryText, estimated, labelOverride, sourceDatabase: null, out failure);
+
+    /// <param name="sourceDatabase">
+    /// The database this plan came from, when that is a Query Store grid's own picker rather
+    /// than the toolbar's — null for every other path. Passed straight through to
+    /// <see cref="PlanViewerControl.SourceDatabase"/>; see its doc comment for why (E1).
+    /// </param>
+    private bool AddPlanTab(string planXml, string queryText, bool estimated, string? labelOverride,
+        string? sourceDatabase, out string? failure)
     {
         failure = null;
         _planCounter++;
@@ -46,6 +55,7 @@ public partial class QuerySessionControl : UserControl
         viewer.HostedInSession = true;
         viewer.Metadata = _serverMetadata;
         viewer.ConnectionString = _connectionString;
+        viewer.SourceDatabase = sourceDatabase;
         viewer.SetConnectionServices(_credentialService, _connectionStore);
         if (_serverConnection != null)
             viewer.SetConnectionStatus(_serverConnection.ServerName, _selectedDatabase);

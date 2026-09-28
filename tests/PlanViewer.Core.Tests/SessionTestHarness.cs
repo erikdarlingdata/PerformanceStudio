@@ -178,6 +178,14 @@ internal static class SessionHarness
     internal static QueryStoreOverviewControl? OverviewView(QuerySessionControl session) =>
         (QueryStoreOverviewControl?)GetField(session, "_overviewView");
 
+    /// <summary>The database the toolbar's picker last settled on, off the session's own field.</summary>
+    internal static string? SelectedDatabase(QuerySessionControl session) =>
+        (string?)GetField(session, "_selectedDatabase");
+
+    /// <summary>The connection string the toolbar last built, off the session's own field.</summary>
+    internal static string? ConnectionString(QuerySessionControl session) =>
+        (string?)GetField(session, "_connectionString");
+
     /// <summary>
     /// Calls the session's private <c>InvalidateOverviewView</c>, which is the last line of the
     /// connect block and the only thing in the app that runs it.

@@ -266,6 +266,27 @@ public partial class QuerySessionControl : UserControl
         cancelBtn.IsVisible = false;
     }
 
+    /// <summary>
+    /// Resolves which database and connection string Get Actual Plan should run
+    /// <paramref name="viewer"/>'s query against: the viewer's own <see
+    /// cref="PlanViewerControl.SourceDatabase"/> when it has one — a plan pulled from a Query
+    /// Store grid's own database picker, which can differ from the toolbar's (E1) — or the
+    /// toolbar's <c>_selectedDatabase</c>/<c>_connectionString</c> when it does not, which is
+    /// every other plan tab (executed, pasted, or opened from History).
+    ///
+    /// <para>Internal so a test can pin the choice directly — through <see
+    /// cref="PlanViewerControl.SourceDatabase"/> and this method — rather than by executing a
+    /// query to observe which database it landed in.</para>
+    /// </summary>
+    internal (string? Database, string? ConnectionString) ResolveExecutionTarget(PlanViewerControl viewer)
+    {
+        if (viewer.SourceDatabase != null)
+            return (viewer.SourceDatabase,
+                _serverConnection?.GetConnectionString(_credentialService, viewer.SourceDatabase));
+
+        return (_selectedDatabase, _connectionString);
+    }
+
     private async void GetActualPlan_Click(object? sender, RoutedEventArgs e)
     {
         var viewer = GetSelectedPlanViewer();
@@ -290,10 +311,17 @@ public partial class QuerySessionControl : UserControl
             return;
         }
 
+        var (database, connectionString) = ResolveExecutionTarget(viewer);
+        if (connectionString == null)
+        {
+            SetErrorStatus("Connect to a server first");
+            return;
+        }
+
         /* Show confirmation dialog */
         var confirmed = await ShowConfirmationDialog(
             "Get Actual Plan",
-            "The query will execute with SET STATISTICS XML ON to capture the actual plan.\n\nAll data results will be discarded.\n\nContinue?");
+            $"The query will execute in [{database}] with SET STATISTICS XML ON to capture the actual plan.\n\nAll data results will be discarded.\n\nContinue?");
 
         if (!confirmed) return;
 
@@ -374,7 +402,7 @@ public partial class QuerySessionControl : UserControl
             var isAzure = IsAzureConnection;
 
             var actualPlanXml = await ActualPlanExecutor.ExecuteForActualPlanAsync(
-                _connectionString, _selectedDatabase, queryText,
+                connectionString, database, queryText,
                 planXml, isolationLevel: null,
                 isAzureSqlDb: isAzure, timeoutSeconds: 0, ct);
 
@@ -390,6 +418,12 @@ public partial class QuerySessionControl : UserControl
 
             SetStatus($"Actual plan captured ({sw.Elapsed.TotalSeconds:F1}s)");
             ShowCapturedPlan(loadingTab, actualPlanXml, tabLabel, queryText);
+
+            // Carry the source database forward, so a second Get Actual Plan on THIS tab (the
+            // one just captured) still runs where the first one did rather than reverting to
+            // the toolbar's (E1). Null for a toolbar-sourced plan, same as its own viewer.
+            if (loadingTab.Content is PlanViewerControl recapturedViewer)
+                recapturedViewer.SourceDatabase = viewer.SourceDatabase;
         }
         catch (OperationCanceledException)
         {

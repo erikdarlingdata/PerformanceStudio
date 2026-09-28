@@ -112,6 +112,31 @@ public partial class QuerySessionControl : UserControl
         await FetchDatabaseMetadataAsync();
     }
 
+    /// <summary>
+    /// Selects <paramref name="db"/> in the database picker if it is one of the databases the
+    /// picker already knows about, using the same match the connect block above uses to restore
+    /// a remembered database. Selecting it runs <see cref="Database_SelectionChanged"/> exactly
+    /// as a user's own pick would, which is what actually sets <c>_selectedDatabase</c> and
+    /// <c>_connectionString</c> and refreshes the metadata — so this never writes either field
+    /// itself. Returns whether a match was found; the Overview's drill-down
+    /// (QuerySessionControl.Views.cs) opens its Query Store tab either way, so a database the
+    /// picker does not know about — one created after connect, most likely — just leaves the
+    /// session on whatever database it already had (E1).
+    /// </summary>
+    internal bool TrySelectDrilledDatabase(string db)
+    {
+        for (int i = 0; i < DatabaseBox.Items.Count; i++)
+        {
+            if (DatabaseBox.Items[i]?.ToString() == db)
+            {
+                DatabaseBox.SelectedIndex = i;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private async Task FetchServerMetadataAsync()
     {
         if (_connectionString == null) return;
