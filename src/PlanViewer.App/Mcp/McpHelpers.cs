@@ -32,6 +32,8 @@ internal static class McpHelpers
         return null;
     }
 
+    /* #589: a JsonException here is the operator tree passing AnalysisJson.MaxDepth; the
+       serializer's own message blames "a possible object cycle". */
     public static string FormatError(string operation, Exception ex) =>
-        $"Error during {operation}: {ex.Message}";
+        $"Error during {operation}: {(ex is JsonException ? AnalysisJson.TooDeepMessage : ex.Message)}";
 }

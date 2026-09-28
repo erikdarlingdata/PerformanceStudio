@@ -46,14 +46,22 @@ public static partial class ShowPlanParser
     private static bool IsHexDigit(char c) =>
         (c >= '0' && c <= '9') || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f');
 
-    private static IEnumerable<XElement> ScopedDescendants(XElement element, XName name)
+    internal static IEnumerable<XElement> ScopedDescendants(XElement element, XName name)
     {
-        foreach (var child in element.Elements())
+        /* #589: a loop with its own stack, in document order. The recursive iterator this replaces
+           used stack for every level of nesting, and no depth guard counts these elements, so deep
+           nesting inside one operator overflowed even the parser thread's stack. */
+        var pending = new Stack<XElement>();
+        foreach (var child in element.Elements().Reverse())
+            pending.Push(child);
+
+        while (pending.Count > 0)
         {
-            if (child.Name == Ns + "RelOp") continue;
-            if (child.Name == name) yield return child;
-            foreach (var desc in ScopedDescendants(child, name))
-                yield return desc;
+            var current = pending.Pop();
+            if (current.Name == Ns + "RelOp") continue;
+            if (current.Name == name) yield return current;
+            foreach (var child in current.Elements().Reverse())
+                pending.Push(child);
         }
     }
 

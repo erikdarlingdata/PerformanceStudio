@@ -1,3 +1,4 @@
+using System;
 using System.IO;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -23,6 +24,33 @@ public static class PlanAnalysisRunner
         PlanAnalysisPipeline.Analyze(planXml, config, serverMetadata);
 
     /// <summary>
+    /// The message to show when the plan XML could not be parsed, or null when it parsed. The
+    /// pipeline skips analysis for such a plan, and whatever parsed before the failure is partial,
+    /// so writing it out would look like a clean result with no findings. A plan nested deeper
+    /// than MaxParseDepth is refused this way (#589).
+    /// </summary>
+    public static string? ParseFailure(ParsedPlan plan) =>
+        string.IsNullOrWhiteSpace(plan.ParseError) ? null : $"Could not parse the plan XML: {plan.ParseError}";
+
+    /// <summary>
+    /// Serializes an analysis result, and says what went wrong when the operator tree is too
+    /// deep for AnalysisJson.MaxDepth, instead of the serializer's "possible object cycle" (#589).
+    /// </summary>
+    public static string SerializeResult(AnalysisResult result, JsonSerializerOptions jsonOptions)
+    {
+        try
+        {
+            return JsonSerializer.Serialize(result, jsonOptions);
+        }
+        catch (JsonException exception)
+        {
+            throw new InvalidOperationException(
+                $"{AnalysisJson.TooDeepMessage} Use --output text, or --warnings-only to leave out the operator tree.",
+                exception);
+        }
+    }
+
+    /// <summary>
     /// Writes {label}.analysis.json and/or {label}.analysis.txt into outDir per
     /// outputFormat ("json", "text", or "both"), honoring warningsOnly (which
     /// drops operator trees from the serialized output).
@@ -39,7 +67,7 @@ public static class PlanAnalysisRunner
 
         if (outputFormat == "json" || outputFormat == "both")
         {
-            var json = JsonSerializer.Serialize(result, jsonOptions);
+            var json = SerializeResult(result, jsonOptions);
             await File.WriteAllTextAsync(Path.Combine(outDir, $"{label}.analysis.json"), json);
         }
 

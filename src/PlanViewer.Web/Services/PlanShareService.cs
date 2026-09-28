@@ -50,12 +50,23 @@ public sealed class PlanShareService : IPlanShareService
            depth ceiling exists for "every writer of this object". Default MaxDepth is 64, an
            operator costs two JSON levels, so sharing a plan ~30 operators deep threw an "object
            cycle" JsonException here while the same analysis rendered fine everywhere else. */
-        var payload = JsonSerializer.Serialize(new
+        string payload;
+        try
         {
-            result = result,
-            text = text,
-            ttl_days = ttlDays
-        }, AnalysisJson.Wire);
+            payload = JsonSerializer.Serialize(new
+            {
+                result = result,
+                text = text,
+                ttl_days = ttlDays
+            }, AnalysisJson.Wire);
+        }
+        catch (JsonException)
+        {
+            /* #589: an analysis has no cycles, so the "object cycle" JsonException here is the
+               depth limit. Only this call maps to TooDeepMessage: a reply that isn't JSON also
+               throws JsonException below, and that has nothing to do with depth. */
+            throw new PlanShareException($"Share failed. {AnalysisJson.TooDeepMessage}");
+        }
         var content = new StringContent(payload, Encoding.UTF8, "application/json");
         var response = await _http.PostAsync($"{ApiBase}/api/share", content);
 

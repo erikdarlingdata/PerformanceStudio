@@ -235,6 +235,13 @@ public static class AnalyzeCommand
 
         var plan = PlanAnalysisRunner.Analyze(planXml, analyzerConfig);
 
+        if (PlanAnalysisRunner.ParseFailure(plan) is { } parseFailure)
+        {
+            Console.Error.WriteLine(parseFailure);
+            Environment.ExitCode = 1;
+            return;
+        }
+
         if (plan.Batches.Count == 0)
         {
             Console.Error.WriteLine("Could not parse any statements from the plan XML");
@@ -257,7 +264,18 @@ public static class AnalyzeCommand
         else
         {
             var opts = compact ? CompactJsonOptions : JsonOptions;
-            Console.WriteLine(JsonSerializer.Serialize(result, opts));
+            string json;
+            try
+            {
+                json = PlanAnalysisRunner.SerializeResult(result, opts);
+            }
+            catch (InvalidOperationException exception)
+            {
+                Console.Error.WriteLine(exception.Message);
+                Environment.ExitCode = 1;
+                return;
+            }
+            Console.WriteLine(json);
         }
     }
 
@@ -432,6 +450,8 @@ public static class AnalyzeCommand
                    single-statement query past the showplan cap gets its full text in the output
                    instead of the plan's 4,000-character stub (#502). */
                 var plan = PlanAnalysisRunner.Analyze(planXml, analyzerConfig, serverMetadata);
+                if (PlanAnalysisRunner.ParseFailure(plan) is { } parseFailure)
+                    throw new InvalidOperationException(parseFailure);
                 var result = ResultMapper.Map(plan, $"{name}.sql", capturedQueryText: sqlText);
 
                 await PlanAnalysisRunner.WriteResultFilesAsync(

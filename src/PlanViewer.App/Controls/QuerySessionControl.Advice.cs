@@ -60,7 +60,9 @@ public partial class QuerySessionControl : UserControl
                process down with no dialog and nothing logged. AnalysisJson's depth ceiling makes this
                unreachable for any plan seen in the field — this catch is here so that "unreachable" is
                not the only thing standing between a deep plan and a silent crash. */
-            SetErrorStatus($"Could not build robot advice for this plan: {ex.Message}");
+            SetErrorStatus(ex is JsonException
+                ? $"Could not build robot advice for this plan. {AnalysisJson.TooDeepMessage}"
+                : $"Could not build robot advice for this plan: {ex.Message}");
             return;
         }
 

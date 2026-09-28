@@ -80,7 +80,9 @@ public partial class MainWindow : Window
                 /* #430: the same unguarded-click-handler crash as QuerySessionControl's Robot Advice
                    button — this entry point builds the payload independently, so it needed the same
                    depth ceiling and the same guard. */
-                ShowError($"Could not build robot advice for this plan: {ex.Message}");
+                ShowError(ex is JsonException
+                    ? $"Could not build robot advice for this plan. {AnalysisJson.TooDeepMessage}"
+                    : $"Could not build robot advice for this plan: {ex.Message}");
                 return;
             }
 

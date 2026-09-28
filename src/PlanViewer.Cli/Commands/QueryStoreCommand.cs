@@ -433,6 +433,8 @@ public static class QueryStoreCommand
                    past the showplan cap gets its complete text in the output (#502) — the same
                    hand-off the MCP Query Store path makes. */
                 var plan = PlanAnalysisRunner.Analyze(qsPlan.PlanXml, analyzerConfig, serverMetadata);
+                if (PlanAnalysisRunner.ParseFailure(plan) is { } parseFailure)
+                    throw new InvalidOperationException(parseFailure);
                 var result = ResultMapper.Map(plan, $"{label}.sqlplan", capturedQueryText: qsPlan.QueryText);
 
                 await PlanAnalysisRunner.WriteResultFilesAsync(
