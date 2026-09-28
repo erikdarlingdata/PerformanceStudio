@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Avalonia.Controls;
@@ -317,12 +318,35 @@ public partial class ConnectionDialog : Window
         }
 
         // Save connection to store
-        _connectionStore.AddOrUpdate(connection);
+        if (!TrySaveConnection(connection))
+            return;
 
         ResultConnection = connection;
         ResultDatabase = ResolveResultDatabase(typedDatabase);
         ResultDatabases = databases;
         Close(true);
+    }
+
+    /// <summary>
+    /// Saves <paramref name="connection"/> through the store, reporting why in StatusText rather
+    /// than letting the failure escape this async void handler and crash the app. ConnectionStore
+    /// throws IOException when it refused to overwrite a connections.json it could not read on
+    /// its last load (see ConnectionStore.Save) — a real failure the user needs to see, not a bug
+    /// to let past this dialog.
+    /// </summary>
+    private bool TrySaveConnection(ServerConnection connection)
+    {
+        try
+        {
+            _connectionStore.AddOrUpdate(connection);
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            StatusText.Text = ex.Message;
+            StatusText.Foreground = StatusBrush("ErrorBrush", Avalonia.Media.Brushes.OrangeRed);
+            return false;
+        }
     }
 
     /// <summary>

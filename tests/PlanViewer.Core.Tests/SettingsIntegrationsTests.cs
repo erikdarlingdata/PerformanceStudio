@@ -32,6 +32,13 @@ namespace PlanViewer.Core.Tests;
 /// delete a credential, and before it was redirected the only thing standing between a test and
 /// the developer's real stored password was nobody having written that test yet.</para>
 /// </summary>
+/// <summary>
+/// Shares a collection with <see cref="SettingsFileStoreTests"/>, which locks the very files
+/// these tests read and write (settings.json, appsettings.json) to simulate an unreadable file.
+/// xunit runs different collections in parallel by default; sharing one here is what stops that
+/// lock from being held while a test here happens to touch the same path on another thread.
+/// </summary>
+[Collection("SettingsFileStore serial")]
 public class SettingsIntegrationsTests
 {
     [Fact]

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text;
@@ -1001,6 +1002,8 @@ internal partial class SettingsWindow : Window
 
 	private void Save_Click(object? sender, RoutedEventArgs e)
 	{
+		SaveErrorText.IsVisible = false;
+
 		/* Nothing is read back off the controls here. Every section writes its edits into
 		   _settings as they happen, so this method's job is to validate, apply and persist what
 		   is already there. Reading at save time was the shape that produced three separate bugs:
@@ -1014,7 +1017,33 @@ internal partial class SettingsWindow : Window
 			TimeDisplayHelper.Current = tdm;
 
 		AppSettingsService.Save(_settings);
-		SaveIntegrations();
+
+		/* Save skips the write, quietly, once the settings file could not be read earlier in
+		   this session (see AppSettingsService.SaveBlocked). Integrations live in a different
+		   file, so they are still saved below; then the window reports the skip and stays open
+		   and dirty, instead of closing as if the edits were kept. */
+		var error = AppSettingsService.SaveBlocked ? AppSettingsService.SaveBlockedMessage : null;
+
+		try
+		{
+			SaveIntegrations();
+		}
+		catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+		{
+			// SaveIntegrations writes through SettingsFile.Update (MCP, directly at line ~605,
+			// and the proxy fields via ProxySettings.Save), either of which throws when its own
+			// read finds the file unreadable rather than overwrite it — see SettingsFile.Update.
+			error = error == null ? ex.Message : $"{error}\n{ex.Message}";
+		}
+
+		if (error != null)
+		{
+			// The dialog stays open and dirty instead of losing the message on Close.
+			SaveErrorText.Text = error;
+			SaveErrorText.IsVisible = true;
+			return;
+		}
+
 		_isDirty = false;
 		SettingsSaved?.Invoke(_settings);
 		Close();
