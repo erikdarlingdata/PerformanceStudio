@@ -518,17 +518,20 @@ public static partial class PlanAnalyzer
     private static void Rule33_CeGuessDetection(PlanNode node, PlanStatement stmt, AnalyzerConfig cfg)
     {
         // Rule 33: Estimated plan CE guess detection — scans with telltale default selectivity
-        // When the optimizer uses a local variable or can't sniff, it falls back to density-based
-        // guesses: 30% (equality), 10% (inequality), 9% (LIKE/between), ~16.43% (sqrt(30%)),
-        // 1% (multi-inequality). On large tables, these guesses can hide the need for an index.
+        // When the optimizer has no statistics to use (a local variable it can't sniff, a column with
+        // no statistics, an expression), it falls back on fixed guesses: 30% for an inequality, 9%
+        // for BETWEEN or LIKE, ~16.4% for two inequalities, 10% for comparing two columns, and an
+        // equality guess that grows with the table. DetectCeGuess has the measured details and
+        // which estimator (CE 70 or 120+) each one belongs to. On large tables, these guesses can
+        // hide the need for an index.
         if (!cfg.IsRuleDisabled(33) && !node.HasActualStats && IsRowstoreScan(node)
-            && node.TableCardinality >= 100_000 && node.EstimateRows > 0
+            && node.TableCardinality >= CeGuessMinTableRows && node.EstimateRows > 0
             && !string.IsNullOrEmpty(node.Predicate))
         {
             var impact = BuildScanImpactDetails(node, stmt);
             if (impact.CostPct >= 50)
             {
-                var guessDesc = DetectCeGuess(node.EstimateRows, node.TableCardinality);
+                var guessDesc = DetectCeGuess(node.EstimateRows, node.TableCardinality, stmt.CardinalityEstimationModelVersion);
                 if (guessDesc != null)
                 {
                     node.Warnings.Add(new PlanWarning
