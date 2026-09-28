@@ -5,6 +5,8 @@ using System.Runtime.ExceptionServices;
 using System.Text;
 using System.Text.Json;
 using System.Xml.Linq;
+using PlanViewer.App.Mcp;
+using PlanViewer.Cli.Commands;
 using PlanViewer.Core.Models;
 using PlanViewer.Core.Output;
 using PlanViewer.Core.Services;
@@ -17,9 +19,9 @@ namespace PlanViewer.Core.Tests;
 /// nested operators and ended the process, long before MaxParseDepth (1,000) could refuse the
 /// plan. The walk now runs on its own large-stack thread.
 ///
-/// <para>Every test here runs on a real 1 MB thread. A regression does not fail an assert: it
-/// crashes the test host with a stack overflow, which is loud. The tests were run against the
-/// unfixed code to confirm that.</para>
+/// <para>The depth tests run on real threads with small stacks: 1 MB, or less where a step
+/// should need less. A regression there does not fail an assert: it crashes the test host with a
+/// stack overflow, which is loud. The tests were run against the unfixed code to confirm that.</para>
 /// </summary>
 public sealed class DeepPlanStackTests
 {
@@ -128,6 +130,81 @@ public sealed class DeepPlanStackTests
     }
 
     [Fact]
+    public void TheHtmlExportersRecursionKeepsASmallFrame()
+    {
+        /* Each operator's line is written in a separate method, so the recursive method's frame
+           stays small. Measured at 1,000 levels in a child process: the exporter now runs in
+           256 KB in Release and 320 KB in Debug. Before #589 it needed more than 384 KB in
+           Release and more than 640 KB in Debug, so this crashes if the split is undone. */
+        var xml = NestedLoopsPlan(ShowPlanParser.MaxParseDepth);
+        var (result, text) = OnOneMegabyteThread(() =>
+        {
+            var mapped = ResultMapper.Map(ShowPlanParser.Parse(xml), "deep.sqlplan");
+            return (mapped, TextFormatter.Format(mapped));
+        });
+
+        var html = OnThread(384 * 1024, () => HtmlExporter.Export(result, text));
+
+        var operatorsWritten = html.Split("<div class=\"op-node").Length - 1;
+        Assert.Equal(NodeCount(result.Statements.Single().OperatorTree!), operatorsWritten);
+    }
+
+    [Fact]
+    public void TheSearchInsideAnOperatorKeepsDocumentOrderAndSkipsChildOperators()
+    {
+        /* The loop must return what the recursive iterator did: every match in document order,
+           including matches inside a match, and nothing inside a nested RelOp, which belongs to
+           another operator. */
+        XNamespace showplan = Showplan;
+        var hash = new XElement(showplan + "Hash",
+            new XElement(showplan + "W",
+                ObjectElement("1"),
+                new XElement(showplan + "W", ObjectElement("2"))),
+            new XElement(showplan + "RelOp", ObjectElement("inside another operator")),
+            new XElement(showplan + "Object", new XAttribute("Id", "3"), ObjectElement("4")));
+
+        var found = ShowPlanParser.ScopedDescendants(hash, showplan + "Object")
+            .Select(element => element.Attribute("Id")!.Value);
+
+        Assert.Equal(new[] { "1", "2", "3", "4" }, found);
+    }
+
+    [Fact]
+    public void TheCliStopsWithTheParseError()
+    {
+        /* Before #589, the CLI's live path and query-store command wrote an empty analysis for a
+           plan that did not parse, and reported OK. */
+        var refused = ShowPlanParser.Parse(NestedLoopsPlan(ShowPlanParser.MaxParseDepth + 1));
+        var parsed = ShowPlanParser.Parse(NestedLoopsPlan(3));
+
+        Assert.Equal($"Could not parse the plan XML: {refused.ParseError}", PlanAnalysisRunner.ParseFailure(refused));
+        Assert.Null(PlanAnalysisRunner.ParseFailure(parsed));
+    }
+
+    [Fact]
+    public void JsonPastTheDepthLimitReportsTheRealCause()
+    {
+        /* Past about 500 operator levels the serializer's own message blames "a possible object
+           cycle". The CLI and the MCP tools say what is really wrong. */
+        var xml = NestedLoopsPlan(600);
+
+        OnOneMegabyteThread(() =>
+        {
+            var result = ResultMapper.Map(ShowPlanParser.Parse(xml), "deep.sqlplan");
+
+            var cli = Assert.Throws<InvalidOperationException>(
+                () => PlanAnalysisRunner.SerializeResult(result, AnalysisJson.Indented));
+            Assert.StartsWith(AnalysisJson.TooDeepMessage, cli.Message);
+            Assert.IsType<JsonException>(cli.InnerException);
+
+            var tooDeep = Assert.Throws<JsonException>(() => JsonSerializer.Serialize(result, AnalysisJson.Indented));
+            Assert.Equal($"Error during analyze_plan: {AnalysisJson.TooDeepMessage}", McpHelpers.FormatError("analyze_plan", tooDeep));
+            Assert.Equal("Error during analyze_plan: boom", McpHelpers.FormatError("analyze_plan", new InvalidOperationException("boom")));
+            return result;
+        });
+    }
+
+    [Fact]
     public void TheParseThreadUsesTheCallersCulture()
     {
         /* The parser writes some warning text itself, such as a spill's granted memory, in the
@@ -197,6 +274,23 @@ public sealed class DeepPlanStackTests
         }
         return deepest;
     }
+
+    private static int NodeCount(OperatorResult root)
+    {
+        var count = 0;
+        var pending = new Stack<OperatorResult>();
+        pending.Push(root);
+        while (pending.Count > 0)
+        {
+            count++;
+            foreach (var child in pending.Pop().Children)
+                pending.Push(child);
+        }
+        return count;
+    }
+
+    private static XElement ObjectElement(string id) =>
+        new(XName.Get("Object", Showplan), new XAttribute("Id", id));
 
     private const string Showplan = "http://schemas.microsoft.com/sqlserver/2004/07/showplan";
 

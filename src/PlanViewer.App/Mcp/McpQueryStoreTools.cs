@@ -215,6 +215,11 @@ public sealed class McpQueryStoreTools
                         AnalyzerConfig.Default,
                         serverMetadata,
                         cancellationToken);
+                    /* #589: a plan the parser refuses, such as one past the depth limit, comes
+                       back with ParseError set and no statements. Report it in load_error, not
+                       as a loaded plan with no warnings. */
+                    if (!string.IsNullOrWhiteSpace(parsed.ParseError))
+                        throw new InvalidOperationException($"Could not parse plan XML: {parsed.ParseError}");
                     var session = CaptureSession(
                         sessionId,
                         label,

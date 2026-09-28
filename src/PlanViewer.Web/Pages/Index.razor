@@ -359,12 +359,7 @@ else
         }
         catch (Exception ex)
         {
-            errorMessage = ex switch
-            {
-                PlanShareException => ex.Message,
-                System.Text.Json.JsonException => $"Share failed. {AnalysisJson.TooDeepMessage}",
-                _ => $"Share failed: {ex.Message}"
-            };
+            errorMessage = ex is PlanShareException ? ex.Message : $"Share failed: {ex.Message}";
         }
         finally
         {

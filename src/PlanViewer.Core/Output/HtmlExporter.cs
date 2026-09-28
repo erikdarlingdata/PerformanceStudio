@@ -292,7 +292,7 @@ pre.query-text, pre.text-output {
         {
             sb.AppendLine("<div class=\"op-tree\">");
             sb.AppendLine("<h3>Operator Tree</h3>");
-            WriteOperatorNode(sb, stmt.OperatorTree, stmt);
+            WriteOperatorNode(sb, stmt.OperatorTree);
             sb.AppendLine("</div>");
         }
 
@@ -530,7 +530,7 @@ pre.query-text, pre.text-output {
         sb.AppendLine("</div>");
     }
 
-    private static void WriteOperatorNode(StringBuilder sb, OperatorResult node, StatementResult stmt)
+    private static void WriteOperatorNode(StringBuilder sb, OperatorResult node)
     {
         WriteOperatorLine(sb, node);
 
@@ -539,7 +539,7 @@ pre.query-text, pre.text-output {
         {
             sb.AppendLine("<div class=\"op-children\">");
             foreach (var child in node.Children)
-                WriteOperatorNode(sb, child, stmt);
+                WriteOperatorNode(sb, child);
             sb.AppendLine("</div>");
         }
 
