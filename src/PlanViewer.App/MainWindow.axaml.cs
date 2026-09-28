@@ -334,9 +334,76 @@ public partial class MainWindow : Window
         _mcpHost = new McpHostService(
             PlanSessionManager.Instance, _connectionStore, _credentialService, settings.Port);
 
+        // Starting is the honest word for what is true the instant StartAsync is fired off:
+        // BackgroundService.StartAsync only kicks ExecuteAsync's Task going, it does not wait
+        // for Kestrel to actually bind — Running or Failed is ReportMcpStartResultAsync's call
+        // once McpHostService.Started says which one actually happened.
+        McpStatusMenuItem.Header = BuildMcpStatusHeader(McpServerStatus.Starting, settings.Port);
+
         _ = _mcpHost.StartAsync(_mcpCts.Token);
-        McpStatusMenuItem.Header = $"MCP Server: Running (port {settings.Port})";
+        _ = ReportMcpStartResultAsync(_mcpHost, settings.Port);
     }
+
+    /// <summary>
+    /// Waits for the background host to report how its start actually went, then resolves the
+    /// menu item to Running or Failed. A cancelled Started (the window closed before Kestrel
+    /// finished binding) is neither — there is nothing left to show it on, so this returns
+    /// without touching the menu.
+    /// </summary>
+    private async Task ReportMcpStartResultAsync(McpHostService host, int port)
+    {
+        string? failureReason;
+        try
+        {
+            failureReason = await host.Started;
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        Dispatcher.UIThread.Post(() =>
+        {
+            // The window may have closed while Started was still pending.
+            if (IsShuttingDown)
+                return;
+
+            McpStatusMenuItem.Header = BuildMcpStatusHeader(
+                failureReason == null ? McpServerStatus.Running : McpServerStatus.Failed,
+                port,
+                failureReason);
+        });
+    }
+
+    /// <summary>
+    /// The three states the MCP status menu item shows over a server's lifetime.
+    /// </summary>
+    internal enum McpServerStatus
+    {
+        /// <summary>StartAsync has been fired off; Kestrel has not yet said whether it bound.</summary>
+        Starting,
+
+        /// <summary>Kestrel is listening on the configured port.</summary>
+        Running,
+
+        /// <summary>Kestrel never came up — see the accompanying reason.</summary>
+        Failed
+    }
+
+    /// <summary>
+    /// The menu text for a status, split out from the update itself so the three outcomes can
+    /// be tested without a real port or a window to read the menu off of.
+    /// </summary>
+    internal static string BuildMcpStatusHeader(McpServerStatus status, int port, string? failureReason = null) =>
+        status switch
+        {
+            McpServerStatus.Starting => $"MCP Server: Starting (port {port})",
+            McpServerStatus.Running => $"MCP Server: Running (port {port})",
+            // A menu header reads "_" as an access key marker, so a reason taken from an
+            // exception message doubles it to show it as written.
+            McpServerStatus.Failed => $"MCP Server: Failed ({failureReason?.Replace("_", "__")})",
+            _ => throw new ArgumentOutOfRangeException(nameof(status), status, null)
+        };
 
     protected override async void OnClosed(EventArgs e)
     {
