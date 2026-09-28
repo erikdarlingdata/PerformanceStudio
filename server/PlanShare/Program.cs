@@ -74,11 +74,10 @@ var analyticsRateLimiter = new RateLimiter(maxRequests: 30, windowSeconds: 60);
 var readRateLimiter = new RateLimiter(maxRequests: 120, windowSeconds: 60);
 
 // --- Storage limit and daily upload budget ---
-// The production disk is 40 GB. Stopping at 10 GB of used database pages leaves room for the OS,
-// logs, the SQLite journal and a VACUUM, and a full store turns shares away instead of filling
-// the disk. The budget caps one client key's stored plan data per UTC day; it is per key and not
-// global, so one heavy uploader cannot use up the space for everyone else in a single day.
-// PlanShare:MaxDatabaseBytes and PlanShare:DailyUploadBytes override the limits (tests and local runs).
+// The production disk is 40 GB, so shares are refused (507) once the database uses 10 GB of pages.
+// The budget is the most plan data one client key can store per UTC day (429 after that).
+// PlanShare:MaxDatabaseBytes and PlanShare:DailyUploadBytes override the two limits, which lets
+// the endpoint tests use small values.
 const long MaxDatabaseBytes = 10L * 1024 * 1024 * 1024;
 const long DailyUploadBytes = 100L * 1024 * 1024;
 var storageCheck = new StorageCheck(

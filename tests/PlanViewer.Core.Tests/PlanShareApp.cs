@@ -46,6 +46,8 @@ internal sealed class PlanShareApp : WebApplicationFactory<UploadBudget>
         base.Dispose(disposing);
         if (!disposing)
             return;
+        // The server's pooled connections keep plans.db open, which stops the delete on Windows
+        SqliteConnection.ClearAllPools();
         try { Directory.Delete(_dataDir, recursive: true); }
         catch (IOException) { }
     }
