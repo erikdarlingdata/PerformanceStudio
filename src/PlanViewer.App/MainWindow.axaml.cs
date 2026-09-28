@@ -399,7 +399,9 @@ public partial class MainWindow : Window
         {
             McpServerStatus.Starting => $"MCP Server: Starting (port {port})",
             McpServerStatus.Running => $"MCP Server: Running (port {port})",
-            McpServerStatus.Failed => $"MCP Server: Failed ({failureReason})",
+            // A menu header reads "_" as an access key marker, so a reason taken from an
+            // exception message doubles it to show it as written.
+            McpServerStatus.Failed => $"MCP Server: Failed ({failureReason?.Replace("_", "__")})",
             _ => throw new ArgumentOutOfRangeException(nameof(status), status, null)
         };
 
