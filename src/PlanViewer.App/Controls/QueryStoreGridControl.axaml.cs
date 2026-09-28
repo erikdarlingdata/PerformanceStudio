@@ -98,6 +98,11 @@ public partial class QueryStoreGridControl : UserControl
             _ => "query-hash"
         });
 
+        /* The time display mode is one setting for the whole app, so the box opens on the mode in
+           effect. It used to open on Local whatever the setting or another grid had chosen, and
+           could say Local beside times shown in Server mode. The tags are the mode names. */
+        SelectComboByTag(TimeDisplayBox, TimeDisplayHelper.Current.ToString());
+
         // Restore the server-filter panel's expanded state, then subscribe — restoring first
         // means the restore itself never triggers a save.
         ServerFilterExpander.IsExpanded = userSettings.QueryStoreFilterPanelExpanded;

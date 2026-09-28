@@ -384,6 +384,74 @@ public class ServerUtcOffsetPerConnectionTests
         });
     }
 
+    // ---- The mode the grid shows -----------------------------------------------------------------
+
+    /// <summary>
+    /// The mode is one setting for the whole app, so a grid's box opens on the mode in effect. It
+    /// used to open on Local whatever the setting or another grid had chosen, and could say Local
+    /// beside times shown in Server mode. Opening a grid must not change the mode either.
+    /// </summary>
+    [Theory]
+    [InlineData(TimeDisplayMode.Local)]
+    [InlineData(TimeDisplayMode.Utc)]
+    [InlineData(TimeDisplayMode.Server)]
+    public void AGridsTimeDisplayBoxOpensOnTheModeInEffect(TimeDisplayMode mode)
+    {
+        HeadlessUi.Run(() =>
+        {
+            var (window, session) = SessionHarness.NewSession();
+            var before = TimeDisplayHelper.Current;
+            try
+            {
+                SessionHarness.PretendConnected(session);
+                TimeDisplayHelper.Current = mode;
+
+                var grid = session.NewQueryStoreGrid("Sales", Databases, supportsWaitStats: false);
+
+                var box = grid.FindControl<ComboBox>("TimeDisplayBox")!;
+                Assert.Equal(mode.ToString(), (box.SelectedItem as ComboBoxItem)?.Tag?.ToString());
+                Assert.Equal(mode, TimeDisplayHelper.Current);
+            }
+            finally
+            {
+                TimeDisplayHelper.Current = before;
+                ChromeTestCleanup.PutAway(window);
+            }
+        });
+    }
+
+    /// <summary>
+    /// A mode change redraws the wait ribbon too. The grid redrew its rows and its slicer, and the
+    /// ribbon kept the old mode's labels and tips until something resized it.
+    /// </summary>
+    [Fact]
+    public void RedrawingTheRibbonAfterAModeChangeShowsTheNewMode()
+    {
+        HeadlessUi.Run(() =>
+        {
+            var profile = new WaitStatsProfileControl { ServerOffset = new ServerUtcOffset { Minutes = Berlin } };
+            var window = new Window { Content = profile, Width = 600, Height = 200 };
+            window.Show();
+            var before = TimeDisplayHelper.Current;
+            try
+            {
+                TimeDisplayHelper.Current = TimeDisplayMode.Utc;
+                var ribbon = profile.FindControl<WaitStatsRibbonControl>("GlobalRibbon")!;
+                Assert.Contains("2026-01-01 00:00 – 01:00", FirstBarTip(ribbon, window));
+
+                TimeDisplayHelper.Current = TimeDisplayMode.Server;
+                profile.RedrawRibbon();
+
+                Assert.Contains("2026-01-01 02:00 – 03:00", BarTip(ribbon));
+            }
+            finally
+            {
+                TimeDisplayHelper.Current = before;
+                window.Close();
+            }
+        });
+    }
+
     // ---- Helpers ---------------------------------------------------------------------------------
 
     /// <summary>Sets Server mode for a test's body and puts the user's preference back after.</summary>
@@ -434,6 +502,12 @@ public class ServerUtcOffsetPerConnectionTests
             new() { IntervalStartUtc = Epoch, WaitCategory = 1, WaitCategoryDesc = "CPU", WaitRatio = 1.0 },
         });
 
+        return BarTip(ribbon);
+    }
+
+    /// <summary>The tooltip text on the first bar the ribbon has drawn, without loading new data.</summary>
+    private static string BarTip(WaitStatsRibbonControl ribbon)
+    {
         var canvas = ribbon.FindControl<Canvas>("RibbonCanvas")!;
         var bar = canvas.Children.OfType<Avalonia.Controls.Shapes.Rectangle>()
             .First(rectangle => ToolTip.GetTip(rectangle) is TextBlock);

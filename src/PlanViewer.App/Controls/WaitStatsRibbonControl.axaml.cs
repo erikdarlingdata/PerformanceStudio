@@ -50,7 +50,7 @@ public partial class WaitStatsRibbonControl : UserControl
         Redraw();
     }
 
-    private void Redraw()
+    internal void Redraw()
     {
         RibbonCanvas.Children.Clear();
         if (_data.Count == 0) return;

@@ -67,6 +67,9 @@ public partial class WaitStatsProfileControl : UserControl
         GlobalRibbon.SetData(data);
     }
 
+    /// <summary>Redraws the ribbon with the data it has, after the time display mode changes.</summary>
+    internal void RedrawRibbon() => GlobalRibbon.Redraw();
+
     public void SetHighlight(string? category)
     {
         GlobalBar.SetHighlight(category);
