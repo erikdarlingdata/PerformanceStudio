@@ -199,7 +199,9 @@ internal sealed class AppSettingsService
     /// settings object's list goes with it — and a secondary's copy is the one it read at its
     /// own startup, long out of date next to the list the owner rewrites on every tab change.
     /// Recent plans, the Settings dialog and the server-filter toggle all save through here.
-    /// The list is taken off the disk first, so the write hands it back unchanged. Every other
+    /// The list is read off the disk just before the write, so the write hands back what the
+    /// owner last saved. An owner save that lands between that read and the write is still
+    /// lost; nothing locks the file across processes, and the gap is milliseconds. Every other
     /// setting stays last-write-wins, which is what two instances on purpose has always meant
     /// (see Program.Main). If the file cannot be read there is no list to keep, so the save is
     /// skipped rather than written with a guess.</para>
