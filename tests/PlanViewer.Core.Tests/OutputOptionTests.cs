@@ -76,11 +76,11 @@ public class OutputOptionTests
     }
 
     [Fact]
-    public void EveryCommandThatTakesOutput_StillAcceptsJsonTextAndBoth()
+    public void EveryCommandThatTakesOutput_AcceptsJsonTextAndBothInAnyLetterCase()
     {
         foreach (var command in CommandsWithOutputOption())
         {
-            foreach (var value in new[] { "json", "text", "both" })
+            foreach (var value in new[] { "json", "text", "both", "JSON", "Text", "BOTH" })
             {
                 var args = RequiredArguments(command);
                 args.AddRange(new[] { "--output", value });
@@ -111,6 +111,34 @@ public class OutputOptionTests
                 Assert.Contains(allowed, run.StandardError);
             // It refused before doing the analysis, so nothing was printed as if it had worked.
             Assert.DoesNotContain("plan_source", run.StandardOutput);
+        }
+        finally
+        {
+            directory.Delete(recursive: true);
+        }
+    }
+
+    /// <summary>
+    /// "-o JSON" printed json for a single file before the option checked its value, so the check
+    /// must not turn a command line that worked into an error. The value reaches the command in
+    /// lowercase, so an uppercase value picks the same format as the lowercase one.
+    /// </summary>
+    [Fact]
+    public async Task AnalyzeOnAFile_WithAnUppercaseOutput_PrintsWhatTheLowercaseOnePrints()
+    {
+        var directory = Directory.CreateTempSubdirectory("planview-output-");
+        try
+        {
+            var plan = Path.Combine(AppContext.BaseDirectory, "Plans", "row_goal_plan.sqlplan");
+            var cancellationToken = TestContext.Current.CancellationToken;
+
+            var upper = await CliProcess.RunAsync(directory.FullName, cancellationToken, "analyze", plan, "-o", "TEXT");
+            var lower = await CliProcess.RunAsync(directory.FullName, cancellationToken, "analyze", plan, "-o", "text");
+
+            Assert.Equal(0, upper.ExitCode);
+            Assert.False(string.IsNullOrWhiteSpace(upper.StandardOutput));
+            Assert.DoesNotContain("plan_source", upper.StandardOutput); // text, not json
+            Assert.Equal(lower.StandardOutput, upper.StandardOutput);
         }
         finally
         {

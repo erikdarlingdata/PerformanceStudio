@@ -132,7 +132,7 @@ public static class AnalyzeCommand
         {
             var file = parseResult.GetValue(fileArg);
             var stdin = parseResult.GetValue(stdinOption);
-            var output = parseResult.GetValue(outputOption) ?? "json";
+            var output = PlanAnalysisRunner.ReadOutputFormat(parseResult, outputOption, "json");
             var compact = parseResult.GetValue(compactOption);
             var warningsOnly = parseResult.GetValue(warningsOnlyOption);
             var server = parseResult.GetValue(serverOption);

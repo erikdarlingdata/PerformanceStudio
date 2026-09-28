@@ -63,6 +63,10 @@ public static class PlanAnalysisRunner
     /// values and refuses anything else while the command line is parsed, before the command does
     /// any work. An unknown value used to get through: the query-store command and "analyze
     /// --server" wrote no files for it and exited 0, and "analyze &lt;file&gt;" printed json.
+    ///
+    /// <para>Any letter case is accepted, as --order-by accepts it: "-o JSON" printed json for a
+    /// single file before, and refusing it now would break a command line that worked. Read the
+    /// value with <see cref="ReadOutputFormat"/>, which lowercases it.</para>
     /// </summary>
     public static Option<string> CreateOutputOption(string description, string defaultFormat)
     {
@@ -71,9 +75,24 @@ public static class PlanAnalysisRunner
             Description = description,
             DefaultValueFactory = _ => defaultFormat
         };
-        option.AcceptOnlyFromAmong(OutputFormats.ToArray());
+        option.Validators.Add(result =>
+        {
+            var value = result.GetValueOrDefault<string>();
+            if (value is not null && !OutputFormats.Contains(value.ToLowerInvariant()))
+            {
+                result.AddError(
+                    $"Argument '{value}' not recognized for --output. Must be one of: {string.Join(", ", OutputFormats)}");
+            }
+        });
         return option;
     }
+
+    /// <summary>
+    /// The --output value in lowercase, the form the commands and <see cref="WriteResultFilesAsync"/>
+    /// compare against.
+    /// </summary>
+    public static string ReadOutputFormat(ParseResult parseResult, Option<string> option, string defaultFormat) =>
+        (parseResult.GetValue(option) ?? defaultFormat).ToLowerInvariant();
 
     /// <summary>
     /// Writes {label}.analysis.json and/or {label}.analysis.txt into outDir per

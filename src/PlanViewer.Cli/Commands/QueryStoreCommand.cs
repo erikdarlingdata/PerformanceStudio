@@ -218,7 +218,7 @@ public static class QueryStoreCommand
             var orderBy = parseResult.GetValue(orderByOption) ?? "cpu";
             var hoursBack = parseResult.GetValue(hoursBackOption);
             var outputDir = parseResult.GetValue(outputDirOption);
-            var output = parseResult.GetValue(outputOption) ?? "text";
+            var output = PlanAnalysisRunner.ReadOutputFormat(parseResult, outputOption, "text");
             var compact = parseResult.GetValue(compactOption);
             var warningsOnly = parseResult.GetValue(warningsOnlyOption);
             var configPath = parseResult.GetValue(configOption);
