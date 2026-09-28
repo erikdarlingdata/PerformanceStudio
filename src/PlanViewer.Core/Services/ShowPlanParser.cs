@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Runtime.ExceptionServices;
+using System.Runtime.Versioning;
 using System.Xml;
 using System.Xml.Linq;
 using PlanViewer.Core.Models;
@@ -19,9 +21,17 @@ public static partial class ShowPlanParser
     internal const int MaxParseDepth = 1000;
     internal const int MaxParseCharacters = 16 * 1024 * 1024;
 
+    /* #589: the tree walk recurses once per nested operator, and its frames are large. On a 1 MB
+       caller thread (the UI thread, the CLI's main thread) the process died with an uncatchable
+       StackOverflowException at about 450-480 levels, so the MaxParseDepth guard above could never
+       fire. The walk now runs on its own thread, with a stack that holds MaxParseDepth levels many
+       times over, and the guard is what stops a deep plan. Same fix as PerformanceMonitor#4551. */
+    private const int ParseThreadStackBytes = 32 * 1024 * 1024;
+
     public static ParsedPlan Parse(string xml)
     {
         var plan = new ParsedPlan { RawXml = xml };
+        XDocument document;
         try
         {
             /* Same ceiling ParseAsync enforces through XmlReaderSettings.MaxCharactersInDocument,
@@ -32,7 +42,22 @@ public static partial class ShowPlanParser
             if (xml.Length > MaxParseCharacters)
                 throw new InvalidOperationException(
                     $"Plan XML exceeds the supported size limit of {MaxParseCharacters.ToString("N0", CultureInfo.InvariantCulture)} characters.");
-            return ParseDocument(XDocument.Parse(xml), plan, CancellationToken.None);
+            document = XDocument.Parse(xml);
+        }
+        catch (Exception exception)
+        {
+            plan.ParseError = exception.Message;
+            return plan;
+        }
+
+        /* Blazor WebAssembly cannot start a thread, so the web viewer walks the tree on the
+           calling thread, as before. */
+        if (OperatingSystem.IsBrowser())
+            return ParseDocument(document, plan, CancellationToken.None);
+
+        try
+        {
+            return RunOnParseThread(() => ParseDocument(document, plan, CancellationToken.None));
         }
         catch (Exception exception)
         {
@@ -61,7 +86,14 @@ public static partial class ShowPlanParser
             var document = await XDocument
                 .LoadAsync(xmlReader, LoadOptions.None, cancellationToken)
                 .ConfigureAwait(false);
-            return ParseDocument(document, plan, cancellationToken, beforeCostComputation);
+
+            /* #589: after the await this runs on the calling thread or a thread-pool thread, and
+               neither holds MaxParseDepth levels. The join blocks this thread for as long as the
+               walk used to run on it, so the thread pool does no more work than before. */
+            if (OperatingSystem.IsBrowser())
+                return ParseDocument(document, plan, cancellationToken, beforeCostComputation);
+            return RunOnParseThread(
+                () => ParseDocument(document, plan, cancellationToken, beforeCostComputation));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -72,6 +104,39 @@ public static partial class ShowPlanParser
             plan.ParseError = exception.Message;
             return plan;
         }
+    }
+
+    /// <summary>
+    /// Runs <paramref name="walk"/> on a new thread with a <see cref="ParseThreadStackBytes"/> stack
+    /// and waits for it. An exception the walk throws, such as an OperationCanceledException, is
+    /// rethrown here unchanged. Nothing is left unhandled on the new thread, because an unhandled
+    /// exception there would end the process. The caller's culture reaches the new thread with the
+    /// execution context, so parser text such as spill warnings is formatted as before.
+    /// </summary>
+    [UnsupportedOSPlatform("browser")]
+    private static ParsedPlan RunOnParseThread(Func<ParsedPlan> walk)
+    {
+        ParsedPlan? result = null;
+        ExceptionDispatchInfo? failure = null;
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                result = walk();
+            }
+            catch (Exception exception)
+            {
+                failure = ExceptionDispatchInfo.Capture(exception);
+            }
+        }, ParseThreadStackBytes)
+        {
+            IsBackground = true,
+            Name = "Plan parser"
+        };
+        thread.Start();
+        thread.Join();
+        failure?.Throw();
+        return result!;
     }
 
     private static ParsedPlan ParseDocument(

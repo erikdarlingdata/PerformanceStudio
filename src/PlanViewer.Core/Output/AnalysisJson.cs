@@ -36,6 +36,15 @@ public static class AnalysisJson
     public const int MaxDepth = 1024;
 
     /// <summary>
+    /// What to tell the user when writing an analysis fails with a <see cref="JsonException"/>. The
+    /// operator tree has no cycles (see above), so the cause is depth: the parser accepts plans up to
+    /// 1,000 operator levels, and each level costs two JSON levels. The serializer's own message
+    /// blames "a possible object cycle", which sends the reader the wrong way (#589).
+    /// </summary>
+    public const string TooDeepMessage =
+        "The plan is too deeply nested to write as JSON (more than about 500 operator levels).";
+
+    /// <summary>
     /// The indented options the UI writes advice with. Matches what the call sites built inline before
     /// #430 — <c>WriteIndented</c> only — so the emitted JSON is unchanged apart from no longer failing
     /// partway down a deep tree.

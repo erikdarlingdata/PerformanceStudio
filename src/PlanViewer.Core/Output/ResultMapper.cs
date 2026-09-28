@@ -309,7 +309,28 @@ public static class ResultMapper
         return result;
     }
 
-    private static OperatorResult MapNode(PlanNode node, CancellationToken cancellationToken)
+    private static OperatorResult MapNode(PlanNode root, CancellationToken cancellationToken)
+    {
+        /* #589: a loop with its own stack. Recursion here used about 1 KB of stack per operator
+           level, so a plan near MaxParseDepth (1,000) needed most of a 1 MB thread, the size the CLI
+           and the UI run on. Each node's children are still added in plan order. */
+        var rootResult = MapSingleNode(root, cancellationToken);
+        var pending = new Stack<(PlanNode Node, OperatorResult Result)>();
+        pending.Push((root, rootResult));
+        while (pending.Count > 0)
+        {
+            var (node, result) = pending.Pop();
+            foreach (var child in node.Children)
+            {
+                var childResult = MapSingleNode(child, cancellationToken);
+                result.Children.Add(childResult);
+                pending.Push((child, childResult));
+            }
+        }
+        return rootResult;
+    }
+
+    private static OperatorResult MapSingleNode(PlanNode node, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var result = new OperatorResult
@@ -368,10 +389,6 @@ public static class ResultMapper
                 OriginNodeIds = w.OriginNodeIds
             });
         }
-
-        // Children
-        foreach (var child in node.Children)
-            result.Children.Add(MapNode(child, cancellationToken));
 
         return result;
     }

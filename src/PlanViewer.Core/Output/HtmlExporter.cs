@@ -1,4 +1,5 @@
 using System.IO;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Web;
 
@@ -531,6 +532,26 @@ pre.query-text, pre.text-output {
 
     private static void WriteOperatorNode(StringBuilder sb, OperatorResult node, StatementResult stmt)
     {
+        WriteOperatorLine(sb, node);
+
+        // Children
+        if (node.Children.Count > 0)
+        {
+            sb.AppendLine("<div class=\"op-children\">");
+            foreach (var child in node.Children)
+                WriteOperatorNode(sb, child, stmt);
+            sb.AppendLine("</div>");
+        }
+
+        sb.AppendLine("</div>");
+    }
+
+    /* #589: kept out of WriteOperatorNode so that the recursion's frame stays small. The
+       interpolated strings here take most of the stack, and now they take it once, not once per
+       operator level. */
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static void WriteOperatorLine(StringBuilder sb, OperatorResult node)
+    {
         var classes = "op-node";
         if (node.CostPercent >= 25) classes += " expensive";
         if (node.Warnings.Count > 0) classes += " has-warnings";
@@ -570,17 +591,6 @@ pre.query-text, pre.text-output {
             sb.Append($" <span class=\"op-object\">{Encode(node.ObjectName)}</span>");
 
         sb.AppendLine();
-
-        // Children
-        if (node.Children.Count > 0)
-        {
-            sb.AppendLine("<div class=\"op-children\">");
-            foreach (var child in node.Children)
-                WriteOperatorNode(sb, child, stmt);
-            sb.AppendLine("</div>");
-        }
-
-        sb.AppendLine("</div>");
     }
 
     private static void WriteTextAnalysis(StringBuilder sb, string textOutput)
