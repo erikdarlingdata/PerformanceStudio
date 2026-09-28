@@ -186,7 +186,7 @@ public partial class QuerySessionControl : UserControl
     private QueryStoreOverviewControl BuildOverviewView()
     {
         var supportsWaitStats = _serverMetadata?.SupportsQueryStoreWaitStats ?? false;
-        var overview = new QueryStoreOverviewControl(_serverConnection!, _credentialService,
+        var overview = new QueryStoreOverviewControl(_serverConnection!, _credentialService, _serverOffset,
             supportsWaitStats: supportsWaitStats);
 
         overview.DrillDownRequested += async (_, args) =>

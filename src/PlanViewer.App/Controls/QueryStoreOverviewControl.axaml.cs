@@ -18,6 +18,12 @@ public partial class QueryStoreOverviewControl : UserControl
 {
     private readonly ServerConnection _serverConnection;
     private readonly ICredentialService _credentialService;
+    /// <summary>
+    /// The offset holder of the connection this Overview was built on (E5). A reconnect throws the
+    /// Overview away and builds a new one (QuerySessionControl.InvalidateOverviewView), so this is
+    /// always the holder of the server whose data is on screen.
+    /// </summary>
+    private readonly ServerUtcOffset _serverOffset;
     private readonly string _masterConnectionString;
     private readonly int _maxDop;
     private readonly int _topN;
@@ -86,10 +92,12 @@ public partial class QueryStoreOverviewControl : UserControl
     public event EventHandler<DrillDownEventArgs>? DrillDownRequested;
 
     public QueryStoreOverviewControl(ServerConnection serverConnection,
-        ICredentialService credentialService, int maxDop = 8, int? topN = null, bool supportsWaitStats = true)
+        ICredentialService credentialService, ServerUtcOffset serverOffset,
+        int maxDop = 8, int? topN = null, bool supportsWaitStats = true)
     {
         _serverConnection = serverConnection;
         _credentialService = credentialService;
+        _serverOffset = serverOffset;
         _masterConnectionString = serverConnection.GetConnectionString(credentialService, "master");
         _maxDop = maxDop;
 
@@ -113,6 +121,9 @@ public partial class QueryStoreOverviewControl : UserControl
         _slicerStartUtc = _slicerEndUtc.AddHours(-24);
 
         InitializeComponent();
+
+        // Declared in XAML, so handed the holder here, before any data reaches it.
+        OverviewTimeSlicer.ServerOffset = serverOffset;
 
         /* Only the wait stats chart is drawn into a Canvas at absolute coordinates, so it is the
            only thing left that has to be redrawn when the control resizes. The state card and the

@@ -105,6 +105,16 @@ public partial class QuerySessionControl : UserControl
     private ServerConnection? _serverConnection;
     private string? _connectionString;
     private string? _selectedDatabase;
+
+    /// <summary>
+    /// The offset from UTC to the server this session is connected to, for Server time display
+    /// (E5). Every connect replaces it (<see cref="BeginServerConnection"/>), and every document
+    /// opened on a connection keeps the one that connection had, so a reconnect — or another
+    /// session on a server in a different time zone — cannot move times that are already on
+    /// screen. Never null: a session that has not connected holds an empty one, which is zero.
+    /// </summary>
+    private ServerUtcOffset _serverOffset = new();
+
     private int _planCounter;
     /// <summary>
     /// The run in flight, or the last one that was: the source of the query or plan capture the

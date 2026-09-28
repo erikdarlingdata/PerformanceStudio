@@ -6,6 +6,7 @@ using Avalonia.LogicalTree;
 using PlanViewer.App.Controls;
 using PlanViewer.Core.Interfaces;
 using PlanViewer.Core.Models;
+using PlanViewer.Core.Services;
 
 namespace PlanViewer.Core.Tests;
 
@@ -451,7 +452,7 @@ public class QueryStoreOverviewCardsTests
     /// </summary>
     private static QueryStoreOverviewControl NewOverview() =>
         new(new ServerConnection { ServerName = "tcp:127.0.0.1,1", DisplayName = "unit test" },
-            new NoCredentials(), topN: 3);
+            new NoCredentials(), new ServerUtcOffset(), topN: 3);
 
     /// <summary>
     /// One overview in one window, laid out so its styles are applied and its toggle segments are

@@ -169,7 +169,7 @@ public partial class QueryStoreGridControl : UserControl
         }
 
         foreach (var plan in plans)
-            _rows.Add(new QueryStoreRow(plan));
+            _rows.Add(new QueryStoreRow(plan, _serverOffset));
 
         ApplyFilters();
         LoadButton.IsEnabled = true;
@@ -377,7 +377,7 @@ public partial class QueryStoreGridControl : UserControl
                     {
                         var leafPlan = GroupedRowToPlan(leaf);
                         leafChildren.Add(new QueryStoreRow(leafPlan, 2,
-                            $"Q:{leaf.QueryId} P:{leaf.PlanId}{(leaf.IsTopRepresentative ? " ★" : "")}", new List<QueryStoreRow>()));
+                            $"Q:{leaf.QueryId} P:{leaf.PlanId}{(leaf.IsTopRepresentative ? " ★" : "")}", new List<QueryStoreRow>(), _serverOffset));
                     }
 
                     // Sort leaf children by metric descending
@@ -388,7 +388,7 @@ public partial class QueryStoreGridControl : UserControl
                     var topLeafForMid = leaves.FirstOrDefault(l => l.IsTopRepresentative) ?? leaves.FirstOrDefault();
                     if (topLeafForMid != null && !string.IsNullOrEmpty(topLeafForMid.QueryText))
                         midPlan.QueryText = topLeafForMid.QueryText;
-                    midChildren.Add(new QueryStoreRow(midPlan, 1, mid.QueryPlanHash, leafChildren));
+                    midChildren.Add(new QueryStoreRow(midPlan, 1, mid.QueryPlanHash, leafChildren, _serverOffset));
                 }
 
                 // Sort mid children by metric descending
@@ -403,7 +403,7 @@ public partial class QueryStoreGridControl : UserControl
                     ?? grouped.LeafRows.FirstOrDefault(l => l.QueryHash == qhKey && !string.IsNullOrEmpty(l.QueryText));
                 if (topLeafForRoot != null)
                     aggPlan.QueryText = topLeafForRoot.QueryText;
-                roots.Add(new QueryStoreRow(aggPlan, 0, qhKey, midChildren));
+                roots.Add(new QueryStoreRow(aggPlan, 0, qhKey, midChildren, _serverOffset));
             }
         }
         else // Module
@@ -431,7 +431,7 @@ public partial class QueryStoreGridControl : UserControl
                     {
                         var leafPlan = GroupedRowToPlan(leaf);
                         leafChildren.Add(new QueryStoreRow(leafPlan, 2,
-                            $"Q:{leaf.QueryId} P:{leaf.PlanId}{(leaf.IsTopRepresentative ? " ★" : "")}", new List<QueryStoreRow>()));
+                            $"Q:{leaf.QueryId} P:{leaf.PlanId}{(leaf.IsTopRepresentative ? " ★" : "")}", new List<QueryStoreRow>(), _serverOffset));
                     }
 
                     // Sort leaf children by metric descending
@@ -442,7 +442,7 @@ public partial class QueryStoreGridControl : UserControl
                     var topLeafForMid = leaves.FirstOrDefault(l => l.IsTopRepresentative) ?? leaves.FirstOrDefault();
                     if (topLeafForMid != null && !string.IsNullOrEmpty(topLeafForMid.QueryText))
                         midPlan.QueryText = topLeafForMid.QueryText;
-                    midChildren.Add(new QueryStoreRow(midPlan, 1, mid.QueryHash, leafChildren));
+                    midChildren.Add(new QueryStoreRow(midPlan, 1, mid.QueryHash, leafChildren, _serverOffset));
                 }
 
                 // Sort mid children by metric descending
@@ -457,7 +457,7 @@ public partial class QueryStoreGridControl : UserControl
                     ?? grouped.LeafRows.FirstOrDefault(l => l.ModuleName == modKey && !string.IsNullOrEmpty(l.QueryText));
                 if (topLeafForRoot != null)
                     aggPlan.QueryText = topLeafForRoot.QueryText;
-                roots.Add(new QueryStoreRow(aggPlan, 0, modKey, midChildren));
+                roots.Add(new QueryStoreRow(aggPlan, 0, modKey, midChildren, _serverOffset));
             }
         }
 

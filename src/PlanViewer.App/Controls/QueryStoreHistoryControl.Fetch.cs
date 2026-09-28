@@ -46,6 +46,12 @@ public partial class QueryStoreHistoryControl : UserControl
 					_connectionString, _queryHash, _maxHoursBack, ct);
 			}
 
+			/* The rows come back from Core, which knows nothing about connections. Each one is given
+			   this control's holder here, before anything binds them, so its own time columns read
+			   the server it was fetched from (E5). */
+			foreach (var row in _historyData)
+				row.ServerOffset = _serverOffset;
+
 			BuildColorMap();
 			HistoryDataGrid.ItemsSource = _historyData;
 			ApplyColorIndicators();
@@ -54,8 +60,8 @@ public partial class QueryStoreHistoryControl : UserControl
 			{
 				var planCount = _historyData.Select(r => r.QueryPlanHash).Distinct().Count();
 				var totalExec = _historyData.Sum(r => r.CountExecutions);
-				var first = TimeDisplayHelper.ConvertForDisplay(_historyData.Min(r => r.IntervalStartUtc));
-				var last = TimeDisplayHelper.ConvertForDisplay(_historyData.Max(r => r.IntervalStartUtc));
+				var first = TimeDisplayHelper.ConvertForDisplay(_historyData.Min(r => r.IntervalStartUtc), _serverOffset.Minutes);
+				var last = TimeDisplayHelper.ConvertForDisplay(_historyData.Max(r => r.IntervalStartUtc), _serverOffset.Minutes);
 				StatusText.Text = $"{_historyData.Count} intervals, {planCount} plan(s), " +
 								  $"{totalExec:N0} total executions | " +
 								  $"{first:MM/dd HH:mm} to {last:MM/dd HH:mm}";

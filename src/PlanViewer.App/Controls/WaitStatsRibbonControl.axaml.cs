@@ -19,6 +19,13 @@ public partial class WaitStatsRibbonControl : UserControl
     private List<WaitCategoryTimeSlice> _data = new();
     private string? _highlightCategory;
 
+    /// <summary>
+    /// The offset holder of the connection whose data this ribbon shows (E5). Assigned by the
+    /// owner right after InitializeComponent. A ribbon nobody assigns keeps a holder of its own at
+    /// zero, which reads as UTC in Server mode.
+    /// </summary>
+    public ServerUtcOffset ServerOffset { get; set; } = new();
+
     public event EventHandler<string>? CategoryClicked;
     public event EventHandler<string>? CategoryDoubleClicked;
 
@@ -171,10 +178,10 @@ public partial class WaitStatsRibbonControl : UserControl
 
                 var intervalStart = hour;
                 var intervalEnd = intervalStart.AddHours(1);
-                var startDisplay = TimeDisplayHelper.FormatForDisplay(intervalStart, "yyyy-MM-dd HH:mm");
+                var startDisplay = TimeDisplayHelper.FormatForDisplay(intervalStart, ServerOffset.Minutes, "yyyy-MM-dd HH:mm");
                 var endDisplay = intervalStart.Date == intervalEnd.Date
-                    ? TimeDisplayHelper.FormatForDisplay(intervalEnd, "HH:mm")
-                    : TimeDisplayHelper.FormatForDisplay(intervalEnd, "yyyy-MM-dd HH:mm");
+                    ? TimeDisplayHelper.FormatForDisplay(intervalEnd, ServerOffset.Minutes, "HH:mm")
+                    : TimeDisplayHelper.FormatForDisplay(intervalEnd, ServerOffset.Minutes, "yyyy-MM-dd HH:mm");
                 var tipBlock = new TextBlock
                 {
                     Text = $"{cat}: {WaitRatioFormatter.Format(ratio)}\n{startDisplay} \u2013 {endDisplay}",
@@ -261,7 +268,7 @@ public partial class WaitStatsRibbonControl : UserControl
                 var dt = allHours[i];
                 var tb = new TextBlock
                 {
-                    Text = TimeDisplayHelper.FormatForDisplay(dt, "MM/dd"),
+                    Text = TimeDisplayHelper.FormatForDisplay(dt, ServerOffset.Minutes, "MM/dd"),
                     FontSize = 8,
                     Foreground = labelBrush,
                 };
@@ -279,7 +286,7 @@ public partial class WaitStatsRibbonControl : UserControl
                 var dt = allHours[i];
                 var tb = new TextBlock
                 {
-                    Text = TimeDisplayHelper.FormatForDisplay(dt, "MM/dd HH:mm"),
+                    Text = TimeDisplayHelper.FormatForDisplay(dt, ServerOffset.Minutes, "MM/dd HH:mm"),
                     FontSize = 8,
                     Foreground = labelBrush,
                 };
