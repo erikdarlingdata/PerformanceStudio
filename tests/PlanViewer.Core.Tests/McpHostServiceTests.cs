@@ -116,11 +116,6 @@ public class McpHostServiceTests
     }
 
     /// <summary>
-    /// The success half of the same contract: Started resolves to null, not just "eventually
-    /// stops throwing". <see cref="AClientOnThisMachineCanListAndCallTools"/> already covers the
-    /// server actually working once up; this one is only about the signal that it got there.
-    /// </summary>
-    /// <summary>
     /// A failure that is not a taken port shows its own message in the menu item, so the
     /// message is cut to its first line and to a length the item can show, and the port is kept.
     /// </summary>
@@ -142,6 +137,11 @@ public class McpHostServiceTests
         Assert.Equal($"port 5150: {new string('x', 100)}...", reason);
     }
 
+    /// <summary>
+    /// The success half of the same contract: Started resolves to null, not just "eventually
+    /// stops throwing". <see cref="AClientOnThisMachineCanListAndCallTools"/> already covers the
+    /// server actually working once up; this one is only about the signal that it got there.
+    /// </summary>
     [Fact]
     public async Task AFreePortResolvesStartedToNull()
     {
