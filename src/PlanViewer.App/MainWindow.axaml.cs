@@ -788,6 +788,11 @@ public partial class MainWindow : Window
 
         MainTabControl.Items.Remove(tab);
 
+        /* Every way of closing a tab ends here — the ✕, middle-click, Ctrl+W and the context
+           menu's Close, Close Other Tabs and Close All Tabs — so this is the one place that has
+           to let go of what the tab's content was holding. */
+        ReleaseTabContent(tab.Content as Control);
+
         /* #496: a scratch tab that actually left the strip has had its fate decided —
            answered at the prompt above (where Don't Save already dropped and a save made it
            file-backed, so this is a no-op), or clean and therefore never asked. The clean

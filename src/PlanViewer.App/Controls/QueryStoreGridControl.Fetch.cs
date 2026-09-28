@@ -24,8 +24,41 @@ namespace PlanViewer.App.Controls;
 
 public partial class QueryStoreGridControl : UserControl
 {
+    /// <summary>
+    /// Set once the grid's tab has been closed. One-way: nothing re-docks a grid, so a grid that
+    /// has been told to stop is finished, and no later fetch may start on it.
+    /// </summary>
+    private bool _abandoned;
+
+    /// <summary>
+    /// Stops everything this grid has running against the server, and keeps it from starting more.
+    /// Called when its tab closes: without it the fetch kept running on the server, for a grid
+    /// nobody could see, until it finished by itself. The History document does the same when it
+    /// closes.
+    /// </summary>
+    /// <remarks>
+    /// Cancelled, never disposed — the opposite of History's, on purpose. Every fetch here reads
+    /// its own token when it wakes, and <see cref="OnWaitStatsCollapsedChanged"/> reads
+    /// <c>_fetchCts.Token</c> fresh at the moment it runs; Token on a disposed source throws, and
+    /// nothing in those callers is catching it. A cancelled source hands out a cancelled token,
+    /// which is exactly what a caller arriving late should get.
+    ///
+    /// <para>The latch is for the fetch that has not started yet: the constructor posts the first
+    /// fetch to run after layout, and a tab closed before that lands would otherwise start it on a
+    /// grid that is already gone.</para>
+    /// </remarks>
+    public void CancelFetch()
+    {
+        _abandoned = true;
+        _fetchCts?.Cancel();
+        _databaseCheckCts?.Cancel();
+    }
+
     private async void Fetch_Click(object? sender, RoutedEventArgs e)
     {
+        if (_abandoned)
+            return;
+
         // Commit any pending toolbar "Search by" entry into the server-filter state first,
         // then refresh the chip strip, before running the fetch.
         CommitSearchByCriterion();

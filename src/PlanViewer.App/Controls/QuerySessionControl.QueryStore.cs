@@ -41,9 +41,10 @@ public partial class QuerySessionControl : UserControl
 
     /// <summary>
     /// Creates a sub-tab with a standard header (label + optional extra buttons + close button).
-    /// Returns the TabItem. The close button removes the tab from the document strip.
+    /// Returns the TabItem. The close button closes the document: it gives up what the content
+    /// holds (see <see cref="ReleaseDocument"/>) and takes the tab out of the strip.
     /// </summary>
-    private TabItem CreateSubTab(string label, Control content, Action<TabItem>? onClose = null, params Button[] extraButtons)
+    private TabItem CreateSubTab(string label, Control content, params Button[] extraButtons)
     {
         var headerText = new TextBlock
         {
@@ -82,10 +83,7 @@ public partial class QuerySessionControl : UserControl
         closeBtn.Click += (s, _) =>
         {
             if (s is Button btn && btn.Tag is TabItem t)
-            {
-                onClose?.Invoke(t);
-                RemoveDocument(t);
-            }
+                CloseDocument(t);
         };
 
         return tab;
@@ -152,9 +150,23 @@ public partial class QuerySessionControl : UserControl
             database, databases, supportsWaitStats);
         if (initialStartUtc.HasValue && initialEndUtc.HasValue)
             grid.SetInitialTimeRange(initialStartUtc.Value, initialEndUtc.Value);
+
+        AddQueryStoreDocument(grid, database);
+    }
+
+    /// <summary>
+    /// Puts a Query Store grid into the strip as a document and shows it.
+    ///
+    /// <para>Said once because the toolbar's Query Store button and the Overview's drill-down both
+    /// open one, and the two used to carry the same ten lines. Internal so a test can hand it a grid
+    /// it built itself: the paths above fetch from a server before they get this far.</para>
+    /// </summary>
+    internal void AddQueryStoreDocument(QueryStoreGridControl grid, string database)
+    {
         grid.PlansSelected += OnQueryStorePlansSelected;
 
         var tab = CreateSubTab($"Query Store — {database}", grid);
+        // Update tab header when database is changed via the grid's picker
         grid.DatabaseChanged += (_, db) =>
         {
             if (GetSubTabHeaderText(tab) is TextBlock tb)
@@ -221,18 +233,8 @@ public partial class QuerySessionControl : UserControl
 
         var grid = new QueryStoreGridControl(_serverConnection!, _credentialService,
             _selectedDatabase!, databases, supportsWaitStats);
-        grid.PlansSelected += OnQueryStorePlansSelected;
 
-        var tab = CreateSubTab($"Query Store — {_selectedDatabase}", grid);
-        // Update tab header when database is changed via the grid's picker
-        grid.DatabaseChanged += (_, db) =>
-        {
-            if (GetSubTabHeaderText(tab) is TextBlock tb)
-                tb.Text = $"Query Store — {db}";
-        };
-
-        AddDocument(tab);
-        SelectDocument(tab);
+        AddQueryStoreDocument(grid, _selectedDatabase!);
     }
 
     /// <summary>
@@ -303,9 +305,7 @@ public partial class QuerySessionControl : UserControl
         };
         Avalonia.Controls.ToolTip.SetTip(detachBtn, "Detach to Window");
 
-        var tab = CreateSubTab(label, control,
-            onClose: t => { if (t.Content is QueryStoreHistoryControl hc) hc.CancelFetch(); },
-            detachBtn);
+        var tab = CreateSubTab(label, control, detachBtn);
 
         detachBtn.Tag = tab;
         detachBtn.Click += (s, _) =>

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -105,7 +106,18 @@ public partial class QuerySessionControl : UserControl
     private string? _connectionString;
     private string? _selectedDatabase;
     private int _planCounter;
+    /// <summary>
+    /// The run in flight, or the last one that was: the source of the query or plan capture the
+    /// session started most recently. Starting another run cancels this one, so it is the only
+    /// source that can still be live. Read by the editor's Escape and by closing the session.
+    /// </summary>
     private CancellationTokenSource? _executionCts;
+
+    /// <summary>
+    /// Which run each loading tab is showing, so closing the tab can stop the run it owns.
+    /// Weak, so a tab that is closed and forgotten takes its entry with it.
+    /// </summary>
+    private readonly ConditionalWeakTable<TabItem, CancellationTokenSource> _tabRuns = new();
     private ServerMetadata? _serverMetadata;
     /// <summary>
     /// Guards FetchDatabaseMetadataAsync's own stale-result race: the database picker can change
