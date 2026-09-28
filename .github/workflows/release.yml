@@ -164,8 +164,11 @@ jobs:
       #    Unlike the App, this is best-effort. If a step below fails, or an
       #    approval times out, the release still goes out with the unsigned
       #    files (as it did before these were signed) and a warning annotation
-      #    says so. Each SignPath request needs a manual approval, so a release
-      #    run now waits for two: the App first, then these two files. ──
+      #    says so. The one exception is in the replace step: if it cannot put
+      #    the unsigned files back after a failed copy, the job stops before
+      #    anything is published. Each SignPath request needs a manual approval,
+      #    so a release run now waits for two: the App first, then these two
+      #    files. ──
       - name: Stage SSMS files for signing
         if: steps.ssms.outputs.BUILT == 'true'
         continue-on-error: true
@@ -218,16 +221,26 @@ jobs:
         shell: pwsh
         run: |
           # Copy both files or neither, so one signed file never ships beside an
-          # unsigned one.
+          # unsigned one. If a copy fails, put the unsigned pair back from
+          # ssms-unsigned/. If that fails too, the step fails and the job stops
+          # before the release is created, so a mixed pair is never published.
           $names = 'InstallSsmsExtension.exe', 'PlanViewer.Ssms.vsix'
           $missing = @($names | Where-Object { -not (Test-Path "signed/ssms/$_") })
           if ($missing.Count -gt 0) {
             Write-Host "::warning::SignPath reported success but these signed files are missing: $($missing -join ', '). PlanViewer.Ssms.vsix and InstallSsmsExtension.exe shipped unsigned."
           } else {
-            foreach ($name in $names) {
-              Copy-Item "signed/ssms/$name" "releases/$name" -Force
+            try {
+              foreach ($name in $names) {
+                Copy-Item "signed/ssms/$name" "releases/$name" -Force -ErrorAction Stop
+              }
+              Write-Host 'Replaced the SSMS extension and installer with the signed files.'
+            } catch {
+              $copyError = $_.Exception.Message
+              foreach ($name in $names) {
+                Copy-Item "ssms-unsigned/$name" "releases/$name" -Force -ErrorAction Stop
+              }
+              Write-Host "::warning::Could not copy the signed SSMS files into releases/ ($copyError). PlanViewer.Ssms.vsix and InstallSsmsExtension.exe shipped unsigned."
             }
-            Write-Host 'Replaced the SSMS extension and installer with the signed files.'
           }
 
       - name: Warn that SSMS files are unsigned
@@ -249,8 +262,11 @@ jobs:
           gh release create "v${{ steps.version.outputs.VERSION }}" --title "v${{ steps.version.outputs.VERSION }}" --generate-notes --target main
 
       # releases/ holds the signed copies here when the SSMS signing above succeeded.
+      # continue-on-error: the release exists by now, so a failed SSMS upload must
+      # not stop the App files from being uploaded below.
       - name: Upload SSMS extension to release
         if: steps.ssms.outputs.BUILT == 'true'
+        continue-on-error: true
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
