@@ -9,15 +9,6 @@ internal static class SettingsFile
 {
     public static string Path { get; private set; } = DefaultPath();
 
-    /// <summary>
-    /// Set by <see cref="Read"/> when <see cref="Path"/> exists but could not even be read
-    /// (locked, permissions). <see cref="Update"/> refuses to write while this is set — see
-    /// <see cref="SettingsFileStore"/> for why, and <see cref="AppSettingsService"/>'s matching
-    /// field for how the block clears on a later successful read. Update always calls Read
-    /// first (it's a read-modify-write), so every Update attempt is itself a retry.
-    /// </summary>
-    private static bool _updateBlocked;
-
     private static string DefaultPath() => System.IO.Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
         ".planview", "settings.json");
@@ -35,10 +26,13 @@ internal static class SettingsFile
     internal static void RedirectForTestHost(string directory)
     {
         Path = System.IO.Path.Combine(directory, "settings.json");
-        _updateBlocked = false;
     }
 
-    public static JsonObject Read()
+    public static JsonObject Read() => Read(out _);
+
+    /// <param name="unreadable">True when <see cref="Path"/> exists but could not even be read
+    /// (locked, permissions) — see <see cref="SettingsFileStore"/> for why that blocks a write.</param>
+    private static JsonObject Read(out bool unreadable)
     {
         var outcome = SettingsFileStore.Read<JsonObject>(
             Path,
@@ -49,7 +43,7 @@ internal static class SettingsFile
             json => JsonNode.Parse(json) as JsonObject,
             out var parsed);
 
-        _updateBlocked = outcome == SettingsFileStore.ReadOutcome.Unreadable;
+        unreadable = outcome == SettingsFileStore.ReadOutcome.Unreadable;
 
         return parsed ?? new JsonObject();
     }
@@ -58,11 +52,13 @@ internal static class SettingsFile
     /// Reads, mutates, and writes back. Throws <see cref="IOException"/>, rather than
     /// overwriting the file, if the read here finds <see cref="Path"/> unreadable — callers
     /// (Settings &gt; Integrations) must catch it and tell the user, not let it crash the app.
+    /// Only this call's own read decides, so a read elsewhere can't let it write over the file,
+    /// and every Update is itself a retry.
     /// </summary>
     public static void Update(Action<JsonObject> mutate)
     {
-        var obj = Read();
-        if (_updateBlocked)
+        var obj = Read(out var unreadable);
+        if (unreadable)
             throw SettingsFileStore.UnreadableSaveRefused(Path);
 
         mutate(obj);

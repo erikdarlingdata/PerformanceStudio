@@ -23,9 +23,8 @@ public class ConnectionStore
 
     /// <summary>
     /// Set by <see cref="Load"/> when <see cref="ConfigFile"/> exists but could not even be read
-    /// (locked, permissions). <see cref="Save"/> refuses to write while this is set — see
-    /// <see cref="SettingsFileStore"/> for why, and <see cref="AppSettingsService"/>'s matching
-    /// field for how the block clears on a later successful read.
+    /// (locked, permissions), and cleared by the next Load that reads it. <see cref="Save"/>
+    /// refuses to write while this is set — see <see cref="SettingsFileStore"/> for why.
     /// </summary>
     private static bool _saveBlocked;
 
@@ -49,7 +48,9 @@ public class ConnectionStore
     /// </summary>
     internal static string ConfigFilePath => ConfigFile;
 
-    public List<ServerConnection> Load()
+    public List<ServerConnection> Load() => Load(out _);
+
+    private List<ServerConnection> Load(out bool unreadable)
     {
         var outcome = SettingsFileStore.Read<List<ServerConnection>>(
             ConfigFile,
@@ -57,7 +58,8 @@ public class ConnectionStore
             json => JsonSerializer.Deserialize<List<ServerConnection>>(json),
             out var parsed);
 
-        _saveBlocked = outcome == SettingsFileStore.ReadOutcome.Unreadable;
+        unreadable = outcome == SettingsFileStore.ReadOutcome.Unreadable;
+        _saveBlocked = unreadable;
 
         return parsed ?? new List<ServerConnection>();
     }
@@ -79,7 +81,12 @@ public class ConnectionStore
 
     public void AddOrUpdate(ServerConnection connection)
     {
-        var connections = Load();
+        // This call's own read decides, not _saveBlocked alone: a Load on another thread (the
+        // MCP server's) can clear that flag between this read and the Save below.
+        var connections = Load(out var unreadable);
+        if (unreadable)
+            throw SettingsFileStore.UnreadableSaveRefused(ConfigFile);
+
         var existing = connections.FirstOrDefault(c =>
             c.ServerName.Equals(connection.ServerName, StringComparison.OrdinalIgnoreCase));
 
