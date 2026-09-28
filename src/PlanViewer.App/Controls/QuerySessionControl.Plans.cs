@@ -231,10 +231,43 @@ public partial class QuerySessionControl : UserControl
     /// </remarks>
     private void CloseDocument(TabItem tab)
     {
+        ReleaseDocument(tab);
+        RemoveDocument(tab);
+    }
+
+    /// <summary>
+    /// Gives up what one document holds, and leaves it in the strip.
+    /// </summary>
+    /// <remarks>
+    /// Said once so that closing one document and closing the whole session release the same
+    /// things: <see cref="CloseDocument"/> calls it for the document it is closing, and
+    /// <see cref="ReleaseOnClose"/> calls it for every document the session still holds. It reads
+    /// the tab's content as it is NOW, so a tab that started as a spinner and had a plan swapped
+    /// into it is released as the plan viewer it became.
+    ///
+    /// <para>Safe to call twice on the same document: unregistering a plan that is already gone
+    /// does nothing.</para>
+    /// </remarks>
+    private static void ReleaseDocument(TabItem tab)
+    {
         if (tab.Content is PlanViewerControl viewer)
             viewer.Clear();
+    }
 
-        RemoveDocument(tab);
+    /// <summary>
+    /// The session's tab has been closed for good: releases every document it still holds.
+    /// </summary>
+    /// <remarks>
+    /// Called by the window that owns the tab, after the tab has left the strip or the detached
+    /// window has closed. Not called on a detach or a re-dock, where the session moves and stays
+    /// open. Closing a session used to remove its tab and nothing else, so every plan viewer in
+    /// it stayed registered with the MCP session manager until the app exited, and the
+    /// <c>list_plans</c> tool kept listing plans nobody could see any more.
+    /// </remarks>
+    internal void ReleaseOnClose()
+    {
+        foreach (var tab in DocumentTabs.ToList())
+            ReleaseDocument(tab);
     }
 
     private void ClosePlanTab_Click(object? sender, RoutedEventArgs e)
