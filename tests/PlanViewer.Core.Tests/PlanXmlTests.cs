@@ -111,18 +111,96 @@ public class PlanXmlTests
         Assert.Contains("attributes", error.Message);
     }
 
+    /// <summary>
+    /// XmlReader took 10 to 40 seconds to read a start tag this size before it could count its
+    /// attributes. Counted in the text first, the tag is refused in milliseconds; the bound here
+    /// is only loose enough for a slow build machine.
+    /// </summary>
+    [Fact]
+    public void AStartTagWithAMillionAttributesIsRefusedQuickly()
+    {
+        var xml = WithAttributes(1_000_000);
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+
+        var error = Assert.Throws<XmlException>(() => PlanXml.Parse(xml));
+
+        Assert.Contains("attributes", error.Message);
+        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(5), $"Took {clock.Elapsed}.");
+    }
+
+    [Fact]
+    public void AnEqualsSignInsideAValueIsNotCounted()
+    {
+        PlanXml.CheckAttributeCounts(WithAttributes(PlanXml.MaxAttributes, value: "a=b=c"));
+    }
+
+    [Theory]
+    [InlineData("a>b")]
+    [InlineData("a'b")]
+    public void AValueDoesNotEndTheCount(string value)
+    {
+        var xml = WithAttributes(PlanXml.MaxAttributes + 1, value);
+
+        Assert.Throws<XmlException>(() => PlanXml.CheckAttributeCounts(xml));
+    }
+
+    [Fact]
+    public void SingleQuotedValuesAreCountedLikeDoubleQuotedOnes()
+    {
+        var xml = WithAttributes(PlanXml.MaxAttributes + 1).Replace('"', '\'');
+
+        Assert.Throws<XmlException>(() => PlanXml.CheckAttributeCounts(xml));
+    }
+
+    [Theory]
+    [InlineData("<r><!-- {0} --></r>")]
+    [InlineData("<r><![CDATA[{0}]]></r>")]
+    [InlineData("<?note {0} ?><r/>")]
+    [InlineData("<r>{1}</r>")]
+    public void MarkupThatIsNotAStartTagIsNotCounted(string format)
+    {
+        var tag = WithAttributes(PlanXml.MaxAttributes + 1);
+        var xml = string.Format(format, tag, System.Net.WebUtility.HtmlEncode(tag));
+
+        PlanXml.CheckAttributeCounts(xml);
+    }
+
+    [Theory]
+    [InlineData("<a b=\"1")]
+    [InlineData("<a b=")]
+    [InlineData("<!-- open")]
+    [InlineData("<![CDATA[ open")]
+    [InlineData("<?open")]
+    [InlineData("</a")]
+    [InlineData("<")]
+    [InlineData("")]
+    public void UnfinishedTextEndsTheCountWithoutAnError(string xml)
+    {
+        PlanXml.CheckAttributeCounts(xml);
+    }
+
+    [Fact]
+    public void EveryFixturePlanPassesTheCount()
+    {
+        var plans = Directory.GetFiles(Path.Combine(AppContext.BaseDirectory, "Plans"), "*.sqlplan");
+
+        Assert.NotEmpty(plans);
+        foreach (var plan in plans)
+            PlanXml.CheckAttributeCounts(File.ReadAllText(plan));
+    }
+
     [Fact]
     public void NullIsAnArgumentError()
     {
         Assert.Throws<ArgumentNullException>(() => PlanXml.Parse(null!));
     }
 
-    /// <summary>One element with <paramref name="count"/> attributes.</summary>
-    private static string WithAttributes(int count)
+    /// <summary>One element with <paramref name="count"/> attributes, each set to <paramref name="value"/>.</summary>
+    private static string WithAttributes(int count, string value = "")
     {
         var xml = new StringBuilder("<a");
         for (var i = 0; i < count; i++)
-            xml.Append(" a").Append(i).Append("=\"\"");
+            xml.Append(" a").Append(i).Append("=\"").Append(value).Append('"');
         return xml.Append("/>").ToString();
     }
 

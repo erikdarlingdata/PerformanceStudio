@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Globalization;
 using System.IO;
 using System.Threading;
@@ -42,13 +43,17 @@ internal static class PlanXml
     internal const int MaxNamespaceLength = 256;
 
     /// <summary>
-    /// The most attributes one element can have. Reading a start tag with a huge number of them
-    /// is slow even for XmlReader, so such a tag is refused after the first read instead of
-    /// being read a second time by XDocument. Real plans have at most 20 on one element.
+    /// The most attributes one element can have. XmlReader reads a whole start tag before it
+    /// can say how many attributes the tag has, and a tag with about a million of them took it
+    /// 10 to 40 seconds, so they are counted in the text first (<see cref="CheckAttributeCounts"/>).
+    /// Real plans have at most 20 on one element.
     /// </summary>
     internal const int MaxAttributes = 1024;
 
     private const string XmlnsNamespace = "http://www.w3.org/2000/xmlns/";
+
+    /// <summary>What ends a step through a start tag: an attribute's "=", a quote, or the tag's end.</summary>
+    private static readonly SearchValues<char> StartTagStops = SearchValues.Create("=\"'>");
 
     internal static XDocument Parse(string xml)
     {
@@ -77,6 +82,8 @@ internal static class PlanXml
             throw new XmlException(
                 $"Plan XML exceeds the supported size limit of {MaxCharacters.ToString("N0", CultureInfo.InvariantCulture)} characters.");
 
+        CheckAttributeCounts(xml);
+
         using var reader = XmlReader.Create(new StringReader(xml), ReaderSettings(async: false));
         long depthSum = 0;
         while (reader.Read())
@@ -97,11 +104,96 @@ internal static class PlanXml
         }
     }
 
+    /// <summary>
+    /// Counts the attributes of each start tag in the text and throws at the first tag with more
+    /// than <see cref="MaxAttributes"/>, in one pass and before XmlReader reads anything. Every
+    /// attribute has exactly one "=" outside its quoted value, so the count is the number of "="
+    /// between a start tag's "&lt;" and its "&gt;" that are not inside quotes. Comments, CDATA
+    /// sections, processing instructions, declarations and end tags are stepped over. Text that is
+    /// not well formed stops the count, and XmlReader reports it.
+    /// </summary>
+    internal static void CheckAttributeCounts(string xml)
+    {
+        var text = xml.AsSpan();
+        var i = 0;
+
+        while (true)
+        {
+            var open = text[i..].IndexOf('<');
+            if (open < 0)
+                return;
+            i += open + 1;
+
+            var rest = text[i..];
+            if (rest.StartsWith("!--", StringComparison.Ordinal))
+                i = SkipPast(text, i + 3, "-->");
+            else if (rest.StartsWith("![CDATA[", StringComparison.Ordinal))
+                i = SkipPast(text, i + 8, "]]>");
+            else if (rest.StartsWith("?", StringComparison.Ordinal))
+                i = SkipPast(text, i + 1, "?>");
+            else if (rest.StartsWith("!", StringComparison.Ordinal) || rest.StartsWith("/", StringComparison.Ordinal))
+                i = SkipPast(text, i + 1, ">");
+            else
+                i = SkipStartTag(text, i);
+
+            if (i < 0)
+                return;
+        }
+    }
+
+    /// <summary>
+    /// Steps through one start tag from just after its "&lt;", counting its attributes. Returns
+    /// the index after the tag's "&gt;", or -1 at the end of the text.
+    /// </summary>
+    private static int SkipStartTag(ReadOnlySpan<char> text, int i)
+    {
+        var attributes = 0;
+
+        while (true)
+        {
+            var stop = text[i..].IndexOfAny(StartTagStops);
+            if (stop < 0)
+                return -1;
+            i += stop;
+
+            switch (text[i])
+            {
+                case '>':
+                    return i + 1;
+
+                case '=':
+                    if (++attributes > MaxAttributes)
+                        throw TooManyAttributes();
+                    i++;
+                    break;
+
+                default:
+                    var close = text[(i + 1)..].IndexOf(text[i]);
+                    if (close < 0)
+                        return -1;
+                    i += close + 2;
+                    break;
+            }
+        }
+    }
+
+    /// <summary>The index after the first <paramref name="end"/> at or past <paramref name="i"/>, or -1.</summary>
+    private static int SkipPast(ReadOnlySpan<char> text, int i, string end)
+    {
+        if (i > text.Length)
+            return -1;
+
+        var found = text[i..].IndexOf(end, StringComparison.Ordinal);
+        return found < 0 ? -1 : i + found + end.Length;
+    }
+
+    private static XmlException TooManyAttributes() =>
+        new($"Plan XML has an element with more than {MaxAttributes.ToString("N0", CultureInfo.InvariantCulture)} attributes.");
+
     private static void CheckAttributes(XmlReader reader)
     {
         if (reader.AttributeCount > MaxAttributes)
-            throw new XmlException(
-                $"Plan XML has an element with more than {MaxAttributes.ToString("N0", CultureInfo.InvariantCulture)} attributes.");
+            throw TooManyAttributes();
 
         while (reader.MoveToNextAttribute())
         {
