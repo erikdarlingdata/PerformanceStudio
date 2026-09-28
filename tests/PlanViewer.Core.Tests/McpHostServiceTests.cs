@@ -120,6 +120,28 @@ public class McpHostServiceTests
     /// stops throwing". <see cref="AClientOnThisMachineCanListAndCallTools"/> already covers the
     /// server actually working once up; this one is only about the signal that it got there.
     /// </summary>
+    /// <summary>
+    /// A failure that is not a taken port shows its own message in the menu item, so the
+    /// message is cut to its first line and to a length the item can show, and the port is kept.
+    /// </summary>
+    [Fact]
+    public void AnotherFailureShowsThePortAndTheFirstLineOfItsMessage()
+    {
+        var reason = McpHostService.DescribeStartFailure(
+            new InvalidOperationException("  Unable to start.\r\nMore detail on the next line."), 5150);
+
+        Assert.Equal("port 5150: Unable to start.", reason);
+    }
+
+    [Fact]
+    public void ALongFailureMessageIsCut()
+    {
+        var reason = McpHostService.DescribeStartFailure(
+            new InvalidOperationException(new string('x', 500)), 5150);
+
+        Assert.Equal($"port 5150: {new string('x', 100)}...", reason);
+    }
+
     [Fact]
     public async Task AFreePortResolvesStartedToNull()
     {

@@ -181,10 +181,10 @@ public sealed class McpHostService : BackgroundService
     /// whose InnerException is AddressInUseException, but the socket layer beneath it can also
     /// surface a bare SocketException(AddressAlreadyInUse) — seen on some platform/transport
     /// combinations without the Kestrel wrapper — so the whole chain is walked rather than just
-    /// the outermost exception or its immediate InnerException. Anything else reports the
-    /// exception's own message, whatever that turns out to be.
+    /// the outermost exception or its immediate InnerException. Anything else reports the port
+    /// and the first line of the exception's own message, cut to a length a menu item can show.
     /// </summary>
-    private static string DescribeStartFailure(Exception ex, int port)
+    internal static string DescribeStartFailure(Exception ex, int port)
     {
         for (var current = ex; current != null; current = current.InnerException)
         {
@@ -195,8 +195,18 @@ public sealed class McpHostService : BackgroundService
             }
         }
 
-        return ex.Message;
+        var message = ex.Message.AsSpan().Trim();
+        var lineEnd = message.IndexOfAny('\r', '\n');
+        if (lineEnd >= 0)
+            message = message[..lineEnd].TrimEnd();
+        if (message.Length > MaxReasonLength)
+            message = string.Concat(message[..MaxReasonLength].TrimEnd(), "...");
+
+        return $"port {port}: {message}";
     }
+
+    /// <summary>The longest failure message the status menu item shows before it is cut.</summary>
+    private const int MaxReasonLength = 100;
 
     internal static bool IsLoopbackAddress(IPAddress? address)
     {
