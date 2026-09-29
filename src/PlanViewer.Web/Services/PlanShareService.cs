@@ -82,7 +82,9 @@ public sealed class PlanShareService : IPlanShareService
 
     /* The server explains a refusal (store full, daily limit, bad request) as {"error": "..."} in
        a message meant for the user, so show that text. A reply without it, such as an HTML error
-       page from the proxy in front of the server, gets the generic message with the status code. */
+       page from the proxy in front of the server, gets the generic message with the status code.
+       A 413 is the exception: nginx and Kestrel both refuse an upload over 10 MB without JSON (see
+       the limit in server/PlanShare/Program.cs), and "server returned 413" explains nothing. */
     private static async Task<string> ShareFailureMessageAsync(HttpResponseMessage response)
     {
         try
@@ -101,6 +103,8 @@ public sealed class PlanShareService : IPlanShareService
         {
             // Not JSON, so there is no server text to show
         }
+        if (response.StatusCode == HttpStatusCode.RequestEntityTooLarge)
+            return "This plan is too large to share. The limit is 10 MB.";
         return $"Share failed: server returned {(int)response.StatusCode}";
     }
 
