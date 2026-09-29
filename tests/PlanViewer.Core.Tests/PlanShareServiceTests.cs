@@ -61,6 +61,8 @@ public class PlanShareServiceTests
     [InlineData(HttpStatusCode.InsufficientStorage, "Plan sharing is full right now. Please try again later.")]
     [InlineData(HttpStatusCode.TooManyRequests, "Daily sharing limit reached for your network. Please try again tomorrow.")]
     [InlineData(HttpStatusCode.BadRequest, "The request body must be a JSON object.")]
+    // Server text wins over the built-in 413 message below
+    [InlineData(HttpStatusCode.RequestEntityTooLarge, "Plans this large can't be shared.")]
     public async Task Share_ShowsTheErrorTextTheServerSent(HttpStatusCode status, string error)
     {
         var handler = new StubHandler(() => Reply(status, $$"""{"error":"{{error}}"}"""));
@@ -84,6 +86,19 @@ public class PlanShareServiceTests
         var ex = await Assert.ThrowsAsync<PlanShareException>(() => Share(handler));
 
         Assert.Equal($"Share failed: server returned {(int)status}", ex.Message);
+    }
+
+    // nginx refuses an oversized upload with its own HTML page, and Kestrel with an empty body
+    [Theory]
+    [InlineData("<html><head><title>413 Request Entity Too Large</title></head><body><center><h1>413 Request Entity Too Large</h1></center><hr><center>nginx</center></body></html>", "text/html")]
+    [InlineData("", "application/json")]
+    public async Task Share_ExplainsTheSizeLimit_WhenTheUploadIsTooLarge(string body, string contentType)
+    {
+        var handler = new StubHandler(() => Reply(HttpStatusCode.RequestEntityTooLarge, body, contentType));
+
+        var ex = await Assert.ThrowsAsync<PlanShareException>(() => Share(handler));
+
+        Assert.Equal("This plan is too large to share. The limit is 10 MB.", ex.Message);
     }
 
     [Fact]
