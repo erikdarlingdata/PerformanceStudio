@@ -2,6 +2,7 @@ using System.IO;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Web;
+using PlanViewer.Core.Services;
 
 namespace PlanViewer.Core.Output;
 
@@ -574,10 +575,11 @@ pre.query-text, pre.text-output {
         if (node.ActualRows.HasValue)
         {
             // #594: the same execution-aware estimate the plan viewer's node label shows.
+            // #611: and the same printed numbers, so they agree with the percentage.
             var est = node.ExpectedRows ?? node.EstimatedRows;
-            var ratio = est > 0 ? (double)node.ActualRows.Value / est : 0;
-            var accuracy = est > 0 ? $" ({ratio * 100:F0}%)" : "";
-            sb.Append($" <span class=\"op-rows\">{node.ActualRows.Value:N0} of {est:N0} rows{accuracy}</span>");
+            var (actualText, expectedText, percent) = PlanRowAccuracy.PrintActualOfExpected(node.ActualRows.Value, est);
+            var accuracy = percent != null ? $" ({percent}%)" : "";
+            sb.Append($" <span class=\"op-rows\">{actualText} of {expectedText} rows{accuracy}</span>");
         }
         else
         {

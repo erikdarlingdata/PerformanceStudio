@@ -538,13 +538,13 @@ else
             // #594: EstimateRows is per execution — RowEstimateHelper scales it by
             // ActualExecutions only on the inner side of a Nested Loops join, where that count is
             // real rather than a parallel zone's thread count.
-            var expectedRows = RowEstimateHelper.GetExpectedRows(node);
+            // #611: PlanRowAccuracy adds decimals where N0 would print numbers that contradict
+            // the percentage ("1 of 1 (89%)").
             var ratio = RowEstimateHelper.GetRowAccuracyRatio(node);
             var rowClass = (ratio < 0.1 || ratio > 10.0) ? " rows-skewed" : "";
-            var accuracy = expectedRows > 0 ? $" ({ratio * 100:F0}%)" : "";
             builder.OpenElement(28, "div");
             builder.AddAttribute(29, "class", $"node-rows{rowClass}");
-            builder.AddContent(30, $"{node.ActualRows:N0} of {expectedRows:N0}{accuracy}");
+            builder.AddContent(30, PlanRowAccuracy.FormatActualOfExpected(node.ActualRows, RowEstimateHelper.GetExpectedRows(node)));
             builder.CloseElement();
         }
         else
