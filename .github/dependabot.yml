@@ -1,7 +1,7 @@
 version: 2
 
 # Coverage note: PlanViewer.sln does NOT contain server/PlanShare, PlanViewer.Ssms,
-# or PlanViewer.Ssms.Installer, so any solution-level scan silently skips them.
+# PlanViewer.Ssms.Installer or its tests, so any solution-level scan silently skips them.
 # Every project directory is therefore listed explicitly below. If a new .csproj
 # is added anywhere, add its directory here too.
 #
@@ -20,6 +20,7 @@ updates:
       - "/src/PlanViewer.Ssms"
       - "/src/PlanViewer.Ssms.Installer"
       - "/tests/PlanViewer.Core.Tests"
+      - "/tests/PlanViewer.Ssms.Installer.Tests"
       - "/server/PlanShare"
     schedule:
       interval: weekly
