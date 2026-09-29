@@ -132,7 +132,11 @@ jobs:
             $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
             "$hash  $($_.Name)"
           }
-          $checksums | Out-File -FilePath releases/SHA256SUMS.txt -Encoding utf8
+          # LF line endings and no BOM. Out-File writes CRLF on Windows, and then
+          # `sha256sum -c` and `shasum -c` on Linux and macOS read the \r as part
+          # of each file name and report every file as missing. release.yml
+          # writes its SHA256SUMS.txt the same way; keep the two in step.
+          [IO.File]::WriteAllText("$PWD/releases/SHA256SUMS.txt", (($checksums -join "`n") + "`n"), [Text.UTF8Encoding]::new($false))
           Write-Host "Checksums:"
           $checksums | ForEach-Object { Write-Host $_ }
 
