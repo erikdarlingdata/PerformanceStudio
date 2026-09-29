@@ -208,15 +208,20 @@ namespace PlanViewer.Ssms.Installer
                     if (manager.Signatures.Count > 1)
                         return "the file has more than one signature";
 
+                    // Compare the certificate first, so that a file from another signer is rejected before the
+                    // signature is verified. The whole certificate must match, not only its thumbprint.
+                    // The verification below uses this same Signer. A signature that holds no certificate has
+                    // nothing to compare, and VerifySignatures reports it as CertificateRequired.
+                    var signature = manager.Signatures[0];
+                    var certificate = installerCert.GetRawCertData();
+                    if (signature.Signer == null)
+                        return $"the signature is not valid ({VerifyResult.CertificateRequired})";
+                    if (!signature.Signer.GetRawCertData().SequenceEqual(certificate))
+                        return "the file is signed with a different certificate than this installer";
+
                     var result = manager.VerifySignatures(false);
                     if (result != VerifyResult.Success)
                         return $"the signature is not valid ({result})";
-
-                    // The whole certificate must match, not only its thumbprint.
-                    var signature = manager.Signatures[0];
-                    var certificate = installerCert.GetRawCertData();
-                    if (signature.Signer == null || !signature.Signer.GetRawCertData().SequenceEqual(certificate))
-                        return "the file is signed with a different certificate than this installer";
 
                     var uncovered = FindUncovered(file, package, manager, signature, certificate);
                     if (uncovered.Count > 0)
