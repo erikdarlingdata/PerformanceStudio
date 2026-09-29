@@ -33,20 +33,28 @@
 		<!-- Bottom button bar -->
 		<Border DockPanel.Dock="Bottom" Background="{DynamicResource BackgroundDarkBrush}"
 				Padding="12,8">
-			<StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
-					<Button x:Name="ResetAllButton" Content="Reset All to Defaults" Click="ResetAll_Click"
+			<DockPanel>
+				<StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+						<Button x:Name="ResetAllButton" Content="Reset All to Defaults" Click="ResetAll_Click"
+								Height="32" Padding="16,0" FontSize="12"
+								Theme="{StaticResource AppButton}"/>
+						<Button x:Name="ResetButton" Content="Reset Section" Click="Reset_Click"
+								Height="32" Padding="16,0" FontSize="12"
+								Theme="{StaticResource AppButton}"/>
+					<Button x:Name="SaveButton" Content="Save" Click="Save_Click"
 							Height="32" Padding="16,0" FontSize="12"
 							Theme="{StaticResource AppButton}"/>
-					<Button x:Name="ResetButton" Content="Reset Section" Click="Reset_Click"
+					<Button x:Name="CancelButton" Content="Cancel" Click="Cancel_Click"
 							Height="32" Padding="16,0" FontSize="12"
 							Theme="{StaticResource AppButton}"/>
-				<Button x:Name="SaveButton" Content="Save" Click="Save_Click"
-						Height="32" Padding="16,0" FontSize="12"
-						Theme="{StaticResource AppButton}"/>
-				<Button x:Name="CancelButton" Content="Cancel" Click="Cancel_Click"
-						Height="32" Padding="16,0" FontSize="12"
-						Theme="{StaticResource AppButton}"/>
-			</StackPanel>
+				</StackPanel>
+
+				<!-- A save that failed to write (SaveIntegrations: an unreadable settings.json or
+				     proxy credential store) is reported here instead of crashing the dialog closed. -->
+				<TextBlock x:Name="SaveErrorText" IsVisible="False" VerticalAlignment="Center"
+						   Foreground="{DynamicResource ErrorBrush}" FontSize="12"
+						   TextWrapping="Wrap" TextTrimming="CharacterEllipsis"/>
+			</DockPanel>
 		</Border>
 
 		<!-- Main content: sidebar + detail -->

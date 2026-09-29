@@ -19,25 +19,27 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # What used to be the workflow's paths-ignore list. Anything NOT matched here is
       # code, and only then is there anything to build.
       - name: Classify changed paths
-        uses: dorny/paths-filter@v4
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: filter
         with:
           # Positive list, not negations. paths-filter ORs the patterns in a filter, so a
           # stack of '!' patterns matches whenever a file fails ANY one of them, which for
           # a docs-only change is always true. Listing what IS code keeps the OR honest.
           # PlanViewer.Ssms and PlanViewer.Ssms.Installer stay out: they are not in the
-          # solution and ci.yml never built them.
+          # solution and ci.yml never built them. server/PlanShare is in: the test project
+          # references it, so this job builds and tests it.
           filters: |
             code:
               - 'src/PlanViewer.App/**'
               - 'src/PlanViewer.Cli/**'
               - 'src/PlanViewer.Core/**'
               - 'src/PlanViewer.Web/**'
+              - 'server/PlanShare/**'
               - 'src/Directory.Build.props'
               - 'Directory.Packages.props'
               - 'tests/**'
@@ -47,7 +49,7 @@ jobs:
 
       - name: Setup .NET 10.0
         if: steps.filter.outputs.code == 'true'
-        uses: actions/setup-dotnet@v6
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: 10.0.x
           cache: true

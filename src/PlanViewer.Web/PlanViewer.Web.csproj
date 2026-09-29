@@ -23,6 +23,7 @@
     <Compile Include="..\PlanViewer.Core\Services\ShowPlanParser.Warnings.cs" Link="Core\Services\ShowPlanParser.Warnings.cs" />
     <Compile Include="..\PlanViewer.Core\Services\ShowPlanParser.Costs.cs" Link="Core\Services\ShowPlanParser.Costs.cs" />
     <Compile Include="..\PlanViewer.Core\Services\ShowPlanParser.Helpers.cs" Link="Core\Services\ShowPlanParser.Helpers.cs" />
+    <Compile Include="..\PlanViewer.Core\Services\PlanXml.cs" Link="Core\Services\PlanXml.cs" />
     <Compile Include="..\PlanViewer.Core\Services\PlanStatements.cs" Link="Core\Services\PlanStatements.cs" />
     <Compile Include="..\PlanViewer.Core\Services\PlanAnalyzer.cs" Link="Core\Services\PlanAnalyzer.cs" />
     <Compile Include="..\PlanViewer.Core\Services\PlanAnalyzer.Statement.cs" Link="Core\Services\PlanAnalyzer.Statement.cs" />
@@ -30,6 +31,7 @@
     <Compile Include="..\PlanViewer.Core\Services\PlanAnalyzer.Detection.cs" Link="Core\Services\PlanAnalyzer.Detection.cs" />
     <Compile Include="..\PlanViewer.Core\Services\PlanAnalyzer.Timing.cs" Link="Core\Services\PlanAnalyzer.Timing.cs" />
     <Compile Include="..\PlanViewer.Core\Services\PlanAnalyzer.Helpers.cs" Link="Core\Services\PlanAnalyzer.Helpers.cs" />
+    <Compile Include="..\PlanViewer.Core\Services\RowEstimateHelper.cs" Link="Core\Services\RowEstimateHelper.cs" />
     <Compile Include="..\PlanViewer.Core\Services\BenefitScorer.cs" Link="Core\Services\BenefitScorer.cs" />
     <Compile Include="..\PlanViewer.Core\Services\NodeTimeAttribution.cs" Link="Core\Services\NodeTimeAttribution.cs" />
     <Compile Include="..\PlanViewer.Core\Services\WaitStatsConfig.cs" Link="Core\Services\WaitStatsConfig.cs" />

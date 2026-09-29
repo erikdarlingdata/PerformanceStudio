@@ -1,6 +1,10 @@
 using System.Threading;
 using System.IO;
+using System.IO.Pipes;
 using System.Linq;
+using System.Runtime.Versioning;
+using System.Security.AccessControl;
+using System.Security.Principal;
 using Avalonia.Controls;
 using PlanViewer.App;
 using PlanViewer.App.Controls;
@@ -248,6 +252,62 @@ public class SingleInstanceTests
 
         using var second = new Mutex(initiallyOwned: true, name, out var createdSecond);
         Assert.False(createdSecond, "a second open of the same name must see the existing mutex");
+    }
+
+    /* ---- The pipe: both ends open it for the current user only --------------------- */
+
+    [Fact]
+    public async Task ALineSentByTheClientReachesTheServer()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        // A unique name, for the same reason as the mutex self-test above. Kept short: off
+        // Windows the pipe is a socket file under the temp folder, and macOS allows 104 bytes for
+        // its whole path. A full GUID suffix made it 131 there; the app's own name makes it 89.
+        var name = $"{SingleInstance.PipeName}_{Guid.NewGuid().ToString("N")[..8]}";
+
+        using var server = SingleInstance.CreatePipeServer(name);
+        // Reading starts before the client writes: a write to the pipe can wait for its reader.
+        var received = ReceiveOneLineAsync(server, cancellationToken);
+
+        using (var client = SingleInstance.CreatePipeClient(name))
+        {
+            await client.ConnectAsync(5000, cancellationToken);
+            using var writer = new StreamWriter(client);
+            await writer.WriteLineAsync(SingleInstance.ActivateSentinel);
+            await writer.FlushAsync(cancellationToken);
+        }
+
+        Assert.Equal(
+            SingleInstance.ActivateSentinel,
+            await received.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken));
+    }
+
+    private static async Task<string?> ReceiveOneLineAsync(
+        NamedPipeServerStream server, CancellationToken cancellationToken)
+    {
+        await server.WaitForConnectionAsync(cancellationToken);
+        using var reader = new StreamReader(server, leaveOpen: true);
+        return await reader.ReadLineAsync(cancellationToken);
+    }
+
+    [Fact]
+    [SupportedOSPlatform("windows")]
+    public void OnWindowsThePipeGrantsAccessToItsOwnerAlone()
+    {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "access lists on pipes are a Windows feature");
+
+        using var server = SingleInstance.CreatePipeServer($"{SingleInstance.PipeName}_selftest_{Guid.NewGuid():N}");
+        using var identity = WindowsIdentity.GetCurrent();
+
+        var security = server.GetAccessControl();
+        var rules = security.GetAccessRules(true, true, typeof(SecurityIdentifier))
+            .Cast<PipeAccessRule>()
+            .ToList();
+
+        Assert.Equal(identity.Owner, security.GetOwner(typeof(SecurityIdentifier)));
+        var rule = Assert.Single(rules);
+        Assert.Equal(AccessControlType.Allow, rule.AccessControlType);
+        Assert.Equal(identity.Owner, rule.IdentityReference);
     }
 
     private static string TempSql(string text)

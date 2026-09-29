@@ -1,7 +1,10 @@
 using System;
+using System.Net;
+using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Connections;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
@@ -27,6 +30,15 @@ public sealed class McpHostService : BackgroundService
     private readonly int _port;
     private WebApplication? _app;
 
+    /// <summary>
+    /// Resolves once <see cref="ExecuteAsync"/> knows whether Kestrel came up: null for success,
+    /// otherwise a short reason a menu item can show. RunContinuationsAsynchronously so a slow
+    /// UI-thread continuation (see MainWindow.ReportMcpStartResultAsync) never runs inline on
+    /// this service's own async state machine.
+    /// </summary>
+    private readonly TaskCompletionSource<string?> _startResult =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+
     public McpHostService(
         PlanSessionManager sessionManager,
         ConnectionStore connectionStore,
@@ -39,11 +51,25 @@ public sealed class McpHostService : BackgroundService
         _port = port;
     }
 
+    /// <summary>
+    /// How the start went: null once Kestrel is actually listening, a short reason if it never
+    /// came up. Cancelled instead of completed if the host stopped before either happened — the
+    /// window closing mid-start is neither outcome, and MainWindow treats that the same as "no
+    /// longer anyone to tell".
+    /// </summary>
+    internal Task<string?> Started => _startResult.Task;
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         try
         {
-            var builder = WebApplication.CreateBuilder();
+            /* An empty builder, not CreateBuilder. CreateBuilder also reads appsettings files
+               from the working directory and the process's environment variables, and a
+               Kestrel section in either one adds endpoints beside the loopback one set below.
+               This server takes its whole setup from this code. */
+            var builder = WebApplication.CreateEmptyBuilder(new WebApplicationOptions());
+            builder.WebHost.UseKestrelCore();
+            builder.Services.AddRoutingCore();
 
             builder.WebHost.ConfigureKestrel(options =>
             {
@@ -93,6 +119,14 @@ public sealed class McpHostService : BackgroundService
                loopback origin, before it can touch an MCP endpoint. */
             _app.Use(async (context, next) =>
             {
+                /* Only this machine may connect. Kestrel is bound to loopback, so this
+                   check is the second of two; it keeps holding if the binding ever changes. */
+                if (!IsLoopbackAddress(context.Connection.RemoteIpAddress))
+                {
+                    context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                    return;
+                }
+
                 if (!IsLoopbackHost(context.Request.Host.Host))
                 {
                     context.Response.StatusCode = StatusCodes.Status403Forbidden;
@@ -111,16 +145,76 @@ public sealed class McpHostService : BackgroundService
 
             _app.MapMcp();
 
-            await _app.RunAsync(stoppingToken);
+            /* Split from the single RunAsync the rest of this class used to call: StartAsync
+               is the half that can fail to bind (another process already on _port, most often),
+               and it has to be awaited on its own so that failure reaches _startResult instead
+               of vanishing into RunAsync's combined start-then-wait Task. WaitForShutdownAsync
+               is the old wait-forever half, unchanged. */
+            await _app.StartAsync(stoppingToken);
+            _startResult.TrySetResult(null);
+
+            await _app.WaitForShutdownAsync(stoppingToken);
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {
-            /* Normal shutdown */
+            /* Normal shutdown. If this fired before StartAsync returned, the finally block
+               below resolves Started as cancelled rather than failed — the window closing
+               mid-bind isn't a start failure, it's just nobody left to tell either way. */
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"MCP server failed to start: {ex.Message}");
+            _startResult.TrySetResult(DescribeStartFailure(ex, _port));
         }
+        finally
+        {
+            /* A safety net, not the normal path: TrySetResult above already settled Started for
+               the two outcomes MainWindow shows. This only fires if neither did — a start still
+               in flight when the token was cancelled — and TrySetCanceled is a no-op once a
+               result is already set, so it never overwrites a real success or failure. */
+            _startResult.TrySetCanceled();
+        }
+    }
+
+    /// <summary>
+    /// A short reason for the MCP status menu item. Kestrel wraps a taken port as an IOException
+    /// whose InnerException is AddressInUseException, but the socket layer beneath it can also
+    /// surface a bare SocketException(AddressAlreadyInUse) — seen on some platform/transport
+    /// combinations without the Kestrel wrapper — so the whole chain is walked rather than just
+    /// the outermost exception or its immediate InnerException. Anything else reports the port
+    /// and the first line of the exception's own message, cut to a length a menu item can show.
+    /// </summary>
+    internal static string DescribeStartFailure(Exception ex, int port)
+    {
+        for (var current = ex; current != null; current = current.InnerException)
+        {
+            if (current is AddressInUseException
+                || current is SocketException { SocketErrorCode: SocketError.AddressAlreadyInUse })
+            {
+                return $"port {port} is in use";
+            }
+        }
+
+        var message = ex.Message.AsSpan().Trim();
+        var lineEnd = message.IndexOfAny('\r', '\n');
+        if (lineEnd >= 0)
+            message = message[..lineEnd].TrimEnd();
+        if (message.Length > MaxReasonLength)
+            message = string.Concat(message[..MaxReasonLength].TrimEnd(), "...");
+
+        return $"port {port}: {message}";
+    }
+
+    /// <summary>The longest failure message the status menu item shows before it is cut.</summary>
+    private const int MaxReasonLength = 100;
+
+    internal static bool IsLoopbackAddress(IPAddress? address)
+    {
+        /* No address (a transport other than TCP) is refused, not trusted. */
+        if (address == null)
+            return false;
+
+        return IPAddress.IsLoopback(address.IsIPv4MappedToIPv6 ? address.MapToIPv4() : address);
     }
 
     private static bool IsLoopbackHost(string host)

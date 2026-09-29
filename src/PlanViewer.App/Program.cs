@@ -1,7 +1,6 @@
 using Avalonia;
 using System;
 using System.IO;
-using System.IO.Pipes;
 using System.Threading;
 using System.Threading.Tasks;
 using PlanViewer.App.Services;
@@ -51,7 +50,10 @@ class Program
            launches already forwarded to the running instance over the pipe; a BARE second
            launch ran a full instance and was exactly the clobber case. So unless the user
            explicitly asks for a second instance, a launch that finds one running hands it
-           its work — a file path, or a bare "surface yourself" — and exits. */
+           its work — a file path, or a bare "surface yourself" — and exits. A launch that
+           does ask (--new-instance) still gets its own window, but it claims the slot first
+           and, if another instance already holds it, runs as a secondary that leaves the
+           saved session alone — see ClaimSlotForNewInstance. */
         var newInstanceRequested = SingleInstance.NewInstanceRequested(args);
 
         // The flag is a launcher directive, not a file: strip it so nothing downstream can
@@ -102,6 +104,11 @@ class Program
                    pre-#489 last-write-wins behavior, which is the accepted floor. */
             }
         }
+        else
+        {
+            // --new-instance: never handed to a running instance, but it still claims the slot.
+            ClaimSlotForNewInstance();
+        }
 
         BuildAvaloniaApp()
             .StartWithClassicDesktopLifetime(effectiveArgs);
@@ -120,15 +127,39 @@ class Program
             .LogToTrace();
 
     /// <summary>
+    /// What <c>--new-instance</c> does about the slot. It never hands its launch to the
+    /// running instance — the user asked for a window of their own — but it no longer skips
+    /// the slot either. It claims it the same way an ordinary launch does:
+    /// <list type="bullet">
+    /// <item>Slot free: no other instance is running, so this launch is an ordinary one. It
+    /// restores, persists and owns the slot, and later launches hand their work to it.</item>
+    /// <item>Slot held: another instance owns the saved session, so this process runs as a
+    /// secondary (<see cref="SingleInstance.IsSecondaryInstance"/>) and leaves that session
+    /// alone. Before this, it restored the owner's list into a second window, and the two
+    /// windows then wrote, dropped and swept the same scratch buffers.</item>
+    /// </list>
+    /// Split from <see cref="Main"/> so the decision can be tested with a mutex name of the
+    /// test's own; the harness cannot start a second app process to hold the real one.
+    ///
+    /// <para>Where named mutexes do not work at all, <see cref="TryBecomeSingleInstanceOwner"/>
+    /// answers true so that the launch still runs, and this launch then acts as an owner: it
+    /// restores the saved session even if another instance is running. That is how every
+    /// <c>--new-instance</c> launch behaved before, and it only happens where the mutex
+    /// machinery itself fails.</para>
+    /// </summary>
+    internal static void ClaimSlotForNewInstance(string mutexName = SingleInstance.MutexName) =>
+        SingleInstance.IsSecondaryInstance = !TryBecomeSingleInstanceOwner(mutexName);
+
+    /// <summary>
     /// Tries to claim the single-instance slot (#489). True means this process is the
     /// owner and should run; false means another instance holds the slot and this launch
-    /// should hand its work over instead.
+    /// should hand its work over instead (or, for <c>--new-instance</c>, run as a secondary).
     /// </summary>
-    private static bool TryBecomeSingleInstanceOwner()
+    private static bool TryBecomeSingleInstanceOwner(string mutexName = SingleInstance.MutexName)
     {
         try
         {
-            var mutex = new Mutex(initiallyOwned: true, SingleInstance.MutexName, out var createdNew);
+            var mutex = new Mutex(initiallyOwned: true, mutexName, out var createdNew);
             if (createdNew)
             {
                 _singleInstanceMutex = mutex;
@@ -182,7 +213,7 @@ class Program
 
             try
             {
-                using var client = new NamedPipeClientStream(".", SingleInstance.PipeName, PipeDirection.Out);
+                using var client = SingleInstance.CreatePipeClient();
                 // 500ms per attempt: a running instance's listener is idle and connects
                 // immediately, while Connect burns the full timeout when nothing is
                 // listening — so the single-attempt probe on a with-file launch adds at
@@ -196,8 +227,9 @@ class Program
             }
             catch
             {
-                // Not listening yet, or the single server slot was mid-conversation with
-                // another client — retry if the budget allows, otherwise report undelivered.
+                // Not listening yet, the single server slot was mid-conversation with
+                // another client, or the pipe belongs to another user — retry if the budget
+                // allows, otherwise report undelivered.
             }
         }
 

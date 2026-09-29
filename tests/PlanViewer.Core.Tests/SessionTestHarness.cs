@@ -178,6 +178,14 @@ internal static class SessionHarness
     internal static QueryStoreOverviewControl? OverviewView(QuerySessionControl session) =>
         (QueryStoreOverviewControl?)GetField(session, "_overviewView");
 
+    /// <summary>The database the toolbar's picker last settled on, off the session's own field.</summary>
+    internal static string? SelectedDatabase(QuerySessionControl session) =>
+        (string?)GetField(session, "_selectedDatabase");
+
+    /// <summary>The connection string the toolbar last built, off the session's own field.</summary>
+    internal static string? ConnectionString(QuerySessionControl session) =>
+        (string?)GetField(session, "_connectionString");
+
     /// <summary>
     /// Calls the session's private <c>InvalidateOverviewView</c>, which is the last line of the
     /// connect block and the only thing in the app that runs it.
@@ -222,6 +230,30 @@ internal static class SessionHarness
         (CancellationTokenSource?)GetField(overview, "_cts");
 
     /// <summary>
+    /// The token the Overview counts as work running right now, or null when it counts none. Not
+    /// the same as <see cref="OverviewLoadToken"/>, which keeps pointing at a finished load's token
+    /// — this is what a detach reads to tell whether it interrupted something.
+    /// </summary>
+    internal static CancellationTokenSource? OverviewRunningToken(QueryStoreOverviewControl overview) =>
+        (CancellationTokenSource?)GetField(overview, "_runningCts");
+
+    /// <summary>
+    /// Stands in for the refresh a load hands the token to when it puts data on the time slicer:
+    /// cancels the load that is running, and installs a fresh token as both the current one and the
+    /// running one. Loading the slicer does this for real, but the refresh it starts goes on to a
+    /// server, and a test has no way to hold that open without one.
+    /// </summary>
+    internal static CancellationTokenSource PlantOverviewRefresh(QueryStoreOverviewControl overview)
+    {
+        ((CancellationTokenSource?)GetField(overview, "_cts"))?.Cancel();
+
+        var refresh = new CancellationTokenSource();
+        SetField(overview, "_cts", refresh);
+        SetField(overview, "_runningCts", refresh);
+        return refresh;
+    }
+
+    /// <summary>
     /// A History document, built the way the app builds one rather than through the designer's
     /// parameterless constructor.
     /// </summary>
@@ -233,7 +265,8 @@ internal static class SessionHarness
     /// whatever is listening on the machine running the suite.
     /// </remarks>
     internal static QueryStoreHistoryControl NewHistory(string label = "0xABC") =>
-        new(connectionString: "", queryHash: label, queryText: "select 1;", database: "master");
+        new(connectionString: "", queryHash: label, queryText: "select 1;", database: "master",
+            serverOffset: new PlanViewer.Core.Services.ServerUtcOffset());
 
     /// <summary>
     /// Puts a live fetch token into a History control, standing in for a fetch still waiting on a

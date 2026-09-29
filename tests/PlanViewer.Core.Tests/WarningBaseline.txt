@@ -37,7 +37,6 @@ Wait: EXECSYNC | Critical | EXECSYNC Observed 123,292 ms across 7 waits.
 Wait: SOS_SCHEDULER_YIELD | Info | SOS_SCHEDULER_YIELD Observed 777 ms across 4,263 waits.
 Wait: CXSYNC_PORT | Critical | CXSYNC_PORT Observed 41 ms across 9 waits.
 Wait: MEMORY_ALLOCATION_EXT | Info | MEMORY_ALLOCATION_EXT Observed 9 ms across 24,330 waits.
-Row Estimate Mismatch | Warning | Estimated 2,983 vs Actual 609 (76 rows x 8 executions) — 39x overestimated. The overestimate may have caused the optimizer to make poor choices.
 Scan With Predicate | Warning | Scan with residual predicate — SQL Server is reading every row and filtering after the fact. Only 0.025% of rows survived filtering (613 of 2,465,713). Check that you have appropriate indexes.\nPredicate: [StackOverflow2013].[dbo].[Users].[Reputation] as [u].[Reputation]>(100000)
 Eager Index Spool | Critical | SQL Server is building a temporary index in TempDB at runtime because no suitable permanent index exists. This is expensive — it builds the index from scratch on every execution. Create a permanent index on the underlying table to eliminate this operator entirely.\n\nCreate this index:\nCREATE INDEX [UserId] ON dbo.Badges (UserId) INCLUDE (Name);
 Parallel Skew | Warning | Thread 3 processed 100% of rows (8,042,005/8,042,005). Work is heavily skewed to one thread, so parallelism isn't helping much. Common causes: uneven data distribution across partitions or hash buckets, or a scan/seek whose predicate sends most rows to one range. Reducing DOP or rewriting the query to avoid the skewed operation may help.
@@ -180,11 +179,10 @@ Wait: MEMORY_ALLOCATION_EXT | Info | MEMORY_ALLOCATION_EXT Observed 256 ms acros
 Wait: PAGEIOLATCH_SH | Info | PAGEIOLATCH_SH Observed 225 ms across 690 waits. Effective latency: 326 µs per wait.
 Wait: SOS_SCHEDULER_YIELD | Info | SOS_SCHEDULER_YIELD Observed 83 ms across 1,268 waits.
 Scan With Predicate | Warning | Scan with residual predicate — SQL Server is reading every row and filtering after the fact. Only 0.236% of rows survived filtering (5,829 of 2,465,713). Check that you have appropriate indexes.\nPredicate: [StackOverflow2013].[dbo].[Users].[Reputation] as [u].[Reputation]>=(20000)
-Row Estimate Mismatch | Critical | Estimated 8,820,150 vs Actual 5,723 (715 rows x 8 executions) — 12329x overestimated. The overestimate may have caused the optimizer to make poor choices.
+Row Estimate Mismatch | Critical | Estimated 8,820,150 vs Actual 5,723 — 1541x overestimated. The overestimate may have caused the optimizer to make poor choices.
 Filter Operator | Warning | Filter operator discarding rows late in the plan.\n• 4,184,508 logical reads below\nPredicate: [Expr1002]=(1)
-Row Estimate Mismatch | Critical | Estimated 8,820,150 vs Actual 569,368 (71,171 rows x 8 executions) — 124x overestimated. The overestimate may have caused the optimizer to make poor choices.
+Row Estimate Mismatch | Warning | Estimated 8,820,150 vs Actual 569,368 — 15x overestimated. The overestimate may have caused the optimizer to make poor choices.
 Sort Spill | Critical | Sort spill level 1, 8 thread(s) — Granted: 10,815,552 KB, Used: 10,220,984 KB, Writes: 1,512,936, Reads: 1,512,936 Operator time: 25,148ms (94% of statement).
-Expensive Operator | Warning | Parallelism took 12,362ms (46.1% of statement elapsed) but no specific rule identified a fix. Worth investigating: is the row volume necessary? Are upstream estimates driving this operator harder than it should be?
 Scan With Predicate | Warning | Scan with residual predicate — SQL Server is reading every row and filtering after the fact. Check that you have appropriate indexes.\nPredicate: [StackOverflow2013].[dbo].[Posts].[PostTypeId] as [p].[PostTypeId]=(2) AND [StackOverflow2013].[dbo].[Posts].[Score] as [p].[Score]>(0)
 
 ### mismatched_data_type_plan.sqlplan
@@ -289,7 +287,7 @@ Parallel Skew | Warning | Thread 3 processed 100% of rows (53,946/53,946). Work 
 Parallel Skew | Warning | Thread 4 processed 100% of rows (47,575/47,575). Work is heavily skewed to one thread, so parallelism isn't helping much. Common causes: uneven data distribution across partitions or hash buckets, or a scan/seek whose predicate sends most rows to one range. Reducing DOP or rewriting the query to avoid the skewed operation may help.
 Scan With Predicate | Warning | Scan with residual predicate — SQL Server is reading every row and filtering after the fact. This scan is 52% of the plan cost. This scan took 53% of elapsed time. Only 0.278% of rows survived filtering (47,575 of 17,142,169). Check that you have appropriate indexes.\nPredicate: [StackOverflow2013].[dbo].[Posts].[PostTypeId] as [p].[PostTypeId]=(2) AND [StackOverflow2013].[dbo].[Posts].[CreationDate] as [p].[CreationDate]>='2013-12-25 00:00:00.000'
 Filter Operator | Warning | Filter operator discarding rows late in the plan.\n• 52,874,774 of 52,928,720 rows discarded (100%)\n• 243,866 logical reads below\n• 1,719ms elapsed below\nPredicate: PROBE([Opt_Bitmap1006],[StackOverflow2013].[dbo].[Votes].[PostId] as [v].[PostId])
-Row Estimate Mismatch | Critical | Estimated 5,292,870 vs Actual 53,946 (13,486 rows x 4 executions) — 392x overestimated. The overestimate may have caused the optimizer to make poor choices.
+Row Estimate Mismatch | Warning | Estimated 5,292,870 vs Actual 53,946 — 98x overestimated. The overestimate may have caused the optimizer to make poor choices.
 Parallel Skew | Warning | Thread 3 processed 100% of rows (53,946/53,946). Work is heavily skewed to one thread, so parallelism isn't helping much. Common causes: uneven data distribution across partitions or hash buckets, or a scan/seek whose predicate sends most rows to one range. Reducing DOP or rewriting the query to avoid the skewed operation may help.
 Bare Scan | Warning | Clustered index scan reads the full table with no predicate, outputting 1 column(s): Votes.PostId. Consider a nonclustered index on the output columns (as key or INCLUDE) so SQL Server can read a narrower structure. For analytical workloads, a columnstore index may be a better fit.
 
@@ -346,8 +344,7 @@ Wait: RESERVED_MEMORY_ALLOCATION_EXT | Info | RESERVED_MEMORY_ALLOCATION_EXT Obs
 Wait: SOS_SCHEDULER_YIELD | Info | SOS_SCHEDULER_YIELD Observed 13 ms across 4,265 waits.
 Wait: CXSYNC_CONSUMER | Critical | CXSYNC_CONSUMER Observed 2 ms across 14 waits.
 Expensive Operator | Critical | Sort took 17,111ms (100.0% of statement elapsed) but no specific rule identified a fix. Worth investigating: is the row volume necessary? Are upstream estimates driving this operator harder than it should be?
-Expensive Operator | Critical | Parallelism took 17,111ms (100.0% of statement elapsed) but no specific rule identified a fix. Worth investigating: is the row volume necessary? Are upstream estimates driving this operator harder than it should be?
-Row Estimate Mismatch | Critical | Estimated 3,279 vs Actual 21 (3 rows x 8 executions) — 1249x overestimated. The overestimate may have caused the optimizer to make poor choices.
+Row Estimate Mismatch | Critical | Estimated 3,279 vs Actual 21 — 156x overestimated. The overestimate may have caused the optimizer to make poor choices.
 Parallel Skew | Warning | Thread 1 processed 100% of rows (27,026/27,026). Work is heavily skewed to one thread, so parallelism isn't helping much. Common causes: uneven data distribution across partitions or hash buckets, or a scan/seek whose predicate sends most rows to one range. Reducing DOP or rewriting the query to avoid the skewed operation may help.
 Nested Loops High Executions | Critical | Nested Loops inner side executed 10,810,787 times (DOP 8). Inner side total: 41,216,099 logical reads. Inner side time: 10,156ms (59% of statement). Consider whether a hash or merge join would be more appropriate for this row count.
 Parallel Skew | Warning | Thread 1 processed 100% of rows (10,810,787/10,810,787). Work is heavily skewed to one thread, so parallelism isn't helping much. Common causes: uneven data distribution across partitions or hash buckets, or a scan/seek whose predicate sends most rows to one range. Reducing DOP or rewriting the query to avoid the skewed operation may help.
@@ -361,7 +358,6 @@ Row Estimate Mismatch | Critical | Estimated 1 vs Actual 21 (0 rows x 27,026 exe
 Wait: SOS_SCHEDULER_YIELD | Info | SOS_SCHEDULER_YIELD Observed 199 ms across 37,744 waits.
 Wait: CXSYNC_PORT | Info | CXSYNC_PORT Observed 1 ms across 9 waits.
 Filter Operator | Warning | Filter operator discarding rows late in the plan.\n• 28,425,793 of 28,425,793 rows discarded (100%)\n• 133,228,207 logical reads below\n• 19,811ms elapsed below\nPredicate: [Expr1002]=(0)
-Row Estimate Mismatch | Warning | Estimated 36,946,200 vs Actual 28,425,793 (3,553,224 rows x 8 executions) — 10x overestimated. The overestimate may have caused the optimizer to make poor choices.
 Nested Loops High Executions | Critical | Nested Loops inner side executed 11,091,349 times (DOP 8). Inner side total: 133,212,966 logical reads. Inner side time: 19,039ms (95% of statement). Consider whether a hash or merge join would be more appropriate for this row count.
 Expensive Operator | Critical | Index Seek took 17,805ms (89.2% of statement elapsed) but no specific rule identified a fix. Worth investigating: is the row volume necessary? Are upstream estimates driving this operator harder than it should be?
 
@@ -379,11 +375,10 @@ Wait: MEMORY_ALLOCATION_EXT | Info | MEMORY_ALLOCATION_EXT Observed 256 ms acros
 Wait: PAGEIOLATCH_SH | Info | PAGEIOLATCH_SH Observed 225 ms across 690 waits. Effective latency: 326 µs per wait.
 Wait: SOS_SCHEDULER_YIELD | Info | SOS_SCHEDULER_YIELD Observed 83 ms across 1,268 waits.
 Scan With Predicate | Warning | Scan with residual predicate — SQL Server is reading every row and filtering after the fact. Only 0.236% of rows survived filtering (5,829 of 2,465,713). Check that you have appropriate indexes.\nPredicate: [StackOverflow2013].[dbo].[Users].[Reputation] as [u].[Reputation]>=(20000)
-Row Estimate Mismatch | Critical | Estimated 8,820,150 vs Actual 5,723 (715 rows x 8 executions) — 12329x overestimated. The overestimate may have caused the optimizer to make poor choices.
+Row Estimate Mismatch | Critical | Estimated 8,820,150 vs Actual 5,723 — 1541x overestimated. The overestimate may have caused the optimizer to make poor choices.
 Filter Operator | Warning | Filter operator discarding rows late in the plan.\n• 4,184,508 logical reads below\nPredicate: [Expr1002]=(1)
-Row Estimate Mismatch | Critical | Estimated 8,820,150 vs Actual 569,368 (71,171 rows x 8 executions) — 124x overestimated. The overestimate may have caused the optimizer to make poor choices.
+Row Estimate Mismatch | Warning | Estimated 8,820,150 vs Actual 569,368 — 15x overestimated. The overestimate may have caused the optimizer to make poor choices.
 Sort Spill | Critical | Sort spill level 1, 8 thread(s) — Granted: 10,815,552 KB, Used: 10,220,984 KB, Writes: 1,512,936, Reads: 1,512,936 Operator time: 25,148ms (94% of statement).
-Expensive Operator | Warning | Parallelism took 12,362ms (46.1% of statement elapsed) but no specific rule identified a fix. Worth investigating: is the row volume necessary? Are upstream estimates driving this operator harder than it should be?
 Scan With Predicate | Warning | Scan with residual predicate — SQL Server is reading every row and filtering after the fact. Check that you have appropriate indexes.\nPredicate: [StackOverflow2013].[dbo].[Posts].[PostTypeId] as [p].[PostTypeId]=(2) AND [StackOverflow2013].[dbo].[Posts].[Score] as [p].[Score]>(0)
 
 ### table_variable_aliased_function_plan.sqlplan

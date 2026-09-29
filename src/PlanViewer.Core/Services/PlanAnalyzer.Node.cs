@@ -99,6 +99,7 @@ public static partial class PlanAnalyzer
 
                 node.Warnings.Add(new PlanWarning
                 {
+                    RuleNumber = 1,
                     WarningType = "Filter Operator",
                     Message = message,
                     Severity = PlanWarningSeverity.Warning
@@ -120,6 +121,7 @@ public static partial class PlanAnalyzer
 
             node.Warnings.Add(new PlanWarning
             {
+                RuleNumber = 2,
                 WarningType = "Eager Index Spool",
                 Message = message,
                 Severity = PlanWarningSeverity.Critical
@@ -135,6 +137,7 @@ public static partial class PlanAnalyzer
         {
             node.Warnings.Add(new PlanWarning
             {
+                RuleNumber = 4,
                 WarningType = "UDF Execution",
                 Message = $"Scalar UDF executing on this operator ({node.UdfElapsedTimeMs:N0}ms elapsed, {node.UdfCpuTimeMs:N0}ms CPU). Scalar UDFs run once per row and prevent parallelism. Options: rewrite as an inline table-valued function, assign the result to a variable if only one row is needed, dump results to a #temp table and apply the UDF to the final result set, or on SQL Server 2019+ check if the UDF is eligible for automatic scalar UDF inlining.",
                 Severity = node.UdfElapsedTimeMs >= 1000 ? PlanWarningSeverity.Critical : PlanWarningSeverity.Warning
@@ -151,7 +154,11 @@ public static partial class PlanAnalyzer
         // - A parent join may have chosen the wrong strategy
         // - Root nodes with no parent to harm are skipped
         // - Nodes whose only parents are Parallelism/Top/Sort (no spill) are skipped
+        /* #577: an operator that never executed returned zero rows because it never ran, so its
+           zero is no evidence that the estimate was wrong. Rules 11, 12 and 29 skip such
+           operators the same way. */
         if (!cfg.IsRuleDisabled(5) && node.HasActualStats && node.EstimateRows > 0
+            && node.ActualExecutions > 0
             && !node.Lookup) // Key lookups are point lookups (1 row per execution) — per-execution estimate is misleading
         {
             if (node.ActualRows == 0)
@@ -164,6 +171,7 @@ public static partial class PlanAnalyzer
                 {
                     node.Warnings.Add(new PlanWarning
                     {
+                        RuleNumber = 5,
                         WarningType = "Row Estimate Mismatch",
                         Message = $"Estimated {node.EstimateRows:N0} rows but actual 0 rows returned. SQL Server allocated resources for rows that never materialized.",
                         Severity = PlanWarningSeverity.Warning
@@ -172,10 +180,13 @@ public static partial class PlanAnalyzer
             }
             else
             {
-                // Compare per-execution actuals to estimates (SQL Server estimates are per-execution)
-                var executions = node.ActualExecutions > 0 ? node.ActualExecutions : 1;
-                var actualPerExec = (double)node.ActualRows / executions;
-                var ratio = actualPerExec / node.EstimateRows;
+                // #594: compare like with like. EstimateRows is per execution; ActualExecutions
+                // is a real per-execution count only on the inner side of a Nested Loops join —
+                // everywhere else (including a non-inner node in a parallel zone, where it is
+                // thread-summed) RowEstimateHelper leaves the estimate at one execution instead
+                // of inflating it by DOP.
+                var isInnerSide = RowEstimateHelper.IsInnerSideOfNestedLoops(node);
+                var ratio = RowEstimateHelper.GetRowAccuracyRatio(node);
                 if (ratio >= 10.0 || ratio <= 0.1)
                 {
                     var harm = AssessEstimateHarm(node, ratio);
@@ -183,11 +194,12 @@ public static partial class PlanAnalyzer
                     {
                         var direction = ratio >= 10.0 ? "underestimated" : "overestimated";
                         var factor = ratio >= 10.0 ? ratio : 1.0 / ratio;
-                        var actualDisplay = executions > 1
-                            ? $"Actual {node.ActualRows:N0} ({actualPerExec:N0} rows x {executions:N0} executions)"
+                        var actualDisplay = isInnerSide && node.ActualExecutions > 1
+                            ? $"Actual {node.ActualRows:N0} ({(double)node.ActualRows / node.ActualExecutions:N0} rows x {node.ActualExecutions:N0} executions)"
                             : $"Actual {node.ActualRows:N0}";
                         node.Warnings.Add(new PlanWarning
                         {
+                            RuleNumber = 5,
                             WarningType = "Row Estimate Mismatch",
                             Message = $"Estimated {node.EstimateRows:N0} vs {actualDisplay} — {factor:F0}x {direction}. {harm}",
                             Severity = factor >= 100 ? PlanWarningSeverity.Critical : PlanWarningSeverity.Warning
@@ -204,16 +216,22 @@ public static partial class PlanAnalyzer
         // Rule 6: Scalar UDF references (works on estimated plans too)
         // Suppress when Serial Plan warning is already firing for a UDF-related reason —
         // the Serial Plan warning already explains the issue, this would be redundant.
-        var serialPlanCoversUdf = stmt.NonParallelPlanReason is
-            "TSQLUserDefinedFunctionsNotParallelizable"
-            or "CLRUserDefinedFunctionRequiresDataAccess"
-            or "CouldNotGenerateValidParallelPlan";
+        /* #576: "already firing" has to be checked, not assumed from the reason. Rule 3 can be
+           disabled, and it skips statements that cost under 1, TRIVIAL plans and 0 ms runs, so
+           the UDF warning used to vanish with nothing in its place. Statement rules run before
+           node rules, so rule 3's finding is on the statement by now if it fired. */
+        var serialPlanCoversUdf =
+            (stmt.NonParallelPlanReason is "TSQLUserDefinedFunctionsNotParallelizable"
+                or "CLRUserDefinedFunctionRequiresDataAccess"
+                or "CouldNotGenerateValidParallelPlan")
+            && stmt.PlanWarnings.Any(w => w.WarningType == "Serial Plan");
         if (!cfg.IsRuleDisabled(6) && !serialPlanCoversUdf)
             foreach (var udf in node.ScalarUdfs)
             {
                 var type = udf.IsClrFunction ? "CLR" : "T-SQL";
                 node.Warnings.Add(new PlanWarning
                 {
+                    RuleNumber = 6,
                     WarningType = "Scalar UDF",
                     Message = $"Scalar {type} UDF: {udf.FunctionName}. Scalar UDFs run once per row and prevent parallelism. Options: rewrite as an inline table-valued function, assign the result to a variable if only one row is needed, dump results to a #temp table and apply the UDF to the final result set, or on SQL Server 2019+ check if the UDF is eligible for automatic scalar UDF inlining.",
                     Severity = PlanWarningSeverity.Warning
@@ -317,6 +335,7 @@ public static partial class PlanAnalyzer
 
                     node.Warnings.Add(new PlanWarning
                     {
+                        RuleNumber = 8,
                         WarningType = "Parallel Skew",
                         Message = message,
                         Severity = severity
@@ -339,6 +358,7 @@ public static partial class PlanAnalyzer
 
             node.Warnings.Add(new PlanWarning
             {
+                RuleNumber = 10,
                 WarningType = "RID Lookup",
                 Message = message,
                 Severity = PlanWarningSeverity.Warning
@@ -365,6 +385,7 @@ public static partial class PlanAnalyzer
 
             node.Warnings.Add(new PlanWarning
             {
+                RuleNumber = 10,
                 WarningType = "Key Lookup",
                 Message = lookupMsg,
                 Severity = PlanWarningSeverity.Critical
@@ -405,6 +426,7 @@ public static partial class PlanAnalyzer
 
             node.Warnings.Add(new PlanWarning
             {
+                RuleNumber = 12,
                 WarningType = "Non-SARGable Predicate",
                 Message = $"{nonSargableAdvice}\nPredicate: {Truncate(node.Predicate!, 200)}",
                 Severity = PlanWarningSeverity.Warning
@@ -452,6 +474,7 @@ public static partial class PlanAnalyzer
 
             node.Warnings.Add(new PlanWarning
             {
+                RuleNumber = 11,
                 WarningType = "Scan With Predicate",
                 Message = message,
                 Severity = severity
@@ -480,6 +503,7 @@ public static partial class PlanAnalyzer
             {
                 node.Warnings.Add(new PlanWarning
                 {
+                    RuleNumber = 32,
                     WarningType = "Scan Cardinality Misestimate",
                     Message = $"Estimated {node.EstimateRows:N0} rows but only {node.ActualRows:N0} returned ({selectivity * 100:N3}% of {node.ActualRowsRead:N0} rows read). " +
                               $"The {overestimateRatio:N0}x overestimate likely caused the optimizer to choose a scan instead of a seek. " +
@@ -494,21 +518,25 @@ public static partial class PlanAnalyzer
     private static void Rule33_CeGuessDetection(PlanNode node, PlanStatement stmt, AnalyzerConfig cfg)
     {
         // Rule 33: Estimated plan CE guess detection — scans with telltale default selectivity
-        // When the optimizer uses a local variable or can't sniff, it falls back to density-based
-        // guesses: 30% (equality), 10% (inequality), 9% (LIKE/between), ~16.43% (sqrt(30%)),
-        // 1% (multi-inequality). On large tables, these guesses can hide the need for an index.
+        // When the optimizer has no statistics to use (a local variable it can't sniff, a column with
+        // no statistics, an expression), it falls back on fixed guesses: 30% for an inequality, 9%
+        // for BETWEEN or LIKE, ~16.4% for two inequalities, 10% for comparing two columns, and an
+        // equality guess that grows with the table. DetectCeGuess has the measured details and
+        // which estimator (CE 70 or 120+) each one belongs to. On large tables, these guesses can
+        // hide the need for an index.
         if (!cfg.IsRuleDisabled(33) && !node.HasActualStats && IsRowstoreScan(node)
-            && node.TableCardinality >= 100_000 && node.EstimateRows > 0
+            && node.TableCardinality >= CeGuessMinTableRows && node.EstimateRows > 0
             && !string.IsNullOrEmpty(node.Predicate))
         {
             var impact = BuildScanImpactDetails(node, stmt);
             if (impact.CostPct >= 50)
             {
-                var guessDesc = DetectCeGuess(node.EstimateRows, node.TableCardinality);
+                var guessDesc = DetectCeGuess(node.EstimateRows, node.TableCardinality, stmt.CardinalityEstimationModelVersion);
                 if (guessDesc != null)
                 {
                     node.Warnings.Add(new PlanWarning
                     {
+                        RuleNumber = 33,
                         WarningType = "Estimated Plan CE Guess",
                         Message = $"Estimated {node.EstimateRows:N0} rows from {node.TableCardinality:N0} row table — {guessDesc}. " +
                                   $"The optimizer may be using a default guess instead of accurate statistics. " +
@@ -554,6 +582,7 @@ public static partial class PlanAnalyzer
 
                     node.Warnings.Add(new PlanWarning
                     {
+                        RuleNumber = 34,
                         WarningType = "Bare Scan",
                         Message = $"{scanKind} reads the full table with no predicate, outputting {colCount} column(s): {Truncate(node.OutputColumns, 200)}. {indexAdvice} For analytical workloads, a columnstore index may be a better fit.",
                         Severity = PlanWarningSeverity.Warning
@@ -566,6 +595,7 @@ public static partial class PlanAnalyzer
                     // count. Suggest it for analytical / aggregate-style workloads.
                     node.Warnings.Add(new PlanWarning
                     {
+                        RuleNumber = 34,
                         WarningType = "Bare Scan",
                         Message = $"{scanKind} reads the full table with no predicate, outputting {colCount} columns. A nonclustered rowstore index isn't a great fit for wide outputs, but if this is an analytical or aggregate-style query, a columnstore index (CCI or NCCI) can scan the same data far more cheaply — column count doesn't penalize columnstore the way it does rowstore indexes.",
                         Severity = PlanWarningSeverity.Warning
@@ -592,6 +622,7 @@ public static partial class PlanAnalyzer
 
                 node.Warnings.Add(new PlanWarning
                 {
+                    RuleNumber = 13,
                     WarningType = "Data Type Mismatch",
                     Message = reason,
                     Severity = PlanWarningSeverity.Warning
@@ -626,6 +657,7 @@ public static partial class PlanAnalyzer
 
                 node.Warnings.Add(new PlanWarning
                 {
+                    RuleNumber = 14,
                     WarningType = "Lazy Spool Ineffective",
                     Message = $"Lazy spool has low cache hit ratio ({source}): {rebinds:N0} rebinds (cache misses), {rewinds:N0} rewinds (cache hits) — {ratio}. The spool is caching results but rarely reusing them, adding overhead for no benefit.",
                     Severity = severity
@@ -655,6 +687,7 @@ public static partial class PlanAnalyzer
             {
                 node.Warnings.Add(new PlanWarning
                 {
+                    RuleNumber = 15,
                     WarningType = "Join OR Clause",
                     Message = $"OR in a join predicate. SQL Server rewrote the OR as {constantScanBranches.Count} separate lookups, each evaluated independently — this multiplies the work on the inner side. Rewrite as separate queries joined with UNION ALL. For example, change \"FROM a JOIN b ON a.x = b.x OR a.y = b.y\" to \"FROM a JOIN b ON a.x = b.x UNION ALL FROM a JOIN b ON a.y = b.y\".",
                     Severity = PlanWarningSeverity.Warning
@@ -684,15 +717,20 @@ public static partial class PlanAnalyzer
                 // Core fact
                 details.Add($"Nested Loops inner side executed {innerChild.ActualExecutions:N0} times (DOP {dop}).");
 
-                // Outer side estimate mismatch — explains WHY the optimizer chose NL
+                // Outer side estimate mismatch — explains WHY the optimizer chose NL.
+                // #594: outerChild is this join's OUTER input, but if this Nested Loops is itself
+                // nested inside an ancestor join's inner side, outerChild inherits that — walk the
+                // whole ancestor chain (RowEstimateHelper) rather than assuming one execution.
                 if (outerChild.HasActualStats && outerChild.EstimateRows > 0)
                 {
-                    var outerExecs = outerChild.ActualExecutions > 0 ? outerChild.ActualExecutions : 1;
-                    var outerActualPerExec = (double)outerChild.ActualRows / outerExecs;
-                    var outerRatio = outerActualPerExec / outerChild.EstimateRows;
+                    var outerIsInnerSide = RowEstimateHelper.IsInnerSideOfNestedLoops(outerChild);
+                    var outerRatio = RowEstimateHelper.GetRowAccuracyRatio(outerChild);
                     if (outerRatio >= 10.0)
                     {
-                        details.Add($"Outer side: estimated {outerChild.EstimateRows:N0} rows, actual {outerActualPerExec:N0} ({outerRatio:F0}x underestimate). The optimizer chose Nested Loops expecting far fewer iterations.");
+                        var outerActualDisplay = outerIsInnerSide && outerChild.ActualExecutions > 0
+                            ? (double)outerChild.ActualRows / outerChild.ActualExecutions
+                            : outerChild.ActualRows;
+                        details.Add($"Outer side: estimated {outerChild.EstimateRows:N0} rows, actual {outerActualDisplay:N0} ({outerRatio:F0}x underestimate). The optimizer chose Nested Loops expecting far fewer iterations.");
                     }
                 }
 
@@ -724,6 +762,7 @@ public static partial class PlanAnalyzer
 
                 node.Warnings.Add(new PlanWarning
                 {
+                    RuleNumber = 16,
                     WarningType = "Nested Loops High Executions",
                     Message = string.Join(" ", details),
                     Severity = innerChild.ActualExecutions > 1000000
@@ -747,6 +786,7 @@ public static partial class PlanAnalyzer
         {
             node.Warnings.Add(new PlanWarning
             {
+                RuleNumber = 17,
                 WarningType = "Many-to-Many Merge Join",
                 Message = node.HasActualStats
                     ? $"Many-to-many Merge Join — SQL Server created a worktable in TempDB ({node.ActualLogicalReads:N0} logical reads) because both sides have duplicate values in the join columns."
@@ -769,6 +809,7 @@ public static partial class PlanAnalyzer
 
             node.Warnings.Add(new PlanWarning
             {
+                RuleNumber = 22,
                 WarningType = "Table Variable",
                 Message = isModificationOp
                     ? "Modifying a table variable forces the entire plan to run single-threaded. Replace with a #temp table to allow parallel execution."
@@ -782,11 +823,18 @@ public static partial class PlanAnalyzer
     private static void Rule23_TableValuedFunctions(PlanNode node, PlanStatement stmt, AnalyzerConfig cfg)
     {
         // Rule 23: Table-valued functions
-        if (!cfg.IsRuleDisabled(23) && node.LogicalOp == "Table-valued function")
+        /* A function the engine supplies runs as the same operator: STRING_SPLIT, OPENJSON,
+           GENERATE_SERIES, and every DMV and DMF (sys.dm_exec_requests is SYSREQUESTS,
+           sys.dm_db_index_physical_stats is INDEXANALYSIS). Its Object names no database and no
+           schema, and a function a user wrote always has both. The advice below is about code
+           the user can rewrite, so the engine's own functions are skipped. */
+        var isEngineFunction = string.IsNullOrEmpty(node.DatabaseName) && string.IsNullOrEmpty(node.SchemaName);
+        if (!cfg.IsRuleDisabled(23) && node.LogicalOp == "Table-valued function" && !isEngineFunction)
         {
             var funcName = node.ObjectName ?? node.PhysicalOp;
             node.Warnings.Add(new PlanWarning
             {
+                RuleNumber = 23,
                 WarningType = "Table-Valued Function",
                 Message = $"Table-valued function: {funcName}. Multi-statement TVFs have no statistics — SQL Server guesses 1 row (pre-2017) or 100 rows (2017+) regardless of actual size. Rewrite as an inline table-valued function if possible, or dump the function results into a #temp table and join to that instead.",
                 Severity = PlanWarningSeverity.Warning
@@ -827,6 +875,7 @@ public static partial class PlanAnalyzer
                         : "";
                     node.Warnings.Add(new PlanWarning
                     {
+                        RuleNumber = 24,
                         WarningType = "Top Above Scan",
                         Message = $"{topLabel} reads from {FormatNodeRef(scanCandidate)}.{innerNote}{predInfo} An index on the ORDER BY columns could eliminate the scan and sort entirely.",
                         Severity = onInner ? PlanWarningSeverity.Critical : PlanWarningSeverity.Warning
@@ -857,9 +906,11 @@ public static partial class PlanAnalyzer
                 var rowGoalWorked = false;
                 if (node.HasActualStats)
                 {
-                    var executions = node.ActualExecutions > 0 ? node.ActualExecutions : 1;
-                    var actualPerExec = (double)node.ActualRows / executions;
-                    rowGoalWorked = actualPerExec <= node.EstimateRows;
+                    // #594: compare like with like — see RowEstimateHelper. A scan or seek is
+                    // routinely the inner side of a Nested Loops join (a key lookup, for one),
+                    // where ActualExecutions is a real per-execution count; everywhere else it
+                    // must not be treated as one.
+                    rowGoalWorked = RowEstimateHelper.GetRowAccuracyRatio(node) <= 1.0;
                 }
 
                 if (!rowGoalWorked)
@@ -869,6 +920,7 @@ public static partial class PlanAnalyzer
 
                     node.Warnings.Add(new PlanWarning
                     {
+                        RuleNumber = 26,
                         WarningType = "Row Goal",
                         Message = $"Row goal active: estimate reduced from {node.EstimateRowsWithoutRowGoal:N0} to {node.EstimateRows:N0} ({reduction:N0}x reduction) due to {cause}. The optimizer chose this plan shape expecting to stop reading early. If the query reads all rows anyway, the plan choice may be suboptimal.",
                         Severity = PlanWarningSeverity.Info
@@ -891,6 +943,7 @@ public static partial class PlanAnalyzer
             {
                 node.Warnings.Add(new PlanWarning
                 {
+                    RuleNumber = 28,
                     WarningType = "NOT IN with Nullable Column",
                     Message = $"Row Count Spool with {rewinds:N0} rewinds. This pattern occurs when NOT IN is used with a nullable column — SQL Server cannot use an efficient Anti Semi Join because it must check for NULL values on every outer row. Rewrite as NOT EXISTS, or add WHERE column IS NOT NULL to the subquery.",
                     Severity = rewinds > 1_000_000 ? PlanWarningSeverity.Critical : PlanWarningSeverity.Warning
@@ -931,7 +984,13 @@ public static partial class PlanAnalyzer
         // to still surface as top items. Threshold: self-time >= 20% of statement
         // elapsed. Only emits if no other warning is already on the node to avoid
         // doubling up. The benefit % is just the self-time share.
+        // Exchanges (Parallelism) are skipped: their self-time is mostly time spent waiting on the
+        // operators that feed them and drain them, not work of their own. On a live plan an exchange
+        // feeding a spilling sort showed 21 s of elapsed time on 2.4 s of CPU per thread, and was
+        // named as the expensive operator while the sort beside it was the real problem. The text
+        // report's "Expensive operators" list skips exchanges for the same reason.
         if (!cfg.IsRuleDisabled(35) && node.HasActualStats && node.Warnings.Count == 0
+            && !NodeTimeAttribution.IsExchangeOperator(node)
             && stmt.QueryTimeStats != null && stmt.QueryTimeStats.ElapsedTimeMs >= Rule35MinStatementElapsedMs)
         {
             var selfMs = GetOperatorOwnElapsedMs(node);
@@ -940,6 +999,7 @@ public static partial class PlanAnalyzer
             {
                 node.Warnings.Add(new PlanWarning
                 {
+                    RuleNumber = 35,
                     WarningType = "Expensive Operator",
                     Message = $"{node.PhysicalOp} took {selfMs:N0}ms ({pct:N1}% of statement elapsed) but no specific rule identified a fix. Worth investigating: is the row volume necessary? Are upstream estimates driving this operator harder than it should be?",
                     Severity = pct >= 50 ? PlanWarningSeverity.Critical : PlanWarningSeverity.Warning,

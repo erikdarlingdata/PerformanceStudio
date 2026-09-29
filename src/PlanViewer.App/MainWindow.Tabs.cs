@@ -174,6 +174,73 @@ public partial class MainWindow : Window
             _ = TryCloseTabAsync(tab);
     }
 
+    /// <summary>
+    /// Which run each window-level loading panel is showing, so closing the tab that holds the
+    /// panel can stop the run. Keyed by the panel rather than the tab because the panel is what
+    /// moves if the tab is detached. Weak, so a panel that was replaced by its plan takes its
+    /// entry with it.
+    /// </summary>
+    private readonly ConditionalWeakTable<Control, CancellationTokenSource> _loadingRuns = new();
+
+    /// <summary>
+    /// Opens a tab that shows a progress panel for a run that will fill it in later, and selects it.
+    /// The run is remembered against the panel, so closing the tab cancels it: a Get Actual Plan
+    /// against a server runs with no timeout, and used to keep running there for a tab nobody
+    /// could see.
+    /// </summary>
+    /// <remarks>
+    /// Cancelled, never disposed: the panel's Cancel button and Escape handler hold the same
+    /// source and can fire after anything else has.
+    /// </remarks>
+    internal TabItem AddLoadingTab(string label, Control loadingPanel, CancellationTokenSource run)
+    {
+        var tab = CreateTab(label, loadingPanel);
+        _loadingRuns.AddOrUpdate(loadingPanel, run);
+
+        MainTabControl.Items.Add(tab);
+        MainTabControl.SelectedItem = tab;
+        UpdateEmptyOverlay();
+        loadingPanel.Focus();
+
+        return tab;
+    }
+
+    /// <summary>
+    /// Gives up what a tab's content was holding, once the content is gone for good: the tab has
+    /// been closed, or the detached window that held it has closed.
+    /// </summary>
+    /// <remarks>
+    /// <para>Every plan viewer registers its plan with <see cref="PlanSessionManager"/> when it
+    /// loads, and only <see cref="PlanViewerControl.Clear"/> takes it back out. Closing a tab used
+    /// to remove the tab and nothing else, so the plan stayed in memory and in the MCP
+    /// <c>list_plans</c> answer until the app exited. It reads the content as it is at close time,
+    /// so a "Get Actual Plan" tab that started as a spinner is released as the plan viewer that
+    /// replaced it.</para>
+    ///
+    /// <para>Not called on detach or re-dock. There the content moves to another home and is
+    /// still on screen, so its plan must stay registered.</para>
+    /// </remarks>
+    private void ReleaseTabContent(Control? content)
+    {
+        // A tab still waiting on the run that will fill it: stop the run.
+        if (content != null && _loadingRuns.TryGetValue(content, out var run))
+            run.Cancel();
+
+        switch (content)
+        {
+            case QuerySessionControl session:
+                session.ReleaseOnClose();
+                break;
+
+            // Plans opened from a file, a paste or a capture: the viewer is a child of the DockPanel
+            // that carries the advice toolbar.
+            case DockPanel dock:
+                foreach (var viewer in dock.Children.OfType<PlanViewerControl>())
+                    viewer.Clear();
+                break;
+        }
+    }
+
     private void TabContextMenu_Click(object? sender, RoutedEventArgs e)
     {
         if (sender is not MenuItem item) return;
@@ -421,6 +488,13 @@ public partial class MainWindow : Window
                    itself. */
                 if (!IsShuttingDown && c is QuerySessionControl { SourceFilePath: null } scratchSession)
                     DropScratchBuffer(scratchSession);
+
+                /* The detached twin of TryCloseTabAsync's release: this window closing is the
+                   content leaving the app, so its plans have to come off the MCP session list
+                   too. Not during shutdown, when the process is about to take everything with it
+                   and the windows are being force-closed around a main window that is going away. */
+                if (!IsShuttingDown)
+                    ReleaseTabContent(c);
 
                 if (c is QueryStoreHistoryControl hc)
                     hc.CancelFetch();

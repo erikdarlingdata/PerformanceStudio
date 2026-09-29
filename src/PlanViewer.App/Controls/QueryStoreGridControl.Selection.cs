@@ -94,11 +94,14 @@ public partial class QueryStoreGridControl : UserControl
 
         var metricTag = QueryStoreHistoryWindow.MapOrderByToMetricTag(_lastFetchedOrderBy);
 
+        /* The grid's own holder, not the session's current one: this History reads the grid's
+           server, and the session may have reconnected somewhere else since the grid opened (E5). */
         var control = new QueryStoreHistoryControl(
             _connectionString,
             row.QueryHash,
             row.FullQueryText,
             _database,
+            _serverOffset,
             initialMetricTag: metricTag,
             slicerStartUtc: _slicerStartUtc,
             slicerEndUtc: _slicerEndUtc,
@@ -120,6 +123,7 @@ public partial class QueryStoreGridControl : UserControl
                 row.QueryHash,
                 row.FullQueryText,
                 _database,
+                _serverOffset,
                 initialMetricTag: metricTag,
                 slicerStartUtc: _slicerStartUtc,
                 slicerEndUtc: _slicerEndUtc,

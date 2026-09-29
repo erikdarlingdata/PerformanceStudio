@@ -16,7 +16,7 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Get version
         id: version
@@ -44,7 +44,7 @@ jobs:
       # window lapsed. Nothing before the signing step publishes anything now.
 
       - name: Setup .NET 10.0
-        uses: actions/setup-dotnet@v6
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: 10.0.x
 
@@ -68,7 +68,7 @@ jobs:
       # The build step never fails the job (it only sets an output on success),
       # so a VSIX build failure can never block the cross-platform app release.
       - name: Add MSBuild to PATH
-        uses: microsoft/setup-msbuild@v3
+        uses: microsoft/setup-msbuild@30375c66a4eea26614e0d39710365f22f8b0af57 # v3.0.0
         continue-on-error: true
 
       - name: Build SSMS extension
@@ -124,7 +124,7 @@ jobs:
 
       - name: Upload Windows build for signing
         id: upload-unsigned
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: App-unsigned
           path: publish/win-x64/
@@ -136,7 +136,7 @@ jobs:
       # fix the cause and start a fresh run (a new dev -> main merge) instead of
       # re-running the same one.
       - name: Sign Windows build
-        uses: signpath/github-action-submit-signing-request@v3
+        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3.0
         with:
           api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
           organization-id: '7969f8b6-d946-4a74-9bac-a55856d8b8e0'
@@ -160,6 +160,107 @@ jobs:
           Remove-Item -Recurse -Force publish/win-x64
           Copy-Item -Recurse signed/win-x64 publish/win-x64
 
+      # ── SignPath code signing for the SSMS extension and its installer.
+      #    Unlike the App, this is best-effort. If a step below fails, or an
+      #    approval times out, the release still goes out with the unsigned
+      #    files (as it did before these were signed) and a warning annotation
+      #    says so. The one exception is in the replace step: if it cannot put
+      #    the unsigned files back after a failed copy or a failed signature
+      #    check, the job stops before anything is published. Each SignPath
+      #    request needs a manual approval, so a release run now waits for two:
+      #    the App first, then these two files. ──
+      - name: Stage SSMS files for signing
+        if: steps.ssms.outputs.BUILT == 'true'
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          # Exactly these two files, at the root of one folder. The SignPath
+          # "Vsix" artifact configuration matches them by that root-relative path.
+          New-Item -ItemType Directory -Force -Path ssms-unsigned | Out-Null
+          Copy-Item releases/InstallSsmsExtension.exe ssms-unsigned/InstallSsmsExtension.exe
+          Copy-Item releases/PlanViewer.Ssms.vsix ssms-unsigned/PlanViewer.Ssms.vsix
+
+      - name: Upload SSMS files for signing
+        id: upload-ssms-unsigned
+        if: steps.ssms.outputs.BUILT == 'true'
+        continue-on-error: true
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: Ssms-unsigned
+          path: ssms-unsigned/
+          if-no-files-found: error
+
+      # Same organization, project, policy and timeout as the App request above.
+      # Only the artifact configuration differs. "Vsix" is a zip whose root holds
+      # InstallSsmsExtension.exe (Authenticode) and PlanViewer.Ssms.vsix (OPC
+      # signature, plus Authenticode on PlanViewer.Ssms.dll, which sits at the
+      # root of the VSIX).
+      - name: Sign SSMS extension and installer
+        id: sign-ssms
+        if: steps.ssms.outputs.BUILT == 'true'
+        continue-on-error: true
+        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3.0
+        with:
+          api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
+          organization-id: '7969f8b6-d946-4a74-9bac-a55856d8b8e0'
+          project-slug: 'PerformanceStudio'
+          signing-policy-slug: 'release-signing'
+          artifact-configuration-slug: 'Vsix'
+          github-artifact-id: '${{ steps.upload-ssms-unsigned.outputs.artifact-id }}'
+          wait-for-completion: true
+          output-artifact-directory: 'signed/ssms'
+          wait-for-completion-timeout-in-seconds: 1800
+
+      # Copy the signed files over the ones in releases/ only when signing
+      # succeeded (steps.<id>.outcome is the result before continue-on-error, so
+      # it is never 'success' for a failed step). Every later step reads the
+      # files from releases/: the release upload, the SSMS Gallery upload and the
+      # checksums.
+      - name: Replace unsigned SSMS files with signed
+        if: steps.ssms.outputs.BUILT == 'true' && steps.sign-ssms.outcome == 'success'
+        shell: pwsh
+        run: |
+          # Copy both files or neither, so one signed file never ships beside an
+          # unsigned one. The signed installer must also accept the signed VSIX:
+          # --verify-only runs the installer's signature check and installs
+          # nothing. If a copy or that check fails, put the unsigned pair back
+          # from ssms-unsigned/. If that fails too, the step fails and the job
+          # stops before the release is created, so a mixed pair is never
+          # published.
+          $names = 'InstallSsmsExtension.exe', 'PlanViewer.Ssms.vsix'
+          $missing = @($names | Where-Object { -not (Test-Path "signed/ssms/$_") })
+          if ($missing.Count -gt 0) {
+            Write-Host "::warning::SignPath reported success but these signed files are missing: $($missing -join ', '). PlanViewer.Ssms.vsix and InstallSsmsExtension.exe shipped unsigned."
+          } else {
+            try {
+              foreach ($name in $names) {
+                Copy-Item "signed/ssms/$name" "releases/$name" -Force -ErrorAction Stop
+              }
+              & releases/InstallSsmsExtension.exe --verify-only releases/PlanViewer.Ssms.vsix
+              if ($LASTEXITCODE -ne 0) {
+                throw "the installer rejected the signed VSIX with exit code $LASTEXITCODE (the reason is in the log above)"
+              }
+              Write-Host 'Replaced the SSMS extension and installer with the signed files.'
+            } catch {
+              $problem = $_.Exception.Message
+              foreach ($name in $names) {
+                Copy-Item "ssms-unsigned/$name" "releases/$name" -Force -ErrorAction Stop
+              }
+              # The failed check left a non-zero exit code, and the shell ends the
+              # script with `exit $LASTEXITCODE`. The failure is handled, so reset it.
+              $global:LASTEXITCODE = 0
+              Write-Host "::warning::Could not use the signed SSMS files: $problem. PlanViewer.Ssms.vsix and InstallSsmsExtension.exe shipped unsigned."
+            }
+          }
+
+      - name: Warn that SSMS files are unsigned
+        if: steps.ssms.outputs.BUILT == 'true' && steps.sign-ssms.outcome != 'success'
+        shell: pwsh
+        env:
+          SIGN_OUTCOME: ${{ steps.sign-ssms.outcome }}
+        run: |
+          Write-Host "::warning::SSMS signing did not succeed (result: $env:SIGN_OUTCOME). PlanViewer.Ssms.vsix and InstallSsmsExtension.exe shipped unsigned."
+
       # ── Everything above this line is reversible: nothing has been published.
       #    The release is created only now that signed binaries exist. ──
       - name: Create release
@@ -170,8 +271,12 @@ jobs:
         run: |
           gh release create "v${{ steps.version.outputs.VERSION }}" --title "v${{ steps.version.outputs.VERSION }}" --generate-notes --target main
 
+      # releases/ holds the signed copies here when the SSMS signing above succeeded.
+      # continue-on-error: the release exists by now, so a failed SSMS upload must
+      # not stop the App files from being uploaded below.
       - name: Upload SSMS extension to release
         if: steps.ssms.outputs.BUILT == 'true'
+        continue-on-error: true
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -215,6 +320,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.version.outputs.VERSION }}
+          SSMS_BUILT: ${{ steps.ssms.outputs.BUILT }}
         run: |
           New-Item -ItemType Directory -Force -Path releases
 
@@ -271,8 +377,14 @@ jobs:
             python .github/scripts/zip_with_exec.py "$wrapperDir" "releases/PerformanceStudio-$rid.zip" --exec "PerformanceStudio.app/Contents/MacOS/PlanViewer.App" --exec-optional "PerformanceStudio.app/Contents/MacOS/createdump"
           }
 
-          # Checksums (zips only, Velopack has its own checksums)
-          $checksums = Get-ChildItem releases/*.zip | ForEach-Object {
+          # Checksums: the zips, plus the SSMS extension and installer when they
+          # were built (the signed copies when signing succeeded). Velopack has
+          # its own checksums.
+          $files = @(Get-ChildItem releases/*.zip)
+          if ($env:SSMS_BUILT -eq 'true') {
+            $files += Get-Item releases/PlanViewer.Ssms.vsix, releases/InstallSsmsExtension.exe
+          }
+          $checksums = $files | ForEach-Object {
             $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
             "$hash  $($_.Name)"
           }

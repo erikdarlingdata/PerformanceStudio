@@ -99,6 +99,16 @@ public partial class MainWindow : Window
     /// </summary>
     private void HookScratchPersistence(QuerySessionControl session)
     {
+        /* A secondary instance never persists scratch content. The buffer folder and the ids
+           in it belong to the instance that owns the slot: writing there would put this
+           window's text under names the owner also writes, drops and sweeps. With no
+           subscription nothing is ever queued, no buffer id is minted, and every place that
+           drops a buffer finds no id and does nothing — the drop sites need no guard of
+           their own. The cost is crash recovery for this window's scratch tabs; the close
+           prompts do not depend on it. */
+        if (SingleInstance.IsSecondaryInstance)
+            return;
+
         /* Only sessions that are scratch NOW. SourceFilePath moves null→path exactly once
            (the save) and never back, so a session arriving here file-backed can never need
            this hook later — the scope fence again, applied at subscription time. It also

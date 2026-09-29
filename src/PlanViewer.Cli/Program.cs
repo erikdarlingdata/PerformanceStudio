@@ -1,6 +1,5 @@
 using System.CommandLine;
 using PlanViewer.Cli;
-using PlanViewer.Cli.Commands;
 using PlanViewer.Core.Services;
 using PlanViewer.Core.Interfaces;
 using PlanViewer.Cli.ReplSurface;
@@ -22,14 +21,7 @@ catch (PlatformNotSupportedException)
     // Credential storage not available — analyze-only mode still works
 }
 
-var root = new RootCommand("SQL Server execution plan analyzer (use 'planview repl' for interactive plan exploration)")
-{
-    AnalyzeCommand.Create(credentialService),
-    QueryStoreCommand.Create(credentialService),
-};
-
-if (credentialService != null)
-    root.Add(CredentialCommand.Create(credentialService));
+var root = CliRoot.Create(credentialService);
 
 // System.CommandLine's InvokeAsync returns 0 for successful dispatch even when a
 // handler set Environment.ExitCode = 1 to signal a validation error. Honor either

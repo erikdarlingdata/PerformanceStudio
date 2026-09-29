@@ -33,9 +33,36 @@ namespace PlanViewer.App.Controls;
 public partial class QuerySessionControl : UserControl
 {
     private bool AddPlanTab(string planXml, string queryText, bool estimated, string? labelOverride = null)
-        => AddPlanTab(planXml, queryText, estimated, labelOverride, out _);
+        => AddPlanTab(planXml, queryText, estimated, labelOverride, sourceDatabase: null, out _);
 
     private bool AddPlanTab(string planXml, string queryText, bool estimated, string? labelOverride, out string? failure)
+        => AddPlanTab(planXml, queryText, estimated, labelOverride, sourceDatabase: null, out failure);
+
+    /// <summary>
+    /// Points a plan viewer hosted in this session at the database its plan came from:
+    /// <paramref name="sourceDatabase"/> when a Query Store grid supplied one, the toolbar's when
+    /// not. The viewer's schema lookups (Show Indexes, Show Table Definition) run on its
+    /// ConnectionString and its status label names the database, so both follow the plan rather
+    /// than whatever the toolbar shows (E1).
+    /// </summary>
+    private void ConnectViewer(PlanViewerControl viewer, string? sourceDatabase)
+    {
+        viewer.SourceDatabase = sourceDatabase;
+        viewer.ConnectionString = sourceDatabase != null && _serverConnection != null
+            ? _serverConnection.GetConnectionString(_credentialService, sourceDatabase)
+            : _connectionString;
+        viewer.SetConnectionServices(_credentialService, _connectionStore);
+        if (_serverConnection != null)
+            viewer.SetConnectionStatus(_serverConnection.ServerName, sourceDatabase ?? _selectedDatabase);
+    }
+
+    /// <param name="sourceDatabase">
+    /// The database this plan came from, when that is a Query Store grid's own picker rather
+    /// than the toolbar's — null for every other path. See <see cref="ConnectViewer"/> and
+    /// <see cref="PlanViewerControl.SourceDatabase"/> for why (E1).
+    /// </param>
+    private bool AddPlanTab(string planXml, string queryText, bool estimated, string? labelOverride,
+        string? sourceDatabase, out string? failure)
     {
         failure = null;
         _planCounter++;
@@ -45,10 +72,7 @@ public partial class QuerySessionControl : UserControl
         // Sub-tab of this session: the session's toolbar above it owns the connection (#U5).
         viewer.HostedInSession = true;
         viewer.Metadata = _serverMetadata;
-        viewer.ConnectionString = _connectionString;
-        viewer.SetConnectionServices(_credentialService, _connectionStore);
-        if (_serverConnection != null)
-            viewer.SetConnectionStatus(_serverConnection.ServerName, _selectedDatabase);
+        ConnectViewer(viewer, sourceDatabase);
         viewer.OpenInEditorRequested += OnOpenInEditorRequested;
 
         if (!viewer.LoadPlan(planXml, label, queryText))
@@ -201,16 +225,80 @@ public partial class QuerySessionControl : UserControl
     /// Said once because there are four doors onto it — the header's ✕, the context menu's Close,
     /// its two bulk siblings, and Ctrl+F4 — and the release half is the half that goes missing.
     /// A plan viewer holds an MCP session registration that nothing else unregisters, so a close
-    /// that only removes the tab leaks it, invisibly and for the life of the process. The sub-tab
-    /// kinds built by <see cref="CreateSubTab"/> release themselves instead, on detach, which is
-    /// what removing them from the strip causes.
+    /// that only removes the tab leaks it, invisibly and for the life of the process. The ✕ that
+    /// <see cref="CreateSubTab"/> builds for Query Store and History documents goes through here
+    /// too, so what each kind gives up is decided in <see cref="ReleaseDocument"/> and nowhere else.
     /// </remarks>
     private void CloseDocument(TabItem tab)
     {
-        if (tab.Content is PlanViewerControl viewer)
-            viewer.Clear();
-
+        ReleaseDocument(tab);
         RemoveDocument(tab);
+    }
+
+    /// <summary>
+    /// Gives up what one document holds, and leaves it in the strip.
+    /// </summary>
+    /// <remarks>
+    /// Said once so that closing one document and closing the whole session release the same
+    /// things: <see cref="CloseDocument"/> calls it for the document it is closing, and
+    /// <see cref="ReleaseOnClose"/> calls it for every document the session still holds. It reads
+    /// the tab's content as it is NOW, so a tab that started as a spinner and had a plan swapped
+    /// into it is released as the plan viewer it became.
+    ///
+    /// <para>What each kind holds: a plan viewer holds its MCP session registration, a Query Store
+    /// grid and a History document hold a fetch running on the server, and a loading tab holds the
+    /// run that will fill it. Closing the tab stops all of them, because none of them has anywhere
+    /// left to put what it was fetching.</para>
+    ///
+    /// <para>Safe to call twice on the same document: unregistering a plan that is already gone,
+    /// and cancelling a source that is already cancelled, both do nothing.</para>
+    /// </remarks>
+    private void ReleaseDocument(TabItem tab)
+    {
+        switch (tab.Content)
+        {
+            case PlanViewerControl viewer:
+                viewer.Clear();
+                break;
+
+            case QueryStoreGridControl grid:
+                grid.CancelFetch();
+                break;
+
+            case QueryStoreHistoryControl history:
+                history.CancelFetch();
+                break;
+        }
+
+        if (_tabRuns.TryGetValue(tab, out var run))
+            run.Cancel();
+    }
+
+    /// <summary>
+    /// The session's tab has been closed for good: releases every document it still holds, and
+    /// stops the work the session itself has running.
+    /// </summary>
+    /// <remarks>
+    /// Called by the window that owns the tab, after the tab has left the strip or the detached
+    /// window has closed. Not called on a detach or a re-dock, where the session moves and stays
+    /// open. Closing a session used to remove its tab and nothing else: every plan viewer in it
+    /// stayed registered with the MCP session manager until the app exited, and a query or plan
+    /// capture (both run with no timeout) kept running on the server for a session nobody could
+    /// see any more.
+    ///
+    /// <para>The current run is cancelled here directly, as well as through the loading tab that
+    /// shows it: the session's current source is the one thing a close must never leave live,
+    /// whatever state its tab is in. Starting a run cancels the one before it, so it is also the
+    /// only source that can still be live. The metadata fetch behind the database picker belongs
+    /// to the session too.</para>
+    /// </remarks>
+    internal void ReleaseOnClose()
+    {
+        _executionCts?.Cancel();
+        _databaseMetadataCts?.Cancel();
+
+        foreach (var tab in DocumentTabs.ToList())
+            ReleaseDocument(tab);
     }
 
     private void ClosePlanTab_Click(object? sender, RoutedEventArgs e)

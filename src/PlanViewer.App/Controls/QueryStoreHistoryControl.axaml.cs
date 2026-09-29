@@ -22,6 +22,11 @@ public partial class QueryStoreHistoryControl : UserControl
 	private readonly string _queryHash;
 	private readonly string _database;
 	private readonly string _queryText;
+	/// <summary>
+	/// The offset holder of the connection this History was opened from (E5): the grid's, not the
+	/// session's current one, because the data it fetches comes from the grid's server.
+	/// </summary>
+	private readonly ServerUtcOffset _serverOffset;
 	private readonly DateTime? _slicerStartUtc;
 	private readonly DateTime? _slicerEndUtc;
 	private readonly int _maxHoursBack;
@@ -117,11 +122,12 @@ public partial class QueryStoreHistoryControl : UserControl
 		_queryHash = "";
 		_database = "";
 		_queryText = "";
+		_serverOffset = new ServerUtcOffset();
 		InitializeComponent();
 	}
 
 	public QueryStoreHistoryControl(string connectionString, string queryHash,
-		string queryText, string database,
+		string queryText, string database, ServerUtcOffset serverOffset,
 		string initialMetricTag = "AvgCpuMs",
 		DateTime? slicerStartUtc = null, DateTime? slicerEndUtc = null,
 		int slicerDaysBack = 30)
@@ -130,6 +136,7 @@ public partial class QueryStoreHistoryControl : UserControl
 		_queryHash = queryHash;
 		_database = database;
 		_queryText = queryText;
+		_serverOffset = serverOffset;
 		_slicerStartUtc = slicerStartUtc;
 		_slicerEndUtc = slicerEndUtc;
 		_maxHoursBack = slicerDaysBack * 24;

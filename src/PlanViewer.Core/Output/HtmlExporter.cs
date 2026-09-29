@@ -1,4 +1,5 @@
 using System.IO;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Web;
 
@@ -291,7 +292,7 @@ pre.query-text, pre.text-output {
         {
             sb.AppendLine("<div class=\"op-tree\">");
             sb.AppendLine("<h3>Operator Tree</h3>");
-            WriteOperatorNode(sb, stmt.OperatorTree, stmt);
+            WriteOperatorNode(sb, stmt.OperatorTree);
             sb.AppendLine("</div>");
         }
 
@@ -509,9 +510,11 @@ pre.query-text, pre.text-output {
 
         foreach (var w in sorted)
         {
-            var sevLower = w.Severity.ToLowerInvariant();
-            sb.AppendLine($"<div class=\"warning-item {sevLower}\">");
-            sb.AppendLine($"<span class=\"sev sev-{sevLower}\">{Encode(w.Severity)}</span>");
+            // A shared plan's analysis is caller-supplied JSON, so Severity can hold anything.
+            // Only a fixed class name goes into the attributes; the text itself is encoded.
+            var sevClass = SeverityClass(w.Severity);
+            sb.AppendLine($"<div class=\"warning-item {sevClass}\">");
+            sb.AppendLine($"<span class=\"sev sev-{sevClass}\">{Encode(w.Severity)}</span>");
             if (w.Operator != null)
                 sb.AppendLine($"<span class=\"warn-op\">{Encode(w.Operator)}</span>");
             sb.AppendLine($"<span class=\"warn-type\">{Encode(w.Type)}</span>");
@@ -527,7 +530,27 @@ pre.query-text, pre.text-output {
         sb.AppendLine("</div>");
     }
 
-    private static void WriteOperatorNode(StringBuilder sb, OperatorResult node, StatementResult stmt)
+    private static void WriteOperatorNode(StringBuilder sb, OperatorResult node)
+    {
+        WriteOperatorLine(sb, node);
+
+        // Children
+        if (node.Children.Count > 0)
+        {
+            sb.AppendLine("<div class=\"op-children\">");
+            foreach (var child in node.Children)
+                WriteOperatorNode(sb, child);
+            sb.AppendLine("</div>");
+        }
+
+        sb.AppendLine("</div>");
+    }
+
+    /* #589: kept out of WriteOperatorNode so that the recursion's frame stays small. The
+       interpolated strings here take most of the stack, and now they take it once, not once per
+       operator level. */
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static void WriteOperatorLine(StringBuilder sb, OperatorResult node)
     {
         var classes = "op-node";
         if (node.CostPercent >= 25) classes += " expensive";
@@ -549,7 +572,8 @@ pre.query-text, pre.text-output {
         // Rows
         if (node.ActualRows.HasValue)
         {
-            var est = node.EstimatedRows;
+            // #594: the same execution-aware estimate the plan viewer's node label shows.
+            var est = node.ExpectedRows ?? node.EstimatedRows;
             var ratio = est > 0 ? (double)node.ActualRows.Value / est : 0;
             var accuracy = est > 0 ? $" ({ratio * 100:F0}%)" : "";
             sb.Append($" <span class=\"op-rows\">{node.ActualRows.Value:N0} of {est:N0} rows{accuracy}</span>");
@@ -568,17 +592,6 @@ pre.query-text, pre.text-output {
             sb.Append($" <span class=\"op-object\">{Encode(node.ObjectName)}</span>");
 
         sb.AppendLine();
-
-        // Children
-        if (node.Children.Count > 0)
-        {
-            sb.AppendLine("<div class=\"op-children\">");
-            foreach (var child in node.Children)
-                WriteOperatorNode(sb, child, stmt);
-            sb.AppendLine("</div>");
-        }
-
-        sb.AppendLine("</div>");
     }
 
     private static void WriteTextAnalysis(StringBuilder sb, string textOutput)
@@ -619,4 +632,15 @@ pre.query-text, pre.text-output {
     }
 
     private static string Encode(string text) => HttpUtility.HtmlEncode(text);
+
+    /// <summary>
+    /// Maps a warning severity to one of the stylesheet's three class names. Any other value,
+    /// null included, gets "info", so severity text never reaches a class attribute.
+    /// </summary>
+    private static string SeverityClass(string? severity) => severity?.ToLowerInvariant() switch
+    {
+        "critical" => "critical",
+        "warning" => "warning",
+        _ => "info"
+    };
 }

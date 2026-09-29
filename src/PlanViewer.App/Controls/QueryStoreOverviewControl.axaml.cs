@@ -18,11 +18,41 @@ public partial class QueryStoreOverviewControl : UserControl
 {
     private readonly ServerConnection _serverConnection;
     private readonly ICredentialService _credentialService;
+    /// <summary>
+    /// The offset holder of the connection this Overview was built on (E5). A reconnect throws the
+    /// Overview away and builds a new one (QuerySessionControl.InvalidateOverviewView), so this is
+    /// always the holder of the server whose data is on screen.
+    /// </summary>
+    private readonly ServerUtcOffset _serverOffset;
     private readonly string _masterConnectionString;
     private readonly int _maxDop;
     private readonly int _topN;
     private readonly bool _supportsWaitStats;
     private CancellationTokenSource? _cts;
+
+    /// <summary>
+    /// The token source of the load or refresh that is running right now, or null when nothing is.
+    /// Set where <see cref="LoadAsync"/> and <see cref="OnSlicerRangeChanged"/> take the token over,
+    /// and cleared in their <c>finally</c> only if it is still theirs — read by the detach handler
+    /// so it knows whether cancelling is aborting real work or just tidying up an already-finished
+    /// token (<see cref="_cts"/> stays non-null after a load succeeds, so it cannot answer that on
+    /// its own).
+    ///
+    /// <para>By identity rather than a flag because the two overlap on every ordinary load: loading
+    /// the slicer raises RangeChanged, whose handler cancels the load's token and runs the long
+    /// metrics phase on a token of its own, while the cancelled load unwinds and reaches its
+    /// <c>finally</c> first. A flag cleared there would say nothing is running for the whole of
+    /// the slowest phase — exactly when a switch away is likeliest.</para>
+    /// </summary>
+    private CancellationTokenSource? _runningCts;
+
+    /// <summary>
+    /// Set when a detach cancelled a load that was still running — the load the user would have
+    /// seen finish if they had not switched away. Consumed by the next attach, which restarts it
+    /// with the same time range; a load that had already finished never sets this, so coming back
+    /// to a view that is already showing its data does not reload it for nothing (E3).
+    /// </summary>
+    private bool _reloadOnAttach;
 
     private List<DatabaseQueryStoreState> _states = new();
     private List<DatabaseMetrics> _metrics = new();
@@ -62,10 +92,12 @@ public partial class QueryStoreOverviewControl : UserControl
     public event EventHandler<DrillDownEventArgs>? DrillDownRequested;
 
     public QueryStoreOverviewControl(ServerConnection serverConnection,
-        ICredentialService credentialService, int maxDop = 8, int? topN = null, bool supportsWaitStats = true)
+        ICredentialService credentialService, ServerUtcOffset serverOffset,
+        int maxDop = 8, int? topN = null, bool supportsWaitStats = true)
     {
         _serverConnection = serverConnection;
         _credentialService = credentialService;
+        _serverOffset = serverOffset;
         _masterConnectionString = serverConnection.GetConnectionString(credentialService, "master");
         _maxDop = maxDop;
 
@@ -90,6 +122,9 @@ public partial class QueryStoreOverviewControl : UserControl
 
         InitializeComponent();
 
+        // Declared in XAML, so handed the holder here, before any data reaches it.
+        OverviewTimeSlicer.ServerOffset = serverOffset;
+
         /* Only the wait stats chart is drawn into a Canvas at absolute coordinates, so it is the
            only thing left that has to be redrawn when the control resizes. The state card and the
            metric cards are laid out by the panels they live in and reflow on their own. */
@@ -105,8 +140,42 @@ public partial class QueryStoreOverviewControl : UserControl
            and ObjectDisposedException is not what its caller is catching. */
         this.DetachedFromVisualTree += (_, _) =>
         {
+            /* A load left running is one the user would have seen land if they had not switched
+               away — remembered here so the next attach can pick it back up (E3). The claim is
+               dropped along with the token: what is cancelled next is about to unwind, and the
+               question for the next detach is only ever about work started since. */
+            _reloadOnAttach = _runningCts != null;
+            _runningCts = null;
             _cts?.Cancel();
             _cts = null;
+        };
+
+        /* The session detaches this control's whole host when the user switches to another
+           top-level tab (QuerySessionControl.axaml.cs) — switching the view's own segment does
+           not, ApplySurface only toggles IsVisible, so this never fires from that. Only the
+           detach above sets _reloadOnAttach, so an attach after a load that already finished,
+           failed, or was cancelled some other way restarts nothing. */
+        this.AttachedToVisualTree += async (_, _) =>
+        {
+            if (!_reloadOnAttach) return;
+            _reloadOnAttach = false;
+
+            try
+            {
+                await LoadAsync();
+            }
+            catch (OperationCanceledException)
+            {
+                // Superseded by yet another load before this one finished — that one reports.
+            }
+            catch (Exception ex)
+            {
+                /* Nothing awaits this handler, so an escaped exception here has nowhere to go
+                   but the process — same reasoning as ShowOverviewCoreAsync's own catch
+                   (QuerySessionControl.Views.cs). The session may not even be looking at this
+                   view by the time it lands, which is exactly what this badge is for. */
+                ShowRefreshError(ex);
+            }
         };
     }
 
@@ -123,8 +192,10 @@ public partial class QueryStoreOverviewControl : UserControl
     public async Task LoadAsync()
     {
         _cts?.Cancel();
-        _cts = new CancellationTokenSource();
-        var ct = _cts.Token;
+        var cts = new CancellationTokenSource();
+        _cts = cts;
+        _runningCts = cts;
+        var ct = cts.Token;
 
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
@@ -198,6 +269,11 @@ public partial class QueryStoreOverviewControl : UserControl
         }
         finally
         {
+            /* Only if the claim is still this run's. Loading the slicer hands the token to
+               OnSlicerRangeChanged, so on the ordinary path this run unwinds while the refresh it
+               started is only beginning its slowest phase — and that refresh's claim is the one
+               that has to survive. */
+            if (ReferenceEquals(_runningCts, cts)) _runningCts = null;
             await Dispatcher.UIThread.InvokeAsync(() => LoadingBar.IsIndeterminate = false);
         }
     }
@@ -309,6 +385,7 @@ public partial class QueryStoreOverviewControl : UserControl
         _cts?.Cancel();
         var newCts = new CancellationTokenSource();
         _cts = newCts;
+        _runningCts = newCts;
 
         ClearRefreshError();
         try
@@ -319,6 +396,10 @@ public partial class QueryStoreOverviewControl : UserControl
         catch (Exception ex)
         {
             ShowRefreshError(ex);
+        }
+        finally
+        {
+            if (ReferenceEquals(_runningCts, newCts)) _runningCts = null;
         }
     }
 

@@ -228,6 +228,19 @@ planview analyze ./queries/ --output-dir ./results/
 
 CLI arguments override `.env` values when both are provided.
 
+When the `.env` file supplies a setting, the CLI prints one line to stderr. The line names the file and those settings, and it never shows their values:
+
+```text
+Using settings from /work/.env: PLANVIEW_SERVER, PLANVIEW_TRUST_CERT
+```
+
+The CLI takes a setting from the file only when the setting has an effect:
+
+- With no server from either place, `analyze` reads the plan file offline and takes nothing from the `.env` file.
+- `PLANVIEW_PASSWORD` is used only with a login.
+
+If a `PLANVIEW_` value holds a control character, the CLI stops and names the setting. The CLI prints the server and database names later. A control character in them moves the cursor and erases text, such as the `Using settings` line.
+
 **Using the credential store** — for longer-term use, store credentials in your OS keychain:
 
 ```bash
@@ -380,6 +393,8 @@ A VSIX extension that adds **"Open in Performance Studio"** to the execution pla
 4. The installer auto-detects SSMS 21 and/or SSMS 22 and installs into both
 5. Restart SSMS to activate the extension
 
+Release builds are signed. A signed installer installs only a `PlanViewer.Ssms.vsix` that has the same signature, so use the two files from the same release. You can also double-click `PlanViewer.Ssms.vsix` to install the extension without the installer.
+
 ### First run
 
 On first use, if Performance Studio isn't found automatically, the extension will prompt you to locate `PlanViewer.App.exe`. The path is saved to the registry (`HKCU\SOFTWARE\DarlingData\SQLPerformanceStudio\InstallPath`) so you only need to do this once.
@@ -462,7 +477,7 @@ Arguments:
 
 Options:
   --stdin                    Read plan XML from stdin
-  -o, --output <format>      json (default) or text
+  -o, --output <format>      json (default), text, or both (with --server, both writes .json and .txt files)
   --compact                  Compact JSON (no indentation)
   --warnings-only            Skip operator tree, only output warnings and indexes
   -s, --server <name>        SQL Server name (matches credential store key)

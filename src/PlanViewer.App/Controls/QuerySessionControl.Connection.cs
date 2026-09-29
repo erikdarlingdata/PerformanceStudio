@@ -47,6 +47,21 @@ public partial class QuerySessionControl : UserControl
             _selectedDatabase = dialog.ResultDatabase;
             _connectionString = _serverConnection.GetConnectionString(_credentialService, _selectedDatabase);
 
+            /* A new holder for a new connection, made here rather than at the fetch below so a
+               document opened while the fetch is still in flight already has the right one to
+               read, and handed to the fetch as a parameter so an offset that lands after ANOTHER
+               reconnect fills this connection's holder and not the newer one's (E5). The
+               connection string is captured for the same reason. */
+            var serverOffset = BeginServerConnection();
+            var offsetConnectionString = _connectionString;
+
+            /* A database metadata fetch still running from before this reconnect was built from
+               the previous server's connection string. Left alone it can land after
+               FetchServerMetadataAsync below has replaced _serverMetadata, and write the old
+               server's database rows into the new server's metadata (E7). The fetch this block
+               makes itself is the newest pick and owns the result. */
+            _databaseMetadataCts?.Cancel();
+
             ServerLabel.Text = _serverConnection.ApplicationIntentReadOnly
                 ? $"{_serverConnection.ServerName} (Read-only)"
                 : _serverConnection.ServerName;
@@ -74,7 +89,7 @@ public partial class QuerySessionControl : UserControl
             DatabaseBox.IsEnabled = true;
 
             await FetchServerMetadataAsync();
-            await FetchServerUtcOffset();
+            await FetchServerUtcOffset(offsetConnectionString, serverOffset);
 
             if (_selectedDatabase != null)
             {
@@ -112,6 +127,31 @@ public partial class QuerySessionControl : UserControl
         await FetchDatabaseMetadataAsync();
     }
 
+    /// <summary>
+    /// Selects <paramref name="db"/> in the database picker if it is one of the databases the
+    /// picker already knows about, using the same match the connect block above uses to restore
+    /// a remembered database. Selecting it runs <see cref="Database_SelectionChanged"/> exactly
+    /// as a user's own pick would, which is what actually sets <c>_selectedDatabase</c> and
+    /// <c>_connectionString</c> and refreshes the metadata — so this never writes either field
+    /// itself. Returns whether a match was found; the Overview's drill-down
+    /// (QuerySessionControl.Views.cs) opens its Query Store tab either way, so a database the
+    /// picker does not know about — one created after connect, most likely — just leaves the
+    /// session on whatever database it already had (E1).
+    /// </summary>
+    internal bool TrySelectDrilledDatabase(string db)
+    {
+        for (int i = 0; i < DatabaseBox.Items.Count; i++)
+        {
+            if (DatabaseBox.Items[i]?.ToString() == db)
+            {
+                DatabaseBox.SelectedIndex = i;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private async Task FetchServerMetadataAsync()
     {
         if (_connectionString == null) return;
@@ -127,18 +167,36 @@ public partial class QuerySessionControl : UserControl
         }
     }
 
-    private async Task FetchServerUtcOffset()
+    /// <summary>
+    /// Starts the offset holder for a new connection. A connect replaces the holder instead of
+    /// reusing it: documents already open keep the old one, because their data came from the old
+    /// server, and documents opened from here on get this one. Internal so a test can connect
+    /// without a server — the connect block calls this and nothing else makes a holder (E5).
+    /// </summary>
+    internal ServerUtcOffset BeginServerConnection()
     {
-        if (_connectionString == null) return;
+        _serverOffset = new ServerUtcOffset();
+        return _serverOffset;
+    }
+
+    /// <summary>
+    /// Asks the server it just connected to for its offset from UTC and fills
+    /// <paramref name="target"/> with it. Takes the connection string and the holder rather than
+    /// reading the session's fields, so the answer lands on the connection that asked even if the
+    /// session has reconnected in the meantime. A failed query leaves the holder at zero.
+    /// </summary>
+    private static async Task FetchServerUtcOffset(string? connectionString, ServerUtcOffset target)
+    {
+        if (connectionString == null) return;
         try
         {
-            await using var conn = new SqlConnection(_connectionString);
+            await using var conn = new SqlConnection(connectionString);
             await conn.OpenAsync();
             await using var cmd = new SqlCommand(
                 "SELECT DATEDIFF(MINUTE, GETUTCDATE(), GETDATE())", conn);
             var offset = await cmd.ExecuteScalarAsync();
             if (offset is int mins)
-                PlanViewer.Core.Services.TimeDisplayHelper.ServerUtcOffsetMinutes = mins;
+                target.Minutes = mins;
         }
         catch { }
     }
@@ -146,10 +204,28 @@ public partial class QuerySessionControl : UserControl
     private async Task FetchDatabaseMetadataAsync()
     {
         if (_connectionString == null || _serverMetadata == null) return;
+
+        /* The database picker can change again before this lands — Database_SelectionChanged
+           calls this on every pick, and nothing stopped an older fetch from landing after a
+           newer one and overwriting _serverMetadata.Database with the wrong database's rows
+           (E7). Same shape as the Query Store grid's own database check
+           (QueryStoreGridControl.QsDatabase_SelectionChanged). Cancelled, never disposed: the
+           older fetch reads its own token when it wakes, and Token on a disposed source throws. */
+        _databaseMetadataCts?.Cancel();
+        var cts = new CancellationTokenSource();
+        _databaseMetadataCts = cts;
+
         try
         {
-            _serverMetadata.Database = await ServerMetadataService.FetchDatabaseMetadataAsync(
-                _connectionString, _serverMetadata.SupportsScopedConfigs);
+            var database = await ServerMetadataService.FetchDatabaseMetadataAsync(
+                _connectionString, _serverMetadata.SupportsScopedConfigs, cts.Token);
+            if (cts.Token.IsCancellationRequested) return; // superseded — the newer pick owns this
+
+            _serverMetadata.Database = database;
+        }
+        catch (OperationCanceledException)
+        {
+            // superseded — the newer pick owns this
         }
         catch
         {

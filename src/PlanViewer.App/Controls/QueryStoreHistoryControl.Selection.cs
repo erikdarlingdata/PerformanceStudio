@@ -128,7 +128,7 @@ public partial class QueryStoreHistoryControl : UserControl
 			for (int i = 0; i < _historyData.Count; i++)
 			{
 				var row = _historyData[i];
-				var displayTime = TimeDisplayHelper.ConvertForDisplay(row.IntervalStartUtc);
+				var displayTime = TimeDisplayHelper.ConvertForDisplay(row.IntervalStartUtc, _serverOffset.Minutes);
 				if (row.QueryPlanHash == bestPlanHash &&
 					Math.Abs((displayTime - clickedTime).TotalMinutes) < 1)
 				{
@@ -154,7 +154,7 @@ public partial class QueryStoreHistoryControl : UserControl
 		for (int i = 0; i < _historyData.Count; i++)
 		{
 			var row = _historyData[i];
-			var xVal = TimeDisplayHelper.ConvertForDisplay(row.IntervalStartUtc).ToOADate();
+			var xVal = TimeDisplayHelper.ConvertForDisplay(row.IntervalStartUtc, _serverOffset.Minutes).ToOADate();
 			var yVal = GetMetricValue(row, tag);
 
 			if (xVal >= x1 && xVal <= x2 && yVal >= y1 && yVal <= y2)

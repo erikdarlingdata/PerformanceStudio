@@ -8,15 +8,15 @@ namespace PlanViewer.Core.Services;
 
 public static partial class PlanAnalyzer
 {
-    /* Both passes below match on WarningType alone, and a type name is not unique to us:
+    /* MarkLegacyWarnings matches on WarningType alone, and a type name is not unique to us:
        "Implicit Conversion" is rule 29's legacy-listed type AND what the parser stamps on the
        engine's own PlanAffectingConvert element (Source = SqlServer). Matching by name only
        therefore branded the ENGINE's record "[SQL Server] [legacy]" — a badge that exists to
-       flag our un-migrated rules on a warning that is not ours at all — and TryOverrideSeverity
-       routed a user's rule-number override onto engine warnings the rule never produced (the
-       Contains matching makes it worse: every engine Spill variant lands on rule 7, "Memory
-       Grant" on rule 9). Legacy status and rule severity are facts about OUR rules, so anything
-       the engine said is skipped by both. */
+       flag our un-migrated rules on a warning that is not ours at all. TryOverrideSeverity
+       matched by name too until #575, and routed a user's rule-number override onto engine
+       warnings the rule never produced (its Contains matching sent every engine Spill variant
+       to rule 7 and "Memory Grant" to rule 9). Legacy status and rule severity are facts about
+       OUR rules, so anything the engine said is skipped by both. */
     private static void MarkLegacyWarnings(PlanStatement stmt)
     {
         foreach (var w in stmt.PlanWarnings)
@@ -72,21 +72,14 @@ public static partial class PlanAnalyzer
         if (warning.Source == PlanWarningSource.SqlServer)
             return;
 
-        // Find the rule number for this warning type (partial match for flexibility)
-        int? ruleNumber = null;
-        foreach (var (rule, type) in RuleWarningTypes)
-        {
-            if (warning.WarningType.Contains(type, StringComparison.OrdinalIgnoreCase) ||
-                type.Contains(warning.WarningType, StringComparison.OrdinalIgnoreCase))
-            {
-                ruleNumber = rule;
-                break;
-            }
-        }
+        /* #575: the rule that emits a finding stamps its number on it. Overrides used to find the
+           rule by matching WarningType against a rule-to-name table, and that table had no entry
+           for rules 34-37 and 39, for two of rule 30's three finding types, or for rule 10's RID
+           Lookup, so an override for any of them was silently ignored. */
+        if (warning.RuleNumber is not int ruleNumber)
+            return;
 
-        if (ruleNumber == null) return;
-
-        var overrideSeverity = cfg.GetSeverityOverride(ruleNumber.Value);
+        var overrideSeverity = cfg.GetSeverityOverride(ruleNumber);
         if (overrideSeverity == null) return;
 
         if (Enum.TryParse<PlanWarningSeverity>(overrideSeverity, ignoreCase: true, out var severity))
@@ -281,6 +274,91 @@ public static partial class PlanAnalyzer
         return $"{node.PhysicalOp} (Node {node.NodeId})";
     }
 
+    /* #579: the rules that look for a hint or a keyword in the query text (MAXDOP 1, MAXDOP 2,
+       RECOMPILE, OPTIMIZE FOR UNKNOWN, NOT IN, a cursor declaration, a row goal's cause) matched the raw
+       StatementText, so the words inside a string literal or a comment counted as code. This
+       blanks string-literal contents and whole comments with spaces, keeping every other character
+       where it was, so a match in the result is a match in the code. The scan follows
+       ParameterSubstitution's: '...' with doubled-quote escapes, -- to the end of the line, and
+       block comments, which nest in T-SQL. Delimited identifiers ("..." and [...]) are stepped
+       over unchanged, so a quote or a dash inside one does not start a string or a comment. */
+    internal static string MaskCommentsAndLiterals(string? text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return "";
+
+        var chars = text.ToCharArray();
+        var i = 0;
+        while (i < chars.Length)
+        {
+            var c = chars[i];
+            if (c == '\'' || c == '"' || c == '[')
+            {
+                var close = c == '[' ? ']' : c;
+                var end = i + 1;
+                while (end < chars.Length)
+                {
+                    if (chars[end] == close)
+                    {
+                        if (end + 1 < chars.Length && chars[end + 1] == close)
+                        {
+                            end += 2;
+                            continue;
+                        }
+                        break;
+                    }
+                    end++;
+                }
+                if (c == '\'')
+                {
+                    for (var k = i + 1; k < end && k < chars.Length; k++)
+                        chars[k] = ' ';
+                }
+                i = end + 1;
+                continue;
+            }
+
+            if (c == '-' && i + 1 < chars.Length && chars[i + 1] == '-')
+            {
+                while (i < chars.Length && chars[i] != '\n' && chars[i] != '\r')
+                    chars[i++] = ' ';
+                continue;
+            }
+
+            if (c == '/' && i + 1 < chars.Length && chars[i + 1] == '*')
+            {
+                var depth = 0;
+                while (i < chars.Length)
+                {
+                    if (chars[i] == '/' && i + 1 < chars.Length && chars[i + 1] == '*')
+                    {
+                        depth++;
+                        chars[i++] = ' ';
+                        chars[i++] = ' ';
+                        continue;
+                    }
+                    if (chars[i] == '*' && i + 1 < chars.Length && chars[i + 1] == '/')
+                    {
+                        depth--;
+                        chars[i++] = ' ';
+                        chars[i++] = ' ';
+                        if (depth == 0)
+                            break;
+                        continue;
+                    }
+                    if (chars[i] != '\n' && chars[i] != '\r')
+                        chars[i] = ' ';
+                    i++;
+                }
+                continue;
+            }
+
+            i++;
+        }
+
+        return new string(chars);
+    }
+
     /// <summary>
     /// Identifies the specific cause of a row goal from the statement text.
     /// Returns a specific cause when detectable, or a generic list as fallback.
@@ -290,7 +368,7 @@ public static partial class PlanAnalyzer
         if (string.IsNullOrEmpty(stmtText))
             return "TOP, EXISTS, IN, or FAST hint";
 
-        var text = stmtText.ToUpperInvariant();
+        var text = MaskCommentsAndLiterals(stmtText).ToUpperInvariant();
         var causes = new List<string>(4);
 
         if (Regex.IsMatch(text, @"\bTOP\b"))

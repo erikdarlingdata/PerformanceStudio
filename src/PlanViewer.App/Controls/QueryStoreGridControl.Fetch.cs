@@ -24,8 +24,41 @@ namespace PlanViewer.App.Controls;
 
 public partial class QueryStoreGridControl : UserControl
 {
+    /// <summary>
+    /// Set once the grid's tab has been closed. One-way: nothing re-docks a grid, so a grid that
+    /// has been told to stop is finished, and no later fetch may start on it.
+    /// </summary>
+    private bool _abandoned;
+
+    /// <summary>
+    /// Stops everything this grid has running against the server, and keeps it from starting more.
+    /// Called when its tab closes: without it the fetch kept running on the server, for a grid
+    /// nobody could see, until it finished by itself. The History document does the same when it
+    /// closes.
+    /// </summary>
+    /// <remarks>
+    /// Cancelled, never disposed — the opposite of History's, on purpose. Every fetch here reads
+    /// its own token when it wakes, and <see cref="OnWaitStatsCollapsedChanged"/> reads
+    /// <c>_fetchCts.Token</c> fresh at the moment it runs; Token on a disposed source throws, and
+    /// nothing in those callers is catching it. A cancelled source hands out a cancelled token,
+    /// which is exactly what a caller arriving late should get.
+    ///
+    /// <para>The latch is for the fetch that has not started yet: the constructor posts the first
+    /// fetch to run after layout, and a tab closed before that lands would otherwise start it on a
+    /// grid that is already gone.</para>
+    /// </remarks>
+    public void CancelFetch()
+    {
+        _abandoned = true;
+        _fetchCts?.Cancel();
+        _databaseCheckCts?.Cancel();
+    }
+
     private async void Fetch_Click(object? sender, RoutedEventArgs e)
     {
+        if (_abandoned)
+            return;
+
         // Commit any pending toolbar "Search by" entry into the server-filter state first,
         // then refresh the chip strip, before running the fetch.
         CommitSearchByCriterion();
@@ -136,7 +169,7 @@ public partial class QueryStoreGridControl : UserControl
         }
 
         foreach (var plan in plans)
-            _rows.Add(new QueryStoreRow(plan));
+            _rows.Add(new QueryStoreRow(plan, _serverOffset));
 
         ApplyFilters();
         LoadButton.IsEnabled = true;
@@ -344,7 +377,7 @@ public partial class QueryStoreGridControl : UserControl
                     {
                         var leafPlan = GroupedRowToPlan(leaf);
                         leafChildren.Add(new QueryStoreRow(leafPlan, 2,
-                            $"Q:{leaf.QueryId} P:{leaf.PlanId}{(leaf.IsTopRepresentative ? " ★" : "")}", new List<QueryStoreRow>()));
+                            $"Q:{leaf.QueryId} P:{leaf.PlanId}{(leaf.IsTopRepresentative ? " ★" : "")}", new List<QueryStoreRow>(), _serverOffset));
                     }
 
                     // Sort leaf children by metric descending
@@ -355,7 +388,7 @@ public partial class QueryStoreGridControl : UserControl
                     var topLeafForMid = leaves.FirstOrDefault(l => l.IsTopRepresentative) ?? leaves.FirstOrDefault();
                     if (topLeafForMid != null && !string.IsNullOrEmpty(topLeafForMid.QueryText))
                         midPlan.QueryText = topLeafForMid.QueryText;
-                    midChildren.Add(new QueryStoreRow(midPlan, 1, mid.QueryPlanHash, leafChildren));
+                    midChildren.Add(new QueryStoreRow(midPlan, 1, mid.QueryPlanHash, leafChildren, _serverOffset));
                 }
 
                 // Sort mid children by metric descending
@@ -370,7 +403,7 @@ public partial class QueryStoreGridControl : UserControl
                     ?? grouped.LeafRows.FirstOrDefault(l => l.QueryHash == qhKey && !string.IsNullOrEmpty(l.QueryText));
                 if (topLeafForRoot != null)
                     aggPlan.QueryText = topLeafForRoot.QueryText;
-                roots.Add(new QueryStoreRow(aggPlan, 0, qhKey, midChildren));
+                roots.Add(new QueryStoreRow(aggPlan, 0, qhKey, midChildren, _serverOffset));
             }
         }
         else // Module
@@ -398,7 +431,7 @@ public partial class QueryStoreGridControl : UserControl
                     {
                         var leafPlan = GroupedRowToPlan(leaf);
                         leafChildren.Add(new QueryStoreRow(leafPlan, 2,
-                            $"Q:{leaf.QueryId} P:{leaf.PlanId}{(leaf.IsTopRepresentative ? " ★" : "")}", new List<QueryStoreRow>()));
+                            $"Q:{leaf.QueryId} P:{leaf.PlanId}{(leaf.IsTopRepresentative ? " ★" : "")}", new List<QueryStoreRow>(), _serverOffset));
                     }
 
                     // Sort leaf children by metric descending
@@ -409,7 +442,7 @@ public partial class QueryStoreGridControl : UserControl
                     var topLeafForMid = leaves.FirstOrDefault(l => l.IsTopRepresentative) ?? leaves.FirstOrDefault();
                     if (topLeafForMid != null && !string.IsNullOrEmpty(topLeafForMid.QueryText))
                         midPlan.QueryText = topLeafForMid.QueryText;
-                    midChildren.Add(new QueryStoreRow(midPlan, 1, mid.QueryHash, leafChildren));
+                    midChildren.Add(new QueryStoreRow(midPlan, 1, mid.QueryHash, leafChildren, _serverOffset));
                 }
 
                 // Sort mid children by metric descending
@@ -424,7 +457,7 @@ public partial class QueryStoreGridControl : UserControl
                     ?? grouped.LeafRows.FirstOrDefault(l => l.ModuleName == modKey && !string.IsNullOrEmpty(l.QueryText));
                 if (topLeafForRoot != null)
                     aggPlan.QueryText = topLeafForRoot.QueryText;
-                roots.Add(new QueryStoreRow(aggPlan, 0, modKey, midChildren));
+                roots.Add(new QueryStoreRow(aggPlan, 0, modKey, midChildren, _serverOffset));
             }
         }
 

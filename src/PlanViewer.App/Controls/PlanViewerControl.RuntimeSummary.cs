@@ -147,13 +147,22 @@ public partial class PlanViewerControl : UserControl
         if (statement.MemoryGrant != null)
         {
             var mg = statement.MemoryGrant;
-            var grantPct = mg.GrantedMemoryKB > 0
-                ? (double)mg.MaxUsedMemoryKB / mg.GrantedMemoryKB * 100 : 100;
-            var grantBrushKey = MemoryGrantBrushKey(grantPct, hasSpillInTree);
             var spillTag = hasSpillInTree ? " ⚠ spill" : "";
-            AddRow("Memory grant",
-                $"{TextFormatter.FormatMemoryGrantKB(mg.GrantedMemoryKB)} granted, {TextFormatter.FormatMemoryGrantKB(mg.MaxUsedMemoryKB)} used ({grantPct:N0}%){spillTag}",
-                grantBrushKey);
+            if (mg.GrantedMemoryKB > 0)
+            {
+                var grantPct = (double)mg.MaxUsedMemoryKB / mg.GrantedMemoryKB * 100;
+                var grantBrushKey = MemoryGrantBrushKey(grantPct, hasSpillInTree);
+                AddRow("Memory grant",
+                    $"{TextFormatter.FormatMemoryGrantKB(mg.GrantedMemoryKB)} granted, {TextFormatter.FormatMemoryGrantKB(mg.MaxUsedMemoryKB)} used ({grantPct:N0}%){spillTag}",
+                    grantBrushKey);
+            }
+            else
+            {
+                // #595: a 0 KB grant isn't "0 KB used (100%)" — there was nothing to use a
+                // percentage of. Say so plainly, in the same neutral color as every other
+                // row that isn't flagging a problem.
+                AddRow("Memory grant", $"No memory grant{spillTag}");
+            }
             if (mg.GrantWaitTimeMs > 0)
                 AddRow("Grant wait", $"{mg.GrantWaitTimeMs:N0}ms", "ErrorBrush");
         }

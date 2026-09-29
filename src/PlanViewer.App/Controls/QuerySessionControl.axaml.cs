@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -104,9 +105,36 @@ public partial class QuerySessionControl : UserControl
     private ServerConnection? _serverConnection;
     private string? _connectionString;
     private string? _selectedDatabase;
+
+    /// <summary>
+    /// The offset from UTC to the server this session is connected to, for Server time display
+    /// (E5). Every connect replaces it (<see cref="BeginServerConnection"/>), and every document
+    /// opened on a connection keeps the one that connection had, so a reconnect — or another
+    /// session on a server in a different time zone — cannot move times that are already on
+    /// screen. Never null: a session that has not connected holds an empty one, which is zero.
+    /// </summary>
+    private ServerUtcOffset _serverOffset = new();
+
     private int _planCounter;
+    /// <summary>
+    /// The run in flight, or the last one that was: the source of the query or plan capture the
+    /// session started most recently. Starting another run cancels this one, so it is the only
+    /// source that can still be live. Read by the editor's Escape and by closing the session.
+    /// </summary>
     private CancellationTokenSource? _executionCts;
+
+    /// <summary>
+    /// Which run each loading tab is showing, so closing the tab can stop the run it owns.
+    /// Weak, so a tab that is closed and forgotten takes its entry with it.
+    /// </summary>
+    private readonly ConditionalWeakTable<TabItem, CancellationTokenSource> _tabRuns = new();
     private ServerMetadata? _serverMetadata;
+    /// <summary>
+    /// Guards FetchDatabaseMetadataAsync's own stale-result race: the database picker can change
+    /// again before a fetch lands, and without this whichever fetch finished last used to
+    /// overwrite _serverMetadata.Database, even for a database already clicked past (E7).
+    /// </summary>
+    private CancellationTokenSource? _databaseMetadataCts;
 
     // TextMate installation for syntax highlighting
     private TextMate.Installation? _textMateInstallation;

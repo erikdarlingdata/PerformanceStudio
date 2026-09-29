@@ -1,8 +1,8 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Linq;
-using System.Xml;
+using System.Runtime.ExceptionServices;
+using System.Runtime.Versioning;
 using System.Xml.Linq;
 using PlanViewer.Core.Models;
 
@@ -17,22 +17,39 @@ public static partial class ShowPlanParser
     // StackOverflowException that takes the whole process down.
     // Internal so tests can pin behavior just past each limit without hardcoding the values.
     internal const int MaxParseDepth = 1000;
-    internal const int MaxParseCharacters = 16 * 1024 * 1024;
+    internal const int MaxParseCharacters = PlanXml.MaxCharacters;
+
+    /* #589: the tree walk recurses once per nested operator, and its frames are large. On a 1 MB
+       caller thread (the UI thread, the CLI's main thread) the process died with an uncatchable
+       StackOverflowException at about 450-480 levels, so the MaxParseDepth guard above could never
+       fire. The walk now runs on its own thread, with a stack that holds MaxParseDepth levels many
+       times over, and the guard is what stops a deep plan. Same fix as PerformanceMonitor#4551. */
+    private const int ParseThreadStackBytes = 32 * 1024 * 1024;
 
     public static ParsedPlan Parse(string xml)
     {
         var plan = new ParsedPlan { RawXml = xml };
+        XDocument document;
         try
         {
-            /* Same ceiling ParseAsync enforces through XmlReaderSettings.MaxCharactersInDocument,
-               which this synchronous path (PlanViewerControl, the web viewer, the analysis
-               pipeline) never had - it went straight to XDocument.Parse with no limit at all.
-               The input is already an in-memory string here, so a length check is the equivalent
-               guard; like the reader setting, the limit is in characters, not bytes. */
-            if (xml.Length > MaxParseCharacters)
-                throw new InvalidOperationException(
-                    $"Plan XML exceeds the supported size limit of {MaxParseCharacters.ToString("N0", CultureInfo.InvariantCulture)} characters.");
-            return ParseDocument(XDocument.Parse(xml), plan, CancellationToken.None);
+            /* The same limits as ParseAsync: this synchronous path (PlanViewerControl, the web
+               viewer, the analysis pipeline) once went straight to XDocument.Parse with none. */
+            document = PlanXml.Parse(xml);
+        }
+        catch (Exception exception)
+        {
+            plan.ParseError = exception.Message;
+            return plan;
+        }
+
+        /* Blazor WebAssembly cannot start a thread, so the web viewer walks the tree on the
+           calling thread, as before. */
+        if (OperatingSystem.IsBrowser())
+            return ParseDocument(document, plan, CancellationToken.None);
+
+        try
+        {
+            return RunOnParseThread(() => ParseDocument(document, plan, CancellationToken.None));
         }
         catch (Exception exception)
         {
@@ -49,19 +66,15 @@ public static partial class ShowPlanParser
         var plan = new ParsedPlan { RawXml = xml };
         try
         {
-            var settings = new XmlReaderSettings
-            {
-                Async = true,
-                DtdProcessing = DtdProcessing.Prohibit,
-                MaxCharactersInDocument = MaxParseCharacters,
-                XmlResolver = null
-            };
-            using var textReader = new StringReader(xml);
-            using var xmlReader = XmlReader.Create(textReader, settings);
-            var document = await XDocument
-                .LoadAsync(xmlReader, LoadOptions.None, cancellationToken)
-                .ConfigureAwait(false);
-            return ParseDocument(document, plan, cancellationToken, beforeCostComputation);
+            var document = await PlanXml.ParseAsync(xml, cancellationToken).ConfigureAwait(false);
+
+            /* #589: after the await this runs on the calling thread or a thread-pool thread, and
+               neither holds MaxParseDepth levels. The join blocks this thread for as long as the
+               walk used to run on it, so the thread pool does no more work than before. */
+            if (OperatingSystem.IsBrowser())
+                return ParseDocument(document, plan, cancellationToken, beforeCostComputation);
+            return RunOnParseThread(
+                () => ParseDocument(document, plan, cancellationToken, beforeCostComputation));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -72,6 +85,39 @@ public static partial class ShowPlanParser
             plan.ParseError = exception.Message;
             return plan;
         }
+    }
+
+    /// <summary>
+    /// Runs <paramref name="walk"/> on a new thread with a <see cref="ParseThreadStackBytes"/> stack
+    /// and waits for it. An exception the walk throws, such as an OperationCanceledException, is
+    /// rethrown here unchanged. Nothing is left unhandled on the new thread, because an unhandled
+    /// exception there would end the process. The caller's culture reaches the new thread with the
+    /// execution context, so parser text such as spill warnings is formatted as before.
+    /// </summary>
+    [UnsupportedOSPlatform("browser")]
+    private static ParsedPlan RunOnParseThread(Func<ParsedPlan> walk)
+    {
+        ParsedPlan? result = null;
+        ExceptionDispatchInfo? failure = null;
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                result = walk();
+            }
+            catch (Exception exception)
+            {
+                failure = ExceptionDispatchInfo.Capture(exception);
+            }
+        }, ParseThreadStackBytes)
+        {
+            IsBackground = true,
+            Name = "Plan parser"
+        };
+        thread.Start();
+        thread.Join();
+        failure?.Throw();
+        return result!;
     }
 
     private static ParsedPlan ParseDocument(
@@ -159,12 +205,21 @@ public static partial class ShowPlanParser
 
         if (localName == "StmtCond")
         {
-            // IF/ELSE blocks — recurse into Condition, Then, Else
+            /* IF/ELSE blocks. #580: Condition never holds a Stmt* element. Per the XSD
+               (StmtCondType/Condition) it holds the condition's OWN QueryPlan (0 or 1) plus optional
+               UDF sub-plans, while that plan's statement-level facts (StatementType "COND WITH QUERY",
+               the hashes, StatementSetOptions) sit on the StmtCond itself. Recursing into Condition's
+               children handed the bare QueryPlan to ParseStatement as if it were a statement: an empty
+               "STATEMENT" placeholder, with the operator tree, hashes, missing indexes and warnings
+               dropped. So the StmtCond is parsed as the statement, and Condition is where its plan and
+               sub-plans are read from. A plain IF with neither stays out of the list, as before. */
             var condEl = stmtEl.Element(Ns + "Condition");
-            if (condEl != null)
+            if (condEl != null
+                && (condEl.Element(Ns + "QueryPlan") != null || condEl.Element(Ns + "UDF") != null))
             {
-                foreach (var child in condEl.Elements())
-                    results.AddRange(ParseStatementAndChildren(child, depth + 1, cancellationToken));
+                var condStmt = ParseStatement(stmtEl, depth, cancellationToken, planContainerEl: condEl);
+                if (condStmt != null)
+                    results.Add(condStmt);
             }
 
             var thenStmts = stmtEl.Element(Ns + "Then")?.Element(Ns + "Statements");
@@ -250,11 +305,14 @@ public static partial class ShowPlanParser
        ParseStatementAndChildren could never fire across StoredProc/UDF nesting - a crafted plan
        alternating StmtSimple > StoredProc > Statements a few thousand levels deep (about sixty
        bytes each) still reached the uncatchable StackOverflowException the guard exists to
-       prevent. Carrying the caller's depth through this method closes that reset. */
+       prevent. Carrying the caller's depth through this method closes that reset.
+       planContainerEl is where the QueryPlan and the UDF/StoredProc sub-plans are read from when
+       that is not the statement element itself: a StmtCond keeps them under Condition (#580). */
     private static PlanStatement? ParseStatement(
         XElement stmtEl,
         int depth = 0,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        XElement? planContainerEl = null)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var stmt = new PlanStatement
@@ -269,7 +327,8 @@ public static partial class ShowPlanParser
         if (stmtEl.Name.LocalName == "StmtUseDb")
             stmt.StmtUseDatabaseName = stmtEl.Attribute("Database")?.Value;
 
-        var queryPlanEl = stmtEl.Element(Ns + "QueryPlan");
+        var containerEl = planContainerEl ?? stmtEl;
+        var queryPlanEl = containerEl.Element(Ns + "QueryPlan");
 
         // XSD gap: Dispatcher/PSP (on StmtSimple, not inside QueryPlan)
         var dispatcherEl = stmtEl.Element(Ns + "Dispatcher");
@@ -314,10 +373,15 @@ public static partial class ShowPlanParser
            so it took that early return and never reached this code, seventy lines further down. The
            parser looked like it descended into procedures and in the one case that matters never
            did. The same was true of a UDF call whose statement carries no plan of its own. */
-        ParseSubPlans(stmt, stmtEl, depth, cancellationToken);
+        ParseSubPlans(stmt, containerEl, depth, cancellationToken);
 
         if (queryPlanEl == null)
         {
+            /* #580: the statement attributes (QueryHash, QueryPlanHash, StatementId and the rest)
+               sit on the statement element and never depended on a QueryPlan child, but they were
+               read only after this return, so a MULTIPLE PLAN statement lost the hashes it carries. */
+            ParseStmtAttributes(stmt, stmtEl);
+
             // Statements with no QueryPlan (e.g., DECLARE/ASSIGN) still get a synthetic
             // root node so they appear in the statement tab list.
             var stmtType = stmt.StatementType.Length > 0
@@ -554,6 +618,8 @@ public static partial class ShowPlanParser
                 RequestedMemoryKB = ParseLong(memEl.Attribute("RequestedMemory")?.Value),
                 GrantedMemoryKB = ParseLong(memEl.Attribute("GrantedMemory")?.Value),
                 MaxUsedMemoryKB = ParseLong(memEl.Attribute("MaxUsedMemory")?.Value),
+                HasMaxUsedMemory = long.TryParse(memEl.Attribute("MaxUsedMemory")?.Value,
+                    System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out _),
                 GrantWaitTimeMs = ParseLong(memEl.Attribute("GrantWaitTime")?.Value),
                 LastRequestedMemoryKB = ParseLong(memEl.Attribute("LastRequestedMemory")?.Value),
                 IsMemoryGrantFeedbackAdjusted = memEl.Attribute("IsMemoryGrantFeedbackAdjusted")?.Value

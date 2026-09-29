@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.IO.Pipes;
 using System.Linq;
 using System.Text.Json;
 using System.Threading;
@@ -71,7 +70,12 @@ public partial class MainWindow : Window
         // Not in the test host (#451): every test window would grab the machine's single
         // SQLPerformanceStudio_OpenFile pipe slot and never release it — OnClosed never
         // runs there — racing any real Studio instance on the same box.
-        if (!AppRuntimeMode.IsTestHost)
+        // Not in a secondary instance either: the pipe belongs to the instance that owns the
+        // slot. The listener retries until it gets the pipe, so a secondary would take it once
+        // the owner exits, and later launches would hand their files to a window whose tabs are
+        // never saved. Without it, such a launch finds no pipe, claims the slot, and runs as the
+        // new owner.
+        if (!AppRuntimeMode.IsTestHost && !SingleInstance.IsSecondaryInstance)
             StartPipeServer();
 
         InitializeComponent();
@@ -225,7 +229,23 @@ public partial class MainWindow : Window
            way when a file is about to open — a stray empty scratch tab beside the file the
            user asked for is nobody's intent. */
         var hasFileArg = args.Length > 1 && File.Exists(args[1]);
-        RestoreOpenPlans(createFallbackTab: !hasFileArg);
+
+        if (SingleInstance.IsSecondaryInstance)
+        {
+            /* A secondary instance (--new-instance beside a running one) does not restore.
+               The saved list belongs to the instance that owns the slot, which rewrites it on
+               every tab change: restoring it here would open a copy of every one of its tabs
+               and share its scratch buffer ids. RestoreOpenPlans is skipped whole, not called
+               with a flag, because it also clears and saves the list and sweeps the buffer
+               folder — both of which would land on the owner's files. What is left is what a
+               launch with nothing to restore does: the file it was given, else a new tab. */
+            if (!hasFileArg)
+                NewQuery_Click(this, new RoutedEventArgs());
+        }
+        else
+        {
+            RestoreOpenPlans(createFallbackTab: !hasFileArg);
+        }
 
         if (hasFileArg)
             OpenFileByExtension(args[1]);
@@ -242,9 +262,7 @@ public partial class MainWindow : Window
             {
                 try
                 {
-                    using var server = new NamedPipeServerStream(
-                        SingleInstance.PipeName, PipeDirection.In, 1,
-                        PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
+                    using var server = SingleInstance.CreatePipeServer();
 
                     await server.WaitForConnectionAsync(token);
 
@@ -337,9 +355,76 @@ public partial class MainWindow : Window
         _mcpHost = new McpHostService(
             PlanSessionManager.Instance, _connectionStore, _credentialService, settings.Port);
 
+        // Starting is the honest word for what is true the instant StartAsync is fired off:
+        // BackgroundService.StartAsync only kicks ExecuteAsync's Task going, it does not wait
+        // for Kestrel to actually bind — Running or Failed is ReportMcpStartResultAsync's call
+        // once McpHostService.Started says which one actually happened.
+        McpStatusMenuItem.Header = BuildMcpStatusHeader(McpServerStatus.Starting, settings.Port);
+
         _ = _mcpHost.StartAsync(_mcpCts.Token);
-        McpStatusMenuItem.Header = $"MCP Server: Running (port {settings.Port})";
+        _ = ReportMcpStartResultAsync(_mcpHost, settings.Port);
     }
+
+    /// <summary>
+    /// Waits for the background host to report how its start actually went, then resolves the
+    /// menu item to Running or Failed. A cancelled Started (the window closed before Kestrel
+    /// finished binding) is neither — there is nothing left to show it on, so this returns
+    /// without touching the menu.
+    /// </summary>
+    private async Task ReportMcpStartResultAsync(McpHostService host, int port)
+    {
+        string? failureReason;
+        try
+        {
+            failureReason = await host.Started;
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        Dispatcher.UIThread.Post(() =>
+        {
+            // The window may have closed while Started was still pending.
+            if (IsShuttingDown)
+                return;
+
+            McpStatusMenuItem.Header = BuildMcpStatusHeader(
+                failureReason == null ? McpServerStatus.Running : McpServerStatus.Failed,
+                port,
+                failureReason);
+        });
+    }
+
+    /// <summary>
+    /// The three states the MCP status menu item shows over a server's lifetime.
+    /// </summary>
+    internal enum McpServerStatus
+    {
+        /// <summary>StartAsync has been fired off; Kestrel has not yet said whether it bound.</summary>
+        Starting,
+
+        /// <summary>Kestrel is listening on the configured port.</summary>
+        Running,
+
+        /// <summary>Kestrel never came up — see the accompanying reason.</summary>
+        Failed
+    }
+
+    /// <summary>
+    /// The menu text for a status, split out from the update itself so the three outcomes can
+    /// be tested without a real port or a window to read the menu off of.
+    /// </summary>
+    internal static string BuildMcpStatusHeader(McpServerStatus status, int port, string? failureReason = null) =>
+        status switch
+        {
+            McpServerStatus.Starting => $"MCP Server: Starting (port {port})",
+            McpServerStatus.Running => $"MCP Server: Running (port {port})",
+            // A menu header reads "_" as an access key marker, so a reason taken from an
+            // exception message doubles it to show it as written.
+            McpServerStatus.Failed => $"MCP Server: Failed ({failureReason?.Replace("_", "__")})",
+            _ => throw new ArgumentOutOfRangeException(nameof(status), status, null)
+        };
 
     protected override async void OnClosed(EventArgs e)
     {
@@ -723,6 +808,11 @@ public partial class MainWindow : Window
             return false;
 
         MainTabControl.Items.Remove(tab);
+
+        /* Every way of closing a tab ends here — the ✕, middle-click, Ctrl+W and the context
+           menu's Close, Close Other Tabs and Close All Tabs — so this is the one place that has
+           to let go of what the tab's content was holding. */
+        ReleaseTabContent(tab.Content as Control);
 
         /* #496: a scratch tab that actually left the strip has had its fate decided —
            answered at the prompt above (where Don't Save already dropped and a save made it

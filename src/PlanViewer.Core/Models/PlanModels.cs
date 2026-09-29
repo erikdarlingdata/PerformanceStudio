@@ -198,6 +198,7 @@ public class PlanNode
 
     // Detail properties (for tooltip/properties panel)
     public string? DatabaseName { get; set; }
+    public string? SchemaName { get; set; }
     public string? ObjectName { get; set; }
     public string? FullObjectName { get; set; }
     public string? IndexName { get; set; }
@@ -413,6 +414,17 @@ public class PlanWarning
     public PlanWarningSource Source { get; set; } = PlanWarningSource.PerformanceStudio;
 
     /// <summary>
+    /// The analyzer rule that produced this finding, set where the rule emits it (#575). Null for
+    /// anything no numbered rule produced: the engine's own warnings and the wait-stats findings.
+    ///
+    /// <para>Severity overrides key on it. They used to map WarningType back to a rule through a
+    /// partial name match against a rule-to-name table, and that table had no entry for rules
+    /// 34-37 and 39, for two of rule 30's three finding types, or for rule 10's RID Lookup, so
+    /// overrides for those were silently ignored.</para>
+    /// </summary>
+    public int? RuleNumber { get; set; }
+
+    /// <summary>
     /// The operators this finding actually came from, so a reader can be taken to them (#440).
     ///
     /// <para>A LIST rather than a single id, because the three honest answers are genuinely
@@ -468,6 +480,13 @@ public class MemoryGrantInfo
     public long RequestedMemoryKB { get; set; }
     public long GrantedMemoryKB { get; set; }
     public long MaxUsedMemoryKB { get; set; }
+    /// <summary>
+    /// True when the plan XML carried a MaxUsedMemory attribute. An actual plan does, and there 0
+    /// means the query used none of its grant. An estimated plan, or a plan with no runtime grant
+    /// info, does not, and there <see cref="MaxUsedMemoryKB"/> is 0 only because nothing was
+    /// reported. A rule that acts on "used nothing" must check this first.
+    /// </summary>
+    public bool HasMaxUsedMemory { get; set; }
     public long GrantWaitTimeMs { get; set; }
     public long LastRequestedMemoryKB { get; set; }
     public string? IsMemoryGrantFeedbackAdjusted { get; set; }

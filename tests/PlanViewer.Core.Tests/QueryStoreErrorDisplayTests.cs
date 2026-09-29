@@ -3,6 +3,7 @@ using Avalonia.Controls;
 using PlanViewer.App.Controls;
 using PlanViewer.Core.Interfaces;
 using PlanViewer.Core.Models;
+using PlanViewer.Core.Services;
 
 namespace PlanViewer.Core.Tests;
 
@@ -29,6 +30,7 @@ public class QueryStoreErrorDisplayTests
             var grid = new QueryStoreGridControl(
                 new ServerConnection { ServerName = "tcp:127.0.0.1,1", DisplayName = "unit test" },
                 new NoCredentials(),
+                new ServerUtcOffset(),
                 initialDatabase: "master",
                 databases: new List<string> { "master" });
 

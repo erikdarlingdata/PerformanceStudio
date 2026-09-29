@@ -80,7 +80,9 @@ public partial class MainWindow : Window
                 /* #430: the same unguarded-click-handler crash as QuerySessionControl's Robot Advice
                    button — this entry point builds the payload independently, so it needed the same
                    depth ceiling and the same guard. */
-                ShowError($"Could not build robot advice for this plan: {ex.Message}");
+                ShowError(ex is JsonException
+                    ? $"Could not build robot advice for this plan. {AnalysisJson.TooDeepMessage}"
+                    : $"Could not build robot advice for this plan: {ex.Message}");
                 return;
             }
 
@@ -405,7 +407,7 @@ public partial class MainWindow : Window
 
         try
         {
-            var doc = XDocument.Parse(planXml);
+            var doc = PlanXml.Parse(planXml);
             XNamespace ns = "http://schemas.microsoft.com/sqlserver/2004/07/showplan";
             var stmt = doc.Descendants(ns + "StmtSimple").FirstOrDefault();
             var dbContext = stmt?.Attribute("DatabaseContext")?.Value;
@@ -518,11 +520,7 @@ public partial class MainWindow : Window
             if (ke.Key == Avalonia.Input.Key.Escape) { cts.Cancel(); ke.Handled = true; }
         };
 
-        var tab = CreateTab("Actual Plan", loadingContainer);
-        MainTabControl.Items.Add(tab);
-        MainTabControl.SelectedItem = tab;
-        UpdateEmptyOverlay();
-        loadingContainer.Focus();
+        var tab = AddLoadingTab("Actual Plan", loadingContainer, cts);
 
         try
         {
@@ -547,6 +545,11 @@ public partial class MainWindow : Window
                 isAzureSqlDb: isAzure, timeoutSeconds: 0, cts.Token);
 
             sw.Stop();
+
+            /* Closing the tab cancels this run, but the answer can already be on its way back.
+               Building a viewer for a tab nobody can see would register a plan that nothing is
+               left to unregister. */
+            cts.Token.ThrowIfCancellationRequested();
 
             if (string.IsNullOrEmpty(actualPlanXml))
             {
