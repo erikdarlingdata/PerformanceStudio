@@ -8,7 +8,8 @@
         <div class="insight-card runtime">
             <h4>@(isEstimatedRuntime ? "Predicted Runtime" : "Runtime")</h4>
             <div class="insight-body">
-                @* Order per Joe #215 E11: Elapsed → CPU:Elapsed → DOP → CPU → Compile → Memory → Used → Optimization → CE Model → Cost *@
+                @* Order per Joe #215 E11: Elapsed → CPU:Elapsed → DOP → CPU → Compile → Memory → Used → CE Model → Optimization → Cost.
+                   #613 moved CE Model above Optimization, the same order as the App's Runtime Summary. *@
                 @if (Stmt.QueryTime != null)
                 {
                     <div class="insight-row">
@@ -86,18 +87,18 @@
                         </div>
                     }
                 }
-                @if (Stmt.OptimizationLevel != null)
-                {
-                    <div class="insight-row">
-                        <span class="insight-label">Optimization</span>
-                        <span class="insight-value">@Stmt.OptimizationLevel</span>
-                    </div>
-                }
                 @if (Stmt.CardinalityEstimationModel > 0)
                 {
                     <div class="insight-row">
                         <span class="insight-label">CE Model</span>
                         <span class="insight-value">@Stmt.CardinalityEstimationModel</span>
+                    </div>
+                }
+                @if (Stmt.OptimizationLevel != null)
+                {
+                    <div class="insight-row">
+                        <span class="insight-label">Optimization</span>
+                        <span class="insight-value">@Stmt.OptimizationLevel</span>
                     </div>
                 }
                 <div class="insight-row">

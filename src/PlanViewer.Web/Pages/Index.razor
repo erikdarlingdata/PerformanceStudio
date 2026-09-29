@@ -76,7 +76,16 @@ else
         <div class="modal-overlay" @onclick="HideShareDialog">
             <div class="modal" @onclick:stopPropagation="true">
                 <h3>Share Plan Analysis</h3>
-                <p>Your plan analysis will be uploaded and stored on a server. Anyone with the link can view the full analysis, including query text, operator details, and warnings.</p>
+                <p>Your plan analysis will be uploaded and stored on a server. Anyone with the link can read all of it. The upload includes:</p>
+                <ul>
+                    <li>The file name of the plan</li>
+                    <li>The query text</li>
+                    <li>The operator details and the warnings</li>
+                    <li>The compiled and runtime values of the parameters</li>
+                    <li>The missing index suggestions, with database, schema, and table names</li>
+                    <li>The full text report</li>
+                </ul>
+                <p>Query text and parameter values can contain private data. Check the analysis on this page before you share it.</p>
                 <div class="ttl-picker">
                     <label>Expire after:</label>
                     <select @bind="shareTtlDays">
@@ -277,6 +286,16 @@ else
                 return;
             }
 
+            /* XML that parses but is not a showplan, or a showplan with no statements, gets this far
+               with nothing to show. The result view draws the active statement without checking that
+               there is one, so let it through and the page threw a NullReferenceException. */
+            if (PlanStatements.NoStatementsMessage(parsedPlan) is { } noStatements)
+            {
+                errorMessage = noStatements;
+                parsedPlan = null;
+                return;
+            }
+
             PlanAnalyzer.Analyze(parsedPlan);
             BenefitScorer.Score(parsedPlan);
 
@@ -408,6 +427,14 @@ else
         try
         {
             var shared = await ShareService.LoadAsync(id);
+
+            // The same guard as RunAnalysis: a stored result with no statements would fail the same way.
+            if (shared.Result is { } loaded && PlanStatements.NoStatementsMessage(loaded) is { } noStatements)
+            {
+                errorMessage = noStatements;
+                return;
+            }
+
             result = shared.Result;
             textOutput = shared.Text;
             sourceLabel = "shared plan";
@@ -508,13 +535,16 @@ else
             builder.AddContent(27, $"CPU: {ownCpuSec:F3}s");
             builder.CloseElement();
 
-            var estRows = node.EstimateRows;
-            var ratio = estRows > 0 ? node.ActualRows / estRows : (node.ActualRows > 0 ? double.MaxValue : 1.0);
+            // #594: EstimateRows is per execution — RowEstimateHelper scales it by
+            // ActualExecutions only on the inner side of a Nested Loops join, where that count is
+            // real rather than a parallel zone's thread count.
+            // #611: PlanRowAccuracy adds decimals where N0 would print numbers that contradict
+            // the percentage ("1 of 1 (89%)").
+            var ratio = RowEstimateHelper.GetRowAccuracyRatio(node);
             var rowClass = (ratio < 0.1 || ratio > 10.0) ? " rows-skewed" : "";
-            var accuracy = estRows > 0 ? $" ({ratio * 100:F0}%)" : "";
             builder.OpenElement(28, "div");
             builder.AddAttribute(29, "class", $"node-rows{rowClass}");
-            builder.AddContent(30, $"{node.ActualRows:N0} of {estRows:N0}{accuracy}");
+            builder.AddContent(30, PlanRowAccuracy.FormatActualOfExpected(node.ActualRows, RowEstimateHelper.GetExpectedRows(node)));
             builder.CloseElement();
         }
         else

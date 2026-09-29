@@ -43,6 +43,14 @@ public class QueryStoreHistoryRow
     public string TotalLogicalWritesDisplay => TotalLogicalWrites.ToString("N0");
     public string TotalPhysicalReadsDisplay => TotalPhysicalReads.ToString("N0");
     public string TotalMemoryMbDisplay => TotalMemoryMb.ToString("N2");
-	public string IntervalStartLocal => TimeDisplayHelper.FormatForDisplay(IntervalStartUtc);
-    public string LastExecutionLocal => LastExecutionUtc.HasValue ? TimeDisplayHelper.FormatForDisplay(LastExecutionUtc.Value) : "";
+
+    /// <summary>
+    /// The offset holder of the connection this row was fetched on. Set by whoever fetched it
+    /// (the History control), which keeps this model free of anything from the app. Unset reads
+    /// as zero, which is UTC in Server mode.
+    /// </summary>
+    public ServerUtcOffset? ServerOffset { get; set; }
+
+	public string IntervalStartLocal => TimeDisplayHelper.FormatForDisplay(IntervalStartUtc, ServerOffset?.Minutes ?? 0);
+    public string LastExecutionLocal => LastExecutionUtc.HasValue ? TimeDisplayHelper.FormatForDisplay(LastExecutionUtc.Value, ServerOffset?.Minutes ?? 0) : "";
 }

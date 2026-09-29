@@ -24,6 +24,22 @@ internal sealed class AppSettingsService
 
     private static AppSettings? _cached;
 
+    /// <summary>
+    /// Set by <see cref="Load"/> when <see cref="SettingsPath"/> exists but could not even be
+    /// read (locked, permissions) — as opposed to missing, or present but unparseable, both of
+    /// which are fine to overwrite. <see cref="Save"/> consults this so a transient read failure
+    /// can never cost the user their file: it skips quietly, the same way it already does for a
+    /// write failure.
+    ///
+    /// <para>It stays set for the rest of the process, even after a later <see cref="Load"/>
+    /// reads the file. That failed Load handed out defaults, and callers keep what they are
+    /// given: MainWindow holds its copy for the whole session and passes it to the Settings
+    /// window, which saves a clone of it. Once the block lifted, either save would write those
+    /// defaults over the user's file. So the session runs without saving, and the next start
+    /// reads the file again.</para>
+    /// </summary>
+    private static bool _saveBlocked;
+
     static AppSettingsService()
     {
         SettingsDir = Path.Combine(
@@ -69,8 +85,10 @@ internal sealed class AppSettingsService
         ScratchDir = Path.Combine(directory, "scratch");
 
         // Anything cached was loaded from the old location; drop it so the first Load
-        // after the redirect reads the new one.
+        // after the redirect reads the new one. A block belongs to the old path too — the
+        // new one hasn't been read yet, let alone failed to read.
         _cached = null;
+        _saveBlocked = false;
     }
 
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -89,13 +107,18 @@ internal sealed class AppSettingsService
     };
 
     /// <summary>
-    /// Loads settings from disk. Returns default settings if the file is missing or corrupt.
-    /// Migrates legacy format settings from the old standalone file if present.
+    /// Loads settings from disk. Returns default settings if the file is missing, corrupt, or
+    /// unreadable. Migrates legacy format settings from the old standalone file if present.
     /// </summary>
     /// <remarks>
-    /// Returns the in-process cached instance — callers must not mutate it. Use
-    /// <see cref="AppSettings.Clone"/> if you need an editable copy, or <see cref="Save"/>
-    /// to persist new state (which also refreshes the cache).
+    /// Returns the in-process cached instance — callers must not mutate it without immediately
+    /// <see cref="Save"/>ing it back (mutate-then-Save is how the rest of this class persists
+    /// state; see <see cref="AppSettings.Clone"/> instead when the edit must stay a draft, e.g.
+    /// the Settings dialog's Cancel button). A file that could not be read (as opposed to missing
+    /// or unparseable — see <see cref="SettingsFileStore"/>) is never cached: every call keeps
+    /// retrying the disk, so a caller that loads after a transient lock clears still gets the
+    /// user's settings. <see cref="Save"/> stays refused for the rest of the process, though;
+    /// see <see cref="_saveBlocked"/>.
     /// </remarks>
     public static AppSettings Load()
     {
@@ -104,14 +127,19 @@ internal sealed class AppSettingsService
 
         try
         {
-            AppSettings settings;
-            if (!File.Exists(SettingsPath))
-                settings = new AppSettings();
-            else
+            var outcome = SettingsFileStore.Read<AppSettings>(
+                SettingsPath,
+                nameof(AppSettingsService),
+                json => JsonSerializer.Deserialize<AppSettings>(json, JsonOptions),
+                out var parsed);
+
+            if (outcome == SettingsFileStore.ReadOutcome.Unreadable)
             {
-                var json = File.ReadAllText(SettingsPath);
-                settings = JsonSerializer.Deserialize<AppSettings>(json, JsonOptions) ?? new AppSettings();
+                _saveBlocked = true;
+                return new AppSettings();
             }
+
+            var settings = parsed ?? new AppSettings();
 
             // Settings written before the open-tab list held queries use the old key.
             // Ahead of MigrateFormatSettings, which can Save mid-load and would otherwise
@@ -149,12 +177,45 @@ internal sealed class AppSettingsService
     public static void Invalidate() => _cached = null;
 
     /// <summary>
-    /// Saves settings to disk. Silently ignores write failures.
+    /// True once a <see cref="Load"/> has found the settings file unreadable, which blocks every
+    /// save for the rest of the process (see <see cref="_saveBlocked"/>). The Settings window
+    /// checks it after saving, so it can say the save did not happen instead of closing as if
+    /// it had.
+    /// </summary>
+    internal static bool SaveBlocked => _saveBlocked;
+
+    /// <summary>What the Settings window shows when <see cref="SaveBlocked"/> is set.</summary>
+    internal static string SaveBlockedMessage =>
+        $"Settings were not saved. {SettingsPath} could not be read earlier in this session, and saving now could replace it with default settings. Restart Performance Studio, then save again.";
+
+    /// <summary>
+    /// Saves settings to disk. Silently ignores write failures — including a save attempted
+    /// while <see cref="Load"/> found the file unreadable, which would otherwise overwrite
+    /// content this process has never actually seen. The Settings window reports that case
+    /// through <see cref="SaveBlocked"/>.
+    ///
+    /// <para>In a secondary instance (<see cref="SingleInstance.IsSecondaryInstance"/>) the
+    /// saved open-tab list is kept as the disk has it. The whole file is written, so the
+    /// settings object's list goes with it — and a secondary's copy is the one it read at its
+    /// own startup, long out of date next to the list the owner rewrites on every tab change.
+    /// Recent plans, the Settings dialog and the server-filter toggle all save through here.
+    /// The list is read off the disk just before the write, so the write hands back what the
+    /// owner last saved. An owner save that lands between that read and the write is still
+    /// lost; nothing locks the file across processes, and the gap is milliseconds. Every other
+    /// setting stays last-write-wins, which is what two instances on purpose has always meant
+    /// (see Program.Main). If the file cannot be read there is no list to keep, so the save is
+    /// skipped rather than written with a guess.</para>
     /// </summary>
     public static void Save(AppSettings settings)
     {
+        if (_saveBlocked)
+            return;
+
         try
         {
+            if (SingleInstance.IsSecondaryInstance && !TryAdoptSavedOpenTabs(settings))
+                return;
+
             Directory.CreateDirectory(SettingsDir);
             var json = JsonSerializer.Serialize(settings, JsonOptions);
             AtomicFile.WriteAllText(SettingsPath, json);
@@ -164,6 +225,32 @@ internal sealed class AppSettingsService
         {
             // Best-effort persistence — don't crash the app
         }
+    }
+
+    /// <summary>
+    /// Puts the open-tab list that is on disk right now into <paramref name="settings"/>, for a
+    /// secondary instance about to write the whole file (see <see cref="Save"/>). Read the way
+    /// <see cref="Load"/> reads, so a file that will not parse is moved aside rather than
+    /// overwritten. False when the file exists but cannot be read — the caller must not write.
+    /// </summary>
+    private static bool TryAdoptSavedOpenTabs(AppSettings settings)
+    {
+        var outcome = SettingsFileStore.Read<AppSettings>(
+            SettingsPath,
+            nameof(AppSettingsService),
+            json => JsonSerializer.Deserialize<AppSettings>(json, JsonOptions),
+            out var onDisk);
+
+        if (outcome == SettingsFileStore.ReadOutcome.Unreadable)
+            return false;
+
+        if (onDisk != null)
+            MigrateOpenTabs(onDisk);
+
+        // Missing, or unparseable and just moved aside: there is no list on disk to keep, and
+        // an empty one is a truer thing to write than a stale one.
+        settings.OpenTabs = onDisk?.OpenTabs ?? new List<string>();
+        return true;
     }
 
     /// <summary>

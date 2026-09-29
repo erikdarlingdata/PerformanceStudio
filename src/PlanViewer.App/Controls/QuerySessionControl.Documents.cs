@@ -125,6 +125,14 @@ public partial class QuerySessionControl : UserControl
     private void RemoveDocument(TabItem tab)
     {
         var index = SubTabControl.Items.IndexOf(tab);
+
+        /* Already gone, and nothing to land anywhere: closing a loading tab cancels its run, and
+           the run's own cancelled continuation removes its tab as well, so the second removal
+           arrives for a tab the first one took out. Without this it would run the landing rules
+           below for a removal that changed nothing. */
+        if (index < 0)
+            return;
+
         SubTabControl.Items.Remove(tab);
 
         if (_surface != SessionSurface.Documents)

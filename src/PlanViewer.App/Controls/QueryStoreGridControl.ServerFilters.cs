@@ -80,10 +80,19 @@ public partial class QueryStoreGridControl : UserControl
         ChipStrip.IsVisible = chips.Count > 0;
     }
 
-    /// <summary>Persists the panel's expanded/collapsed state whenever the user toggles it.</summary>
+    /// <summary>
+    /// Persists the panel's expanded/collapsed state whenever the user toggles it.
+    ///
+    /// <para>Mutates the live cached instance and saves it in place, the same way MainWindow
+    /// itself persists AppSettings elsewhere (SaveOpenPlans, AddRecentPlan, ...). This used to
+    /// Clone() first, which handed AppSettingsService a second, independent AppSettings object:
+    /// it cached that clone, but MainWindow kept its own older _appSettings reference, and
+    /// MainWindow's next save — closing a tab, opening a plan — wrote that older object straight
+    /// back over the clone, silently reverting the panel's expanded state.</para>
+    /// </summary>
     private void ServerFilterExpander_StateChanged(object? sender, RoutedEventArgs e)
     {
-        var s = AppSettingsService.Load().Clone();
+        var s = AppSettingsService.Load();
         s.QueryStoreFilterPanelExpanded = ServerFilterExpander.IsExpanded;
         AppSettingsService.Save(s);
     }

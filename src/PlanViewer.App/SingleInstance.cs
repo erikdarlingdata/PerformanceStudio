@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.IO.Pipes;
 using System.Linq;
 
 namespace PlanViewer.App;
@@ -46,11 +47,41 @@ internal static class SingleInstance
     internal const string MutexName = "SQLPerformanceStudio_SingleInstance";
 
     /// <summary>
-    /// Escape hatch (#489): skip the single-instance check and run a full second instance.
-    /// A user who runs two on purpose accepts settings last-write-wins as their informed
-    /// choice. Stripped from argv before any file-open logic sees it.
+    /// Escape hatch (#489): open a window of its own instead of handing the launch to the
+    /// running instance. A user who runs two on purpose accepts settings last-write-wins as
+    /// their informed choice — but not a duplicated session: the launch claims the slot
+    /// first, and when another instance already holds it this process runs as a secondary
+    /// (see <see cref="IsSecondaryInstance"/>). Stripped from argv before any file-open
+    /// logic sees it.
     /// </summary>
     internal const string NewInstanceFlag = "--new-instance";
+
+    /// <summary>
+    /// True in a process started with <see cref="NewInstanceFlag"/> while another instance
+    /// already owned the single-instance slot. Set once by <see cref="Program"/> before any
+    /// window exists; nothing else in the product sets it. Tests that set it belong in the
+    /// serial collection, because it changes what every settings save writes.
+    ///
+    /// <para><b>Why a secondary must not own the session.</b> The saved open-tab list and the
+    /// scratch buffer folder have one writer by design: the owner rewrites the list on every
+    /// tab change, names buffers by ids only it knows, and sweeps any buffer its own list
+    /// does not name. A second process that restored that list would open a copy of every
+    /// tab, share the owner's buffer ids so that both windows write, drop and sweep the same
+    /// files, and whichever window closed last would overwrite the other's list.</para>
+    ///
+    /// <para><b>What a secondary does instead.</b> It restores nothing (a file argument still
+    /// opens; otherwise the usual new tab), never writes the list or a scratch buffer, never
+    /// sweeps the buffer folder, and keeps the list already on disk when it saves settings
+    /// (see <c>AppSettingsService.Save</c>). What it loses is session restore for its own
+    /// tabs: they are not reopened at the next start, whether it closed cleanly or crashed,
+    /// and its scratch tabs have no crash recovery. The unsaved-changes prompts do not depend
+    /// on persistence and work as they always have.</para>
+    ///
+    /// <para>Not set on the launch path where a non-owner runs fully after the pipe hand-off
+    /// failed (see <c>Program.Main</c>): that launch never asked for a second window, so it
+    /// keeps the pre-#489 behavior.</para>
+    /// </summary>
+    internal static bool IsSecondaryInstance { get; set; }
 
     /// <summary>
     /// The line a bare second launch sends to mean "surface your main window". The
@@ -58,6 +89,25 @@ internal static class SingleInstance
     /// class comment for why that property is the entire backward-compatibility story.
     /// </summary>
     internal const string ActivateSentinel = "::activate::";
+
+    /// <summary>
+    /// The receiver's end of the pipe. CurrentUserOnly gives the pipe an access list that
+    /// names only this user, so another account on the machine can neither send it a line
+    /// nor connect and hold its single server slot.
+    /// </summary>
+    internal static NamedPipeServerStream CreatePipeServer(string pipeName = PipeName) =>
+        new(pipeName, PipeDirection.In, 1, PipeTransmissionMode.Byte,
+            PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+
+    /// <summary>
+    /// A sender's end of the pipe. CurrentUserOnly makes Connect check that the pipe it
+    /// reached was created by this user, so a pipe of the same name that another account
+    /// created first never receives a path. On Windows the check also compares elevation:
+    /// an elevated launch does not hand its file to a running instance that is not
+    /// elevated, and opens its own window instead.
+    /// </summary>
+    internal static NamedPipeClientStream CreatePipeClient(string pipeName = PipeName) =>
+        new(".", pipeName, PipeDirection.Out, PipeOptions.CurrentUserOnly);
 
     /// <summary>What one received pipe line means. See <see cref="Classify"/>.</summary>
     internal enum PipeMessage

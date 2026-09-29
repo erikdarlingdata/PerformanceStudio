@@ -24,9 +24,21 @@ public partial class QueryStoreGridControl : UserControl
 {
     private readonly ServerConnection _serverConnection;
     private readonly ICredentialService _credentialService;
+    /// <summary>
+    /// The offset holder of the connection this grid was opened on (E5). Kept for the grid's whole
+    /// life and handed to everything it builds — rows, slicer, ribbon, History — because they show
+    /// this server's data, whichever connection the session is on by the time they draw.
+    /// </summary>
+    private readonly ServerUtcOffset _serverOffset;
     private string _connectionString;
     private string _database;
     private CancellationTokenSource? _fetchCts;
+    /// <summary>
+    /// Guards the picker's own CheckEnabledAsync race: two selections before the first check
+    /// lands used to let whichever finished last win, even for a database the user had already
+    /// clicked past. See <see cref="QsDatabase_SelectionChanged"/> (E6).
+    /// </summary>
+    private CancellationTokenSource? _databaseCheckCts;
     private ObservableCollection<QueryStoreRow> _rows = new();
     private ObservableCollection<QueryStoreRow> _filteredRows = new();
     private readonly Dictionary<string, ColumnFilterState> _activeFilters = new();
@@ -56,10 +68,11 @@ public partial class QueryStoreGridControl : UserControl
     public string Database => _database;
 
     public QueryStoreGridControl(ServerConnection serverConnection, ICredentialService credentialService,
-        string initialDatabase, List<string> databases, bool supportsWaitStats = false)
+        ServerUtcOffset serverOffset, string initialDatabase, List<string> databases, bool supportsWaitStats = false)
     {
         _serverConnection = serverConnection;
         _credentialService = credentialService;
+        _serverOffset = serverOffset;
         _database = initialDatabase;
         _connectionString = serverConnection.GetConnectionString(credentialService, initialDatabase);
         _waitStatsSupported = supportsWaitStats;
@@ -68,6 +81,11 @@ public partial class QueryStoreGridControl : UserControl
         _slicerDaysBack = userSettings.QueryStoreSlicerDays;
 
         InitializeComponent();
+
+        // The slicer and the ribbon are declared in XAML, so they are handed the holder here,
+        // before any data reaches them.
+        TimeRangeSlicer.ServerOffset = serverOffset;
+        WaitStatsProfile.ServerOffset = serverOffset;
 
         // Apply user defaults to UI controls
         TopNBox.Value = userSettings.QueryStoreTopLimit;
@@ -79,6 +97,11 @@ public partial class QueryStoreGridControl : UserControl
             "None" => "none",
             _ => "query-hash"
         });
+
+        /* The time display mode is one setting for the whole app, so the box opens on the mode in
+           effect. It used to open on Local whatever the setting or another grid had chosen, and
+           could say Local beside times shown in Server mode. The tags are the mode names. */
+        SelectComboByTag(TimeDisplayBox, TimeDisplayHelper.Current.ToString());
 
         // Restore the server-filter panel's expanded state, then subscribe — restoring first
         // means the restore itself never triggers a save.
@@ -156,13 +179,33 @@ public partial class QueryStoreGridControl : UserControl
 
         _fetchCts?.Cancel();
 
+        /* Picking a second database before the first one's CheckEnabledAsync lands used to let
+           whichever finished last win, even for a database the user had already clicked past
+           (E6). Cancelling the previous check's token here, and this call bailing out below if
+           it turns out to be the one that got cancelled, makes only the newest pick able to
+           write _database/_connectionString — same shape as the Overview's load generation
+           (QuerySessionControl.Views.cs). This has to stay below the early-out above: a revert
+           below re-fires this handler with the OLD database, which must hit that early-out and
+           return before it ever reaches here — otherwise the revert's own re-entry would cancel
+           the very check that superseded it.
+
+           Cancelled, never disposed: the superseded check is still awaiting and reads its own
+           token when it wakes, and Token on a disposed source throws — same rule as the
+           Overview's OnSlicerRangeChanged. */
+        _databaseCheckCts?.Cancel();
+        var cts = new CancellationTokenSource();
+        _databaseCheckCts = cts;
+
         // Check if Query Store is enabled on the new database
         var newConnStr = _serverConnection.GetConnectionString(_credentialService, db);
         StatusText.Text = "Checking Query Store...";
 
         try
         {
-            var (enabled, state, readOnlyReplica) = await QueryStoreService.CheckEnabledAsync(newConnStr);
+            var (enabled, state, readOnlyReplica) =
+                await QueryStoreService.CheckEnabledAsync(newConnStr, cts.Token);
+            if (cts.Token.IsCancellationRequested) return; // superseded — the newer pick owns this
+
             if (!enabled)
             {
                 StatusText.Text = readOnlyReplica
@@ -172,8 +215,14 @@ public partial class QueryStoreGridControl : UserControl
                 return;
             }
         }
+        catch (OperationCanceledException)
+        {
+            return; // superseded — the newer pick owns this
+        }
         catch (Exception ex)
         {
+            if (cts.Token.IsCancellationRequested) return; // superseded
+
             /* Was cut to 60 characters + "..." before display. Trimming to the space available
                is the display layer's job — the strip clips at its own edge — and pre-cutting
                here also destroyed the only recovery path: the tooltip the constructor mirrors
@@ -334,19 +383,26 @@ public class QueryStoreRow : INotifyPropertyChanged
     private bool _isExpanded;
     private int _indentLevel;
 
+    // The connection's offset holder (E5): read each time the row formats its time, so Server
+    // mode shows this row's own server's time whatever else the process is connected to.
+    private readonly ServerUtcOffset _serverOffset;
+
     /// <summary>Standard constructor for flat (ungrouped) rows.</summary>
-    public QueryStoreRow(QueryStorePlan plan)
+    public QueryStoreRow(QueryStorePlan plan, ServerUtcOffset serverOffset)
     {
         Plan = plan;
+        _serverOffset = serverOffset;
     }
 
     /// <summary>Constructor for grouped parent/intermediate rows (aggregated, no single plan).</summary>
-    public QueryStoreRow(QueryStorePlan syntheticPlan, int indentLevel, string groupLabel, List<QueryStoreRow> children)
+    public QueryStoreRow(QueryStorePlan syntheticPlan, int indentLevel, string groupLabel, List<QueryStoreRow> children,
+        ServerUtcOffset serverOffset)
     {
         Plan = syntheticPlan;
         _indentLevel = indentLevel;
         GroupLabel = groupLabel;
         Children = children;
+        _serverOffset = serverOffset;
     }
 
     public QueryStorePlan Plan { get; }
@@ -520,7 +576,7 @@ public class QueryStoreRow : INotifyPropertyChanged
     public long TotalMemSort => Plan.TotalMemoryGrantPages;
     public double AvgMemSort => Plan.AvgMemoryGrantPages;
 
-    public string LastExecutedLocal => TimeDisplayHelper.FormatForDisplay(Plan.LastExecutedUtc);
+    public string LastExecutedLocal => TimeDisplayHelper.FormatForDisplay(Plan.LastExecutedUtc, _serverOffset.Minutes);
 
     public void NotifyTimeDisplayChanged() => OnPropertyChanged(nameof(LastExecutedLocal));
 

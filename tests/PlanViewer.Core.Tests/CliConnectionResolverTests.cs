@@ -1,3 +1,5 @@
+using Microsoft.Data.SqlClient;
+using PlanViewer.Cli;
 using PlanViewer.Cli.Commands;
 using PlanViewer.Core.Interfaces;
 using PlanViewer.Core.Services;
@@ -53,6 +55,29 @@ public class CliConnectionResolverTests
             Console.SetError(realError);
             Environment.ExitCode = 0;
         }
+    }
+
+    /* --trust-cert skips certificate validation and nothing else. It used to make encryption
+       optional as well, unlike the direct-login path in ConnectionHelper, which always kept it
+       mandatory. Both paths must agree. */
+    [Theory]
+    [InlineData("sql", false)]
+    [InlineData("sql", true)]
+    [InlineData("windows", false)]
+    [InlineData("windows", true)]
+    public void BuildServerConnection_KeepsEncryptionMandatory(string auth, bool trustCert)
+    {
+        var store = new InMemoryCredentialService();
+        store.SaveCredential("srv", "user", "pass");
+
+        var connection = CliConnectionResolver.BuildServerConnection("srv", auth, trustCert, store);
+        var resolved = new SqlConnectionStringBuilder(connection.GetConnectionString(store));
+        var direct = new SqlConnectionStringBuilder(
+            ConnectionHelper.BuildConnectionString("srv", "master", "user", "pass", trustCert));
+
+        Assert.Equal(SqlConnectionEncryptOption.Mandatory, resolved.Encrypt);
+        Assert.Equal(trustCert, resolved.TrustServerCertificate);
+        Assert.Equal(direct.Encrypt, resolved.Encrypt);
     }
 
     /* Minimal stand-in: the resolver only asks whether a credential exists, and the entra refusal must fire

@@ -8,6 +8,7 @@ using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
 using PlanViewer.Core.Models;
+using PlanViewer.Core.Services;
 
 namespace PlanViewer.App.Controls;
 
@@ -25,6 +26,16 @@ public partial class WaitStatsProfileControl : UserControl
     public event EventHandler<bool>? CollapsedChanged;
 
     public bool IsCollapsed => _isCollapsed;
+
+    /// <summary>
+    /// The offset holder of the connection whose data this profile shows, handed on to the ribbon
+    /// that draws the times (E5). Assigned by the owning grid right after InitializeComponent.
+    /// </summary>
+    public ServerUtcOffset ServerOffset
+    {
+        get => GlobalRibbon.ServerOffset;
+        set => GlobalRibbon.ServerOffset = value;
+    }
 
     // All known wait categories in the order they appear in the theme
     private static readonly string[] AllWaitCategories =
@@ -55,6 +66,9 @@ public partial class WaitStatsProfileControl : UserControl
     {
         GlobalRibbon.SetData(data);
     }
+
+    /// <summary>Redraws the ribbon with the data it has, after the time display mode changes.</summary>
+    internal void RedrawRibbon() => GlobalRibbon.Redraw();
 
     public void SetHighlight(string? category)
     {

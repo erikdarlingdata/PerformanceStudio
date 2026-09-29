@@ -3,13 +3,13 @@
                  xmlns:d="http://schemas.microsoft.com/developer/vsx-schema-design/2011">
   <Metadata>
     <Identity Id="PlanViewer.Ssms.64F79022-9D9A-4463-A1AE-4B19426A0CB1"
-              Version="1.27.0"
+              Version="1.28.0"
               Language="en-US"
               Publisher="Darling Data" />
     <DisplayName>Performance Studio for SSMS</DisplayName>
     <Description xml:space="preserve">Adds "Open in Performance Studio" to the execution plan right-click menu in SSMS. Extracts the plan XML and opens it in Performance Studio for advanced analysis. Compatible with SSMS 21 and SSMS 22.</Description>
     <MoreInfo>https://github.com/erikdarlingdata/PerformanceStudio</MoreInfo>
-    <License>LICENSE</License>
+    <License>LICENSE.txt</License>
     <Icon>Resources\PerformanceStudioIcon.png</Icon>
     <Tags>SQL Server, Execution Plan, Performance, SSMS</Tags>
   </Metadata>

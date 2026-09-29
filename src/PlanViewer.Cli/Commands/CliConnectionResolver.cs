@@ -70,7 +70,10 @@ public static class CliConnectionResolver
             DisplayName = server,
             AuthenticationType = authType,
             TrustServerCertificate = trustCert,
-            EncryptMode = trustCert ? "Optional" : "Mandatory"
+            /* Keep encryption mandatory regardless of --trust-cert, as ConnectionHelper does for a
+               direct login. --trust-cert only skips certificate validation (for self-signed certs);
+               it must not also make encryption optional and let queries and results cross in plaintext. */
+            EncryptMode = "Mandatory"
         };
     }
 

@@ -30,7 +30,8 @@ public partial class PlanViewerControl : UserControl
         };
         int rowIndex = 0;
 
-        void AddRow(string label, string value, string? brushKey = null)
+        // nested: the row is a detail of the row above it, so its label is indented under that row's.
+        void AddRow(string label, string value, string? brushKey = null, bool nested = false)
         {
             grid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
 
@@ -40,7 +41,7 @@ public partial class PlanViewerControl : UserControl
                 FontSize = 11,
                 Foreground = labelBrush,
                 HorizontalAlignment = HorizontalAlignment.Left,
-                Margin = new Thickness(0, 1, 8, 1)
+                Margin = new Thickness(nested ? 12 : 0, 1, 8, 1)
             };
             Grid.SetRow(labelText, rowIndex);
             Grid.SetColumn(labelText, 0);
@@ -84,7 +85,8 @@ public partial class PlanViewerControl : UserControl
 
         var hasSpillInTree = statement.RootNode != null && HasSpillInPlanTree(statement.RootNode);
 
-        // E11: order — Elapsed → CPU:Elapsed → DOP → CPU → Compile → Memory → Used → Optimization → CE Model → Cost.
+        // E11: order — Elapsed → CPU:Elapsed → DOP → CPU → Compile → Memory → Used → CE Model → Optimization → Cost.
+        // #613 moved CE Model above Optimization, so Optimization and its nested early abort reason end the list.
         // Extra Avalonia-only rows (threads, UDF, cached plan size) kept near their logical neighbors.
 
         if (statement.QueryTimeStats != null)
@@ -147,13 +149,22 @@ public partial class PlanViewerControl : UserControl
         if (statement.MemoryGrant != null)
         {
             var mg = statement.MemoryGrant;
-            var grantPct = mg.GrantedMemoryKB > 0
-                ? (double)mg.MaxUsedMemoryKB / mg.GrantedMemoryKB * 100 : 100;
-            var grantBrushKey = MemoryGrantBrushKey(grantPct, hasSpillInTree);
             var spillTag = hasSpillInTree ? " ⚠ spill" : "";
-            AddRow("Memory grant",
-                $"{TextFormatter.FormatMemoryGrantKB(mg.GrantedMemoryKB)} granted, {TextFormatter.FormatMemoryGrantKB(mg.MaxUsedMemoryKB)} used ({grantPct:N0}%){spillTag}",
-                grantBrushKey);
+            if (mg.GrantedMemoryKB > 0)
+            {
+                var grantPct = (double)mg.MaxUsedMemoryKB / mg.GrantedMemoryKB * 100;
+                var grantBrushKey = MemoryGrantBrushKey(grantPct, hasSpillInTree);
+                AddRow("Memory grant",
+                    $"{TextFormatter.FormatMemoryGrantKB(mg.GrantedMemoryKB)} granted, {TextFormatter.FormatMemoryGrantKB(mg.MaxUsedMemoryKB)} used ({grantPct:N0}%){spillTag}",
+                    grantBrushKey);
+            }
+            else
+            {
+                // #595: a 0 KB grant isn't "0 KB used (100%)" — there was nothing to use a
+                // percentage of. Say so plainly, in the same neutral color as every other
+                // row that isn't flagging a problem.
+                AddRow("Memory grant", $"No memory grant{spillTag}");
+            }
             if (mg.GrantWaitTimeMs > 0)
                 AddRow("Grant wait", $"{mg.GrantWaitTimeMs:N0}ms", "ErrorBrush");
         }
@@ -179,13 +190,15 @@ public partial class PlanViewerControl : UserControl
             }
         }
 
-        // Optimization + CE model
-        if (!string.IsNullOrEmpty(statement.StatementOptmLevel))
-            AddRow("Optimization", statement.StatementOptmLevel);
-        if (!string.IsNullOrEmpty(statement.StatementOptmEarlyAbortReason))
-            AddRow("Early abort", statement.StatementOptmEarlyAbortReason);
+        // CE model, then Optimization. #613: the early abort reason is part of the optimization
+        // result, not a fact of its own, so it sits under the Optimization row.
         if (statement.CardinalityEstimationModelVersion > 0)
             AddRow("CE model", statement.CardinalityEstimationModelVersion.ToString());
+        var hasOptimizationRow = !string.IsNullOrEmpty(statement.StatementOptmLevel);
+        if (hasOptimizationRow)
+            AddRow("Optimization", statement.StatementOptmLevel!);
+        if (!string.IsNullOrEmpty(statement.StatementOptmEarlyAbortReason))
+            AddRow("Early abort", statement.StatementOptmEarlyAbortReason, nested: hasOptimizationRow);
 
         if (grid.Children.Count > 0)
         {

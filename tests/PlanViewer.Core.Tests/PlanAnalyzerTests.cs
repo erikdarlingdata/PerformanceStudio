@@ -89,6 +89,22 @@ public class PlanAnalyzerTests
         Assert.Empty(warnings);
     }
 
+    /// <summary>
+    /// #594: Node 1 is a DOP-8 Nested Loops join whose ActualExecutions (8) is a thread count,
+    /// not a real re-execution count — it is not on the inner side of any join. Its true
+    /// mismatch is 609 actual against an estimate of 2,983.02, a 4.9x overestimate, well inside
+    /// the 10x gate. The pre-fix bug divided by the thread count and reported this node as a 39x
+    /// overestimate instead.
+    /// </summary>
+    [Fact]
+    public void Rule05_EagerIndexSpoolPlan_Node1IsNotOverstatedByItsThreadCount()
+    {
+        var plan = PlanTestHelper.LoadAndAnalyze("eager_index_spool_plan.sqlplan");
+        var node1 = PlanTestHelper.FindNode(plan.Batches[0].Statements[0].RootNode!, 1)!;
+
+        Assert.DoesNotContain(node1.Warnings, w => w.WarningType == "Row Estimate Mismatch");
+    }
+
     // ---------------------------------------------------------------
     // Rule 6: Scalar UDF Reference
     // ---------------------------------------------------------------
@@ -366,6 +382,48 @@ public class PlanAnalyzerTests
     {
         Assert.False(PlanAnalyzer.ConvertImplicitWrapsColumn(
             "[S]=CONVERT_IMPLICIT(nvarchar(20),[@n],0)", Identity(alias: null, table: "@tv", isTableVariable: true)));
+    }
+
+    /// <summary>
+    /// A conversion nested inside another is not read on its own: its arguments are part of the
+    /// outer one's, which were read already. Conversions after the outer one still are.
+    /// </summary>
+    [Fact]
+    public void Rule12f_NonSargable_NestedConversionsAroundAParameter_AreNotFlagged()
+    {
+        Assert.False(PlanAnalyzer.ConvertImplicitWrapsColumn(
+            "[db].[dbo].[t].[c]=CONVERT_IMPLICIT(int,CONVERT_IMPLICIT(smallint,[@p],0),0)"));
+    }
+
+    [Fact]
+    public void Rule12f_NonSargable_ConversionAfterNestedParameterConversions_IsStillRead()
+    {
+        Assert.True(PlanAnalyzer.ConvertImplicitWrapsColumn(
+            "CONVERT_IMPLICIT(int,CONVERT_IMPLICIT(smallint,[@p],0),0)=(1) AND CONVERT_IMPLICIT(int,[db].[dbo].[t].[c],0)=[@q]"));
+    }
+
+    /// <summary>
+    /// Conversion text inside a string literal is not a conversion. It sits inside the arguments
+    /// of the real conversion around it, so it is not read on its own.
+    /// </summary>
+    [Fact]
+    public void Rule12f_NonSargable_ConversionTextInsideAStringLiteral_IsNotRead()
+    {
+        var scan = new ScanIdentity(null, "T", false, new HashSet<string>());
+
+        Assert.False(PlanAnalyzer.ConvertImplicitWrapsColumn(
+            "CONVERT_IMPLICIT(nvarchar(50),N'x CONVERT_IMPLICIT(int,[T].[c],0)',0)=[@p]", scan));
+    }
+
+    /// <summary>
+    /// Each side of a comparison is read once and remembered, so a call on the parameter side
+    /// must not decide the answer for a call on the column side of the same comparison.
+    /// </summary>
+    [Fact]
+    public void Rule12_NonSargable_FunctionsOnBothSidesOfOneComparison_TheColumnSideIsFlagged()
+    {
+        Assert.Equal("Function call (ABS) on column", PlanAnalyzer.DetectNonSargablePattern(
+            "abs([@p])=abs([db].[dbo].[t].[c])"));
     }
 
     // ---------------------------------------------------------------
@@ -1151,6 +1209,47 @@ public class PlanAnalyzerTests
 
         Assert.Single(warnings);
         Assert.Contains("GetTopPosts", warnings[0].Message);
+    }
+
+    [Fact]
+    public void Rule23_EngineFunction_IsNotFlagged()
+    {
+        // sys.dm_db_index_physical_stats runs as the engine's INDEXANALYSIS function. Its Object
+        // names no database and no schema, and the multi-statement TVF advice does not apply.
+        var plan = PlanTestHelper.LoadAndAnalyze("eager_table_spool_plan.sqlplan");
+
+        static IEnumerable<PlanNode> Walk(PlanNode node) => node.Children.SelectMany(Walk).Prepend(node);
+        var tvf = Assert.Single(
+            PlanStatements.EnumerateAll(plan).Where(s => s.RootNode != null).SelectMany(s => Walk(s.RootNode!)),
+            n => n.LogicalOp == "Table-valued function");
+        Assert.Equal("INDEXANALYSIS", tvf.ObjectName);
+        Assert.Empty(PlanTestHelper.WarningsOfType(plan, "Table-Valued Function"));
+    }
+
+    [Theory]
+    // STRING_SPLIT, OPENJSON or a DMV: the engine's own function.
+    [InlineData(null, null, false)]
+    // A function a user wrote. Only an Object with neither part counts as the engine's.
+    [InlineData("StackOverflow2013", "dbo", true)]
+    [InlineData("StackOverflow2013", null, true)]
+    [InlineData(null, "dbo", true)]
+    public void Rule23_WarnsUnlessTheFunctionHasNoDatabaseAndNoSchema(
+        string? database, string? schema, bool expectWarning)
+    {
+        var node = new PlanNode
+        {
+            PhysicalOp = "Table-valued function",
+            LogicalOp = "Table-valued function",
+            DatabaseName = database,
+            SchemaName = schema,
+            ObjectName = "F"
+        };
+        PlanAnalyzer.Analyze(new ParsedPlan
+        {
+            Batches = [new PlanBatch { Statements = [new PlanStatement { RootNode = node }] }]
+        });
+
+        Assert.Equal(expectWarning, node.Warnings.Any(w => w.WarningType == "Table-Valued Function"));
     }
 
     // ---------------------------------------------------------------

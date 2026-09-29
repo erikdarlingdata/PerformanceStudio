@@ -121,9 +121,14 @@ internal static class HeadlessUi
         // Integrations writes. Redirected for the same reason as the line above.
         SettingsFile.RedirectForTestHost(SettingsRedirectRoot);
 
-        // And the third store. Proxy passwords live in the OS credential manager, not in either
-        // JSON file, so redirecting those two still left a test able to read — or delete — the
-        // developer's real saved credential.
+        // The saved server list (connections.json). Redirected for the same reason: its path
+        // used to be a plain static field under the real profile, so a test that saved a
+        // connection would have rewritten the developer's own list.
+        ConnectionStore.RedirectForTestHost(SettingsRedirectRoot);
+
+        // And the credential store. Proxy passwords live in the OS credential manager, not in
+        // any of the JSON files above, so redirecting those still left a test able to read — or
+        // delete — the developer's real saved credential.
         CredentialServiceFactory.UseInMemoryForTestHost();
     }
 

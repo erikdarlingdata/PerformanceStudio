@@ -422,6 +422,14 @@ public partial class MainWindow : Window
 
             var xml = File.ReadAllText(filePath);
 
+            /* A plan sent from SSMS arrives as a temp file that the extension wrote for this one
+               handoff. It holds the query text and any parameter values, so once the plan has
+               loaded, the file is deleted. The tab is then treated like a pasted plan, with no
+               file behind it: it goes on neither the recent list nor the tabs restored at the
+               next start. A file that fails to load, or to delete, is left for the extension's
+               own sweep of files older than an hour. */
+            var ssmsHandoff = IsSsmsHandoffFile(fullPath);
+
             // SSMS saves plans as UTF-16 with encoding="utf-16" in the XML declaration.
             // File.ReadAllText auto-detects the BOM, but the resulting C# string still
             // contains encoding="utf-16" which causes XDocument.Parse to fail.
@@ -434,8 +442,15 @@ public partial class MainWindow : Window
 
             var viewer = new PlanViewerControl();
             viewer.SetConnectionServices(_credentialService, _connectionStore);
-            viewer.LoadPlan(xml, fileName);
-            viewer.SourceFilePath = filePath;
+            var loaded = viewer.LoadPlan(xml, fileName);
+            if (!ssmsHandoff)
+                viewer.SourceFilePath = filePath;
+            else if (loaded)
+            {
+                try { File.Delete(fullPath); }
+                catch (IOException) { }
+                catch (UnauthorizedAccessException) { }
+            }
 
             // Wrap viewer with advice toolbar
             var content = CreatePlanTabContent(viewer);
@@ -446,12 +461,32 @@ public partial class MainWindow : Window
             UpdateEmptyOverlay();
 
             // Track in recent plans list and persist
-            TrackRecentPlan(filePath);
+            if (!ssmsHandoff)
+                TrackRecentPlan(filePath);
         }
         catch (Exception ex)
         {
             ShowError($"Failed to open {Path.GetFileName(filePath)}:\n\n{ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// True for a plan file that the SSMS extension wrote to hand over one plan: named
+    /// ssms_plan_*.sqlplan, directly in this user's temp folder, on Windows (the only place
+    /// the extension runs). All three must hold, so a file of the user's own that matches
+    /// the name somewhere else is never deleted. The extension sweeps that same pattern
+    /// from the temp folder itself.
+    /// </summary>
+    internal static bool IsSsmsHandoffFile(string fullPath)
+    {
+        var name = Path.GetFileName(fullPath);
+        return OperatingSystem.IsWindows()
+            && name.StartsWith("ssms_plan_", StringComparison.OrdinalIgnoreCase)
+            && name.EndsWith(".sqlplan", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(
+                Path.GetDirectoryName(fullPath),
+                Path.TrimEndingDirectorySeparator(Path.GetFullPath(Path.GetTempPath())),
+                StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task PasteXmlAsync()
@@ -483,7 +518,7 @@ public partial class MainWindow : Window
     {
         try
         {
-            var doc = XDocument.Parse(xml);
+            var doc = PlanXml.Parse(xml);
             XNamespace ns = "http://schemas.microsoft.com/sqlserver/2004/07/showplan";
             if (doc.Root?.Name.LocalName != "ShowPlanXML" &&
                 doc.Descendants(ns + "ShowPlanXML").FirstOrDefault() == null)
@@ -548,9 +583,18 @@ public partial class MainWindow : Window
     /// <summary>
     /// Saves the restore entries of all currently open tabs — file paths, and since #496
     /// scratch buffer entries — docked and detached alike (#490).
+    ///
+    /// <para>Not in a secondary instance (<see cref="SingleInstance.IsSecondaryInstance"/>):
+    /// the list on disk is the owner's, and this is the one writer that would replace it
+    /// with the secondary's own tabs. Every write of the list comes through here — the
+    /// debounce, the final write in <see cref="OnClosed"/>, and the update restart — so the
+    /// one guard covers all three.</para>
     /// </summary>
     private void SaveOpenPlans()
     {
+        if (SingleInstance.IsSecondaryInstance)
+            return;
+
         _appSettings.OpenTabs.Clear();
         _appSettings.OpenTabs.AddRange(CollectOpenTabEntries());
 
@@ -590,6 +634,12 @@ public partial class MainWindow : Window
            detached windows, whose Forget calls land right back here). Nothing may re-arm the
            timer against a window being torn down. */
         if (IsShuttingDown)
+            return;
+
+        /* A secondary instance writes no session state (see SaveOpenPlans), so there is
+           nothing to schedule: no pending flag, and no timer that would tick just to find
+           the write refused. */
+        if (SingleInstance.IsSecondaryInstance)
             return;
 
         _sessionPersistPending = true;
@@ -706,6 +756,11 @@ public partial class MainWindow : Window
     /// the poison defense wholesale — the entry is already off the cleared list before its
     /// buffer is read, and a buffer that fails to load is skipped, never re-added, and
     /// deleted (<see cref="TryRestoreScratchTab"/>).</para>
+    ///
+    /// <para><b>Never in a secondary instance.</b> Everything above is written for the one
+    /// instance that owns the saved session: the clear-and-save empties the owner's list on
+    /// disk, and the sweep deletes buffers the owner still needs. <see cref="OpenFromStartupArgs"/>
+    /// skips this method when <see cref="SingleInstance.IsSecondaryInstance"/> is set.</para>
     /// </summary>
     /// <param name="createFallbackTab">
     /// Whether an empty restore opens a fresh query tab. False when the caller is about to

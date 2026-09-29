@@ -29,13 +29,15 @@ public static class ConnectionHelper
         return builder.ConnectionString;
     }
 
-    public static Dictionary<string, string> LoadEnvFile()
+    public static EnvFile LoadEnvFile() => LoadEnvFile(Directory.GetCurrentDirectory());
+
+    public static EnvFile LoadEnvFile(string directory)
     {
         var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        var envPath = Path.Combine(Directory.GetCurrentDirectory(), ".env");
+        var envPath = Path.GetFullPath(Path.Combine(directory, ".env"));
 
         if (!File.Exists(envPath))
-            return result;
+            return new EnvFile(null, result);
 
         foreach (var line in File.ReadAllLines(envPath))
         {
@@ -61,6 +63,6 @@ public static class ConnectionHelper
             result[key] = value;
         }
 
-        return result;
+        return new EnvFile(envPath, result);
     }
 }

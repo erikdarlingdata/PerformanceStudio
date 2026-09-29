@@ -169,7 +169,7 @@ public partial class QueryStoreOverviewControl : UserControl
                 });
                 var tb = new TextBlock
                 {
-                    Text = TimeDisplayHelper.FormatForDisplay(allHours[i], "MM/dd"),
+                    Text = TimeDisplayHelper.FormatForDisplay(allHours[i], _serverOffset.Minutes, "MM/dd"),
                     FontSize = 8,
                     Foreground = labelBrush,
                 };

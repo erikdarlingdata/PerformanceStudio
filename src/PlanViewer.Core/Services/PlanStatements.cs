@@ -1,5 +1,7 @@
 using System.Collections.Generic;
+using System.Linq;
 using PlanViewer.Core.Models;
+using PlanViewer.Core.Output;
 
 namespace PlanViewer.Core.Services;
 
@@ -113,6 +115,26 @@ public static class PlanStatements
             return outerPath;
         return outerPath is null ? procName : outerPath + " > " + procName;
     }
+
+    private const string NoStatements = "Could not parse any statements from the plan XML";
+
+    /// <summary>
+    /// The message to show when <paramref name="plan"/> has no statement to analyze, or null when it
+    /// has at least one. XML that is well formed but is not a showplan, and a showplan with no
+    /// statements, both parse without a <see cref="ParsedPlan.ParseError"/> and reach this state.
+    /// The web page indexed the first statement without checking, so it threw a
+    /// NullReferenceException while it drew the result. Uses the same traversal as the result
+    /// mapper, so this is null exactly when the mapped result has at least one statement.
+    /// </summary>
+    public static string? NoStatementsMessage(ParsedPlan plan) =>
+        EnumerateAll(plan).Any() ? null : NoStatements;
+
+    /// <summary>
+    /// The same check for a result that was mapped earlier or read back from the share server,
+    /// where there is no parsed plan to look at.
+    /// </summary>
+    public static string? NoStatementsMessage(AnalysisResult result) =>
+        result.Statements.Count > 0 ? null : NoStatements;
 }
 
 /// <summary>

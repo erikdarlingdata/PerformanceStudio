@@ -1,5 +1,6 @@
 using PlanViewer.App.Controls;
 using PlanViewer.Core.Models;
+using PlanViewer.Core.Services;
 
 namespace PlanViewer.Core.Tests;
 
@@ -11,12 +12,12 @@ namespace PlanViewer.Core.Tests;
 public class QueryStoreGroupedRowIdDisplayTests
 {
     private static QueryStoreRow LeafRow(long queryId, long planId) =>
-        new(new QueryStorePlan { QueryId = queryId, PlanId = planId });
+        new(new QueryStorePlan { QueryId = queryId, PlanId = planId }, new ServerUtcOffset());
 
     // How QueryStoreGridControl builds a grouped parent: AggregateGroupedRows returns a
     // QueryStorePlan with the metric totals summed and no ids set at all.
     private static QueryStoreRow AggregateRow(params QueryStoreRow[] children) =>
-        new(new QueryStorePlan { QueryHash = "0x1A2B3C" }, 0, "0x1A2B3C", children.ToList());
+        new(new QueryStorePlan { QueryHash = "0x1A2B3C" }, 0, "0x1A2B3C", children.ToList(), new ServerUtcOffset());
 
     [Fact]
     public void LeafRowsShowTheIdsTheyHave()

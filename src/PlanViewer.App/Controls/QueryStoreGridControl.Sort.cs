@@ -98,6 +98,8 @@ public partial class QueryStoreGridControl : UserControl
         }
         // Refresh slicer labels
         TimeRangeSlicer.Redraw();
+        // Refresh the wait ribbon's labels and tips, which kept the old mode until a resize
+        WaitStatsProfile.RedrawRibbon();
     }
 
     private void UpdateStatusText()

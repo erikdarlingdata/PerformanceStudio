@@ -10,6 +10,13 @@ namespace PlanViewer.Cli.Commands;
 
 public static class QueryStoreCommand
 {
+    /// <summary>The --order-by values the Query Store query ranks by.</summary>
+    internal static readonly IReadOnlyList<string> OrderByValues = new[]
+    {
+        "cpu", "avg-cpu", "duration", "avg-duration", "reads", "avg-reads", "writes", "avg-writes",
+        "physical-reads", "avg-physical-reads", "memory", "avg-memory", "executions"
+    };
+
     /* #430: these two were built inline and never got the depth ceiling, so `querystore` still
        failed on a plan deeper than ~30 operators long after the crash was "fixed" — one ERROR row
        in summary.txt per deep plan, which is quieter than the crash and no more correct. */
@@ -39,9 +46,23 @@ public static class QueryStoreCommand
 
         var orderByOption = new Option<string>("--order-by")
         {
-            Description = "Ranking metric (total or avg): cpu, avg-cpu, duration, avg-duration, reads, avg-reads, writes, avg-writes, physical-reads, avg-physical-reads, memory, avg-memory, executions",
+            Description = $"Ranking metric (total or avg): {string.Join(", ", OrderByValues)}",
             DefaultValueFactory = _ => "cpu"
         };
+
+        /* The query lowercases the value and falls back to CPU order for one it does not know, so a
+           misspelled metric used to run to the end ranked by CPU, with the summary still saying "top
+           by <the misspelling>". Refuse it while the command line is parsed, as --output does. Any
+           letter case is accepted, because the query accepts it. */
+        orderByOption.Validators.Add(result =>
+        {
+            var value = result.GetValueOrDefault<string>();
+            if (value is not null && !OrderByValues.Contains(value.ToLowerInvariant()))
+            {
+                result.AddError(
+                    $"Argument '{value}' not recognized for --order-by. Must be one of: {string.Join(", ", OrderByValues)}");
+            }
+        });
 
         var hoursBackOption = new Option<int>("--hours-back")
         {
@@ -54,11 +75,9 @@ public static class QueryStoreCommand
             Description = "Directory for output files (default: current directory)"
         };
 
-        var outputOption = new Option<string>("--output", "-o")
-        {
-            Description = "Output format: json or text",
-            DefaultValueFactory = _ => "text"
-        };
+        var outputOption = PlanAnalysisRunner.CreateOutputOption(
+            "Output format for each plan's file. both writes a .json and a .txt file per plan",
+            defaultFormat: "text");
 
         var compactOption = new Option<bool>("--compact")
         {
@@ -199,7 +218,7 @@ public static class QueryStoreCommand
             var orderBy = parseResult.GetValue(orderByOption) ?? "cpu";
             var hoursBack = parseResult.GetValue(hoursBackOption);
             var outputDir = parseResult.GetValue(outputDirOption);
-            var output = parseResult.GetValue(outputOption) ?? "text";
+            var output = PlanAnalysisRunner.ReadOutputFormat(parseResult, outputOption, "text");
             var compact = parseResult.GetValue(compactOption);
             var warningsOnly = parseResult.GetValue(warningsOnlyOption);
             var configPath = parseResult.GetValue(configOption);
@@ -227,19 +246,31 @@ public static class QueryStoreCommand
 
             // Load .env file if present (CLI args take precedence)
             var env = ConnectionHelper.LoadEnvFile();
-            login ??= env.GetValueOrDefault("PLANVIEW_LOGIN");
-            if (!trustCert && env.GetValueOrDefault("PLANVIEW_TRUST_CERT")?.Equals("true", StringComparison.OrdinalIgnoreCase) == true)
-                trustCert = true;
+            if (env.Error is { } envError)
+            {
+                Console.Error.WriteLine(envError);
+                Environment.ExitCode = 1;
+                return;
+            }
+
+            // --server and --database are required, so the file only fills the login and trust-cert.
+            var settings = env.Fill(new ConnectionSettings(server, database, login, trustCert));
+            login = settings.Login;
+            trustCert = settings.TrustCert;
 
             // Resolve password from --password-stdin, --password, or PLANVIEW_PASSWORD
             if (!PasswordResolver.TryResolve(
                     passwordInline, passwordStdin, stdinAlreadyClaimed: false,
-                    env.GetValueOrDefault("PLANVIEW_PASSWORD"),
+                    () => env.PasswordFor(settings),
                     out var password))
             {
                 Environment.ExitCode = 1;
                 return;
             }
+
+            // A .env file can turn off certificate validation, so say when it did.
+            if (env.Notice is { } envNotice)
+                Console.Error.WriteLine(envNotice);
 
             if (top < 1)
             {
@@ -394,6 +425,36 @@ public static class QueryStoreCommand
         var outDir = outputDir?.FullName ?? Directory.GetCurrentDirectory();
         Directory.CreateDirectory(outDir);
 
+        var failed = await AnalyzePlansAsync(
+            plans, database, orderBy, hoursBack, outDir, outputFormat, compact, warningsOnly,
+            analyzerConfig, serverMetadata, Console.Error);
+
+        Console.Error.WriteLine();
+        if (plans.Count > 1)
+            Console.Error.WriteLine($"Processed {plans.Count} plans: {plans.Count - failed} succeeded, {failed} failed");
+        Console.Error.WriteLine($"Output: {outDir}");
+        Console.Error.WriteLine($"Summary: {Path.Combine(outDir, SummaryFileName)}");
+
+        /* Same as "analyze --server": the plans that worked keep their files and their rows in the
+           summary, and the exit code says the run was incomplete. It used to exit 0 no matter how
+           many plans failed, so a script or a CI job could not tell. */
+        if (failed > 0)
+            Environment.ExitCode = 1;
+    }
+
+    internal const string SummaryFileName = "summary.txt";
+
+    /// <summary>
+    /// Analyzes each fetched plan, writes its .sqlplan and analysis files, then writes summary.txt.
+    /// Returns how many plans failed. A failed plan gets an ERROR row in the summary and does not stop
+    /// the plans after it, so every plan that worked still has its files. Progress goes to
+    /// <paramref name="log"/>, which is stderr for the command.
+    /// </summary>
+    internal static async Task<int> AnalyzePlansAsync(
+        IReadOnlyList<QueryStorePlan> plans, string database, string orderBy, int hoursBack,
+        string outDir, string outputFormat, bool compact, bool warningsOnly,
+        AnalyzerConfig analyzerConfig, ServerMetadata? serverMetadata, TextWriter log)
+    {
         // Summary tracking — show the primary sort metric column
         var (metricHeader, metricFmt) = GetMetricFormatter(orderBy);
 
@@ -404,6 +465,7 @@ public static class QueryStoreCommand
             "#", "Query ID", "Plan ID", "Query Hash", "Module", metricHeader, "Executions", "Warns", "Crit"));
         summaryLines.Add(new string('-', 130));
 
+        var failed = 0;
         for (int i = 0; i < plans.Count; i++)
         {
             var qsPlan = plans[i];
@@ -411,7 +473,7 @@ public static class QueryStoreCommand
 
             try
             {
-                Console.Error.Write($"[{i + 1}/{plans.Count}] Query {qsPlan.QueryId} / Plan {qsPlan.PlanId}... ");
+                log.Write($"[{i + 1}/{plans.Count}] Query {qsPlan.QueryId} / Plan {qsPlan.PlanId}... ");
 
                 // Save .sqlplan
                 var planPath = Path.Combine(outDir, $"{label}.sqlplan");
@@ -421,6 +483,8 @@ public static class QueryStoreCommand
                    past the showplan cap gets its complete text in the output (#502) — the same
                    hand-off the MCP Query Store path makes. */
                 var plan = PlanAnalysisRunner.Analyze(qsPlan.PlanXml, analyzerConfig, serverMetadata);
+                if (PlanAnalysisRunner.ParseFailure(plan) is { } parseFailure)
+                    throw new InvalidOperationException(parseFailure);
                 var result = ResultMapper.Map(plan, $"{label}.sqlplan", capturedQueryText: qsPlan.QueryText);
 
                 await PlanAnalysisRunner.WriteResultFilesAsync(
@@ -436,11 +500,12 @@ public static class QueryStoreCommand
                     moduleName.Length > 18 ? moduleName[..18] + ".." : moduleName,
                     metricValue, qsPlan.CountExecutions, warnings, critical));
 
-                Console.Error.WriteLine($"OK ({warnings} warnings, {critical} critical)");
+                log.WriteLine($"OK ({warnings} warnings, {critical} critical)");
             }
             catch (Exception ex)
             {
-                Console.Error.WriteLine($"ERROR: {ex.Message}");
+                failed++;
+                log.WriteLine($"ERROR: {ex.Message}");
                 summaryLines.Add(string.Format(" {0,-4} {1,-10} {2,-10} {3,-20} {4,-20} ERROR: {5}",
                     i + 1, qsPlan.QueryId, qsPlan.PlanId, qsPlan.QueryHash, "", ex.Message));
             }
@@ -448,12 +513,9 @@ public static class QueryStoreCommand
 
         // Write summary
         summaryLines.Add("");
-        var summaryPath = Path.Combine(outDir, "summary.txt");
-        await File.WriteAllLinesAsync(summaryPath, summaryLines);
+        await File.WriteAllLinesAsync(Path.Combine(outDir, SummaryFileName), summaryLines);
 
-        Console.Error.WriteLine();
-        Console.Error.WriteLine($"Output: {outDir}");
-        Console.Error.WriteLine($"Summary: {summaryPath}");
+        return failed;
     }
 
     private static (string Header, Func<QueryStorePlan, string> Format) GetMetricFormatter(string orderBy)

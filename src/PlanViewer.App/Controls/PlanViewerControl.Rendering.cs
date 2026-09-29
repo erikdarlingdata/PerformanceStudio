@@ -295,15 +295,18 @@ public partial class PlanViewerControl : UserControl
             });
 
             // Actual rows of Estimated rows (accuracy %) -- red if off by divergence limit
-            var estRows = node.EstimateRows;
-            var accuracyRatio = estRows > 0 ? node.ActualRows / estRows : (node.ActualRows > 0 ? double.MaxValue : 1.0);
+            // #594: EstimateRows is per execution. On the inner side of a Nested Loops join,
+            // ActualExecutions is a real per-execution count, so the estimate has to scale by it
+            // to compare fairly against the summed ActualRows. Everywhere else — including a
+            // parallel zone, where ActualExecutions just counts threads — the estimate stays
+            // per-execution. RowEstimateHelper is the one place that decides which applies.
+            // #611: PlanRowAccuracy adds decimals where N0 would print numbers that contradict
+            // the percentage ("1 of 1 (89%)").
+            var accuracyRatio = RowEstimateHelper.GetRowAccuracyRatio(node);
             IBrush rowBrush = (accuracyRatio < 1.0 / divergenceLimit || accuracyRatio > divergenceLimit) ? OrangeRedBrush : fgBrush;
-            var accuracy = estRows > 0
-                ? $" ({accuracyRatio * 100:F0}%)"
-                : "";
             stack.Children.Add(new TextBlock
             {
-                Text = $"{node.ActualRows:N0} of {estRows:N0}{accuracy}",
+                Text = PlanRowAccuracy.FormatActualOfExpected(node.ActualRows, RowEstimateHelper.GetExpectedRows(node)),
                 FontSize = 10,
                 Foreground = rowBrush,
                 TextAlignment = TextAlignment.Center,
@@ -382,10 +385,8 @@ public partial class PlanViewerControl : UserControl
             return EdgeBrush;
 
         divergenceLimit = Math.Max(2.0, divergenceLimit);
-        var estRows = child.EstimateRows;
-        var accuracyRatio = estRows > 0
-            ? child.ActualRows / estRows
-            : (child.ActualRows > 0 ? double.MaxValue : 1.0);
+        // #594: same per-execution-vs-total comparison as the node label, via the shared helper.
+        var accuracyRatio = RowEstimateHelper.GetRowAccuracyRatio(child);
 
         // Within the neutral band — keep default color
         if (accuracyRatio >= 1.0 / divergenceLimit && accuracyRatio <= divergenceLimit)

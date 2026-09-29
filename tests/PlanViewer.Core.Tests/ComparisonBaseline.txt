@@ -150,27 +150,29 @@ Plan A: eager_table_spool_plan.sqlplan
 Plan B: eager_table_spool_plan.sqlplan
 
 --- Statement 1 ---
+WHILE (  SELECT dm.[avg_fragmentation_in_percent]  FROM sys.indexes i  INNER JOIN sys.dm_db_index_physical_stats (DB_ID(), NULL, NULL, NULL, 'LIMITED') dm  ON i.[object_id] = dm.[object_id]  AND i.[index_id] = dm.[index_id]  WHERE OBJECT_NAME(dm.[object_id]) = 'RealBigTest'  AND dm.[alloc_unit_type_desc] = 'IN_ROW_DATA'  AND i.index_id = 1  ) < 99.0
+
+  Estimated cost:     0.0099 -> 0.0099  (0.0% costlier)
+  Estimated rows:     1 -> 1  (0.0% more)
+
+--- Statement 2 ---
 BEGIN             SELECT TOP ( 5000 )                  @bmax = [Sequence]          FROM    dbo.RealBigTest WITH ( NOLOCK )          WHERE [Sequence] > @hkey          ORDER BY Sequence
 
   Estimated cost:     0.0217 -> 0.0217  (0.0% costlier)
   Estimated rows:     5,000 -> 5,000  (0.0% more)
 
---- Statement 2 ---
+--- Statement 3 ---
 ;             UPDATE  R          SET     ID = NEWID()          FROM    dbo.RealBigTest R          WHERE   R.[Sequence] > @hkey                  AND R.[Sequence] <= @bmax
 
   Estimated cost:     135,408 -> 135,408  (0.0% costlier)
   Estimated rows:     12,323,800 -> 12,323,800  (0.0% more)
 
---- Statement 3 ---
+--- Statement 4 ---
 DECLARE @hkey BIGINT = -1 ,      @bmax BIGINT,   @cur VARCHAR(20)
 
 
---- Statement 4 ---
-SET NOCOUNT ON
-
-
 --- Statement 5 ---
-
+SET NOCOUNT ON
 
 
 --- Statement 6 ---
@@ -1484,7 +1486,7 @@ SET NOCOUNT ON
   (no comparison available)
 
 --- Statement 3 (only in Plan B) ---
-
+WHILE (  SELECT dm.[avg_fragmentation_in_percent]  FROM sys.indexes i  INNER JOIN sys.dm_db_index_physical_stats (DB_ID(), NULL, NULL, NULL, 'LIMITED') dm  ON i.[object_id] = dm.[object_id]  AND i.[index_id] = dm.[index_id]  WHERE OBJECT_NAME(dm.[object_id]) = 'RealBigTest'  AND dm.[alloc_unit_type_desc] = 'IN_ROW_DATA'  AND i.index_id = 1  ) < 99.0
   (no comparison available)
 
 --- Statement 4 (only in Plan B) ---
@@ -1543,7 +1545,7 @@ SET NOCOUNT ON
   (no comparison available)
 
 --- Statement 3 (only in Plan A) ---
-
+WHILE (  SELECT dm.[avg_fragmentation_in_percent]  FROM sys.indexes i  INNER JOIN sys.dm_db_index_physical_stats (DB_ID(), NULL, NULL, NULL, 'LIMITED') dm  ON i.[object_id] = dm.[object_id]  AND i.[index_id] = dm.[index_id]  WHERE OBJECT_NAME(dm.[object_id]) = 'RealBigTest'  AND dm.[alloc_unit_type_desc] = 'IN_ROW_DATA'  AND i.index_id = 1  ) < 99.0
   (no comparison available)
 
 --- Statement 4 (only in Plan A) ---

@@ -31,11 +31,9 @@ public static class AnalyzeCommand
             Description = "Read plan XML from stdin"
         };
 
-        var outputOption = new Option<string>("--output", "-o")
-        {
-            Description = "Output format: json or text",
-            DefaultValueFactory = _ => "json"
-        };
+        var outputOption = PlanAnalysisRunner.CreateOutputOption(
+            "Output format. With --server, both writes a .json and a .txt file per plan. Without --server, both prints json",
+            defaultFormat: "json");
 
         var compactOption = new Option<bool>("--compact")
         {
@@ -134,7 +132,7 @@ public static class AnalyzeCommand
         {
             var file = parseResult.GetValue(fileArg);
             var stdin = parseResult.GetValue(stdinOption);
-            var output = parseResult.GetValue(outputOption) ?? "json";
+            var output = PlanAnalysisRunner.ReadOutputFormat(parseResult, outputOption, "json");
             var compact = parseResult.GetValue(compactOption);
             var warningsOnly = parseResult.GetValue(warningsOnlyOption);
             var server = parseResult.GetValue(serverOption);
@@ -155,22 +153,30 @@ public static class AnalyzeCommand
 
             // Load .env file if present (CLI args take precedence)
             var env = ConnectionHelper.LoadEnvFile();
-            server ??= env.GetValueOrDefault("PLANVIEW_SERVER");
-            database ??= env.GetValueOrDefault("PLANVIEW_DATABASE");
-            login ??= env.GetValueOrDefault("PLANVIEW_LOGIN");
-            if (!trustCert && env.GetValueOrDefault("PLANVIEW_TRUST_CERT")?.Equals("true", StringComparison.OrdinalIgnoreCase) == true)
-                trustCert = true;
+            if (env.Error is { } envError)
+            {
+                Console.Error.WriteLine(envError);
+                Environment.ExitCode = 1;
+                return;
+            }
+
+            var settings = env.Fill(new ConnectionSettings(server, database, login, trustCert));
+            (server, database, login, trustCert) = settings;
 
             // Resolve password from --password-stdin, --password, or PLANVIEW_PASSWORD
             // (in that order). --stdin for plan XML conflicts with --password-stdin.
             if (!PasswordResolver.TryResolve(
                     passwordInline, passwordStdin, stdin,
-                    env.GetValueOrDefault("PLANVIEW_PASSWORD"),
+                    () => env.PasswordFor(settings),
                     out var password))
             {
                 Environment.ExitCode = 1;
                 return;
             }
+
+            // A .env file can pick the server and turn off certificate validation, so say when it did.
+            if (env.Notice is { } envNotice)
+                Console.Error.WriteLine(envNotice);
 
             if (server != null)
             {
@@ -227,9 +233,10 @@ public static class AnalyzeCommand
 
         var plan = PlanAnalysisRunner.Analyze(planXml, analyzerConfig);
 
-        if (plan.Batches.Count == 0)
+        // Covers a plan that failed to parse and a plan with no statements, with the same messages as before.
+        if (PlanAnalysisRunner.ParseFailure(plan) is { } parseFailure)
         {
-            Console.Error.WriteLine("Could not parse any statements from the plan XML");
+            Console.Error.WriteLine(parseFailure);
             Environment.ExitCode = 1;
             return;
         }
@@ -249,7 +256,18 @@ public static class AnalyzeCommand
         else
         {
             var opts = compact ? CompactJsonOptions : JsonOptions;
-            Console.WriteLine(JsonSerializer.Serialize(result, opts));
+            string json;
+            try
+            {
+                json = PlanAnalysisRunner.SerializeResult(result, opts);
+            }
+            catch (InvalidOperationException exception)
+            {
+                Console.Error.WriteLine(exception.Message);
+                Environment.ExitCode = 1;
+                return;
+            }
+            Console.WriteLine(json);
         }
     }
 
@@ -424,6 +442,8 @@ public static class AnalyzeCommand
                    single-statement query past the showplan cap gets its full text in the output
                    instead of the plan's 4,000-character stub (#502). */
                 var plan = PlanAnalysisRunner.Analyze(planXml, analyzerConfig, serverMetadata);
+                if (PlanAnalysisRunner.ParseFailure(plan) is { } parseFailure)
+                    throw new InvalidOperationException(parseFailure);
                 var result = ResultMapper.Map(plan, $"{name}.sql", capturedQueryText: sqlText);
 
                 await PlanAnalysisRunner.WriteResultFilesAsync(

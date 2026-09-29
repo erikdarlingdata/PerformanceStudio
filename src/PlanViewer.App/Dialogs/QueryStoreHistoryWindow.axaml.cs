@@ -2,6 +2,7 @@ using System;
 using Avalonia.Controls;
 using PlanViewer.App.Controls;
 using PlanViewer.App.Services;
+using PlanViewer.Core.Services;
 
 namespace PlanViewer.App.Dialogs;
 
@@ -18,7 +19,7 @@ public partial class QueryStoreHistoryWindow : Window
 	}
 
 	public QueryStoreHistoryWindow(string connectionString, string queryHash,
-		string queryText, string database,
+		string queryText, string database, ServerUtcOffset serverOffset,
 		string? initialMetricTag = null,
 		DateTime? slicerStartUtc = null, DateTime? slicerEndUtc = null,
 		int? slicerDaysBack = null)
@@ -30,7 +31,7 @@ public partial class QueryStoreHistoryWindow : Window
 		var daysBack = slicerDaysBack ?? settings.QueryStoreSlicerDays;
 
 		var control = new QueryStoreHistoryControl(
-			connectionString, queryHash, queryText, database,
+			connectionString, queryHash, queryText, database, serverOffset,
 			metricTag, slicerStartUtc, slicerEndUtc, daysBack);
 		control.ShowCloseButton(true);
 		Content = control;

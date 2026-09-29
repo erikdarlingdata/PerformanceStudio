@@ -18,9 +18,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Repl" Version="0.11.0" />
-    <PackageReference Include="Repl.Mcp" Version="0.11.0" />
-    <PackageReference Include="System.CommandLine" Version="2.0.12" />
+    <PackageReference Include="Repl" />
+    <PackageReference Include="Repl.Mcp" />
+    <PackageReference Include="System.CommandLine" />
   </ItemGroup>
 
 </Project>
