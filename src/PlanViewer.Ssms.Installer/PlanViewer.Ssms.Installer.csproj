@@ -10,10 +10,7 @@
 
   <ItemGroup>
     <Reference Include="WindowsBase" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <InternalsVisibleTo Include="PlanViewer.Ssms.Installer.Tests" />
+    <Reference Include="System.IO.Compression" />
   </ItemGroup>
 
 </Project>

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.IO.Compression;
 using System.IO.Packaging;
 using System.Linq;
 using System.Reflection;
@@ -18,9 +19,17 @@ namespace PlanViewer.Ssms.Installer
             ("SSMS 21", @"C:\Program Files\Microsoft SQL Server Management Studio 21\Common7\IDE\VSIXInstaller.exe"),
         };
 
-        // Relationship types of the OPC package signature: origin, signature and certificate.
+        // Relationship types and content type of the OPC package signature.
         const string SignatureRelationshipPrefix = "http://schemas.openxmlformats.org/package/2006/relationships/digital-signature/";
+        const string OriginRelationship = SignatureRelationshipPrefix + "origin";
         const string CertificateRelationship = SignatureRelationshipPrefix + "certificate";
+        const string CertificateContentType = "application/vnd.openxmlformats-package.digital-signature-certificate";
+
+        // The one ZIP entry that OPC does not treat as a part.
+        const string ContentTypesEntry = "[Content_Types].xml";
+
+        // The source of the relationships of the package itself.
+        static readonly Uri PackageRoot = new Uri("/", UriKind.Relative);
 
         static int Main(string[] args)
         {
@@ -184,12 +193,14 @@ namespace PlanViewer.Ssms.Installer
         }
 
         // Returns null when the VSIX passes, or a short reason when it does not. The VSIX passes when it has
-        // exactly one valid signature, made with installerCert, that covers everything in the package.
+        // exactly one valid signature, made with installerCert, and the signature covers every entry in the ZIP file.
         internal static string CheckVsix(string vsixPath, X509Certificate installerCert)
         {
             try
             {
-                using (var package = Package.Open(vsixPath, FileMode.Open, FileAccess.Read))
+                // One read of the file feeds both views of it: the OPC package and the raw ZIP entries.
+                var file = File.ReadAllBytes(vsixPath);
+                using (var package = Package.Open(new MemoryStream(file), FileMode.Open, FileAccess.Read))
                 {
                     var manager = new PackageDigitalSignatureManager(package);
                     if (manager.Signatures.Count == 0)
@@ -201,11 +212,13 @@ namespace PlanViewer.Ssms.Installer
                     if (result != VerifyResult.Success)
                         return $"the signature is not valid ({result})";
 
+                    // The whole certificate must match, not only its thumbprint.
                     var signature = manager.Signatures[0];
-                    if (signature.Signer == null || signature.Signer.GetCertHashString() != installerCert.GetCertHashString())
+                    var certificate = installerCert.GetRawCertData();
+                    if (signature.Signer == null || !signature.Signer.GetRawCertData().SequenceEqual(certificate))
                         return "the file is signed with a different certificate than this installer";
 
-                    var uncovered = FindUncovered(package, manager, signature);
+                    var uncovered = FindUncovered(file, package, manager, signature, certificate);
                     if (uncovered.Count > 0)
                         return "the signature does not cover " + string.Join(", ", uncovered.Take(3)) + (uncovered.Count > 3 ? $" and {uncovered.Count - 3} more" : "");
 
@@ -218,64 +231,146 @@ namespace PlanViewer.Ssms.Installer
             }
         }
 
-        // Lists the parts and relationships that the signature does not cover. Its own parts (origin,
-        // signature, certificates) and its own relationships are left out. Signers differ in how they
-        // sign relationship parts: some sign the whole part, some select single relationships.
-        static List<string> FindUncovered(Package package, PackageDigitalSignatureManager manager, PackageDigitalSignature signature)
+        // Lists what the signature does not cover. The list starts from the raw ZIP entries, not from the parts that
+        // OPC finds. Names are compared exactly, so names that differ only in case are different names. Every entry
+        // must be one of these:
+        //   - a part that the signature signs;
+        //   - [Content_Types].xml;
+        //   - a relationship part that the signature covers, or that belongs to the origin part or the signature part;
+        //   - the origin part, when it is signed or empty;
+        //   - the signature part;
+        //   - a certificate part that holds exactly the certificate of the installer.
+        // A relationship part is covered when it is signed whole, or when the signature selects every relationship
+        // in it. The origin relationship of the package is the one exception: some signers add it after signing, so
+        // it needs no cover. The relationships of the origin part and the signature part may point only to entries
+        // in this list. An entry is never classified by parsing what is in it. The only reads are the checks that the
+        // origin part is empty and that a certificate part is the certificate of the installer.
+        static List<string> FindUncovered(byte[] file, Package package, PackageDigitalSignatureManager manager, PackageDigitalSignature signature, byte[] certificate)
         {
-            var signed = new HashSet<string>(signature.SignedParts.Select(PartKey));
-            var own = new HashSet<string> { PartKey(manager.SignatureOrigin), PartKey(signature.SignaturePart.Uri) };
+            var signedNames = new HashSet<string>(signature.SignedParts.Select(EntryName), StringComparer.Ordinal);
+            var originName = EntryName(manager.SignatureOrigin);
+            var signatureName = EntryName(signature.SignaturePart.Uri);
+
+            // A certificate part is the target of a certificate relationship from the signature part and has the certificate content type.
+            var certificateNames = new HashSet<string>(StringComparer.Ordinal);
             foreach (var rel in signature.SignaturePart.GetRelationshipsByType(CertificateRelationship))
             {
-                var certUri = PackUriHelper.ResolvePartUri(signature.SignaturePart.Uri, rel.TargetUri);
-                if (IsCertificate(package.GetPart(certUri)))
-                    own.Add(PartKey(certUri));
+                if (rel.TargetMode != TargetMode.Internal)
+                    continue;
+                var target = PackUriHelper.ResolvePartUri(signature.SignaturePart.Uri, rel.TargetUri);
+                if (package.PartExists(target) && string.Equals(package.GetPart(target).ContentType, CertificateContentType, StringComparison.OrdinalIgnoreCase))
+                    certificateNames.Add(EntryName(target));
+            }
+
+            // Relationship parts. Signers differ in how they cover them: some sign the whole part, some select
+            // single relationships.
+            var allowed = new HashSet<string>(signedNames, StringComparer.Ordinal) { ContentTypesEntry, signatureName };
+            var selected = new HashSet<string>(signature.SignedRelationshipSelectors.SelectMany(s => s.Select(package)).Select(RelationshipKey));
+            var sources = new List<(Uri Uri, IEnumerable<PackageRelationship> Relationships)> { (PackageRoot, package.GetRelationships()) };
+            foreach (var part in package.GetParts().Where(p => !PackUriHelper.IsRelationshipPartUri(p.Uri)))
+                sources.Add((part.Uri, part.GetRelationships()));
+
+            var relationshipFindings = new List<string>();
+            var explained = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var source in sources)
+            {
+                var sourceName = EntryName(source.Uri);
+                var relationshipsName = EntryName(PackUriHelper.GetRelationshipPartUri(source.Uri));
+                if (sourceName == originName || sourceName == signatureName)
+                {
+                    // These two relationship parts are unsigned. Where their relationships point is checked below.
+                    allowed.Add(relationshipsName);
+                    continue;
+                }
+
+                if (signedNames.Contains(relationshipsName))
+                    continue;
+
+                var covered = true;
+                foreach (var rel in source.Relationships)
+                {
+                    var isOrigin = sourceName.Length == 0 && rel.RelationshipType == OriginRelationship && rel.TargetMode == TargetMode.Internal
+                        && EntryName(PackUriHelper.ResolvePartUri(source.Uri, rel.TargetUri)) == originName;
+                    if (isOrigin || selected.Contains(RelationshipKey(rel)))
+                        continue;
+                    relationshipFindings.Add($"relationship {rel.Id} of {rel.SourceUri}");
+                    covered = false;
+                }
+
+                if (covered)
+                    allowed.Add(relationshipsName);
+                else
+                    explained.Add(relationshipsName);
             }
 
             var uncovered = new List<string>();
-            var parts = package.GetParts().Where(p => !PackUriHelper.IsRelationshipPartUri(p.Uri)).ToList();
-            foreach (var part in parts)
+            var accepted = new HashSet<string>(StringComparer.Ordinal);
+            using (var zip = new ZipArchive(new MemoryStream(file), ZipArchiveMode.Read))
             {
-                if (!own.Contains(PartKey(part.Uri)) && !signed.Contains(PartKey(part.Uri)))
-                    uncovered.Add(part.Uri.ToString());
+                // Names that differ only in case are one file when the VSIX is unpacked on Windows.
+                var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var entry in zip.Entries)
+                {
+                    var name = entry.FullName;
+                    if (!seen.Add(name))
+                        uncovered.Add(Display(name) + " (a second entry with the same name)");
+                    else if (allowed.Contains(name)
+                        || (name == originName && HasContent(entry, new byte[0]))
+                        || (certificateNames.Contains(name) && HasContent(entry, certificate)))
+                        accepted.Add(name);
+                    else if (!explained.Contains(name))
+                        uncovered.Add(Display(name));
+                }
             }
 
-            var selected = new HashSet<string>(signature.SignedRelationshipSelectors.SelectMany(s => s.Select(package)).Select(RelationshipKey));
-            var signedWhole = new HashSet<string>(signature.SignedParts
-                .Where(PackUriHelper.IsRelationshipPartUri)
-                .Select(u => PartKey(PackUriHelper.GetSourcePartUriFromRelationshipPartUri(u))));
-            foreach (var rel in package.GetRelationships().Concat(parts.SelectMany(p => p.GetRelationships())))
+            uncovered.Sort(StringComparer.Ordinal);
+            uncovered.AddRange(relationshipFindings);
+
+            foreach (var partUri in new[] { manager.SignatureOrigin, signature.SignaturePart.Uri })
             {
-                if (!rel.RelationshipType.StartsWith(SignatureRelationshipPrefix, StringComparison.Ordinal)
-                    && !selected.Contains(RelationshipKey(rel))
-                    && !signedWhole.Contains(PartKey(rel.SourceUri)))
-                    uncovered.Add($"relationship {rel.Id} of {rel.SourceUri}");
+                if (!package.PartExists(partUri))
+                    continue;
+                foreach (var rel in package.GetPart(partUri).GetRelationships())
+                {
+                    if (rel.TargetMode != TargetMode.Internal || !accepted.Contains(EntryName(PackUriHelper.ResolvePartUri(rel.SourceUri, rel.TargetUri))))
+                        uncovered.Add($"relationship {rel.Id} of {rel.SourceUri}");
+                }
             }
 
             return uncovered;
         }
 
-        // Part names are not case-sensitive and may be escaped. "/" is the package itself, the source of package relationships.
-        static string PartKey(Uri partUri) => Uri.UnescapeDataString(partUri.ToString()).ToUpperInvariant();
+        // The name of the ZIP entry that holds a part: the part name without its leading slash.
+        // The package itself has the name "".
+        static string EntryName(Uri partUri)
+        {
+            var name = partUri.OriginalString;
+            if (!name.StartsWith("/", StringComparison.Ordinal))
+                throw new InvalidDataException($"the part name {name} is not valid");
+            return name.Substring(1);
+        }
 
         static string RelationshipKey(PackageRelationship rel) => rel.SourceUri + " " + rel.Id;
 
-        static bool IsCertificate(PackagePart part)
+        // True when the entry holds exactly these bytes. It reads no more than one byte past the expected length.
+        static bool HasContent(ZipArchiveEntry entry, byte[] expected)
         {
-            try
+            using (var stream = entry.Open())
             {
-                using (var stream = part.GetStream())
-                using (var bytes = new MemoryStream())
-                {
-                    stream.CopyTo(bytes);
-                    new X509Certificate(bytes.ToArray());
-                    return true;
-                }
+                var actual = new byte[expected.Length + 1];
+                var length = 0;
+                int read;
+                while (length < actual.Length && (read = stream.Read(actual, length, actual.Length - length)) > 0)
+                    length += read;
+                return length == expected.Length && actual.Take(length).SequenceEqual(expected);
             }
-            catch (CryptographicException)
-            {
-                return false;
-            }
+        }
+
+        // An entry name as it appears in a message, like a part name. Control characters and long names are cut down.
+        static string Display(string entryName)
+        {
+            var shown = new string(entryName.Select(c => char.IsControl(c) ? '?' : c).ToArray());
+            return "/" + (shown.Length > 80 ? shown.Substring(0, 80) + "..." : shown);
         }
 
         static void DeleteFolder(string path)
