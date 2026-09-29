@@ -393,6 +393,8 @@ A VSIX extension that adds **"Open in Performance Studio"** to the execution pla
 4. The installer auto-detects SSMS 21 and/or SSMS 22 and installs into both
 5. Restart SSMS to activate the extension
 
+Release builds are signed. A signed installer installs only a `PlanViewer.Ssms.vsix` that has the same signature, so use the two files from the same release. You can also double-click `PlanViewer.Ssms.vsix` to install the extension without the installer.
+
 ### First run
 
 On first use, if Performance Studio isn't found automatically, the extension will prompt you to locate `PlanViewer.App.exe`. The path is saved to the registry (`HKCU\SOFTWARE\DarlingData\SQLPerformanceStudio\InstallPath`) so you only need to do this once.
