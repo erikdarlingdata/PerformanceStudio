@@ -30,7 +30,8 @@ public partial class PlanViewerControl : UserControl
         };
         int rowIndex = 0;
 
-        void AddRow(string label, string value, string? brushKey = null)
+        // nested: the row is a detail of the row above it, so its label is indented under that row's.
+        void AddRow(string label, string value, string? brushKey = null, bool nested = false)
         {
             grid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
 
@@ -40,7 +41,7 @@ public partial class PlanViewerControl : UserControl
                 FontSize = 11,
                 Foreground = labelBrush,
                 HorizontalAlignment = HorizontalAlignment.Left,
-                Margin = new Thickness(0, 1, 8, 1)
+                Margin = new Thickness(nested ? 12 : 0, 1, 8, 1)
             };
             Grid.SetRow(labelText, rowIndex);
             Grid.SetColumn(labelText, 0);
@@ -84,7 +85,8 @@ public partial class PlanViewerControl : UserControl
 
         var hasSpillInTree = statement.RootNode != null && HasSpillInPlanTree(statement.RootNode);
 
-        // E11: order — Elapsed → CPU:Elapsed → DOP → CPU → Compile → Memory → Used → Optimization → CE Model → Cost.
+        // E11: order — Elapsed → CPU:Elapsed → DOP → CPU → Compile → Memory → Used → CE Model → Optimization → Cost.
+        // #613 moved CE Model above Optimization, so Optimization and its nested early abort reason end the list.
         // Extra Avalonia-only rows (threads, UDF, cached plan size) kept near their logical neighbors.
 
         if (statement.QueryTimeStats != null)
@@ -188,13 +190,15 @@ public partial class PlanViewerControl : UserControl
             }
         }
 
-        // Optimization + CE model
-        if (!string.IsNullOrEmpty(statement.StatementOptmLevel))
-            AddRow("Optimization", statement.StatementOptmLevel);
-        if (!string.IsNullOrEmpty(statement.StatementOptmEarlyAbortReason))
-            AddRow("Early abort", statement.StatementOptmEarlyAbortReason);
+        // CE model, then Optimization. #613: the early abort reason is part of the optimization
+        // result, not a fact of its own, so it sits under the Optimization row.
         if (statement.CardinalityEstimationModelVersion > 0)
             AddRow("CE model", statement.CardinalityEstimationModelVersion.ToString());
+        var hasOptimizationRow = !string.IsNullOrEmpty(statement.StatementOptmLevel);
+        if (hasOptimizationRow)
+            AddRow("Optimization", statement.StatementOptmLevel!);
+        if (!string.IsNullOrEmpty(statement.StatementOptmEarlyAbortReason))
+            AddRow("Early abort", statement.StatementOptmEarlyAbortReason, nested: hasOptimizationRow);
 
         if (grid.Children.Count > 0)
         {

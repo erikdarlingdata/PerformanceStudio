@@ -115,6 +115,24 @@ public class HtmlExporterTests
         Assert.Contains("<div class=\"warning-item info\">", html);
     }
 
+    /// <summary>#613: the runtime card lists CE Model above Optimization, the same order as the App's Runtime Summary.</summary>
+    [Fact]
+    public void Export_RuntimeCard_ListsCeModelAboveOptimization()
+    {
+        var plan = PlanTestHelper.LoadAndAnalyze("key_lookup_plan.sqlplan");
+        foreach (var batch in plan.Batches)
+            foreach (var stmt in batch.Statements)
+                PlanLayoutEngine.Layout(stmt);
+
+        var result = ResultMapper.Map(plan, "key_lookup_plan.sqlplan");
+        var html = HtmlExporter.Export(result, TextFormatter.Format(result));
+
+        var ceModel = html.IndexOf("<span class=\"label\">CE Model</span>", StringComparison.Ordinal);
+        var optimization = html.IndexOf("<span class=\"label\">Optimization</span>", StringComparison.Ordinal);
+        Assert.True(ceModel >= 0, "no CE Model row");
+        Assert.True(optimization > ceModel, "Optimization is not below CE Model");
+    }
+
     private static string ExportWithSeverity(string? severity, bool onOperator = false)
     {
         var warning = new WarningResult { Severity = severity!, Type = "demo", Message = "demo" };

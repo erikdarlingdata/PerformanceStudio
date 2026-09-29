@@ -308,8 +308,9 @@ pre.query-text, pre.text-output {
         sb.AppendLine("<div class=\"card-body\">");
 
         // Order per Joe (#215 E11): Elapsed → CPU:Elapsed → DOP → CPU → Compile →
-        // Memory → Used → Optimization → CE Model → Cost. Puts the important
-        // measurements on top and groups related metrics together.
+        // Memory → Used → CE Model → Optimization → Cost. Puts the important
+        // measurements on top and groups related metrics together. #613 moved CE Model
+        // above Optimization, the same order as the App's Runtime Summary.
         if (stmt.QueryTime != null)
         {
             WriteRow(sb, "Elapsed", $"{stmt.QueryTime.ElapsedTimeMs:N0} ms");
@@ -343,10 +344,10 @@ pre.query-text, pre.text-output {
             if (stmt.MemoryGrant.SerialRequiredKB > 0 && stmt.MemoryGrant.SerialRequiredKB != stmt.MemoryGrant.DesiredKB)
                 WriteRow(sb, "Serial required", FormatKB(stmt.MemoryGrant.SerialRequiredKB));
         }
-        if (stmt.OptimizationLevel != null)
-            WriteRow(sb, "Optimization", Encode(stmt.OptimizationLevel));
         if (stmt.CardinalityEstimationModel > 0)
             WriteRow(sb, "CE Model", stmt.CardinalityEstimationModel.ToString());
+        if (stmt.OptimizationLevel != null)
+            WriteRow(sb, "Optimization", Encode(stmt.OptimizationLevel));
         WriteRow(sb, "Cost", stmt.EstimatedCost.ToString("N2"));
         sb.AppendLine("</div>");
         sb.AppendLine("</div>");
