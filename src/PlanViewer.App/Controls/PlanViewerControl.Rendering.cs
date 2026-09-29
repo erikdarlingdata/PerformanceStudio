@@ -300,15 +300,13 @@ public partial class PlanViewerControl : UserControl
             // to compare fairly against the summed ActualRows. Everywhere else — including a
             // parallel zone, where ActualExecutions just counts threads — the estimate stays
             // per-execution. RowEstimateHelper is the one place that decides which applies.
-            var expectedRows = RowEstimateHelper.GetExpectedRows(node);
+            // #611: PlanRowAccuracy adds decimals where N0 would print numbers that contradict
+            // the percentage ("1 of 1 (89%)").
             var accuracyRatio = RowEstimateHelper.GetRowAccuracyRatio(node);
             IBrush rowBrush = (accuracyRatio < 1.0 / divergenceLimit || accuracyRatio > divergenceLimit) ? OrangeRedBrush : fgBrush;
-            var accuracy = expectedRows > 0
-                ? $" ({accuracyRatio * 100:F0}%)"
-                : "";
             stack.Children.Add(new TextBlock
             {
-                Text = $"{node.ActualRows:N0} of {expectedRows:N0}{accuracy}",
+                Text = PlanRowAccuracy.FormatActualOfExpected(node.ActualRows, RowEstimateHelper.GetExpectedRows(node)),
                 FontSize = 10,
                 Foreground = rowBrush,
                 TextAlignment = TextAlignment.Center,

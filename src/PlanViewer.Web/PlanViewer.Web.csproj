@@ -32,6 +32,7 @@
     <Compile Include="..\PlanViewer.Core\Services\PlanAnalyzer.Timing.cs" Link="Core\Services\PlanAnalyzer.Timing.cs" />
     <Compile Include="..\PlanViewer.Core\Services\PlanAnalyzer.Helpers.cs" Link="Core\Services\PlanAnalyzer.Helpers.cs" />
     <Compile Include="..\PlanViewer.Core\Services\RowEstimateHelper.cs" Link="Core\Services\RowEstimateHelper.cs" />
+    <Compile Include="..\PlanViewer.Core\Services\PlanRowAccuracy.cs" Link="Core\Services\PlanRowAccuracy.cs" />
     <Compile Include="..\PlanViewer.Core\Services\BenefitScorer.cs" Link="Core\Services\BenefitScorer.cs" />
     <Compile Include="..\PlanViewer.Core\Services\NodeTimeAttribution.cs" Link="Core\Services\NodeTimeAttribution.cs" />
     <Compile Include="..\PlanViewer.Core\Services\WaitStatsConfig.cs" Link="Core\Services\WaitStatsConfig.cs" />
