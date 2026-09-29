@@ -51,7 +51,7 @@ PerformanceStudio/
 ## Architecture
 
 - **PlanViewer.Core** is the shared library. It contains the XML parser (`ShowPlanParser`), analysis rules (`PlanAnalyzer`), plan layout engine, text/JSON formatters, and all models. Both the GUI and CLI depend on it.
-- **PlanViewer.App** is an Avalonia 11 desktop app using code-behind (no MVVM framework). It renders plan trees on a Canvas with the same operator icons as SSMS.
+- **PlanViewer.App** is an Avalonia 12 desktop app using code-behind (no MVVM framework). It renders plan trees on a Canvas with the same operator icons as SSMS.
 - **PlanViewer.Cli** is a System.CommandLine-based CLI tool that wraps Core for command-line use.
 
 ## Code Style
