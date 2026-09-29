@@ -165,10 +165,10 @@ jobs:
       #    approval times out, the release still goes out with the unsigned
       #    files (as it did before these were signed) and a warning annotation
       #    says so. The one exception is in the replace step: if it cannot put
-      #    the unsigned files back after a failed copy, the job stops before
-      #    anything is published. Each SignPath request needs a manual approval,
-      #    so a release run now waits for two: the App first, then these two
-      #    files. ──
+      #    the unsigned files back after a failed copy or a failed signature
+      #    check, the job stops before anything is published. Each SignPath
+      #    request needs a manual approval, so a release run now waits for two:
+      #    the App first, then these two files. ──
       - name: Stage SSMS files for signing
         if: steps.ssms.outputs.BUILT == 'true'
         continue-on-error: true
@@ -221,9 +221,12 @@ jobs:
         shell: pwsh
         run: |
           # Copy both files or neither, so one signed file never ships beside an
-          # unsigned one. If a copy fails, put the unsigned pair back from
-          # ssms-unsigned/. If that fails too, the step fails and the job stops
-          # before the release is created, so a mixed pair is never published.
+          # unsigned one. The signed installer must also accept the signed VSIX:
+          # --verify-only runs the installer's signature check and installs
+          # nothing. If a copy or that check fails, put the unsigned pair back
+          # from ssms-unsigned/. If that fails too, the step fails and the job
+          # stops before the release is created, so a mixed pair is never
+          # published.
           $names = 'InstallSsmsExtension.exe', 'PlanViewer.Ssms.vsix'
           $missing = @($names | Where-Object { -not (Test-Path "signed/ssms/$_") })
           if ($missing.Count -gt 0) {
@@ -233,13 +236,20 @@ jobs:
               foreach ($name in $names) {
                 Copy-Item "signed/ssms/$name" "releases/$name" -Force -ErrorAction Stop
               }
+              & releases/InstallSsmsExtension.exe --verify-only releases/PlanViewer.Ssms.vsix
+              if ($LASTEXITCODE -ne 0) {
+                throw "the installer rejected the signed VSIX with exit code $LASTEXITCODE (the reason is in the log above)"
+              }
               Write-Host 'Replaced the SSMS extension and installer with the signed files.'
             } catch {
-              $copyError = $_.Exception.Message
+              $problem = $_.Exception.Message
               foreach ($name in $names) {
                 Copy-Item "ssms-unsigned/$name" "releases/$name" -Force -ErrorAction Stop
               }
-              Write-Host "::warning::Could not copy the signed SSMS files into releases/ ($copyError). PlanViewer.Ssms.vsix and InstallSsmsExtension.exe shipped unsigned."
+              # The failed check left a non-zero exit code, and the shell ends the
+              # script with `exit $LASTEXITCODE`. The failure is handled, so reset it.
+              $global:LASTEXITCODE = 0
+              Write-Host "::warning::Could not use the signed SSMS files: $problem. PlanViewer.Ssms.vsix and InstallSsmsExtension.exe shipped unsigned."
             }
           }
 
