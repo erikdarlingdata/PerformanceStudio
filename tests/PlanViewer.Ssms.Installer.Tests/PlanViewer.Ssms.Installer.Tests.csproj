@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- The installer targets .NET Framework 4.7.2 and its signature check uses
+         System.IO.Packaging.PackageDigitalSignatureManager, which exists only on .NET Framework.
+         Its tests have to run on .NET Framework too, so this project is not in PlanViewer.sln:
+         ci.yml builds the solution on ubuntu-latest and cannot run net472 tests.
+         .github/workflows/ssms-installer-tests.yml builds and runs this project on Windows. -->
+    <TargetFramework>net472</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
+
+    <!-- The same 15 minute session timeout as PlanViewer.Core.Tests, so that a bare `dotnet test`
+         cannot hang for good. -->
+    <TestingPlatformCommandLineArguments>--timeout 15m</TestingPlatformCommandLineArguments>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="Microsoft.Testing.Extensions.HangDump" />
+    <PackageReference Include="xunit.v3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="WindowsBase" />
+    <Reference Include="System.IO.Compression" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\PlanViewer.Ssms.Installer\PlanViewer.Ssms.Installer.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+</Project>

@@ -13,4 +13,9 @@
     <Reference Include="System.IO.Compression" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Lets tests/PlanViewer.Ssms.Installer.Tests call the internal signature check. -->
+    <InternalsVisibleTo Include="PlanViewer.Ssms.Installer.Tests" />
+  </ItemGroup>
+
 </Project>
