@@ -421,13 +421,12 @@ public partial class QuerySessionControl : UserControl
     }
 
     /* The colours the theme holds today, as literals, so a key missing from the dictionary renders
-       something sane rather than nothing. Three of them are exactly what the code used to construct
+       something sane rather than nothing. Two of them are exactly what the code used to construct
        inline at each site; FallbackMuted is not, because the muted site was constructing #A0A0A0
        and the theme's muted brush is #B0B6C0 -- taking the token means taking its colour. */
     private static readonly IBrush FallbackForeground = new SolidColorBrush(Color.FromRgb(0xE4, 0xE6, 0xEB));
     private static readonly IBrush FallbackBackground = new SolidColorBrush(Color.FromRgb(0x1A, 0x1D, 0x23));
     private static readonly IBrush FallbackMuted = new SolidColorBrush(Color.FromRgb(0xB0, 0xB6, 0xC0));
-    private static readonly IBrush FallbackError = new SolidColorBrush(Color.FromRgb(0xE5, 0x73, 0x73));
 
     /// <summary>
     /// A theme brush by key, or <paramref name="fallback"/> when the key is not in the

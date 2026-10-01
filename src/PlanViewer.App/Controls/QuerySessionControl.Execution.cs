@@ -9,15 +9,11 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Xml.Linq;
 using Avalonia.Controls;
-using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
-using Avalonia.Layout;
-using Avalonia.Media;
 using AvaloniaEdit;
 using AvaloniaEdit.CodeCompletion;
 using AvaloniaEdit.TextMate;
-using Microsoft.Data.SqlClient;
 using PlanViewer.App.Dialogs;
 using PlanViewer.App.Services;
 using PlanViewer.Core.Interfaces;
@@ -96,77 +92,17 @@ public partial class QuerySessionControl : UserControl
         var planType = estimated ? "Estimated" : "Actual";
 
         // Create loading tab with cancel button
-        var loadingPanel = new StackPanel
-        {
-            VerticalAlignment = VerticalAlignment.Center,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            Width = 300
-        };
-
-        var progressBar = new ProgressBar
-        {
-            IsIndeterminate = true,
-            Height = 4,
-            Margin = new Avalonia.Thickness(0, 0, 0, 12)
-        };
-        // This overlay lives in tab content the user switches away from mid-capture.
-        Helpers.ProgressBarBehaviors.SetRestartOnReattach(progressBar, true);
-
-        /* #448: SelectableTextBlock and wrapping, because this label doubles as the place a query
-           failure is reported. A SQL error is the one string in this app a user most needs to copy
-           somewhere else, and unwrapped it was being clipped by the panel. */
-        var statusLabel = new SelectableTextBlock
-        {
-            Text = $"Capturing {planType.ToLower()} plan...",
-            FontSize = 14,
-            Foreground = ForegroundToken,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            TextAlignment = Avalonia.Media.TextAlignment.Center,
-            TextWrapping = TextWrapping.Wrap
-        };
-
-        var cancelBtn = new Button
-        {
-            Content = "\u25A0 Cancel",
-            Height = 32,
-            Width = 120,
-            Padding = new Avalonia.Thickness(16, 0),
-            FontSize = 13,
-            Margin = new Avalonia.Thickness(0, 16, 0, 0),
-            HorizontalAlignment = HorizontalAlignment.Center,
-            HorizontalContentAlignment = HorizontalAlignment.Center,
-            VerticalContentAlignment = VerticalAlignment.Center,
-            Theme = (Avalonia.Styling.ControlTheme)this.FindResource("AppButton")!
-        };
-        cancelBtn.Click += (_, _) => runCts.Cancel();
-
-        loadingPanel.Children.Add(progressBar);
-        loadingPanel.Children.Add(statusLabel);
-        loadingPanel.Children.Add(cancelBtn);
-
-        var loadingContainer = new Grid
-        {
-            Background = BackgroundToken,
-            Focusable = true,
-            Children = { loadingPanel }
-        };
-        /* This run's own source, not the session's current one. The handler outlives the run: a
-           failed capture leaves this container on screen, still focusable, and Escape pressed on
-           it later must not reach past this tab and cancel whatever run is newer. */
-        loadingContainer.KeyDown += (_, ke) =>
-        {
-            if (ke.Key == Key.Escape) { runCts.Cancel(); ke.Handled = true; }
-        };
+        var progress = new Helpers.CaptureProgressPanel(this, $"Capturing {planType.ToLower()} plan...", runCts);
 
         // Add loading tab and switch to it
         _planCounter++;
         var tabLabel = estimated ? $"Est Plan {_planCounter}" : $"Plan {_planCounter}";
-        var loadingTab = NewPlanTab(tabLabel, loadingContainer);
+        var loadingTab = NewPlanTab(tabLabel, progress.Root);
         _tabRuns.AddOrUpdate(loadingTab, runCts);
 
         AddDocument(loadingTab);
         SelectDocument(loadingTab);
-        loadingContainer.Focus();
+        progress.Root.Focus();
 
         try
         {
@@ -201,9 +137,7 @@ public partial class QuerySessionControl : UserControl
 
             if (string.IsNullOrEmpty(planXml))
             {
-                statusLabel.Text = $"No plan returned ({sw.Elapsed.TotalSeconds:F1}s)";
-                progressBar.IsVisible = false;
-                cancelBtn.IsVisible = false;
+                progress.ShowOutcome($"No plan returned ({sw.Elapsed.TotalSeconds:F1}s)");
                 return;
             }
 
@@ -211,7 +145,7 @@ public partial class QuerySessionControl : UserControl
             SetStatus($"{planType} plan captured ({sw.Elapsed.TotalSeconds:F1}s)");
             ShowCapturedPlan(loadingTab, planXml, tabLabel, queryText);
         }
-        catch (OperationCanceledException)
+        catch (Exception ex) when (ex is OperationCanceledException || ct.IsCancellationRequested)
         {
             /* Nothing in the strip. The user cancelled this themselves — Escape, the Cancel
                button, or by starting the next query — and the spinner tab vanishing is the
@@ -219,16 +153,17 @@ public partial class QuerySessionControl : UserControl
                visible: removing the selected tab clears the selection, and a selection change
                empties the strip. (It used to MOVE the selection to a neighbour. A deselectable
                strip clears it instead and RemoveDocument picks the neighbour afterwards — a
-               different mechanism, and the same thing this relies on either way.) */
+               different mechanism, and the same thing this relies on either way.)
+
+               The token decides, not the exception type. A cancel that lands while the query is
+               running comes back from SqlClient as a SqlException ("Operation cancelled by
+               user."), not an OperationCanceledException, so it used to fall through to the
+               failure below and leave the cancelled run on screen as a red error (#625). */
             RemoveDocument(loadingTab);
-        }
-        catch (SqlException ex)
-        {
-            ShowExecutionFailure(loadingPanel, statusLabel, progressBar, cancelBtn, ex.Message);
         }
         catch (Exception ex)
         {
-            ShowExecutionFailure(loadingPanel, statusLabel, progressBar, cancelBtn, ex.Message);
+            progress.ShowFailure(ex.Message);
         }
     }
 
@@ -266,39 +201,6 @@ public partial class QuerySessionControl : UserControl
            On a view the refresh reads a null SelectedDocument and keeps everything disabled;
            that is the Q2 gate and nothing may write these buttons around it. */
         UpdatePlanTabButtonState();
-    }
-
-    /// <summary>
-    /// Reports a query failure in the plan tab, in full (#448).
-    ///
-    /// <para>It used to be cut to 100 characters with an ellipsis, in a panel fixed at 300px wide
-    /// holding a non-wrapping label — three separate reasons the same message got clipped, and
-    /// between them a SQL error was routinely unreadable. 100 characters does not even reach the end
-    /// of "Msg 208, Level 16, State 1, Procedure X, Line N" before the sentence naming the actual
-    /// problem starts.</para>
-    ///
-    /// <para>The panel is sized for a spinner and a Cancel button, which is why it is narrow; on
-    /// failure it is re-sized for prose. MaxWidth rather than Width, so a short error stays compact
-    /// and a long one is bounded at a readable measure instead of running the width of the window.</para>
-    /// </summary>
-    internal static void ShowExecutionFailure(
-        StackPanel panel,
-        SelectableTextBlock statusLabel,
-        ProgressBar progressBar,
-        Button cancelBtn,
-        string message)
-    {
-        panel.Width = double.NaN;
-        panel.MaxWidth = 640;
-
-        statusLabel.Text = message;
-        /* Static, so it resolves off the label rather than off the session; the label is already
-           in the tree by the time a failure lands on it. ErrorBrush lives in the theme now; the
-           fallback only matters if a lookup ever misses. */
-        statusLabel.Foreground = Token(statusLabel, "ErrorBrush", FallbackError);
-
-        progressBar.IsVisible = false;
-        cancelBtn.IsVisible = false;
     }
 
     /// <summary>
@@ -364,74 +266,16 @@ public partial class QuerySessionControl : UserControl
         var ct = runCts.Token;
 
         // Create loading tab with cancel button
-        var loadingPanel = new StackPanel
-        {
-            VerticalAlignment = VerticalAlignment.Center,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            Width = 300
-        };
-
-        var progressBar = new ProgressBar
-        {
-            IsIndeterminate = true,
-            Height = 4,
-            Margin = new Avalonia.Thickness(0, 0, 0, 12)
-        };
-        // This overlay lives in tab content the user switches away from mid-capture.
-        Helpers.ProgressBarBehaviors.SetRestartOnReattach(progressBar, true);
-
-        /* #448: see the note on the estimated-plan path — this label reports failures too. */
-        var statusLabel = new SelectableTextBlock
-        {
-            Text = "Capturing actual plan...",
-            FontSize = 14,
-            Foreground = ForegroundToken,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            TextAlignment = Avalonia.Media.TextAlignment.Center,
-            TextWrapping = TextWrapping.Wrap
-        };
-
-        var cancelBtn = new Button
-        {
-            Content = "\u25A0 Cancel",
-            Height = 32,
-            Width = 120,
-            Padding = new Avalonia.Thickness(16, 0),
-            FontSize = 13,
-            Margin = new Avalonia.Thickness(0, 16, 0, 0),
-            HorizontalAlignment = HorizontalAlignment.Center,
-            HorizontalContentAlignment = HorizontalAlignment.Center,
-            VerticalContentAlignment = VerticalAlignment.Center,
-            Theme = (Avalonia.Styling.ControlTheme)this.FindResource("AppButton")!
-        };
-        cancelBtn.Click += (_, _) => runCts.Cancel();
-
-        loadingPanel.Children.Add(progressBar);
-        loadingPanel.Children.Add(statusLabel);
-        loadingPanel.Children.Add(cancelBtn);
-
-        var loadingContainer = new Grid
-        {
-            Background = BackgroundToken,
-            Focusable = true,
-            Children = { loadingPanel }
-        };
-        /* This run's own source, not the session's current one. The handler outlives the run: a
-           failed capture leaves this container on screen, still focusable, and Escape pressed on
-           it later must not reach past this tab and cancel whatever run is newer. */
-        loadingContainer.KeyDown += (_, ke) =>
-        {
-            if (ke.Key == Key.Escape) { runCts.Cancel(); ke.Handled = true; }
-        };
+        var progress = new Helpers.CaptureProgressPanel(this, "Capturing actual plan...", runCts);
 
         _planCounter++;
         var tabLabel = $"Plan {_planCounter}";
-        var loadingTab = NewPlanTab(tabLabel, loadingContainer);
+        var loadingTab = NewPlanTab(tabLabel, progress.Root);
         _tabRuns.AddOrUpdate(loadingTab, runCts);
 
         AddDocument(loadingTab);
         SelectDocument(loadingTab);
-        loadingContainer.Focus();
+        progress.Root.Focus();
 
         try
         {
@@ -450,9 +294,7 @@ public partial class QuerySessionControl : UserControl
 
             if (string.IsNullOrEmpty(actualPlanXml))
             {
-                statusLabel.Text = $"No actual plan returned ({sw.Elapsed.TotalSeconds:F1}s)";
-                progressBar.IsVisible = false;
-                cancelBtn.IsVisible = false;
+                progress.ShowOutcome($"No actual plan returned ({sw.Elapsed.TotalSeconds:F1}s)");
                 return;
             }
 
@@ -463,19 +305,16 @@ public partial class QuerySessionControl : UserControl
             // the toolbar's (E1). Null for a toolbar-sourced plan, same as its own viewer.
             ShowCapturedPlan(loadingTab, actualPlanXml, tabLabel, queryText, viewer.SourceDatabase);
         }
-        catch (OperationCanceledException)
+        catch (Exception ex) when (ex is OperationCanceledException || ct.IsCancellationRequested)
         {
             // Same as the capture path above: the cancel was the user's own, and the tab going
-            // away says so. See that catch for why the message is gone.
+            // away says so. See that catch for why the message is gone, and why the token
+            // decides rather than the exception type.
             RemoveDocument(loadingTab);
-        }
-        catch (SqlException ex)
-        {
-            ShowExecutionFailure(loadingPanel, statusLabel, progressBar, cancelBtn, ex.Message);
         }
         catch (Exception ex)
         {
-            ShowExecutionFailure(loadingPanel, statusLabel, progressBar, cancelBtn, ex.Message);
+            progress.ShowFailure(ex.Message);
         }
         finally
         {

@@ -10,6 +10,7 @@ using Avalonia.Interactivity;
 using Avalonia.Threading;
 using PlanViewer.App;
 using PlanViewer.App.Controls;
+using PlanViewer.App.Helpers;
 using PlanViewer.App.Mcp;
 using PlanViewer.Core.Interfaces;
 using PlanViewer.Core.Models;
@@ -402,6 +403,73 @@ public class TabCloseCleanupTests
             }
             finally
             {
+                ChromeTestCleanup.PutAway(window);
+            }
+        });
+    }
+
+    /// <summary>
+    /// #625: cancelling that query closes its tab, the way the query session's capture does. The
+    /// cancel used to land in the error handler and stay on screen as an error.
+    /// </summary>
+    [Fact]
+    public void CancellingAWindowLevelRunClosesItsTab()
+    {
+        HeadlessUi.Run(() =>
+        {
+            var (window, _) = SessionHarness.NewSession();
+            try
+            {
+                var run = new CancellationTokenSource();
+                var progress = new CaptureProgressPanel(window, "Capturing actual plan...", run);
+                var loadingTab = window.AddLoadingTab("Actual Plan", progress.Root, run);
+
+                run.Cancel();
+                var ended = window.EndCancelledCaptureAsync(loadingTab, progress);
+                Dispatcher.UIThread.RunJobs();
+
+                Assert.True(ended.IsCompletedSuccessfully);
+                Assert.DoesNotContain(loadingTab, window.MainTabControl.Items.OfType<TabItem>());
+            }
+            finally
+            {
+                ChromeTestCleanup.PutAway(window);
+            }
+        });
+    }
+
+    /// <summary>
+    /// A loading tab detached to its own window has left the strip, but its panel is still on
+    /// screen. Cancelling there stops the spinner and says so, and leaves the window to the user.
+    /// </summary>
+    [Fact]
+    public void CancellingARunWhoseTabWasDetachedSaysSoInItsWindow()
+    {
+        HeadlessUi.Run(() =>
+        {
+            var (window, _) = SessionHarness.NewSession();
+            Window? detached = null;
+            try
+            {
+                var run = new CancellationTokenSource();
+                var progress = new CaptureProgressPanel(window, "Capturing actual plan...", run);
+                var loadingTab = window.AddLoadingTab("Actual Plan", progress.Root, run);
+                detached = window.DetachTabToWindow(loadingTab)!;
+
+                run.Cancel();
+                var ended = window.EndCancelledCaptureAsync(loadingTab, progress);
+                Dispatcher.UIThread.RunJobs();
+
+                Assert.True(ended.IsCompletedSuccessfully);
+                Assert.Equal("Cancelled.", progress.StatusLabel.Text);
+                Assert.False(progress.ProgressBar.IsVisible, "the spinner kept going after the cancel");
+                Assert.False(progress.CancelButton.IsVisible);
+                Assert.True(detached.IsVisible, "the cancel closed the window the user detached");
+            }
+            finally
+            {
+                // Not owned by the main window, so PutAway would not close it.
+                detached?.Close();
                 ChromeTestCleanup.PutAway(window);
             }
         });
