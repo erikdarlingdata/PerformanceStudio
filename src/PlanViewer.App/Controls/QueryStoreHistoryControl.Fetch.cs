@@ -9,6 +9,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.VisualTree;
+using PlanViewer.App.Helpers;
 using PlanViewer.Core.Models;
 using PlanViewer.Core.Services;
 using ScottPlot;
@@ -75,8 +76,11 @@ public partial class QueryStoreHistoryControl : UserControl
 			UpdateChart();
 			PopulateLegendPanel();
 		}
-		catch (OperationCanceledException)
+		catch (Exception ex) when (CancellationHelper.IsCancellation(ex, ct))
 		{
+			/* The token decides, not the exception type: SqlClient reports a cancel that lands while
+			   the server is still running the query as a SqlException, which used to fall through to
+			   the failure below and put "Operation cancelled by user" in the strip as an error (#628). */
 			StatusText.Text = "Cancelled.";
 		}
 		catch (Exception ex)

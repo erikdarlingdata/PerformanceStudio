@@ -15,6 +15,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.VisualTree;
 using PlanViewer.App.Dialogs;
+using PlanViewer.App.Helpers;
 using PlanViewer.App.Services;
 using PlanViewer.Core.Interfaces;
 using PlanViewer.Core.Models;
@@ -65,7 +66,12 @@ public partial class QueryStoreGridControl : UserControl
                 StatusText.Text = "No time-slicer data available.";
             }
         }
-        catch (OperationCanceledException) { }
+        catch (Exception ex) when (CancellationHelper.IsCancellation(ex, ct))
+        {
+            /* Superseded by a newer fetch, or the grid's tab closed; nothing to say either way.
+               The token decides, not the exception type: SqlClient reports a cancel that lands
+               while the server is still running the query as a SqlException (#628). */
+        }
         catch (Exception ex)
         {
             // #452's mirror: full message out, the status tooltip carries what the strip clips.

@@ -15,6 +15,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.VisualTree;
 using PlanViewer.App.Dialogs;
+using PlanViewer.App.Helpers;
 using PlanViewer.App.Services;
 using PlanViewer.Core.Interfaces;
 using PlanViewer.Core.Models;
@@ -84,8 +85,11 @@ public partial class QueryStoreGridControl : UserControl
             // Without this, LoadData defaults to last 24h and the user's range is lost.
             await LoadTimeSlicerDataAsync(orderBy, ct, _slicerStartUtc, _slicerEndUtc);
         }
-        catch (OperationCanceledException)
+        catch (Exception ex) when (CancellationHelper.IsCancellation(ex, ct))
         {
+            /* The token decides, not the exception type: SqlClient reports a cancel that lands while
+               the server is still running the query as a SqlException, which used to show below as
+               an error (#628). */
             StatusText.Text = "Cancelled.";
         }
         catch (Exception ex)
@@ -137,8 +141,9 @@ public partial class QueryStoreGridControl : UserControl
                 await FetchGroupedPlansAsync(topN, orderBy, filter, ct);
             }
         }
-        catch (OperationCanceledException)
+        catch (Exception ex) when (CancellationHelper.IsCancellation(ex, ct))
         {
+            // Same as Fetch_Click above: the token decides, not the exception type (#628).
             StatusText.Text = "Cancelled.";
         }
         catch (Exception ex)
