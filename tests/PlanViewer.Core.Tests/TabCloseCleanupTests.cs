@@ -425,7 +425,7 @@ public class TabCloseCleanupTests
                 var loadingTab = window.AddLoadingTab("Actual Plan", progress.Root, run);
 
                 run.Cancel();
-                var ended = window.EndCancelledCaptureAsync(loadingTab, progress);
+                var ended = window.EndCancelledCaptureAsync(loadingTab);
                 Dispatcher.UIThread.RunJobs();
 
                 Assert.True(ended.IsCompletedSuccessfully);
@@ -438,12 +438,21 @@ public class TabCloseCleanupTests
         });
     }
 
+    // ---- #627: a tab does not leave the strip while its capture runs --------------------------
+
     /// <summary>
-    /// A loading tab detached to its own window has left the strip, but its panel is still on
-    /// screen. Cancelling there stops the spinner and says so, and leaves the window to the user.
+    /// #627: Run Repro on a plan file opens an Actual Plan tab, and the run puts its plan in that tab
+    /// when it finishes. Detaching the tab mid-run moved the progress panel to a new window and left
+    /// the plan to arrive in a tab nobody could see, while the window kept a spinner and a Cancel
+    /// button for a run that was over. A running capture is not detached.
+    ///
+    /// <para>This replaces #626's CancellingARunWhoseTabWasDetachedSaysSoInItsWindow, which detached
+    /// a running capture on purpose and checked what the cancel then said to the stranded panel. The
+    /// app cannot reach that state any more, so the test proves the rule that removed it: the detach
+    /// is refused, nothing is taken off the tab, and a cancel closes the tab the way it always does.</para>
     /// </summary>
     [Fact]
-    public void CancellingARunWhoseTabWasDetachedSaysSoInItsWindow()
+    public void ARunningCaptureTabIsNotDetachedAndCancellingItStillClosesTheTab()
     {
         HeadlessUi.Run(() =>
         {
@@ -454,22 +463,148 @@ public class TabCloseCleanupTests
                 var run = new CancellationTokenSource();
                 var progress = new CaptureProgressPanel(window, "Capturing actual plan...", run);
                 var loadingTab = window.AddLoadingTab("Actual Plan", progress.Root, run);
-                detached = window.DetachTabToWindow(loadingTab)!;
+
+                detached = window.DetachTabToWindow(loadingTab);
+
+                Assert.Null(detached);
+                Assert.Contains(loadingTab, window.MainTabControl.Items.OfType<TabItem>());
+                Assert.Same(progress.Root, loadingTab.Content);
+                Assert.Same(loadingTab, window.MainTabControl.SelectedItem);
+                Assert.False(run.IsCancellationRequested, "refusing the detach stopped the run");
 
                 run.Cancel();
-                var ended = window.EndCancelledCaptureAsync(loadingTab, progress);
+                var ended = window.EndCancelledCaptureAsync(loadingTab);
                 Dispatcher.UIThread.RunJobs();
 
                 Assert.True(ended.IsCompletedSuccessfully);
-                Assert.Equal("Cancelled.", progress.StatusLabel.Text);
-                Assert.False(progress.ProgressBar.IsVisible, "the spinner kept going after the cancel");
-                Assert.False(progress.CancelButton.IsVisible);
-                Assert.True(detached.IsVisible, "the cancel closed the window the user detached");
+                Assert.DoesNotContain(loadingTab, window.MainTabControl.Items.OfType<TabItem>());
             }
             finally
             {
-                // Not owned by the main window, so PutAway would not close it.
+                // Only with the rule broken: a detached window is not owned by the main window, so
+                // PutAway would leave it open to poison the shared headless session.
                 detached?.Close();
+                ChromeTestCleanup.PutAway(window);
+            }
+        });
+    }
+
+    /// <summary>
+    /// The menu is built once, with the tab, and a capture ends while the tab sits in the strip, so
+    /// the item has to be decided when the menu opens, not when it was built. Disabled while the run
+    /// is going, and enabled again by the same menu once the plan has replaced the panel.
+    /// </summary>
+    [Fact]
+    public void DetachToWindowIsDisabledWhileTheCaptureRunsAndEnabledOnceItsPlanArrives()
+    {
+        HeadlessUi.Run(() =>
+        {
+            var (window, _) = SessionHarness.NewSession();
+            try
+            {
+                var run = new CancellationTokenSource();
+                var progress = new CaptureProgressPanel(window, "Capturing actual plan...", run);
+                var loadingTab = window.AddLoadingTab("Actual Plan", progress.Root, run);
+                var detachItem = TabMenuItem(loadingTab, "Detach to Window");
+
+                RightClick(loadingTab);
+                Assert.False(detachItem.IsEnabled, "the capture is running and the tab offered to detach");
+
+                // A click that gets through anyway, which a disabled item would stop in the real menu,
+                // still leaves the tab where the run will find it.
+                detachItem.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+                Assert.Contains(loadingTab, window.MainTabControl.Items.OfType<TabItem>());
+                Assert.Same(progress.Root, loadingTab.Content);
+
+                // The run finishes: its plan replaces the panel, the swap Run Repro makes.
+                var viewer = new PlanViewerControl();
+                Assert.True(viewer.LoadPlan(SessionHarness.SamplePlanXml(), "Actual Plan"));
+                loadingTab.Content = window.CreatePlanTabContent(viewer);
+
+                RightClick(loadingTab);
+                Assert.True(detachItem.IsEnabled, "the menu kept the answer it gave while the run was going");
+            }
+            finally
+            {
+                ChromeTestCleanup.PutAway(window);
+            }
+        });
+    }
+
+    /// <summary>
+    /// Once the plan has replaced the panel the tab is an ordinary plan tab, and detaching it works as
+    /// it always did: the tab leaves the strip and its content is in the new window.
+    /// </summary>
+    [Fact]
+    public void ATabWhoseCaptureDeliveredItsPlanDetachesAsBefore()
+    {
+        HeadlessUi.Run(() =>
+        {
+            var (window, _) = SessionHarness.NewSession();
+            Window? detached = null;
+            try
+            {
+                var run = new CancellationTokenSource();
+                var progress = new CaptureProgressPanel(window, "Capturing actual plan...", run);
+                var loadingTab = window.AddLoadingTab("Actual Plan", progress.Root, run);
+                Assert.Null(window.DetachTabToWindow(loadingTab));
+
+                var viewer = new PlanViewerControl();
+                Assert.True(viewer.LoadPlan(SessionHarness.SamplePlanXml(), "Actual Plan"));
+                var planContent = window.CreatePlanTabContent(viewer);
+                loadingTab.Content = planContent;
+
+                detached = window.DetachTabToWindow(loadingTab);
+
+                Assert.NotNull(detached);
+                Assert.DoesNotContain(loadingTab, window.MainTabControl.Items.OfType<TabItem>());
+                Assert.Contains(planContent, ((DockPanel)detached!.Content!).Children);
+            }
+            finally
+            {
+                detached?.Close();
+                Dispatcher.UIThread.RunJobs();
+                ChromeTestCleanup.PutAway(window);
+            }
+        });
+    }
+
+    /// <summary>
+    /// A capture that failed leaves its panel in the tab, showing the error, with no run behind it.
+    /// Detaching that moves nothing a run is waiting for, so the tab is free to go again.
+    /// </summary>
+    [Fact]
+    public void ACaptureThatFailedCanBeDetached()
+    {
+        HeadlessUi.Run(() =>
+        {
+            var (window, _) = SessionHarness.NewSession();
+            Window? detached = null;
+            try
+            {
+                var run = new CancellationTokenSource();
+                var progress = new CaptureProgressPanel(window, "Capturing actual plan...", run);
+                var loadingTab = window.AddLoadingTab("Actual Plan", progress.Root, run);
+                var detachItem = TabMenuItem(loadingTab, "Detach to Window");
+
+                RightClick(loadingTab);
+                Assert.False(detachItem.IsEnabled);
+
+                progress.ShowFailure("Msg 208, Level 16, State 1: Invalid object name 'dbo.Missing'.");
+
+                RightClick(loadingTab);
+                Assert.True(detachItem.IsEnabled, "the run is over and the item stayed disabled");
+
+                detached = window.DetachTabToWindow(loadingTab);
+
+                Assert.NotNull(detached);
+                Assert.DoesNotContain(loadingTab, window.MainTabControl.Items.OfType<TabItem>());
+                Assert.Contains(progress.Root, ((DockPanel)detached!.Content!).Children);
+            }
+            finally
+            {
+                detached?.Close();
+                Dispatcher.UIThread.RunJobs();
                 ChromeTestCleanup.PutAway(window);
             }
         });
@@ -693,6 +828,24 @@ public class TabCloseCleanupTests
 
     private static TabItem TabOf(MainWindow window, QuerySessionControl session) =>
         window.MainTabControl.Items.OfType<TabItem>().Single(t => t.Content == session);
+
+    /// <summary>
+    /// Opens the tab's context menu the way a right-click does: Avalonia raises ContextMenu.Opening
+    /// from the ContextRequested handler on the control the menu is attached to, not from Open(), so
+    /// the event goes to the header. Then closes it, so the next call is a fresh open. The same helper
+    /// CopyPathVisibilityTests drives its #472 menu with.
+    /// </summary>
+    private static void RightClick(TabItem tab)
+    {
+        var header = (StackPanel)tab.Header!;
+        header.RaiseEvent(new ContextRequestedEventArgs());
+        header.ContextMenu!.Close();
+    }
+
+    private static MenuItem TabMenuItem(TabItem tab, string header) =>
+        ((StackPanel)tab.Header!).ContextMenu!.Items
+            .OfType<MenuItem>()
+            .Single(i => (i.Header as string) == header);
 
     private static Button RedockButton(Window detached) =>
         ((DockPanel)detached.Content!).Children.OfType<StackPanel>().Single()

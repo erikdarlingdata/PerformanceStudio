@@ -48,6 +48,26 @@ internal sealed class CaptureProgressPanel
 
     public Button CancelButton { get; }
 
+    /// <summary>
+    /// Whether the run behind this panel is still going: true from construction until
+    /// <see cref="ShowOutcome"/>, the one call every ending without a plan goes through (a failure,
+    /// or "no plan returned"). A run that produces its plan never gets there, because its owner
+    /// swaps the panel out of the tab instead, and a cancelled one closes the tab.
+    ///
+    /// <para>#627: the window asks this before it detaches a tab, because a run that finishes into a
+    /// tab nobody is looking at is a plan nobody can see. A cancel that has been requested but not yet
+    /// acted on still reads as running, which is right: the owner is about to close the tab, and the
+    /// tab has to still be in the strip when it does.</para>
+    /// </summary>
+    public bool IsRunning { get; private set; } = true;
+
+    /// <summary>
+    /// The panel that <paramref name="content"/> belongs to, or null when the content is something
+    /// else. A tab holds only the <see cref="Root"/> grid, so the window has no other way back to the
+    /// panel it was built around; <see cref="Root"/> carries the panel in its Tag for that.
+    /// </summary>
+    public static CaptureProgressPanel? From(Control? content) => content?.Tag as CaptureProgressPanel;
+
     /// <param name="resources">Where the theme brushes and the AppButton theme are looked up.</param>
     /// <param name="status">What the status line says when the run starts.</param>
     /// <param name="run">The run that the Cancel button and Escape cancel.</param>
@@ -105,7 +125,8 @@ internal sealed class CaptureProgressPanel
         {
             Background = Token(resources, "BackgroundBrush", FallbackBackground),
             Focusable = true,
-            Children = { Panel }
+            Children = { Panel },
+            Tag = this // see From
         };
         /* This run's own source, not whatever run its host thinks is current. The handler outlives
            the run: a failed capture leaves this panel on screen, still focusable, and Escape pressed
@@ -122,6 +143,7 @@ internal sealed class CaptureProgressPanel
     /// </summary>
     public void ShowOutcome(string text)
     {
+        IsRunning = false;
         StatusLabel.Text = text;
         ProgressBar.IsVisible = false;
         CancelButton.IsVisible = false;
