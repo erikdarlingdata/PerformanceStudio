@@ -114,6 +114,46 @@ public class GcfOutputTests : IDisposable
         Assert.Equal(90087L, (long)last["plan_id"]!);  // 90000 + 29 * 3
     }
 
+    // The {server, plans:[...]} envelope again, cut to two columns. database_name holds one
+    // value in every row unless lastRowDiffers.
+    private static string PlansWithDatabaseName(bool lastRowDiffers) =>
+        JsonSerializer.Serialize(new
+        {
+            server = "SQLPROD01",
+            plans = Enumerable
+                .Range(0, 30)
+                .Select(i => new
+                {
+                    plan_id = (long)(90000 + i),
+                    database_name = lastRowDiffers && i == 29 ? "OtherDb" : "AppDb",
+                })
+                .ToList(),
+        });
+
+    [Fact]
+    public void TryEncode_Writes_A_Constant_Column_Once_And_Every_Decoded_Row_Still_Has_It()
+    {
+        // Gcf 1.1.0 (GCF spec 3.6.0, section 7.4.7): a column that holds the same value in
+        // every row of a record array is written once in the array's header, not in each row.
+        // The fail-safe in TryEncode decodes the wire and compares it with the input, so this
+        // checks that the fail-safe accepts the shorter wire instead of falling back to JSON.
+        var constant = GcfOutput.TryEncode(PlansWithDatabaseName(lastRowDiffers: false));
+        var varying = GcfOutput.TryEncode(PlansWithDatabaseName(lastRowDiffers: true));
+        Assert.NotNull(constant);
+        Assert.NotNull(varying);
+
+        // One different row puts the column back into all 30 rows. Without the factoring, the
+        // two wires would differ by the two characters between "AppDb" and "OtherDb".
+        var saved = varying!.Length - constant!.Length;
+        Assert.True(saved > 20 * "AppDb".Length, $"constant column saved {saved} characters");
+
+        var root = Assert.IsType<OrderedMap>(Gcf.DecodeGeneric(constant));
+        var plans = Assert.IsType<List<object?>>(root["plans"]);
+        Assert.Equal(30, plans.Count);
+        Assert.All(plans, p => Assert.Equal("AppDb", (string?)Assert.IsType<OrderedMap>(p)["database_name"]));
+        Assert.Equal(90029L, (long)Assert.IsType<OrderedMap>(plans[29])["plan_id"]!);
+    }
+
     [Fact]
     public void TryEncode_Tiny_Payload_Falls_Back_To_Json()
     {
