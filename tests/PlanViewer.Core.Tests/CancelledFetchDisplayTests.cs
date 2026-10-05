@@ -418,6 +418,63 @@ public class CancelledFetchDisplayTests
     }
 
     /// <summary>
+    /// A fetch that a newer fetch replaced says nothing when its cancel arrives. The newer fetch has
+    /// written its own status by then, and "Cancelled." would cover it while that fetch is still
+    /// running (review of #635). The newer fetch here fails without being cancelled, so its error is
+    /// what the strip must keep.
+    /// </summary>
+    [Fact]
+    public void ASupersededPlanFetchLeavesTheStripToTheFetchThatReplacedIt()
+    {
+        HeadlessUi.Run(() =>
+        {
+            var grid = NewGrid();
+            try
+            {
+                var newer = StartAnotherWhenStatusSays(grid, "Fetching plans...",
+                    () => (Task)Invoke(grid, "FetchPlansForRangeAsync")!);
+
+                var older = (Task)Invoke(grid, "FetchPlansForRangeAsync")!;
+
+                Assert.True(newer() is { IsCompletedSuccessfully: true },
+                    "the older fetch never announced itself, so nothing replaced it");
+                Assert.True(older.IsCompletedSuccessfully);
+                Assert.Equal(FailureMessage(), StatusOf(grid).Text);
+            }
+            finally
+            {
+                grid.CancelFetch();
+            }
+        });
+    }
+
+    [Fact]
+    public void ASupersededTimeSlicerLoadLeavesTheStripToTheFetchThatReplacedIt()
+    {
+        HeadlessUi.Run(() =>
+        {
+            var grid = NewGrid();
+            try
+            {
+                var newer = StartAnotherWhenStatusSays(grid, "Loading time slicer...", () =>
+                {
+                    Invoke(grid, "Fetch_Click", null, new RoutedEventArgs());
+                    return Task.CompletedTask;
+                });
+
+                Invoke(grid, "Fetch_Click", null, new RoutedEventArgs());
+
+                Assert.True(newer() != null, "the older fetch never announced itself, so nothing replaced it");
+                Assert.Equal("Slicer: " + FailureMessage(), StatusOf(grid).Text);
+            }
+            finally
+            {
+                grid.CancelFetch();
+            }
+        });
+    }
+
+    /// <summary>
     /// Changing the metric reloads the slicer. A reload that was cancelled — by the next change, or
     /// by the tab closing — says nothing: the strip keeps what it was saying, which is what an
     /// OperationCanceledException has always left there.
@@ -618,6 +675,29 @@ public class CancelledFetchDisplayTests
             }
         };
         return () => cancelled;
+    }
+
+    /// <summary>
+    /// Starts a second fetch the first time the strip says <paramref name="text"/>. At that moment
+    /// the first fetch has made its token and has not built its connection yet, so the second fetch
+    /// cancels that token and takes the first one's place, as a newer fetch does to an older one.
+    /// Returns the second fetch's task, or null when the first fetch never got that far.
+    /// </summary>
+    private static Func<Task?> StartAnotherWhenStatusSays(
+        QueryStoreGridControl grid, string text, Func<Task> start)
+    {
+        var started = false;
+        Task? second = null;
+        StatusOf(grid).PropertyChanged += (_, e) =>
+        {
+            if (!started && e.Property == TextBlock.TextProperty && (e.NewValue as string) == text)
+            {
+                // Set before the start: the second fetch writes the same text.
+                started = true;
+                second = start();
+            }
+        };
+        return () => second;
     }
 
     private static object? Invoke(object target, string method, params object?[] args) =>

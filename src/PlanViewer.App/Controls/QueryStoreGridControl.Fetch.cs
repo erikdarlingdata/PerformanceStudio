@@ -67,8 +67,9 @@ public partial class QueryStoreGridControl : UserControl
 
         _fetchCts?.Cancel();
         _fetchCts?.Dispose();
-        _fetchCts = new CancellationTokenSource();
-        var ct = _fetchCts.Token;
+        var thisFetch = new CancellationTokenSource();
+        _fetchCts = thisFetch;
+        var ct = thisFetch.Token;
 
         var orderBy = (OrderByBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "cpu";
         _lastFetchedOrderBy = orderBy;
@@ -89,8 +90,12 @@ public partial class QueryStoreGridControl : UserControl
         {
             /* The token decides, not the exception type: SqlClient reports a cancel that lands while
                the server is still running the query as a SqlException, which used to show below as
-               an error (#628). */
-            StatusText.Text = "Cancelled.";
+               an error (#628).
+
+               A fetch that a newer one replaced says nothing. The newer fetch has already written
+               its own status, and "Cancelled." would cover it while that fetch is still running. */
+            if (ReferenceEquals(_fetchCts, thisFetch))
+                StatusText.Text = "Cancelled.";
         }
         catch (Exception ex)
         {
@@ -109,8 +114,9 @@ public partial class QueryStoreGridControl : UserControl
     {
         _fetchCts?.Cancel();
         _fetchCts?.Dispose();
-        _fetchCts = new CancellationTokenSource();
-        var ct = _fetchCts.Token;
+        var thisFetch = new CancellationTokenSource();
+        _fetchCts = thisFetch;
+        var ct = thisFetch.Token;
 
         var topN = (int)(TopNBox.Value ?? 25);
         var orderBy = _lastFetchedOrderBy;
@@ -143,8 +149,10 @@ public partial class QueryStoreGridControl : UserControl
         }
         catch (Exception ex) when (CancellationHelper.IsCancellation(ex, ct))
         {
-            // Same as Fetch_Click above: the token decides, not the exception type (#628).
-            StatusText.Text = "Cancelled.";
+            /* Same as Fetch_Click above: the token decides, not the exception type (#628), and a
+               fetch that a newer one replaced leaves the strip to the newer one. */
+            if (ReferenceEquals(_fetchCts, thisFetch))
+                StatusText.Text = "Cancelled.";
         }
         catch (Exception ex)
         {
