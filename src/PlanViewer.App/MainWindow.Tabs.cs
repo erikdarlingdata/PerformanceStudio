@@ -139,6 +139,13 @@ public partial class MainWindow : Window
         void RefreshCopyPathVisibility() => copyPathItem.IsVisible = GetTabFilePath(tab) != null;
         RefreshCopyPathVisibility();
 
+        /* #627: a tab that is still waiting on its capture cannot leave the strip. The run will
+           put its plan in this tab when it finishes, and a tab that has been detached is not
+           where the plan would go. */
+        var detachItem = new MenuItem { Header = "Detach to Window", Tag = tab };
+        void RefreshDetachEnabled() => detachItem.IsEnabled = !IsCaptureRunning(tab.Content as Control);
+        RefreshDetachEnabled();
+
         var contextMenu = new ContextMenu
         {
             Items =
@@ -146,7 +153,7 @@ public partial class MainWindow : Window
                 new MenuItem { Header = "Rename Tab", Tag = new object[] { header, headerText } },
                 copyPathItem,
                 new Separator(),
-                new MenuItem { Header = "Detach to Window", Tag = tab },
+                detachItem,
                 new Separator(),
                 new MenuItem { Header = "Close", Tag = tab, InputGesture = new KeyGesture(Key.W, KeyModifiers.Control) },
                 new MenuItem { Header = "Close Other Tabs", Tag = tab },
@@ -157,8 +164,16 @@ public partial class MainWindow : Window
         /* #472: whether there is a path to copy is not a fact about the tab's birth. A scratch
            query gains one the moment it is saved, and a tab can lose one. The menu is only
            consulted when it opens, so that is when the question gets asked — the call above is
-           just the answer for a menu nobody has opened yet. */
-        contextMenu.Opening += (_, _) => RefreshCopyPathVisibility();
+           just the answer for a menu nobody has opened yet.
+
+           #627: Detach to Window has the same shape. A capture ends while the tab sits in the
+           strip (it fails, or its plan replaces the panel), so whether the tab can leave is
+           asked here too, not once at construction. */
+        contextMenu.Opening += (_, _) =>
+        {
+            RefreshCopyPathVisibility();
+            RefreshDetachEnabled();
+        };
 
         foreach (var item in contextMenu.Items.OfType<MenuItem>())
             item.Click += TabContextMenu_Click;
@@ -194,8 +209,10 @@ public partial class MainWindow : Window
     /// </remarks>
     internal TabItem AddLoadingTab(string label, Control loadingPanel, CancellationTokenSource run)
     {
-        var tab = CreateTab(label, loadingPanel);
+        // Before the tab is built, so what the tab first says about its content (#627: whether it
+        // can be detached) already knows the panel is a capture.
         _loadingRuns.AddOrUpdate(loadingPanel, run);
+        var tab = CreateTab(label, loadingPanel);
 
         MainTabControl.Items.Add(tab);
         MainTabControl.SelectedItem = tab;
@@ -204,6 +221,24 @@ public partial class MainWindow : Window
 
         return tab;
     }
+
+    /// <summary>
+    /// Whether this tab content is a capture that has not ended yet: a panel that
+    /// <see cref="AddLoadingTab"/> registered, whose run has not reported an outcome.
+    ///
+    /// <para>#627: such a tab cannot be detached. <see cref="_loadingRuns"/> says which content is a
+    /// capture, but not whether it is still going — its entries are never removed, and a run that
+    /// fails leaves its panel in the tab, with the error on it and the run's source uncancelled. The
+    /// panel is what knows. A run that succeeds is not a case here at all: its plan replaces the
+    /// panel, so the tab's content is no longer registered.</para>
+    ///
+    /// <para>A registered panel that cannot say is taken as running, so the error is on the side of
+    /// keeping the tab where its run will find it.</para>
+    /// </summary>
+    private bool IsCaptureRunning(Control? content) =>
+        content != null
+        && _loadingRuns.TryGetValue(content, out _)
+        && CaptureProgressPanel.From(content) is not { IsRunning: false };
 
     /// <summary>
     /// Gives up what a tab's content was holding, once the content is gone for good: the tab has
@@ -425,11 +460,22 @@ public partial class MainWindow : Window
     /// close guard and the session goes on the detached register until it comes back or the
     /// window closes.</para>
     /// </summary>
-    /// <returns>The detached window, or null when the tab had no content to detach.</returns>
+    /// <remarks>
+    /// <para>#627: a tab whose capture is still running is not detached. The run holds the tab, not
+    /// the progress panel, and puts its plan in that tab when it finishes. A tab that had been
+    /// detached left the plan in a tab nobody could see, and the detached window kept a spinner and a
+    /// Cancel button for a run that was already over. The menu item is disabled for this case, and
+    /// the method refuses on its own so that no other caller can bring the bug back.</para>
+    /// </remarks>
+    /// <returns>The detached window, or null when the tab had no content to detach or its content is a
+    /// capture that is still running. The tab is left exactly where it was.</returns>
     internal Window? DetachTabToWindow(TabItem tab)
     {
         var content = tab.Content as Control;
         if (content == null) return null;
+
+        // Before anything is taken off the tab: a refusal has to leave it as it found it.
+        if (IsCaptureRunning(content)) return null;
 
         var label = GetTabLabel(tab);
 
