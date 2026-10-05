@@ -171,7 +171,7 @@ jobs:
         run: |
           # Pin vpk to match the Velopack PackageReference (Velopack recommends the
           # CLI and library versions match for compatible packages + reproducible releases).
-          dotnet tool install -g vpk --version 1.2.0
+          dotnet tool install -g vpk --version 1.2.161
           New-Item -ItemType Directory -Force -Path releases/velopack
 
           # Download previous release for delta generation
