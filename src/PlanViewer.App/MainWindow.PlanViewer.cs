@@ -463,64 +463,11 @@ public partial class MainWindow : Window
                       dialog.ResultConnection.ServerName.Contains(".database.azure.com",
                           StringComparison.OrdinalIgnoreCase);
 
-        // Create a loading placeholder tab immediately
-        var loadingPanel = new StackPanel
-        {
-            VerticalAlignment = VerticalAlignment.Center,
-            HorizontalAlignment = HorizontalAlignment.Center,
-            Width = 300
-        };
-
-        var progressBar = new ProgressBar
-        {
-            IsIndeterminate = true,
-            Height = 4,
-            Margin = new Avalonia.Thickness(0, 0, 0, 12)
-        };
-        // This loading tab detaches whenever the user switches top-level tabs mid-capture.
-        Helpers.ProgressBarBehaviors.SetRestartOnReattach(progressBar, true);
-
-        var statusText = new TextBlock
-        {
-            Text = "Executing query...",
-            FontSize = 14,
-            Foreground = new SolidColorBrush(Color.Parse("#E4E6EB")),
-            HorizontalAlignment = HorizontalAlignment.Center
-        };
-
-        var cancelBtn = new Button
-        {
-            Content = AppIcons.MakeContent(AppIcons.Stop, "Cancel"),
-            Height = 32,
-            Width = 120,
-            Padding = new Avalonia.Thickness(16, 0),
-            FontSize = 13,
-            Margin = new Avalonia.Thickness(0, 16, 0, 0),
-            HorizontalAlignment = HorizontalAlignment.Center,
-            HorizontalContentAlignment = HorizontalAlignment.Center,
-            VerticalContentAlignment = VerticalAlignment.Center,
-            Theme = (Avalonia.Styling.ControlTheme)this.FindResource("AppButton")!
-        };
-
-        loadingPanel.Children.Add(progressBar);
-        loadingPanel.Children.Add(statusText);
-        loadingPanel.Children.Add(cancelBtn);
-
         var cts = new System.Threading.CancellationTokenSource();
-        cancelBtn.Click += (_, _) => cts.Cancel();
 
-        var loadingContainer = new Grid
-        {
-            Background = new SolidColorBrush(Color.Parse("#1A1D23")),
-            Focusable = true,
-            Children = { loadingPanel }
-        };
-        loadingContainer.KeyDown += (_, ke) =>
-        {
-            if (ke.Key == Avalonia.Input.Key.Escape) { cts.Cancel(); ke.Handled = true; }
-        };
-
-        var tab = AddLoadingTab("Actual Plan", loadingContainer, cts);
+        // Create a loading placeholder tab immediately
+        var progress = new CaptureProgressPanel(this, "Executing query...", cts);
+        var tab = AddLoadingTab("Actual Plan", progress.Root, cts);
 
         try
         {
@@ -535,7 +482,7 @@ public partial class MainWindow : Window
             }
             catch { /* Non-fatal — advice will just lack server context */ }
 
-            statusText.Text = "Capturing actual plan...";
+            progress.StatusLabel.Text = "Capturing actual plan...";
 
             var sw = System.Diagnostics.Stopwatch.StartNew();
 
@@ -553,8 +500,7 @@ public partial class MainWindow : Window
 
             if (string.IsNullOrEmpty(actualPlanXml))
             {
-                statusText.Text = $"No actual plan returned ({sw.Elapsed.TotalSeconds:F1}s).";
-                progressBar.IsVisible = false;
+                progress.ShowOutcome($"No actual plan returned ({sw.Elapsed.TotalSeconds:F1}s).");
                 return;
             }
 
@@ -574,10 +520,37 @@ public partial class MainWindow : Window
 
             tab.Content = CreatePlanTabContent(actualViewer);
         }
+        catch (Exception ex) when (CancellationHelper.IsCancellation(ex, cts.Token))
+        {
+            await EndCancelledCaptureAsync(tab);
+        }
         catch (Exception ex)
         {
-            statusText.Text = $"Error: {ex.Message}";
-            progressBar.IsVisible = false;
+            progress.ShowFailure(ex.Message);
         }
+    }
+
+    /// <summary>
+    /// Ends a Run Repro that the user cancelled, the way the query session ends a cancelled
+    /// capture: the user stopped the run with Cancel, Escape or by closing the tab, and the spinner
+    /// tab going away says so.
+    ///
+    /// <para>The cancel used to fall through to the error handler and show up as an error. The
+    /// caller decides by the run's token, not the exception type, because SqlClient reports a
+    /// cancel that lands while the query is running as a SqlException ("Operation cancelled by
+    /// user.").</para>
+    ///
+    /// <para>A tab closed by hand has already left the strip, and its panel with it, so there is
+    /// nothing left to end. #627: closing is now the only way a tab leaves the strip while its run
+    /// is going. Detaching it was the other, and it needed a second branch here that told the
+    /// detached window's panel "Cancelled."; a running capture cannot be detached any more, so the
+    /// branch is gone.</para>
+    ///
+    /// <para>Internal so a test can cancel a capture without a server to run one against.</para>
+    /// </summary>
+    internal async Task EndCancelledCaptureAsync(TabItem tab)
+    {
+        if (MainTabControl.Items.Contains(tab))
+            await TryCloseTabAsync(tab);
     }
 }

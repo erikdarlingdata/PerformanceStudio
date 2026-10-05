@@ -36,6 +36,15 @@ public static class QueryStoreOverviewService
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
+                /* The token decides as well as the type: SqlClient reports a cancel that lands while
+                   the server is still running the query as a SqlException, which used to be recorded
+                   here as this database's error, and the cancelled load went on to draw it (#628).
+                   It goes to the caller as an OperationCanceledException instead, the contract the
+                   slicer load and the MCP Query Store tools keep, so a caller that catches only
+                   that type still sees a cancel. */
+                if (ct.IsCancellationRequested)
+                    throw new OperationCanceledException(ex.Message, ex, ct);
+
                 results.Add(new DatabaseQueryStoreState { DatabaseName = db, State = QueryStoreState.Error, ErrorMessage = ex.Message });
             }
             finally
@@ -72,6 +81,10 @@ public static class QueryStoreOverviewService
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
+                // The token decides as well as the type, as in FetchAllStatesAsync (#628).
+                if (ct.IsCancellationRequested)
+                    throw new OperationCanceledException(ex.Message, ex, ct);
+
                 results.Add(new DatabaseMetrics { DatabaseName = db });
             }
             finally
@@ -177,6 +190,10 @@ public static class QueryStoreOverviewService
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
+                // The token decides as well as the type, as in FetchAllStatesAsync (#628).
+                if (ct.IsCancellationRequested)
+                    throw new OperationCanceledException(ex.Message, ex, ct);
+
                 errors.Add((db, ex.Message));
             }
             finally

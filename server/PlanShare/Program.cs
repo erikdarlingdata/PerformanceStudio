@@ -92,7 +92,10 @@ builder.Services.AddSingleton(new RateLimiters(rateLimiter, analyticsRateLimiter
 builder.Services.AddSingleton(uploadBudget);
 builder.Services.AddHostedService<CleanupService>();
 
-// Request size limit (10 MB)
+// Request size limit (10 MB). nginx on the server sets the same limit for /api/
+// (client_max_body_size 10m); without it, nginx's 1 MB default refuses larger shares
+// first. The web client's too-large message (PlanShareService) also names 10 MB.
+// Change all three together.
 builder.WebHost.ConfigureKestrel(o => o.Limits.MaxRequestBodySize = 10 * 1024 * 1024);
 
 var app = builder.Build();

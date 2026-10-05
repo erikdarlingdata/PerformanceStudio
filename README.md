@@ -401,8 +401,8 @@ On first use, if Performance Studio isn't found automatically, the extension wil
 
 The extension searches for the app in this order:
 1. Registry key (set automatically after first browse)
-2. System PATH
-3. Common install locations (`%LOCALAPPDATA%\Programs\SQLPerformanceStudio\`, `Program Files`, etc.)
+2. Common install locations: `%LOCALAPPDATA%\PerformanceStudio\current\` (the release installer's folder), then older install folders under `%LOCALAPPDATA%\Programs\` and `Program Files`
+3. System PATH
 
 ## MCP Server (LLM Integration)
 

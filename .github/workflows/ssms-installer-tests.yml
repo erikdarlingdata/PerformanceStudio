@@ -1,0 +1,36 @@
+name: SSMS installer tests
+
+# Tests for the signature check of InstallSsmsExtension.exe (src/PlanViewer.Ssms.Installer).
+# The check uses System.IO.Packaging.PackageDigitalSignatureManager, which exists only on
+# .NET Framework. The installer targets net472, so its tests do too, and they need Windows.
+# That is why they are not in PlanViewer.sln: ci.yml builds the solution on ubuntu-latest and
+# cannot run net472 tests. This workflow builds and runs only the new test project.
+# It is not a required check, so the path filter below is safe: a PR that skips it is not blocked.
+
+on:
+  pull_request:
+    branches: [dev, main]
+    paths:
+      - 'src/PlanViewer.Ssms.Installer/**'
+      - 'tests/PlanViewer.Ssms.Installer.Tests/**'
+      - 'Directory.Packages.props'
+      - '.github/workflows/ssms-installer-tests.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup .NET 10.0
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Run the SSMS installer tests
+        run: dotnet test tests/PlanViewer.Ssms.Installer.Tests/PlanViewer.Ssms.Installer.Tests.csproj -c Release --verbosity normal -- --hangdump --hangdump-timeout 5m --hangdump-type none

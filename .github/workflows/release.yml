@@ -160,6 +160,84 @@ jobs:
           Remove-Item -Recurse -Force publish/win-x64
           Copy-Item -Recurse signed/win-x64 publish/win-x64
 
+      # ── Velopack (packs the signed Windows build) ─────────────────────
+      #    Packing runs before the release is created, so the executables it
+      #    generates are signed before anything is published. ──
+      - name: Create Velopack release (Windows)
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          # Pin vpk to match the Velopack PackageReference (Velopack recommends the
+          # CLI and library versions match for compatible packages + reproducible releases).
+          dotnet tool install -g vpk --version 1.2.161
+          New-Item -ItemType Directory -Force -Path releases/velopack
+
+          # Download previous release for delta generation
+          vpk download github --repoUrl https://github.com/${{ github.repository }} --channel win -o releases/velopack --token $env:GH_TOKEN
+
+          # Pack Windows release (now signed)
+          vpk pack -u PerformanceStudio -v $env:VERSION -p publish/win-x64 -e PlanViewer.App.exe -o releases/velopack --channel win
+
+      # `vpk pack` generates three executables: Setup.exe, and the launcher
+      # (PerformanceStudio.exe) and Update.exe at the root of Portable.zip. They
+      # do not exist when the App is signed above, so they shipped unsigned
+      # through v1.28.0. The steps below sign them in one more SignPath request
+      # and write them back. PerformanceMonitor does the same (its #3288), and
+      # both scripts come from there.
+      #
+      # The launcher stub and Squirrel.exe inside the .nupkg stay unsigned.
+      # releases.win.json records the .nupkg's SHA256 and size, and the delta is
+      # built against those bytes, so the .nupkg must not change after packing.
+      # Nothing records a hash for Setup.exe or Portable.zip.
+      #
+      # Unlike the SSMS signing below, this is required, like the App signing:
+      # if a step fails or the approval times out, the job stops here, before
+      # the release is created.
+      - name: Collect the executables Velopack generates
+        shell: pwsh
+        run: python .github/scripts/postpack_signing.py collect --stage postpack/unsigned --manifest postpack/manifest.json --product studio=releases/velopack
+
+      - name: Upload the Velopack-generated executables for signing
+        id: upload-postpack
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: Velopack-generated-unsigned
+          path: postpack/unsigned/
+
+      # Same organization, project, policy and timeout as the App request. The
+      # "SignTemplate" artifact configuration on signpath.io Authenticode-signs
+      # every .exe and .dll in the artifact, with min-matches="0". So an empty
+      # artifact would sign nothing and still succeed, and the collect step
+      # refuses to stage an empty set for that reason.
+      - name: Sign the executables Velopack generates
+        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3.0
+        with:
+          api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
+          organization-id: '7969f8b6-d946-4a74-9bac-a55856d8b8e0'
+          project-slug: 'PerformanceStudio'
+          signing-policy-slug: 'release-signing'
+          artifact-configuration-slug: 'SignTemplate'
+          github-artifact-id: '${{ steps.upload-postpack.outputs.artifact-id }}'
+          wait-for-completion: true
+          output-artifact-directory: 'postpack/signed'
+          wait-for-completion-timeout-in-seconds: 1800
+
+      # Setup.exe is overwritten. Portable.zip is rebuilt entry by entry: every
+      # entry that is not replaced keeps its original bytes, and the rebuilt zip
+      # is checked against the original before it replaces it.
+      - name: Write the signed Velopack executables back
+        shell: pwsh
+        run: python .github/scripts/postpack_signing.py apply --signed postpack/signed --manifest postpack/manifest.json
+
+      # Fails the job if any .exe in the Velopack output has no signature,
+      # including the ones inside Portable.zip and the .nupkg files. The only
+      # exceptions are the two .nupkg members described above.
+      - name: Assert every Velopack executable is signed
+        shell: pwsh
+        run: python .github/scripts/verify_release_signatures.py --verify-dir releases/velopack
+
       # ── SignPath code signing for the SSMS extension and its installer.
       #    Unlike the App, this is best-effort. If a step below fails, or an
       #    approval times out, the release still goes out with the unsigned
@@ -167,8 +245,9 @@ jobs:
       #    says so. The one exception is in the replace step: if it cannot put
       #    the unsigned files back after a failed copy or a failed signature
       #    check, the job stops before anything is published. Each SignPath
-      #    request needs a manual approval, so a release run now waits for two:
-      #    the App first, then these two files. ──
+      #    request needs a manual approval, so a release run now waits for three:
+      #    the App, then the executables Velopack generates, then these two
+      #    files. ──
       - name: Stage SSMS files for signing
         if: steps.ssms.outputs.BUILT == 'true'
         continue-on-error: true
@@ -296,24 +375,6 @@ jobs:
           curl -sS -f "https://ssmsgallery.azurewebsites.net/api/upload" \
             -F "file=@releases/PlanViewer.Ssms.vsix"
 
-      # ── Velopack (uses signed Windows binaries) ───────────────────────
-      - name: Create Velopack release (Windows)
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ steps.version.outputs.VERSION }}
-        run: |
-          # Pin vpk to match the Velopack PackageReference (Velopack recommends the
-          # CLI and library versions match for compatible packages + reproducible releases).
-          dotnet tool install -g vpk --version 1.2.0
-          New-Item -ItemType Directory -Force -Path releases/velopack
-
-          # Download previous release for delta generation
-          vpk download github --repoUrl https://github.com/${{ github.repository }} --channel win -o releases/velopack --token $env:GH_TOKEN
-
-          # Pack Windows release (now signed)
-          vpk pack -u PerformanceStudio -v $env:VERSION -p publish/win-x64 -e PlanViewer.App.exe -o releases/velopack --channel win
-
       # ── Package and upload ────────────────────────────────────────────
       - name: Package and upload
         shell: pwsh
@@ -388,7 +449,11 @@ jobs:
             $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
             "$hash  $($_.Name)"
           }
-          $checksums | Out-File -FilePath releases/SHA256SUMS.txt -Encoding utf8
+          # LF line endings and no BOM. Out-File writes CRLF on Windows, and then
+          # `sha256sum -c` and `shasum -c` on Linux and macOS read the \r as part
+          # of each file name and report every file as missing. nightly.yml
+          # writes its SHA256SUMS.txt the same way; keep the two in step.
+          [IO.File]::WriteAllText("$PWD/releases/SHA256SUMS.txt", (($checksums -join "`n") + "`n"), [Text.UTF8Encoding]::new($false))
           Write-Host "Checksums:"
           $checksums | ForEach-Object { Write-Host $_ }
 

@@ -39,6 +39,14 @@ public partial class QueryStoreGridControl : UserControl
                 StatusText.Text = "No time-slicer data available.";
         }
         catch (OperationCanceledException) { throw; }
+        catch (Exception ex) when (ct.IsCancellationRequested)
+        {
+            /* The caller's cancel path decides what a cancel looks like ("Cancelled." in
+               Fetch_Click), so a cancel has to reach it as an OperationCanceledException. SqlClient
+               reports one that lands while the server is still running the query as a SqlException,
+               which used to stop here and show as "Slicer: A severe error occurred..." (#628). */
+            throw new OperationCanceledException(ex.Message, ex, ct);
+        }
         catch (Exception ex)
         {
             // #452's mirror: full message out, the status tooltip carries what the strip clips.

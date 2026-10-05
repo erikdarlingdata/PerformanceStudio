@@ -15,6 +15,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.VisualTree;
 using PlanViewer.App.Dialogs;
+using PlanViewer.App.Helpers;
 using PlanViewer.App.Services;
 using PlanViewer.Core.Interfaces;
 using PlanViewer.Core.Models;
@@ -66,8 +67,9 @@ public partial class QueryStoreGridControl : UserControl
 
         _fetchCts?.Cancel();
         _fetchCts?.Dispose();
-        _fetchCts = new CancellationTokenSource();
-        var ct = _fetchCts.Token;
+        var thisFetch = new CancellationTokenSource();
+        _fetchCts = thisFetch;
+        var ct = thisFetch.Token;
 
         var orderBy = (OrderByBox.SelectedItem as ComboBoxItem)?.Tag?.ToString() ?? "cpu";
         _lastFetchedOrderBy = orderBy;
@@ -84,9 +86,16 @@ public partial class QueryStoreGridControl : UserControl
             // Without this, LoadData defaults to last 24h and the user's range is lost.
             await LoadTimeSlicerDataAsync(orderBy, ct, _slicerStartUtc, _slicerEndUtc);
         }
-        catch (OperationCanceledException)
+        catch (Exception ex) when (CancellationHelper.IsCancellation(ex, ct))
         {
-            StatusText.Text = "Cancelled.";
+            /* The token decides, not the exception type: SqlClient reports a cancel that lands while
+               the server is still running the query as a SqlException, which used to show below as
+               an error (#628).
+
+               A fetch that a newer one replaced says nothing. The newer fetch has already written
+               its own status, and "Cancelled." would cover it while that fetch is still running. */
+            if (ReferenceEquals(_fetchCts, thisFetch))
+                StatusText.Text = "Cancelled.";
         }
         catch (Exception ex)
         {
@@ -105,8 +114,9 @@ public partial class QueryStoreGridControl : UserControl
     {
         _fetchCts?.Cancel();
         _fetchCts?.Dispose();
-        _fetchCts = new CancellationTokenSource();
-        var ct = _fetchCts.Token;
+        var thisFetch = new CancellationTokenSource();
+        _fetchCts = thisFetch;
+        var ct = thisFetch.Token;
 
         var topN = (int)(TopNBox.Value ?? 25);
         var orderBy = _lastFetchedOrderBy;
@@ -137,9 +147,12 @@ public partial class QueryStoreGridControl : UserControl
                 await FetchGroupedPlansAsync(topN, orderBy, filter, ct);
             }
         }
-        catch (OperationCanceledException)
+        catch (Exception ex) when (CancellationHelper.IsCancellation(ex, ct))
         {
-            StatusText.Text = "Cancelled.";
+            /* Same as Fetch_Click above: the token decides, not the exception type (#628), and a
+               fetch that a newer one replaced leaves the strip to the newer one. */
+            if (ReferenceEquals(_fetchCts, thisFetch))
+                StatusText.Text = "Cancelled.";
         }
         catch (Exception ex)
         {
@@ -159,6 +172,13 @@ public partial class QueryStoreGridControl : UserControl
         var plans = await QueryStoreService.FetchTopPlansAsync(
             _connectionString, topN, orderBy, filter: filter, ct: ct,
             startUtc: _slicerStartUtc, endUtc: _slicerEndUtc);
+        /* A query can finish just before its cancel lands: a range drag, a metric change or a
+           database switch right at the end of the query. The method then returns normally, and
+           a fetch that is already cancelled must stop here. Before this check it added its rows
+           to the grid that the newer fetch had just cleared, so the plans of two ranges (or of
+           the previous database) showed together. The slicer and wait-stats loaders already
+           make the same check after each query. */
+        if (ct.IsCancellationRequested) return;
 
         GridLoadingOverlay.IsVisible = false;
 
@@ -196,6 +216,8 @@ public partial class QueryStoreGridControl : UserControl
                 _connectionString, topN, orderBy, filter, ct,
                 _slicerStartUtc, _slicerEndUtc);
         }
+        // Same late-cancel stop as FetchFlatPlansAsync.
+        if (ct.IsCancellationRequested) return;
 
         GridLoadingOverlay.IsVisible = false;
         GridEmptyMessage.IsVisible = false;

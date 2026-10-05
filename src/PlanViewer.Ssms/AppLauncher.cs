@@ -236,6 +236,10 @@ namespace PlanViewer.Ssms
 
             var candidates = new[]
             {
+                // The release Setup.exe (Velopack) installs per user. The folder's root holds
+                // Update.exe and a launcher stub; the app itself is in current\, which every
+                // update replaces in place, so this path survives updates.
+                Path.Combine(localAppData, "PerformanceStudio", "current", ExeName),
                 Path.Combine(localAppData, "Programs", "SQLPerformanceStudio", ExeName),
                 Path.Combine(localAppData, "Programs", "plan-b", ExeName),
                 Path.Combine(programFiles, "DarlingData", "SQLPerformanceStudio", ExeName),
