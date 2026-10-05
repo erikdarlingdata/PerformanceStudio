@@ -522,7 +522,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex) when (ex is OperationCanceledException || cts.IsCancellationRequested)
         {
-            await EndCancelledCaptureAsync(tab, progress);
+            await EndCancelledCaptureAsync(tab);
         }
         catch (Exception ex)
         {
@@ -540,17 +540,17 @@ public partial class MainWindow : Window
     /// cancel that lands while the query is running as a SqlException ("Operation cancelled by
     /// user.").</para>
     ///
-    /// <para>A tab closed by hand has already left the strip. So has one detached to its own
-    /// window mid-run, but its panel is still on screen there, so the panel says the run
-    /// stopped.</para>
+    /// <para>A tab closed by hand has already left the strip, and its panel with it, so there is
+    /// nothing left to end. #627: closing is now the only way a tab leaves the strip while its run
+    /// is going. Detaching it was the other, and it needed a second branch here that told the
+    /// detached window's panel "Cancelled."; a running capture cannot be detached any more, so the
+    /// branch is gone.</para>
     ///
     /// <para>Internal so a test can cancel a capture without a server to run one against.</para>
     /// </summary>
-    internal async Task EndCancelledCaptureAsync(TabItem tab, CaptureProgressPanel progress)
+    internal async Task EndCancelledCaptureAsync(TabItem tab)
     {
         if (MainTabControl.Items.Contains(tab))
             await TryCloseTabAsync(tab);
-        else
-            progress.ShowOutcome("Cancelled.");
     }
 }
