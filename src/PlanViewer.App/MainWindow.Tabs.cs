@@ -139,9 +139,9 @@ public partial class MainWindow : Window
         void RefreshCopyPathVisibility() => copyPathItem.IsVisible = GetTabFilePath(tab) != null;
         RefreshCopyPathVisibility();
 
-        /* #627: a tab that is still waiting on its capture cannot leave the strip. The run will
-           put its plan in this tab when it finishes, and a tab that has been detached is not
-           where the plan would go. */
+        /* #627: a tab that is still waiting on its capture cannot leave the strip. The run puts
+           its plan in this tab when it finishes, and a tab that has been detached is off the
+           screen, so the plan would land where nobody can see it. */
         var detachItem = new MenuItem { Header = "Detach to Window", Tag = tab };
         void RefreshDetachEnabled() => detachItem.IsEnabled = !IsCaptureRunning(tab.Content as Control);
         RefreshDetachEnabled();
@@ -232,8 +232,8 @@ public partial class MainWindow : Window
     /// panel is what knows. A run that succeeds is not a case here at all: its plan replaces the
     /// panel, so the tab's content is no longer registered.</para>
     ///
-    /// <para>A registered panel that cannot say is taken as running, so the error is on the side of
-    /// keeping the tab where its run will find it.</para>
+    /// <para>A registered panel that cannot say is taken as running, so any doubt keeps the tab
+    /// where its run will find it.</para>
     /// </summary>
     private bool IsCaptureRunning(Control? content) =>
         content != null
@@ -461,11 +461,12 @@ public partial class MainWindow : Window
     /// window closes.</para>
     /// </summary>
     /// <remarks>
-    /// <para>#627: a tab whose capture is still running is not detached. The run holds the tab, not
-    /// the progress panel, and puts its plan in that tab when it finishes. A tab that had been
-    /// detached left the plan in a tab nobody could see, and the detached window kept a spinner and a
-    /// Cancel button for a run that was already over. The menu item is disabled for this case, and
-    /// the method refuses on its own so that no other caller can bring the bug back.</para>
+    /// <para>#627: a tab whose capture is still running is not detached. The run keeps hold of the
+    /// tab it started in, not of the progress panel, and puts its plan there when it finishes. A tab
+    /// that had been detached got the plan in a tab nobody could see, and the detached window kept a
+    /// spinner and a Cancel button for a run that was already over. The menu item is disabled for
+    /// this case, and the method refuses on its own so that no other caller can bring the bug
+    /// back.</para>
     /// </remarks>
     /// <returns>The detached window, or null when the tab had no content to detach or its content is a
     /// capture that is still running. The tab is left exactly where it was.</returns>

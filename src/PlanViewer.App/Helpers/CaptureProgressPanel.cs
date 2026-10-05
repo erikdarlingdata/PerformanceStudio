@@ -51,8 +51,8 @@ internal sealed class CaptureProgressPanel
     /// <summary>
     /// Whether the run behind this panel is still going: true from construction until
     /// <see cref="ShowOutcome"/>, the one call every ending without a plan goes through (a failure,
-    /// "no plan returned", a cancel the owner reports on the panel). A run that produces its plan
-    /// never gets there, because its owner swaps the panel out of the tab instead.
+    /// or "no plan returned"). A run that produces its plan never gets there, because its owner
+    /// swaps the panel out of the tab instead, and a cancelled one closes the tab.
     ///
     /// <para>#627: the window asks this before it detaches a tab, because a run that finishes into a
     /// tab nobody is looking at is a plan nobody can see. A cancel that has been requested but not yet
