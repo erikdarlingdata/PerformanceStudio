@@ -2,6 +2,7 @@ using System;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using PlanViewer.App.Helpers;
 
 namespace PlanViewer.App.Controls;
 
@@ -157,9 +158,15 @@ public partial class QuerySessionControl : UserControl
            ahead of it would be wiped by the very switch that made it worth saying. */
         SetStatus("Loading Query Store Overview...");
 
+        /* The load's own token, read the moment it starts: it takes the token over before its first
+           await, so this is its token — and stays its token after a later load or a detach moves
+           the control on to another. The failure below can then be told from a cancel (#628). */
+        var load = overview.LoadAsync();
+        var run = overview.LoadToken;
+
         try
         {
-            await overview.LoadAsync();
+            await load;
             if (generation == _overviewLoadGeneration && _surface == SessionSurface.Overview)
                 ClearStatus();
         }
@@ -177,9 +184,9 @@ public partial class QuerySessionControl : UserControl
                 // superseded: nothing to say
             }
             else if (_surface == SessionSurface.Overview)
-                SetStatusFromException(ex);
-            else
-                overview.ShowRefreshError(ex);
+                SetStatusFromException(ex, ct: run);
+            else if (!CancellationHelper.IsCancellation(ex, run))
+                overview.ShowRefreshError(ex); // a cancel is no "Last refresh failed" either (#628)
         }
     }
 

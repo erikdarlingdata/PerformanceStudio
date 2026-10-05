@@ -7,6 +7,7 @@ using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Threading;
+using PlanViewer.App.Helpers;
 using PlanViewer.App.Services;
 using PlanViewer.Core.Interfaces;
 using PlanViewer.Core.Models;
@@ -45,6 +46,17 @@ public partial class QueryStoreOverviewControl : UserControl
     /// the slowest phase — exactly when a switch away is likeliest.</para>
     /// </summary>
     private CancellationTokenSource? _runningCts;
+
+    /// <summary>
+    /// The token of the load or refresh that started most recently, or a token that is never
+    /// cancelled when none has.
+    ///
+    /// <para>Read it straight after starting a load, not after awaiting one: <see cref="LoadAsync"/>
+    /// takes its token over before its first await, so at that moment it is that load's — and it
+    /// stays that load's after a later load replaces the field or a detach nulls it, which is what
+    /// lets a caller tell, once the load fails, whether it failed or was cancelled (#628).</para>
+    /// </summary>
+    internal CancellationToken LoadToken => _cts?.Token ?? default;
 
     /// <summary>
     /// Set when a detach cancelled a load that was still running — the load the user would have
@@ -160,13 +172,19 @@ public partial class QueryStoreOverviewControl : UserControl
             if (!_reloadOnAttach) return;
             _reloadOnAttach = false;
 
+            var load = LoadAsync();
+            var run = LoadToken;
+
             try
             {
-                await LoadAsync();
+                await load;
             }
-            catch (OperationCanceledException)
+            catch (Exception ex) when (CancellationHelper.IsCancellation(ex, run))
             {
-                // Superseded by yet another load before this one finished — that one reports.
+                /* Superseded by yet another load before this one finished — that one reports — or
+                   cancelled by another detach. Either way not a failed refresh. The token decides,
+                   not the exception type: SqlClient reports a cancel that lands while the server is
+                   still running the query as a SqlException (#628). */
             }
             catch (Exception ex)
             {
@@ -259,13 +277,18 @@ public partial class QueryStoreOverviewControl : UserControl
             // Phase 3: Metrics and wait stats for selected time range
             await RefreshMetricsAndWaitStatsAsync(ct);
         }
-        catch (OperationCanceledException)
+        catch (Exception ex) when (CancellationHelper.IsCancellation(ex, ct))
         {
             /* Not a failure, and not worth a word. The caller puts this control's outcome on the
                session's status strip, where "A task was canceled." says nothing about which task —
                and the thing that cancelled it is a later load already in flight, which will report
                for itself. Loading the slicer is one of the cancellers: it raises RangeChanged,
-               whose handler takes the token over to run the same last phase. */
+               whose handler takes the token over to run the same last phase.
+
+               The token decides, not the exception type. A cancel that lands while the server is
+               still running a query comes back from SqlClient as a SqlException ("Operation
+               cancelled by user."), not an OperationCanceledException, so it used to escape to the
+               caller and be shown as a failed refresh (#628). */
         }
         finally
         {
@@ -392,7 +415,10 @@ public partial class QueryStoreOverviewControl : UserControl
         {
             await RefreshMetricsAndWaitStatsAsync(newCts.Token);
         }
-        catch (OperationCanceledException) { }
+        catch (Exception ex) when (CancellationHelper.IsCancellation(ex, newCts.Token))
+        {
+            // Superseded or detached: no "Last refresh failed" badge for a cancel (#628).
+        }
         catch (Exception ex)
         {
             ShowRefreshError(ex);

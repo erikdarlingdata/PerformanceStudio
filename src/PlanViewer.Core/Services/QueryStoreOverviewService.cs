@@ -34,8 +34,12 @@ public static class QueryStoreOverviewService
                 var state = await GetQueryStoreStateAsync(masterConnectionString, db, ct);
                 results.Add(new DatabaseQueryStoreState { DatabaseName = db, State = state });
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception ex) when (ex is not OperationCanceledException && !ct.IsCancellationRequested)
             {
+                /* The token decides as well as the type: SqlClient reports a cancel that lands while
+                   the server is still running the query as a SqlException, which used to be recorded
+                   here as this database's error, and the cancelled load went on to draw it (#628).
+                   Now it propagates, and the load's own handler takes it for the cancel it is. */
                 results.Add(new DatabaseQueryStoreState { DatabaseName = db, State = QueryStoreState.Error, ErrorMessage = ex.Message });
             }
             finally
@@ -70,8 +74,9 @@ public static class QueryStoreOverviewService
                 var metrics = await FetchDatabaseMetricsAsync(masterConnectionString, db, startUtc, endUtc, ct);
                 results.Add(metrics);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception ex) when (ex is not OperationCanceledException && !ct.IsCancellationRequested)
             {
+                // The token decides as well as the type, as in FetchAllStatesAsync (#628).
                 results.Add(new DatabaseMetrics { DatabaseName = db });
             }
             finally
@@ -175,8 +180,9 @@ public static class QueryStoreOverviewService
                 foreach (var s in slices)
                     results.Add(s);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception ex) when (ex is not OperationCanceledException && !ct.IsCancellationRequested)
             {
+                // The token decides as well as the type, as in FetchAllStatesAsync (#628).
                 errors.Add((db, ex.Message));
             }
             finally

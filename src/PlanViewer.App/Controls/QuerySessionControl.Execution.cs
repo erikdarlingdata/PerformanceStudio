@@ -15,6 +15,7 @@ using AvaloniaEdit;
 using AvaloniaEdit.CodeCompletion;
 using AvaloniaEdit.TextMate;
 using PlanViewer.App.Dialogs;
+using PlanViewer.App.Helpers;
 using PlanViewer.App.Services;
 using PlanViewer.Core.Interfaces;
 using PlanViewer.Core.Models;
@@ -145,7 +146,7 @@ public partial class QuerySessionControl : UserControl
             SetStatus($"{planType} plan captured ({sw.Elapsed.TotalSeconds:F1}s)");
             ShowCapturedPlan(loadingTab, planXml, tabLabel, queryText);
         }
-        catch (Exception ex) when (ex is OperationCanceledException || ct.IsCancellationRequested)
+        catch (Exception ex) when (CancellationHelper.IsCancellation(ex, ct))
         {
             /* Nothing in the strip. The user cancelled this themselves — Escape, the Cancel
                button, or by starting the next query — and the spinner tab vanishing is the
@@ -305,7 +306,7 @@ public partial class QuerySessionControl : UserControl
             // the toolbar's (E1). Null for a toolbar-sourced plan, same as its own viewer.
             ShowCapturedPlan(loadingTab, actualPlanXml, tabLabel, queryText, viewer.SourceDatabase);
         }
-        catch (Exception ex) when (ex is OperationCanceledException || ct.IsCancellationRequested)
+        catch (Exception ex) when (CancellationHelper.IsCancellation(ex, ct))
         {
             // Same as the capture path above: the cancel was the user's own, and the tab going
             // away says so. See that catch for why the message is gone, and why the token

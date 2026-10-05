@@ -19,6 +19,7 @@ using AvaloniaEdit.CodeCompletion;
 using AvaloniaEdit.TextMate;
 using Microsoft.Data.SqlClient;
 using PlanViewer.App.Dialogs;
+using PlanViewer.App.Helpers;
 using PlanViewer.App.Services;
 using PlanViewer.Core.Interfaces;
 using PlanViewer.Core.Models;
@@ -458,10 +459,17 @@ public partial class QuerySessionControl : UserControl
     /// land in the strip with <c>autoClear: false</c> and sit there across every view the user
     /// visited afterwards. <see cref="TaskCanceledException"/> derives from
     /// <see cref="OperationCanceledException"/>, so the one check covers both.</para>
+    ///
+    /// <para>The type is not the whole answer, which is why callers hand in the token of the run
+    /// that failed. SqlClient reports a cancel that lands while the server is still running the
+    /// query as a <c>SqlException</c> — "A severe error occurred on the current command. The
+    /// results, if any, should be discarded. Operation cancelled by user." — so a run whose token
+    /// has been cancelled is a cancel whatever came back (#628). A caller with no run to ask
+    /// leaves it out, and only the exception type decides.</para>
     /// </summary>
-    private void SetStatusFromException(Exception ex, string prefix = "")
+    internal void SetStatusFromException(Exception ex, string prefix = "", CancellationToken ct = default)
     {
-        if (ex is OperationCanceledException)
+        if (CancellationHelper.IsCancellation(ex, ct))
             return;
 
         SetErrorStatus(prefix + ex.Message);

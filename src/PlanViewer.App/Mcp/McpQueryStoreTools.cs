@@ -54,6 +54,14 @@ public sealed class McpQueryStoreTools
         {
             throw;
         }
+        catch (Exception ex) when (cancellationToken.IsCancellationRequested)
+        {
+            /* The client cancelled the call, so there is nothing to report to it. SqlClient reports
+               a cancel that lands while the server is still running the query as a SqlException
+               ("Operation cancelled by user."), not an OperationCanceledException, so it would be
+               returned below as a failure (#628). */
+            throw new OperationCanceledException(ex.Message, ex, cancellationToken);
+        }
         catch (Exception ex)
         {
             return McpHelpers.FormatError("check_query_store", ex);
@@ -301,6 +309,14 @@ public sealed class McpQueryStoreTools
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw;
+        }
+        catch (Exception ex) when (cancellationToken.IsCancellationRequested)
+        {
+            /* The client cancelled the call, so there is nothing to report to it. SqlClient reports
+               a cancel that lands while the server is still running the query as a SqlException
+               ("Operation cancelled by user."), not an OperationCanceledException, so it would be
+               returned below as a failure (#628). */
+            throw new OperationCanceledException(ex.Message, ex, cancellationToken);
         }
         catch (Exception ex)
         {

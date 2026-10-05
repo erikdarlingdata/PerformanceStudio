@@ -520,7 +520,7 @@ public partial class MainWindow : Window
 
             tab.Content = CreatePlanTabContent(actualViewer);
         }
-        catch (Exception ex) when (ex is OperationCanceledException || cts.IsCancellationRequested)
+        catch (Exception ex) when (CancellationHelper.IsCancellation(ex, cts.Token))
         {
             await EndCancelledCaptureAsync(tab);
         }
