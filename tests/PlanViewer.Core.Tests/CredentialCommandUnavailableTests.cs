@@ -35,6 +35,24 @@ public sealed class CredentialCommandUnavailableTests
         }
     }
 
+    /// <summary>
+    /// The real process, not the parsed tree: Program.cs maps the factory's in-memory store (what
+    /// Linux gets) to no store. Skipped where a credential store exists, so CI on ubuntu-latest is
+    /// where this runs.
+    /// </summary>
+    [Fact]
+    public async Task OnLinux_TheRealProcessHasNoStore()
+    {
+        Assert.SkipUnless(OperatingSystem.IsLinux(), "only Linux has no credential store");
+
+        var run = await CliProcess.RunAsync(
+            Path.GetTempPath(), TestContext.Current.CancellationToken,
+            "credential", "add", "sql2022", "--user", "sa", "-p", "hunter2");
+
+        Assert.Equal(1, run.ExitCode);
+        Assert.Equal(CredentialCommand.NoStoreMessage, run.StandardError.Trim());
+    }
+
     [Fact]
     public void WithoutStore_CredentialStaysInHelpAndSaysSo()
     {
