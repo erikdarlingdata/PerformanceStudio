@@ -13,6 +13,8 @@ on:
     paths:
       - 'src/PlanViewer.Ssms.Installer/**'
       - 'tests/PlanViewer.Ssms.Installer.Tests/**'
+      - 'Directory.Build.props'
+      - 'src/Directory.Build.props'
       - 'Directory.Packages.props'
       - '.github/workflows/ssms-installer-tests.yml'
   workflow_dispatch:

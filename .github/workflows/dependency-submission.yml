@@ -8,6 +8,9 @@ name: Dependency submission
 #
 # Dependabot alerts read the default branch (main), so transitive alerts start after the
 # next dev-to-main release merge. The dev trigger lets the workflow be exercised earlier.
+# Dev snapshots feed no alerts, so drop dev from the push trigger once the first run on dev
+# is green: each run holds a contents: write token while running a binary the action
+# downloads at run time (the latest microsoft/component-detection release).
 
 on:
   push:
@@ -24,6 +27,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Setup .NET 10.0
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
@@ -34,18 +39,24 @@ jobs:
       - name: Install WASM workload
         run: dotnet workload install wasm-tools
 
-      # The detector reads project.assets.json, which only exists after a restore.
+      # The detector reads project.assets.json, which only exists after a restore. Every restore
+      # here passes -p:NuGetAudit=false: with the audit gate on, a new high advisory fails the
+      # restore, the submit step never runs, and the graph goes stale exactly when an alert is
+      # needed. Resolution is unchanged, and GitHub matches advisories on the submitted graph.
       - name: Restore solution
-        run: dotnet restore PlanViewer.sln
+        run: dotnet restore PlanViewer.sln -p:NuGetAudit=false
 
       - name: Add MSBuild to PATH
         uses: microsoft/setup-msbuild@30375c66a4eea26614e0d39710365f22f8b0af57 # v3.0.0
 
       - name: Restore SSMS projects
         run: |
-          dotnet restore src/PlanViewer.Ssms.Installer/PlanViewer.Ssms.Installer.csproj
-          dotnet restore tests/PlanViewer.Ssms.Installer.Tests/PlanViewer.Ssms.Installer.Tests.csproj
-          msbuild src/PlanViewer.Ssms/PlanViewer.Ssms.csproj -t:Restore -p:Configuration=Release
+          dotnet restore src/PlanViewer.Ssms.Installer/PlanViewer.Ssms.Installer.csproj -p:NuGetAudit=false
+          dotnet restore tests/PlanViewer.Ssms.Installer.Tests/PlanViewer.Ssms.Installer.Tests.csproj -p:NuGetAudit=false
+          msbuild src/PlanViewer.Ssms/PlanViewer.Ssms.csproj -t:Restore -p:Configuration=Release -p:NuGetAudit=false
 
       - name: Submit dependency snapshot
         uses: advanced-security/component-detection-dependency-submission-action@a02aeda7a175ad4dd38a13c4d3ff2df9da8f2cf0 # v0.2.0
+        with:
+          # The default submits an empty snapshot when nothing is found, replacing the graph.
+          fail-on-empty: 'true'

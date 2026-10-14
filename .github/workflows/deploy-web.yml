@@ -6,6 +6,7 @@ on:
     paths:
       - 'src/PlanViewer.Core/**'
       - 'src/PlanViewer.Web/**'
+      - 'Directory.Build.props'
       - 'src/Directory.Build.props'
       - 'Directory.Packages.props'
       - '.github/workflows/deploy-web.yml'

@@ -6,13 +6,14 @@
   -->
 
   <!--
-    Issue #650: audit transitive packages too, and fail the build on a high-severity
-    advisory (NU1903) instead of printing a warning nobody reads. The way out is a pinned
+    Issue #650: audit transitive packages too, and fail the build on a high or
+    critical advisory (NU1903, NU1904) instead of printing a warning nobody reads. The way out is a pinned
     version: add a PackageVersion in Directory.Packages.props and a direct PackageReference
     in the project that pulls the vulnerable package in. Moderate reports (NU1902) stay warnings.
+    Emergency override for a one-off build: pass -p:NuGetAudit=false.
   -->
   <PropertyGroup>
     <NuGetAuditMode>all</NuGetAuditMode>
-    <WarningsAsErrors>$(WarningsAsErrors);NU1903</WarningsAsErrors>
+    <WarningsAsErrors>$(WarningsAsErrors);NU1903;NU1904</WarningsAsErrors>
   </PropertyGroup>
 </Project>
