@@ -83,8 +83,10 @@
     <PackageReference Include="Microsoft.VisualStudio.SDK" ExcludeAssets="runtime" />
     <PackageReference Include="Microsoft.VSSDK.BuildTools" IncludeAssets="build;buildTransitive" />
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" PrivateAssets="all" />
-    <!-- Direct reference so the central pin (issue #650) beats the SDK's transitive MessagePack 2.5.192. -->
-    <PackageReference Include="MessagePack" />
+    <!-- Direct reference so the central pin (issue #650) beats the SDK's transitive MessagePack 2.5.192.
+         Runtime excluded like the SDK reference above, because SSMS supplies MessagePack and the
+         extension must never carry its own copy. -->
+    <PackageReference Include="MessagePack" ExcludeAssets="runtime" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="System" />
