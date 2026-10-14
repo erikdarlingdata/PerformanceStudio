@@ -118,7 +118,12 @@ jobs:
           # Those props redirect VSToolsPath into the Microsoft.VSSDK.BuildTools
           # package, which is how the VSSDK targets resolve on a runner that
           # lacks the Visual Studio extension-development workload.
-          msbuild src/PlanViewer.Ssms/PlanViewer.Ssms.csproj -restore -t:Build -p:Configuration=Release -p:DeployExtension=false
+          $msbuildLog = Join-Path $env:RUNNER_TEMP 'ssms-msbuild.log'
+          msbuild src/PlanViewer.Ssms/PlanViewer.Ssms.csproj -restore -t:Build -p:Configuration=Release -p:DeployExtension=false | Tee-Object -FilePath $msbuildLog
+          $auditHit = Select-String -Path $msbuildLog -Pattern 'NU1903|NU1904' | Select-Object -First 1
+          if ($auditHit) {
+            Write-Host "::warning::SSMS restore failed the NuGet audit: $($auditHit.Line.Trim())"
+          }
           dotnet build src/PlanViewer.Ssms.Installer/PlanViewer.Ssms.Installer.csproj -c Release
 
           $vsix = 'src/PlanViewer.Ssms/bin/Release/PlanViewer.Ssms.vsix'

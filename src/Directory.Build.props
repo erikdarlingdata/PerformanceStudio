@@ -1,4 +1,7 @@
 <Project>
+
+  <!-- MSBuild stops at the nearest Directory.Build.props, so chain to the repo-root one (NuGet audit settings, #650). -->
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
   <!--
     Single source of truth for product version + identity across src/ projects.
 
@@ -6,13 +9,16 @@
       PlanViewer.App, PlanViewer.Core, PlanViewer.Cli, PlanViewer.Web,
       PlanViewer.Ssms.Installer.
 
-    NOT picked up by PlanViewer.Ssms — it's a legacy non-SDK project.
-    Its version lives in:
+    PlanViewer.Ssms is a legacy non-SDK project. It imports this file too, through
+    Microsoft.Common.props, which is how it gets the NuGet audit settings from the
+    repo-root file. But a legacy project does not generate assembly attributes from
+    <Version>, so its version lives in:
       Properties/AssemblyInfo.cs   (AssemblyVersion + AssemblyFileVersion)
       source.extension.vsixmanifest (Identity Version="...")
     Bump those manually when bumping the version here.
 
-    Tests and server/ projects are outside src/ and are unaffected.
+    Tests and server/ projects are outside src/. They pick up the repo-root
+    Directory.Build.props directly and never see the version block below.
   -->
   <PropertyGroup>
     <Version>1.30.0</Version>
