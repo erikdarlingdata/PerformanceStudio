@@ -120,6 +120,17 @@ public class ConfigLoaderTests : IDisposable
     }
 
     [Fact]
+    public void AnUnreadableFileFailsWithAMessageNotAStackTrace()
+    {
+        var path = Write("""{ "rules": { "disabled": [] } }""");
+        // Hold the file open with no sharing, so the loader's read is refused.
+        using var _ = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None);
+        var ex = Assert.Throws<InvalidDataException>(() => ConfigLoader.Load(path));
+        Assert.Contains(path, ex.Message);
+        Assert.DoesNotContain(Environment.NewLine, ex.Message);
+    }
+
+    [Fact]
     public void ARuleThatIsNotANumberFailsAsAnInvalidFile()
     {
         Assert.Throws<InvalidDataException>(() => ConfigLoader.Load(Write(

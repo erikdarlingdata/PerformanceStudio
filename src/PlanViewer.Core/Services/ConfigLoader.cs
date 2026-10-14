@@ -53,7 +53,18 @@ public static class ConfigLoader
         if (configPath == null)
             return AnalyzerConfig.Default;
 
-        var json = File.ReadAllText(configPath);
+        /* A file that exists but cannot be read (locked, no permission) is the same kind of
+           failure as one that will not parse: one line naming the file, caught by every
+           caller that already catches InvalidDataException. */
+        string json;
+        try
+        {
+            json = File.ReadAllText(configPath);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            throw new InvalidDataException($"Could not read {configPath}: {ex.Message}", ex);
+        }
         AnalyzerConfig? config;
         try
         {
