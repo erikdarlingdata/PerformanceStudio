@@ -232,7 +232,7 @@ public class SuppressionTests
             Suppressions = [Entry(rule: 36, reason: "vendor cursor")]
         };
 
-        PlanAnalysisPipeline.AnalyzeParsed(plan, config);
+        PlanAnalysisPipeline.AnalyzeParsed(plan, config, cancellationToken: TestContext.Current.CancellationToken);
 
         var warning = Assert.Single(stmt.PlanWarnings, w => w.RuleNumber == 36);
         Assert.Equal(PlanWarningSeverity.Info, warning.Severity);
@@ -256,7 +256,8 @@ public class SuppressionTests
         var xml = File.ReadAllText(Path.Combine("Plans", "exec_stored_procedure_plan.sqlplan"))
             .Replace("encoding=\"utf-16\"", "encoding=\"utf-8\"");
         var plan = ShowPlanParser.Parse(xml);
-        PlanAnalysisPipeline.AnalyzeParsed(plan, Cfg(Entry(hash: hash, rule: rule, reason: "library owns it")));
+        PlanAnalysisPipeline.AnalyzeParsed(plan, Cfg(Entry(hash: hash, rule: rule, reason: "library owns it")),
+            cancellationToken: TestContext.Current.CancellationToken);
 
         var suppressedStatements = PlanStatements.EnumerateAll(plan)
             .Where(s => AllOf(s).Any(w => w.IsSuppressed))
@@ -285,7 +286,7 @@ public class SuppressionTests
             var xml = File.ReadAllText(Path.Combine("Plans", "case_predicate_plan.sqlplan"))
                 .Replace("encoding=\"utf-16\"", "encoding=\"utf-8\"");
             var parsed = ShowPlanParser.Parse(xml);
-            PlanAnalysisPipeline.AnalyzeParsed(parsed, config);
+            PlanAnalysisPipeline.AnalyzeParsed(parsed, config, cancellationToken: TestContext.Current.CancellationToken);
             return parsed;
         }
 
@@ -388,6 +389,42 @@ public class SuppressionTests
     }
 
     [Fact]
+    public void TheTextOutputTagsSuppressedOperatorWarningsOnTheGroupedAndTheSinglePath()
+    {
+        // Two warnings that share a severity and a harm sentence are written as a group; the
+        // third has no harm sentence and is written on its own. Both paths build their own tag.
+        static PlanWarning Estimate(string data) => new()
+        {
+            WarningType = "Row Estimate Mismatch",
+            Message = data + ". The underestimate caused a spill.",
+            Severity = PlanWarningSeverity.Warning,
+            RuleNumber = 5
+        };
+
+        var root = Node(0, "Nested Loops", null);
+        root.Children.Add(Node(1, "Index Scan", "dbo.A", Estimate("Estimated 1 row, got 900")));
+        root.Children.Add(Node(2, "Index Scan", "dbo.B", Estimate("Estimated 2 rows, got 800")));
+        root.Children.Add(Node(3, "Index Scan", "dbo.C",
+            new PlanWarning { WarningType = "Scan With Predicate", Message = "Scan reads every row", Severity = PlanWarningSeverity.Info, RuleNumber = 6 }));
+        var plan = new ParsedPlan
+        {
+            Batches = [new PlanBatch { Statements = [new PlanStatement { QueryHash = Hash, RootNode = root }] }]
+        };
+        Suppress(plan,
+            Entry(rule: 5, op: "dbo.A", reason: "grouped reason"),
+            Entry(rule: 6, reason: "single reason"));
+
+        var lines = TextFormatter.Format(ResultMapper.Map(plan, "x")).Split('\n');
+
+        var groupedA = Assert.Single(lines, l => l.Contains("dbo.A"));
+        var groupedB = Assert.Single(lines, l => l.Contains("dbo.B"));
+        var single = Assert.Single(lines, l => l.Contains("dbo.C"));
+        Assert.Contains("[suppressed: grouped reason]", groupedA);
+        Assert.DoesNotContain("[suppressed", groupedB);
+        Assert.Contains("[suppressed: single reason]", single);
+    }
+
+    [Fact]
     public void TheHtmlOutputTagsASuppressedWarningWithItsReason()
     {
         var plan = SamplePlan();
@@ -419,7 +456,8 @@ public class SuppressionTests
         Assert.Equal(1, summary.SuppressedWarnings);
         Assert.Equal(4, summary.TotalWarnings);
 
-        var warnings = operations.GetWarnings(sessionId);
+        var warnings = operations.GetWarnings(
+            sessionId, null, TestContext.Current.CancellationToken);
         var cursor = Assert.Single(warnings.Warnings, w => w.Type == "Dynamic Cursor");
         Assert.True(cursor.IsSuppressed);
         Assert.Equal("vendor cursor", cursor.SuppressionReason);

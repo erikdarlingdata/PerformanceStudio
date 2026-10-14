@@ -120,6 +120,19 @@ public class ComparisonModelTests
         Assert.Equal(ComparisonDirection.Neutral, metric.Direction);
     }
 
+    /// <summary>#651: the Warnings metric is a count, so suppressed warnings are left out of it.</summary>
+    [Fact]
+    public void TheWarningsMetricDoesNotCountSuppressedWarnings()
+    {
+        var withSuppressed = Statement(warnings: 3);
+        withSuppressed.Warnings[0].IsSuppressed = true;
+        withSuppressed.Warnings[1].IsSuppressed = true;
+
+        var metric = Metric(Compare(Plan(Statement(warnings: 3)), Plan(withSuppressed)), "Warnings");
+
+        Assert.Equal("2 resolved", metric.DeltaLabel);
+    }
+
     [Fact]
     public void FewerWarningsIsBetterAndMoreIsWorse_WithoutInventingAPercentage()
     {

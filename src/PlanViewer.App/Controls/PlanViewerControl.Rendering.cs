@@ -49,7 +49,7 @@ public partial class PlanViewerControl : UserControl
         // Render nodes — pass total warning count to root node for badge
         var allWarnings = new List<PlanWarning>();
         CollectWarnings(statement.RootNode, allWarnings);
-        RenderNodes(statement.RootNode, divergenceLimit, allWarnings.Count);
+        RenderNodes(statement.RootNode, divergenceLimit, allWarnings.Count(w => !w.IsSuppressed));
 
         // Update banners
         ShowMissingIndexes(statement.MissingIndexes);

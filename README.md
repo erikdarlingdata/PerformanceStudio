@@ -527,7 +527,7 @@ On Linux, `planview credential` exits with an error. See [Platform Support](#pla
 
 ### Configuration file (.planview.json)
 
-A `.planview.json` file changes what the analyzer reports. The CLI, the desktop app and the MCP server all read it.
+A `.planview.json` file changes what the analyzer reports. The CLI commands `analyze`, `query-store` and `repl` read it. The desktop app reads it each time it opens a plan. The MCP server does not read it and always uses the defaults.
 
 The file is looked for in this order, and the first one found wins:
 
@@ -559,11 +559,13 @@ If none exists, the analyzer uses its defaults. The file is JSON. Comments and t
 }
 ```
 
-**`rules.disabled`** is a list of rule numbers. A disabled rule never runs.
+The `rules.disabled` list holds rule numbers. A disabled rule never runs.
 
-**`rules.severity_overrides`** maps a rule number to a new severity. The allowed values are `Info`, `Warning` and `Critical`.
+The `rules.severity_overrides` map gives a rule number a new severity. The allowed values are `Info`, `Warning` and `Critical`.
 
-**`suppressions`** marks single findings as accepted. Use it when a finding is correct but you cannot or will not act on it. A suppressed finding is not removed. It stays in the output with `"suppressed": true` and its reason, and the text and HTML output tag it as `[suppressed: <reason>]`. It does not count toward `total_warnings`, `critical_warnings` or `warning_types`. The summary reports it in `suppressed_warnings` instead. A suppressed finding keeps its severity, including one set by `severity_overrides`.
+The `suppressions` list marks single findings as accepted. Use it when a finding is correct but you cannot or will not act on it. A suppressed finding is not removed. It stays in the output with `"suppressed": true` and its reason. The text output tags it as `[suppressed: <reason>]` and the HTML output shows a `suppressed: <reason>` badge. A suppressed finding keeps its severity, including one set by `severity_overrides`.
+
+A suppressed finding does not count toward `total_warnings`, `critical_warnings` or `warning_types`. The summary reports it in `suppressed_warnings` instead. The same rule applies to the counts in the desktop app.
 
 Each suppression has these fields:
 
@@ -575,7 +577,7 @@ Each suppression has these fields:
 | `operator` | No | Text that must appear in the operator label. Case does not matter. Use the label from the `operator` field of the JSON output, such as `Key Lookup on eventuous.Messages (Node 1)`. A partial match works, so `eventuous.Messages` is enough. A finding on the statement as a whole has no operator, so a suppression that sets `operator` never matches it. |
 | `reason` | Yes | Why the finding is accepted. It must not be empty. |
 
-A suppression that is missing a field is an error. The command prints one line, for example `Suppression 2 in .planview.json has no "reason".`, and exits with code 1. The number is the zero-based position in the list.
+A suppression that is missing a field is an error. The command prints one line that names the file, for example `Suppression 2 in C:\work\team.json has no "reason".`, and exits with code 1. The number is the zero-based position in the list. The desktop app does not stop. It opens the plan with the defaults and shows the message in the toolbar.
 
 To find the `query_hash` of a statement, run `planview analyze` with JSON output and read `statements[].query_hash`. Each warning in the JSON also shows its `rule` number when a rule produced it, and its `operator` label when it belongs to an operator.
 

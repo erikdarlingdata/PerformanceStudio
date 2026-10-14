@@ -184,6 +184,35 @@ public class AdviceCardsTests
     }
 
     /// <summary>
+    /// #651: a count excludes suppressed warnings, so the statement's "N critical" chip must not
+    /// count them. The warnings themselves still appear as cards.
+    /// </summary>
+    [Fact]
+    public void TheStatementChipsDoNotCountSuppressedWarnings()
+    {
+        var result = Analyze(GoldenPlan);
+        foreach (var type in new[] { "Suppressed Alpha", "Suppressed Beta" })
+        {
+            result.Statements[0].Warnings.Add(new WarningResult
+            {
+                Type = type,
+                Severity = "Critical",
+                Message = "message",
+                IsSuppressed = true,
+                SuppressionReason = "accepted"
+            });
+        }
+
+        HeadlessUi.Run(() =>
+        {
+            var text = AllText(Show(AdviceContentBuilder.Build("", result)));
+
+            Assert.DoesNotContain("2 critical", text);
+            Assert.Contains("Suppressed Alpha", text);
+        });
+    }
+
+    /// <summary>
     /// The summary counts, as chips. Checked through the pane's text rather than by counting
     /// Borders: what matters is that a reader sees "1 critical", not how many containers it took.
     /// </summary>

@@ -93,8 +93,21 @@ public class ConfigLoaderTests : IDisposable
         "Suppression 0 in .planview.json is empty.")]
     public void AnInvalidSuppressionFailsWithOneLineNamingTheEntry(string json, string expected)
     {
-        var ex = Assert.Throws<InvalidDataException>(() => ConfigLoader.Load(Write(json)));
-        Assert.Equal(expected, ex.Message);
+        // The message names the file that was actually read, not the default file name.
+        var path = Write(json);
+        var ex = Assert.Throws<InvalidDataException>(() => ConfigLoader.Load(path));
+        Assert.Equal(expected.Replace("in .planview.json", $"in {path}"), ex.Message);
+    }
+
+    [Fact]
+    public void AnExplicitConfigNameAppearsInTheMessage()
+    {
+        var path = Path.Combine(_dir, "team.json");
+        File.WriteAllText(path, """{ "suppressions": [ { "query_hash": "0xAB", "rule": 3 } ] }""");
+
+        var ex = Assert.Throws<InvalidDataException>(() => ConfigLoader.Load(path));
+
+        Assert.Equal($"Suppression 0 in {path} has no \"reason\".", ex.Message);
     }
 
     [Fact]

@@ -67,7 +67,7 @@ public static class ConfigLoader
         if (config == null)
             return AnalyzerConfig.Default;
 
-        ValidateSuppressions(config);
+        ValidateSuppressions(config, configPath);
         return config;
     }
 
@@ -76,7 +76,7 @@ public static class ConfigLoader
     /// is a mistake worth stopping for. Throws <see cref="InvalidDataException"/> naming the
     /// entry by its zero-based index (#651).
     /// </summary>
-    private static void ValidateSuppressions(AnalyzerConfig config)
+    private static void ValidateSuppressions(AnalyzerConfig config, string configPath)
     {
         var entries = config.Suppressions;
         if (entries == null)
@@ -85,7 +85,7 @@ public static class ConfigLoader
         for (var i = 0; i < entries.Count; i++)
         {
             var entry = entries[i];
-            var prefix = $"Suppression {i} in {ConfigFileName}";
+            var prefix = $"Suppression {i} in {configPath}";
 
             if (entry == null)
                 throw new InvalidDataException($"{prefix} is empty.");
