@@ -358,7 +358,7 @@ public static class QueryStoreCommand
             }
             else
             {
-                Console.Error.WriteLine("No credentials. Use --login/--password or the credential store.");
+                Console.Error.WriteLine("No credentials provided. " + CredentialCommand.NoStoreMessage);
                 Environment.ExitCode = 1;
                 return;
             }
