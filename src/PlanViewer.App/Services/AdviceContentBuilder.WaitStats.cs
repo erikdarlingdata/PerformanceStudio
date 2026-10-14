@@ -224,9 +224,9 @@ internal static partial class AdviceContentBuilder
         }
 
         // Warning counts by severity
-        var criticalCount = stmt.Warnings.Count(w =>
+        var criticalCount = stmt.Warnings.Count(w => !w.IsSuppressed &&
             w.Severity.Equals("Critical", StringComparison.OrdinalIgnoreCase));
-        var warningCount = stmt.Warnings.Count(w =>
+        var warningCount = stmt.Warnings.Count(w => !w.IsSuppressed &&
             w.Severity.Equals("Warning", StringComparison.OrdinalIgnoreCase));
         if (criticalCount > 0 || warningCount > 0)
         {
@@ -246,7 +246,7 @@ internal static partial class AdviceContentBuilder
         }
 
         // Spill warnings
-        var spillCount = stmt.Warnings.Count(w =>
+        var spillCount = stmt.Warnings.Count(w => !w.IsSuppressed &&
             w.Type.Contains("Spill", StringComparison.OrdinalIgnoreCase));
         if (spillCount > 0)
         {

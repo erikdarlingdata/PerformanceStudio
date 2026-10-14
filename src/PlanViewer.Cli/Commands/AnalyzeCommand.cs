@@ -149,7 +149,17 @@ public static class AnalyzeCommand
             var configPath = parseResult.GetValue(configOption);
 
             // Load analyzer config
-            var analyzerConfig = ConfigLoader.Load(configPath);
+            AnalyzerConfig analyzerConfig;
+            try
+            {
+                analyzerConfig = ConfigLoader.Load(configPath);
+            }
+            catch (Exception ex) when (ex is System.IO.FileNotFoundException or System.IO.InvalidDataException)
+            {
+                Console.Error.WriteLine(ex.Message);
+                Environment.ExitCode = 1;
+                return;
+            }
 
             // Load .env file if present (CLI args take precedence)
             var env = ConnectionHelper.LoadEnvFile();

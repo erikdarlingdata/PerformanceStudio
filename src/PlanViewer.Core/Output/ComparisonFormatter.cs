@@ -238,7 +238,7 @@ public static class ComparisonFormatter
         }
 
         // Warning and missing index counts
-        AddCount(metrics, "Warnings", a.Warnings.Count, b.Warnings.Count);
+        AddCount(metrics, "Warnings", a.Warnings.Count(w => !w.IsSuppressed), b.Warnings.Count(w => !w.IsSuppressed));
         AddCount(metrics, "Missing indexes", a.MissingIndexes.Count, b.MissingIndexes.Count);
 
         var orderedWaitsA = a.WaitStats.OrderByDescending(w => w.WaitTimeMs).ToList();

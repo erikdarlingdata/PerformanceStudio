@@ -334,7 +334,17 @@ public static class QueryStoreCommand
                 };
             }
 
-            var analyzerConfig = ConfigLoader.Load(configPath);
+            AnalyzerConfig analyzerConfig;
+            try
+            {
+                analyzerConfig = ConfigLoader.Load(configPath);
+            }
+            catch (Exception ex) when (ex is System.IO.FileNotFoundException or System.IO.InvalidDataException)
+            {
+                Console.Error.WriteLine(ex.Message);
+                Environment.ExitCode = 1;
+                return;
+            }
 
             // Build connection string
             string connectionString;

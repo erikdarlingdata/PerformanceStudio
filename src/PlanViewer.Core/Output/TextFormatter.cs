@@ -36,6 +36,8 @@ public static class TextFormatter
         writer.WriteLine("=== Summary ===");
         writer.WriteLine($"Statements: {result.Summary.TotalStatements}");
         writer.WriteLine($"Warnings: {result.Summary.TotalWarnings} ({result.Summary.CriticalWarnings} critical)");
+        if (result.Summary.SuppressedWarnings > 0)
+            writer.WriteLine($"Suppressed warnings: {result.Summary.SuppressedWarnings}");
         writer.WriteLine($"Missing indexes: {result.Summary.MissingIndexes}");
         writer.WriteLine($"Actual stats: {(result.Summary.HasActualStats ? "yes" : "no (estimated plan)")}");
         if (result.Summary.WarningTypes.Count > 0)
@@ -193,7 +195,7 @@ public static class TextFormatter
                         ? $" (up to {(w.MaxBenefitPercent.Value >= 100 ? w.MaxBenefitPercent.Value.ToString("N0") : w.MaxBenefitPercent.Value.ToString("N1"))}% benefit)"
                         : "";
                     var legacyTag = w.IsLegacy ? " [legacy]" : "";
-                    writer.WriteLine($"  [{w.Severity}] {w.Type}{SourceTag(w.Source)}{legacyTag}{benefitTag}: {EscapeNewlines(w.Message)}");
+                    writer.WriteLine($"  [{w.Severity}] {w.Type}{SourceTag(w.Source)}{legacyTag}{SuppressedTag(w)}{benefitTag}: {EscapeNewlines(w.Message)}");
                     if (!string.IsNullOrEmpty(w.ActionableFix))
                         writer.WriteLine($"    Fix: {EscapeNewlines(w.ActionableFix)}");
                 }
@@ -339,7 +341,7 @@ public static class TextFormatter
 
         // Split each message into "data | explanation" at the last sentence boundary
         // that starts with "The " (the harm assessment). Group by shared explanation.
-        var entries = new List<(string Severity, string Operator, string Data, string? Explanation, double? Benefit, bool IsLegacy, string Source)>();
+        var entries = new List<(string Severity, string Operator, string Data, string? Explanation, double? Benefit, bool IsLegacy, string Source, string SuppressedTag)>();
         foreach (var w in sorted)
         {
             var msg = w.Message;
@@ -358,7 +360,7 @@ public static class TextFormatter
                 data = msg;
             }
 
-            entries.Add((w.Severity, w.Operator ?? "?", data, explanation, w.MaxBenefitPercent, w.IsLegacy, w.Source));
+            entries.Add((w.Severity, w.Operator ?? "?", data, explanation, w.MaxBenefitPercent, w.IsLegacy, w.Source, SuppressedTag(w)));
         }
 
         // Group entries that share the same severity, type, and explanation
@@ -380,7 +382,7 @@ public static class TextFormatter
                     var benefitTag = item.Benefit.HasValue
                         ? $" (up to {(item.Benefit.Value >= 100 ? item.Benefit.Value.ToString("N0") : item.Benefit.Value.ToString("N1"))}% benefit)"
                         : "";
-                    writer.WriteLine($"  [{item.Severity}] {item.Operator}{SourceTag(item.Source)}{legacyTag}{benefitTag}: {EscapeNewlines(item.Data)}");
+                    writer.WriteLine($"  [{item.Severity}] {item.Operator}{SourceTag(item.Source)}{legacyTag}{item.SuppressedTag}{benefitTag}: {EscapeNewlines(item.Data)}");
                 }
                 writer.WriteLine($"  -> {group.Key.Item2}");
             }
@@ -394,7 +396,7 @@ public static class TextFormatter
                     var benefitTag = item.Benefit.HasValue
                         ? $" (up to {(item.Benefit.Value >= 100 ? item.Benefit.Value.ToString("N0") : item.Benefit.Value.ToString("N1"))}% benefit)"
                         : "";
-                    writer.WriteLine($"  [{item.Severity}] {item.Operator}{SourceTag(item.Source)}{legacyTag}{benefitTag}: {EscapeNewlines(full)}");
+                    writer.WriteLine($"  [{item.Severity}] {item.Operator}{SourceTag(item.Source)}{legacyTag}{item.SuppressedTag}{benefitTag}: {EscapeNewlines(full)}");
                 }
             }
         }
@@ -427,6 +429,14 @@ public static class TextFormatter
     /// </summary>
     private static string SourceTag(string? source) =>
         source == nameof(PlanViewer.Core.Models.PlanWarningSource.SqlServer) ? " [SQL Server]" : "";
+
+    /// <summary>The " [suppressed: reason]" tag for a finding a .planview.json suppression matched (#651).</summary>
+    private static string SuppressedTag(WarningResult w) =>
+        w.IsSuppressed
+            ? string.IsNullOrWhiteSpace(w.SuppressionReason)
+                ? " [suppressed]"
+                : $" [suppressed: {EscapeNewlines(w.SuppressionReason)}]"
+            : "";
 
     private static string EscapeNewlines(string text) => text.Replace('\n', '\x1F');
 

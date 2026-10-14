@@ -32,6 +32,9 @@ public sealed class PlanSummaryResult
     [JsonPropertyName("critical_warnings")]
     public int CriticalWarnings { get; init; }
 
+    [JsonPropertyName("suppressed_warnings")]
+    public int SuppressedWarnings { get; init; }
+
     [JsonPropertyName("missing_indexes")]
     public int MissingIndexes { get; init; }
 
@@ -83,6 +86,15 @@ public sealed class PlanWarningItem
 
     [JsonPropertyName("statement")]
     public string Statement { get; init; } = "";
+
+    [JsonPropertyName("rule")]
+    public int? Rule { get; init; }
+
+    [JsonPropertyName("suppressed")]
+    public bool IsSuppressed { get; init; }
+
+    [JsonPropertyName("suppression_reason")]
+    public string? SuppressionReason { get; init; }
 }
 
 

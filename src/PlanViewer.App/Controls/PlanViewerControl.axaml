@@ -95,6 +95,12 @@
                 <TextBlock x:Name="CostText" DockPanel.Dock="Right" VerticalAlignment="Center"
                            HorizontalAlignment="Right" Background="Transparent"
                            Foreground="{DynamicResource ForegroundBrush}" FontSize="11"/>
+                <!-- Non-fatal notice when .planview.json could not be used (#651). The plan still
+                     loads with default settings; the full message, which names the file, is the tooltip. -->
+                <TextBlock x:Name="ConfigNoticeText" DockPanel.Dock="Right" VerticalAlignment="Center"
+                           HorizontalAlignment="Right" Background="Transparent" IsVisible="False"
+                           Margin="0,0,12,0" MaxWidth="420" TextTrimming="CharacterEllipsis"
+                           FontSize="11"/>
                 <!-- Same contract as the session toolbar's chevron: docked so it cannot scroll
                      away, inboard of the cost readout, hidden until the menu holds something. -->
                 <!-- Margin differs from the session toolbar's chevron on purpose: that row's

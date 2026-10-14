@@ -205,6 +205,10 @@ internal static partial class AdviceContentBuilder
             tags.Add("SQL Server");
         if (w.IsLegacy)
             tags.Add("legacy");
+        if (w.IsSuppressed)
+            tags.Add(string.IsNullOrWhiteSpace(w.SuppressionReason)
+                ? "suppressed"
+                : $"suppressed: {w.SuppressionReason}");
         if (w.MaxBenefitPercent.HasValue)
             tags.Add($"up to {FormatBenefit(w.MaxBenefitPercent.Value)}% benefit");
         if (tags.Count > 0)

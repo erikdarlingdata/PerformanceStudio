@@ -171,8 +171,8 @@ public partial class PlanViewerControl : UserControl
                 ElapsedMs = stmt.QueryTimeStats?.ElapsedTimeMs ?? 0,
                 UdfMs = stmt.QueryUdfElapsedTimeMs,
                 EstCost = stmt.StatementSubTreeCost,
-                Critical = allWarnings.Count(w => w.Severity == PlanWarningSeverity.Critical),
-                Warnings = allWarnings.Count(w => w.Severity == PlanWarningSeverity.Warning),
+                Critical = allWarnings.Count(w => !w.IsSuppressed && w.Severity == PlanWarningSeverity.Critical),
+                Warnings = allWarnings.Count(w => !w.IsSuppressed && w.Severity == PlanWarningSeverity.Warning),
                 Statement = stmt
             });
         }

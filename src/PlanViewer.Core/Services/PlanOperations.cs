@@ -312,6 +312,7 @@ public sealed class PlanOperations
             TotalStatements = analysis.Summary.TotalStatements,
             TotalWarnings = analysis.Summary.TotalWarnings,
             CriticalWarnings = analysis.Summary.CriticalWarnings,
+            SuppressedWarnings = analysis.Summary.SuppressedWarnings,
             MissingIndexes = analysis.Summary.MissingIndexes,
             HasActualStats = analysis.Summary.HasActualStats,
             MaxEstimatedCost = analysis.Summary.MaxEstimatedCost,
@@ -685,7 +686,12 @@ public sealed class PlanOperations
         Message = Truncate(warning.Message, DefaultMaxResponseTextLength),
         NodeId = warning.NodeId,
         Operator = warning.Operator is null ? null : Truncate(warning.Operator, 512),
-        Statement = statement
+        Statement = statement,
+        Rule = warning.Rule,
+        IsSuppressed = warning.IsSuppressed,
+        SuppressionReason = warning.SuppressionReason is null
+            ? null
+            : Truncate(warning.SuppressionReason, DefaultMaxResponseTextLength)
     };
 
     private static BoundedColumnList BoundColumns(IEnumerable<string> columns)

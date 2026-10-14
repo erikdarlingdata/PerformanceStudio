@@ -512,6 +512,7 @@ Options:
   --timeout <seconds>        Query timeout (default: 60)
   --login <name>             SQL Server login (bypasses credential store)
   --password <password>      SQL Server password (bypasses credential store)
+  --config <path>            Path to a .planview.json config file (overrides auto-discovery)
 ```
 
 ### `planview credential`
@@ -523,6 +524,62 @@ planview credential remove <server>
 ```
 
 On Linux, `planview credential` exits with an error. See [Platform Support](#platform-support).
+
+### Configuration file (.planview.json)
+
+A `.planview.json` file changes what the analyzer reports. The CLI commands `analyze`, `query-store` and `repl` read it. The desktop app reads it each time it opens a plan. The MCP server does not read it and always uses the defaults.
+
+The file is looked for in this order, and the first one found wins:
+
+1. The path given to `--config`. If that file does not exist, the command stops with an error.
+2. `.planview.json` in the current directory.
+3. `.planview.json` in your home directory.
+
+If none exists, the analyzer uses its defaults. The file is JSON. Comments and trailing commas are allowed.
+
+```jsonc
+{
+  "rules": {
+    "disabled": [3],
+    "severity_overrides": { "10": "Info" }
+  },
+  "suppressions": [
+    {
+      "query_hash": "0x00E1987CD1C28B4C",
+      "rule": 10,
+      "operator": "eventuous.Messages",
+      "reason": "Library procedure. The library owns the clustered index."
+    },
+    {
+      "query_hash": "00e1987cd1c28b4c",
+      "type": "Implicit Conversion",
+      "reason": "Accepted. A vendor fixes the column type."
+    }
+  ]
+}
+```
+
+The `rules.disabled` list holds rule numbers. A disabled rule never runs.
+
+The `rules.severity_overrides` map gives a rule number a new severity. The allowed values are `Info`, `Warning` and `Critical`.
+
+The `suppressions` list marks single findings as accepted. Use it when a finding is correct but you cannot or will not act on it. A suppressed finding is not removed. It stays in the output with `"suppressed": true` and its reason. The text output tags it as `[suppressed: <reason>]` and the HTML output shows a `suppressed: <reason>` badge. A suppressed finding keeps its severity, including one set by `severity_overrides`.
+
+A suppressed finding does not count toward `total_warnings`, `critical_warnings` or `warning_types`. The summary reports it in `suppressed_warnings` instead. The same rule applies to the counts in the desktop app.
+
+Each suppression has these fields:
+
+| Field | Required | Meaning |
+|-------|----------|---------|
+| `query_hash` | Yes | The query hash of the statement. Leading `0x` is optional and case does not matter, so `0x00E1987CD1C28B4C` and `00e1987cd1c28b4c` are the same hash. The suppression applies to that statement only, including statements inside a stored procedure body. |
+| `rule` | One of `rule` or `type` | A rule number. It matches findings from that rule. It never matches a warning that SQL Server wrote into the plan, because no rule produced it. |
+| `type` | One of `rule` or `type` | A warning type, such as `Implicit Conversion`. The whole type must match and case does not matter. Use it for warnings that have no rule number. If you give both `rule` and `type`, both must match. |
+| `operator` | No | Text that must appear in the operator label. Case does not matter. Use the label from the `operator` field of the JSON output, such as `Key Lookup on eventuous.Messages (Node 1)`. A partial match works, so `eventuous.Messages` is enough. A finding on the statement as a whole has no operator, so a suppression that sets `operator` never matches it. |
+| `reason` | Yes | Why the finding is accepted. It must not be empty. |
+
+A suppression that is missing a field is an error. The command prints one line that names the file, for example `Suppression 2 in C:\work\team.json has no "reason".`, and exits with code 1. The number is the zero-based position in the list. The desktop app does not stop. It opens the plan with the defaults and shows the message in the toolbar.
+
+To find the `query_hash` of a statement, run `planview analyze` with JSON output and read `statements[].query_hash`. Each warning in the JSON also shows its `rule` number when a rule produced it, and its `operator` label when it belongs to an operator.
 
 ## Authentication
 
@@ -582,7 +639,7 @@ The analyzer runs 30 rules against each plan, covering:
 | Objects | Table variables, table-valued functions, CTE multiple references, eager index spools, lazy spools, row count spools |
 | Operators | Operator self-time calculation with per-thread awareness for parallel plans |
 
-Rules can be disabled or have their severity overridden via a `.planview.json` config file. See the `--config` option.
+Rules can be disabled, have their severity overridden, or have single findings suppressed per statement via a `.planview.json` config file. See [Configuration file](#configuration-file-planviewjson).
 
 ## Sponsors
 
