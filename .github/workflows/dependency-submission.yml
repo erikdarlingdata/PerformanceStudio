@@ -1,0 +1,44 @@
+name: Dependency submission
+
+# Dependabot's dependency graph cannot read versions from Directory.Packages.props (central
+# package management) and no project has a packages.lock.json, so the graph lists direct
+# packages with no version and no transitive packages at all. That means no Dependabot
+# alerts for a vulnerable transitive package (issue #650). This job restores the projects and
+# submits what NuGet actually resolved, transitive packages included.
+#
+# Dependabot alerts read the default branch (main), so transitive alerts start after the
+# next dev-to-main release merge. The dev trigger lets the workflow be exercised earlier.
+
+on:
+  push:
+    branches: [main, dev]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  submit:
+    # Windows, so the old-format SSMS add-in project can be restored with MSBuild too.
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup .NET 10.0
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.x
+
+      # The detector reads project.assets.json, which only exists after a restore.
+      - name: Restore solution
+        run: dotnet restore PlanViewer.sln
+
+      - name: Restore SSMS projects
+        run: |
+          dotnet restore src/PlanViewer.Ssms.Installer/PlanViewer.Ssms.Installer.csproj
+          dotnet restore tests/PlanViewer.Ssms.Installer.Tests/PlanViewer.Ssms.Installer.Tests.csproj
+          msbuild src/PlanViewer.Ssms/PlanViewer.Ssms.csproj -t:Restore -p:Configuration=Release
+
+      - name: Submit dependency snapshot
+        uses: advanced-security/component-detection-dependency-submission-action@a02aeda7a175ad4dd38a13c4d3ff2df9da8f2cf0 # v0.2.0

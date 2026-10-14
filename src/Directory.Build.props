@@ -1,4 +1,7 @@
 <Project>
+
+  <!-- MSBuild stops at the nearest Directory.Build.props, so chain to the repo-root one (NuGet audit settings, #650). -->
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
   <!--
     Single source of truth for product version + identity across src/ projects.
 

@@ -12,6 +12,8 @@
     <PackageReference Include="Meziantou.Framework.Win32.CredentialManager" />
     <PackageReference Include="Microsoft.Data.SqlClient.Extensions.Azure" />
     <PackageReference Include="Microsoft.SqlServer.TransactSql.ScriptDom" />
+    <!-- Direct reference so the central pin (issue #650) beats SqlClient's transitive 9.0.18. -->
+    <PackageReference Include="System.Security.Cryptography.Pkcs" />
   </ItemGroup>
 
   <ItemGroup>
