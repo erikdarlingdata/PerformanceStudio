@@ -7,6 +7,13 @@ namespace PlanViewer.Cli.Commands;
 
 public static class CredentialCommand
 {
+    /// <summary>
+    /// What analyze, query-store and credential print when there is no credential store (Linux).
+    /// </summary>
+    public const string NoStoreMessage =
+        "Credential storage is not available on this operating system. Only Windows and macOS have a credential store. " +
+        "Pass --login and --password-stdin, or put PLANVIEW_LOGIN and PLANVIEW_PASSWORD in a .env file.";
+
     public static Command Create(ICredentialService credentialService)
     {
         var cmd = new Command("credential", "Manage stored server credentials");
@@ -14,6 +21,34 @@ public static class CredentialCommand
         cmd.Subcommands.Add(CreateAddCommand(credentialService));
         cmd.Subcommands.Add(CreateListCommand(credentialService));
         cmd.Subcommands.Add(CreateRemoveCommand(credentialService));
+
+        return cmd;
+    }
+
+    /// <summary>
+    /// The credential command on an operating system with no credential store (Linux, issue 645).
+    /// It stays in --help, accepts whatever subcommand and options the user typed, and exits 1 with
+    /// <see cref="NoStoreMessage"/> instead of the parser's "Unrecognized command" line. Before
+    /// this, Linux got the in-memory store: `credential add` printed "Credential saved" and the
+    /// next planview run had nothing.
+    /// </summary>
+    public static Command CreateUnavailable()
+    {
+        var cmd = new Command("credential", "Manage stored server credentials (not available on this operating system)")
+        {
+            TreatUnmatchedTokensAsErrors = false
+        };
+        cmd.Arguments.Add(new Argument<string[]>("arguments")
+        {
+            Arity = ArgumentArity.ZeroOrMore,
+            Hidden = true
+        });
+
+        cmd.SetAction(_ =>
+        {
+            Console.Error.WriteLine(NoStoreMessage);
+            return 1;
+        });
 
         return cmd;
     }

@@ -7,9 +7,9 @@ namespace PlanViewer.Cli;
 public static class CliRoot
 {
     /// <summary>
-    /// The System.CommandLine commands: analyze, query-store, and credential where credentials can
-    /// be stored. Program.cs runs this tree, and the tests parse it, so a command added here is seen
-    /// by both.
+    /// The System.CommandLine commands: analyze, query-store, and credential. Without a credential
+    /// store (Linux), credential stays in --help and exits 1 with the reason. Program.cs runs this
+    /// tree, and the tests parse it, so a command added here is seen by both.
     /// </summary>
     public static RootCommand Create(ICredentialService? credentialService)
     {
@@ -19,8 +19,9 @@ public static class CliRoot
             QueryStoreCommand.Create(credentialService),
         };
 
-        if (credentialService != null)
-            root.Add(CredentialCommand.Create(credentialService));
+        root.Add(credentialService != null
+            ? CredentialCommand.Create(credentialService)
+            : CredentialCommand.CreateUnavailable());
 
         return root;
     }
