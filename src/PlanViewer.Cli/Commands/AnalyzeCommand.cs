@@ -319,7 +319,7 @@ public static class AnalyzeCommand
         }
         else
         {
-            Console.Error.WriteLine("No credentials provided. Use --login/--password, a .env file, or the credential store.");
+            Console.Error.WriteLine("No credentials provided. " + CredentialCommand.NoStoreMessage);
             Environment.ExitCode = 1;
             return;
         }

@@ -13,6 +13,31 @@
     <AssemblyName>planview</AssemblyName>
   </PropertyGroup>
 
+  <!--
+    Packed as a .NET tool (issue 645): `dotnet tool install -g PerformanceStudio.Cli` gives a
+    `planview` command on any OS with the .NET 10 runtime, and release.yml pushes the package to
+    nuget.org on every release. PackageId must stay here, not on the dotnet pack command line:
+    a global PackageId reaches PlanViewer.Core through the ProjectReference too, and the pack
+    then fails with "Ambiguous project name". The version comes from Directory.Build.props.
+  -->
+  <PropertyGroup>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>planview</ToolCommandName>
+    <PackageId>PerformanceStudio.Cli</PackageId>
+    <Description>Command-line SQL Server execution plan analyzer from Performance Studio. Reads .sqlplan files or captures plans from a live server, and reports the warnings as JSON or text.</Description>
+    <PackageTags>sql-server;execution-plan;sqlplan;query-store;performance;dotnet-tool;cli</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/erikdarlingdata/PerformanceStudio</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/erikdarlingdata/PerformanceStudio</RepositoryUrl>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageIcon>PerformanceStudioIcon.png</PackageIcon>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+    <None Include="..\PlanViewer.Ssms\Resources\PerformanceStudioIcon.png" Pack="true" PackagePath="\" Visible="false" />
+  </ItemGroup>
+
   <ItemGroup>
     <InternalsVisibleTo Include="PlanViewer.Core.Tests" />
   </ItemGroup>

@@ -119,6 +119,28 @@ xattr -cr PerformanceStudio.app
 
 Then open the app normally.
 
+## Install the CLI
+
+The `planview` command is a .NET tool on nuget.org. It needs the .NET 10 runtime.
+
+```bash
+dotnet tool install -g PerformanceStudio.Cli
+planview analyze --help
+```
+
+For a CI pipeline, install into a folder and pin the version. A `dotnet-tools.json` manifest works too.
+
+```bash
+dotnet tool install --tool-path ./tools PerformanceStudio.Cli --version <version>
+./tools/planview analyze plan.sqlplan --compact
+```
+
+To update:
+
+```bash
+dotnet tool update -g PerformanceStudio.Cli
+```
+
 ## Build from Source
 
 Clone and build:
@@ -276,7 +298,7 @@ planview credential list                            # show stored credentials
 planview credential remove my-server                # delete credential
 ```
 
-Credentials are stored in the OS credential store — Windows Credential Manager on Windows, Apple Keychain on macOS. Nothing is written to disk in plaintext.
+Credentials are stored in the OS credential store: Windows Credential Manager on Windows, Apple Keychain on macOS. Nothing is written to disk in plaintext. Linux has no credential store, so `planview credential` exits with an error there. Pass `--login` and `--password-stdin`, or put `PLANVIEW_LOGIN` and `PLANVIEW_PASSWORD` in a `.env` file.
 
 ## Example Output
 
@@ -500,6 +522,8 @@ planview credential list
 planview credential remove <server>
 ```
 
+On Linux, `planview credential` exits with an error. See [Platform Support](#platform-support).
+
 ## Authentication
 
 There are three ways to authenticate, in order of precedence:
@@ -518,7 +542,7 @@ Override the auto-detection with `--auth windows`, `--auth sql`, or `--auth entr
 |----------|-----|-----|-----------------|
 | Windows  | Yes | Yes | Windows Credential Manager |
 | macOS    | Yes | Yes | Apple Keychain |
-| Linux    | Yes | Yes | Not yet (file analysis works) |
+| Linux    | Yes | Yes | None. Use `--login` with `--password-stdin`, or a `.env` file |
 
 ### macOS: SQL Server via Docker
 
