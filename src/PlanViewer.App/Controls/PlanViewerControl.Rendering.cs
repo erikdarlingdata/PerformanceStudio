@@ -19,8 +19,9 @@ public partial class PlanViewerControl : UserControl
 {
     private static void CountNodeWarnings(PlanNode node, ref int total, ref int critical)
     {
-        total += node.Warnings.Count;
-        critical += node.Warnings.Count(w => w.Severity == PlanWarningSeverity.Critical);
+        // Suppressed findings (#651) stay visible but do not count, matching the analysis summary.
+        total += node.Warnings.Count(w => !w.IsSuppressed);
+        critical += node.Warnings.Count(w => !w.IsSuppressed && w.Severity == PlanWarningSeverity.Critical);
         foreach (var child in node.Children)
             CountNodeWarnings(child, ref total, ref critical);
     }
@@ -568,6 +569,11 @@ public partial class PlanViewerControl : UserControl
     /// </summary>
     private static string WarningSourceTag(PlanWarning warning) =>
         warning.Source == PlanWarningSource.SqlServer ? " [SQL Server]" : "";
+
+    private static string SuppressedWarningTag(PlanWarning warning) =>
+        !warning.IsSuppressed ? ""
+        : string.IsNullOrWhiteSpace(warning.SuppressionReason) ? " [suppressed]"
+        : $" [suppressed: {warning.SuppressionReason}]";
 
     private static bool HasSpillInPlanTree(PlanNode node)
     {

@@ -12,9 +12,14 @@ public sealed class HistoricalCliContractTests
        operator that produced it. Nothing has been removed or renamed either time, so a consumer
        reading fields by name is unaffected — but anything diffing or hashing whole output sees
        different bytes, which is exactly what this constant exists to make somebody decide on rather
-       than discover. Verified for #440 that the only new key on a warning is origin_node_ids. */
+       than discover. Verified for #440 that the only new key on a warning is origin_node_ids.
+
+       Rolled a third time for #651, again additively: every warning gains "suppressed" (always
+       written) and "rule" (written when a numbered rule produced it), and the summary gains
+       "suppressed_warnings". Verified by removing exactly those keys from the new output, which
+       gives back the previous hash, 779a85036b74dc7cc7d26d4bad3d7e2b327e4ff89a5ed79b00b78cfae3717cab. */
     private const string ExpectedCompactOutputSha256 =
-        "779a85036b74dc7cc7d26d4bad3d7e2b327e4ff89a5ed79b00b78cfae3717cab";
+        "0eeb5da0bc69ceb162100f4326eee446e07234b4cc1b6660dda19221f951f01a";
 
     [Fact]
     public async Task AnalyzeCompact_PreservesHistoricalOutputBytes()

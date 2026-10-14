@@ -457,6 +457,15 @@ public class PlanWarning
     /// Renderers show a "legacy" badge when true.
     /// </summary>
     public bool IsLegacy { get; set; }
+
+    /// <summary>
+    /// True when a suppression in .planview.json matched this finding (#651). The warning is kept,
+    /// never removed, so a reader can still see it and why it was set aside.
+    /// </summary>
+    public bool IsSuppressed { get; set; }
+
+    /// <summary>The "reason" from the matching suppression. Null unless <see cref="IsSuppressed"/>.</summary>
+    public string? SuppressionReason { get; set; }
 }
 
 public enum PlanWarningSeverity { Info, Warning, Critical }

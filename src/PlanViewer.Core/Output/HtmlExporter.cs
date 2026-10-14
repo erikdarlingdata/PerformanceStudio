@@ -194,6 +194,7 @@ pre.mi-create {
 .warn-type { font-size: 0.75rem; font-weight: 600; }
 .warn-benefit { font-size: 0.7rem; font-weight: 600; color: var(--text-muted); padding: 0.05rem 0.3rem; border-radius: 3px; background: rgba(0,0,0,0.04); }
 .warn-msg { font-size: 0.8rem; color: var(--text); flex-basis: 100%; }
+.warn-suppressed { font-size: 0.65rem; font-weight: 600; color: var(--text-muted); padding: 0.05rem 0.3rem; border-radius: 3px; background: rgba(0,0,0,0.08); letter-spacing: 0.02em; }
 .warn-legacy { font-size: 0.65rem; font-weight: 600; color: var(--text-muted); padding: 0.05rem 0.3rem; border-radius: 3px; background: rgba(0,0,0,0.08); text-transform: uppercase; letter-spacing: 0.05em; }
 .warn-fix { font-size: 0.75rem; color: var(--text-secondary); font-style: italic; flex-basis: 100%; border-left: 2px solid var(--border); padding-left: 0.5rem; margin-top: 0.15rem; }
 .spill-tag { font-size: 0.75rem; font-weight: 600; color: var(--orange); margin-left: 0.4rem; }
@@ -493,9 +494,10 @@ pre.query-text, pre.text-output {
 
         if (allWarnings.Count == 0) return;
 
-        var critCount = allWarnings.Count(w => w.Severity == "Critical");
-        var warnCount = allWarnings.Count(w => w.Severity == "Warning");
-        var infoCount = allWarnings.Count(w => w.Severity == "Info");
+        // Suppressed findings (#651) are listed below but left out of the badge counts.
+        var critCount = allWarnings.Count(w => !w.IsSuppressed && w.Severity == "Critical");
+        var warnCount = allWarnings.Count(w => !w.IsSuppressed && w.Severity == "Warning");
+        var infoCount = allWarnings.Count(w => !w.IsSuppressed && w.Severity == "Info");
 
         sb.AppendLine("<div class=\"warnings-section\">");
         sb.Append("<h3>Warnings");
@@ -522,6 +524,8 @@ pre.query-text, pre.text-output {
             sb.AppendLine($"<span class=\"warn-type\">{Encode(w.Type)}</span>");
             if (w.IsLegacy)
                 sb.AppendLine("<span class=\"warn-legacy\" title=\"Legacy rule — predates the benefit-scoring framework\">legacy</span>");
+            if (w.IsSuppressed)
+                sb.AppendLine($"<span class=\"warn-suppressed\" title=\"Suppressed in .planview.json\">suppressed{(string.IsNullOrWhiteSpace(w.SuppressionReason) ? "" : ": " + Encode(w.SuppressionReason))}</span>");
             if (w.MaxBenefitPercent.HasValue)
                 sb.AppendLine($"<span class=\"warn-benefit\">up to {(w.MaxBenefitPercent.Value >= 100 ? w.MaxBenefitPercent.Value.ToString("N0") : w.MaxBenefitPercent.Value.ToString("N1"))}% benefit</span>");
             sb.AppendLine($"<span class=\"warn-msg\">{Encode(w.Message)}</span>");

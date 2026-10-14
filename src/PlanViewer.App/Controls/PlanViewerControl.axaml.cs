@@ -515,8 +515,9 @@ public partial class PlanViewerControl : UserControl
         foreach (var entry in everyStatement)
         {
             var s = entry.Statement;
-            warningCount += s.PlanWarnings.Count;
-            criticalCount += s.PlanWarnings.Count(w => w.Severity == PlanWarningSeverity.Critical);
+            // Suppressed findings (#651) do not count, matching the analysis summary.
+            warningCount += s.PlanWarnings.Count(w => !w.IsSuppressed);
+            criticalCount += s.PlanWarnings.Count(w => !w.IsSuppressed && w.Severity == PlanWarningSeverity.Critical);
             if (s.RootNode != null)
                 CountNodeWarnings(s.RootNode, ref warningCount, ref criticalCount);
         }

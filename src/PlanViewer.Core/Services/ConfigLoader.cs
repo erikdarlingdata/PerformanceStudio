@@ -54,7 +54,54 @@ public static class ConfigLoader
             return AnalyzerConfig.Default;
 
         var json = File.ReadAllText(configPath);
-        var config = JsonSerializer.Deserialize<AnalyzerConfig>(json, JsonOptions);
-        return config ?? AnalyzerConfig.Default;
+        AnalyzerConfig? config;
+        try
+        {
+            config = JsonSerializer.Deserialize<AnalyzerConfig>(json, JsonOptions);
+        }
+        catch (JsonException ex)
+        {
+            throw new InvalidDataException($"Could not read {configPath}: {ex.Message}", ex);
+        }
+
+        if (config == null)
+            return AnalyzerConfig.Default;
+
+        ValidateSuppressions(config);
+        return config;
+    }
+
+    /// <summary>
+    /// A suppression that cannot match anything, or that hides a finding without saying why,
+    /// is a mistake worth stopping for. Throws <see cref="InvalidDataException"/> naming the
+    /// entry by its zero-based index (#651).
+    /// </summary>
+    private static void ValidateSuppressions(AnalyzerConfig config)
+    {
+        var entries = config.Suppressions;
+        if (entries == null)
+            return;
+
+        for (var i = 0; i < entries.Count; i++)
+        {
+            var entry = entries[i];
+            var prefix = $"Suppression {i} in {ConfigFileName}";
+
+            if (entry == null)
+                throw new InvalidDataException($"{prefix} is empty.");
+
+            if (SuppressionEntry.NormalizeHash(entry.QueryHash).Length == 0)
+                throw new InvalidDataException($"{prefix} has an empty \"query_hash\".");
+
+            var hasType = !string.IsNullOrWhiteSpace(entry.Type);
+            if (entry.Rule == null && !hasType)
+                throw new InvalidDataException($"{prefix} needs \"rule\" or \"type\".");
+
+            if (entry.Operator != null && string.IsNullOrWhiteSpace(entry.Operator))
+                throw new InvalidDataException($"{prefix} has an empty \"operator\".");
+
+            if (string.IsNullOrWhiteSpace(entry.Reason))
+                throw new InvalidDataException($"{prefix} has no \"reason\".");
+        }
     }
 }

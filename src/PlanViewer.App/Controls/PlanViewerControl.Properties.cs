@@ -859,7 +859,7 @@ public partial class PlanViewerControl : UserControl
                 foreach (var w in sortedPlanWarnings)
                 {
                     var warnPanel = new StackPanel { Margin = new Thickness(10, 2, 10, 2) };
-                    var legacyTag = w.IsLegacy ? " [legacy]" : "";
+                    var legacyTag = (w.IsLegacy ? " [legacy]" : "") + SuppressedWarningTag(w);
                     var sourceTag = WarningSourceTag(w);
                     var planWarnHeader = w.MaxBenefitPercent.HasValue
                         ? $"\u26A0 {w.WarningType}{sourceTag}{legacyTag} \u2014 up to {FormatBenefitPercent(w.MaxBenefitPercent.Value)}% benefit"
@@ -945,7 +945,7 @@ public partial class PlanViewerControl : UserControl
                         ? $" \u2014 up to {FormatBenefitPercent(w.MaxBenefitPercent.Value)}% benefit"
                         : "";
                     var opHeaderText =
-                        $"\u26A0 {w.WarningType}{WarningSourceTag(w)}{(w.IsLegacy ? " [legacy]" : "")}{opBenefit}";
+                        $"\u26A0 {w.WarningType}{WarningSourceTag(w)}{(w.IsLegacy ? " [legacy]" : "")}{SuppressedWarningTag(w)}{opBenefit}";
                     var opHeader = new TextBlock
                     {
                         Text = opHeaderText,
@@ -1021,7 +1021,7 @@ public partial class PlanViewerControl : UserControl
             foreach (var w in sortedNodeWarnings)
             {
                 var warnPanel = new StackPanel { Margin = new Thickness(10, 2, 10, 2) };
-                var nodeLegacyTag = w.IsLegacy ? " [legacy]" : "";
+                var nodeLegacyTag = (w.IsLegacy ? " [legacy]" : "") + SuppressedWarningTag(w);
                 var nodeSourceTag = WarningSourceTag(w);
                 var nodeWarnHeader = w.MaxBenefitPercent.HasValue
                     ? $"\u26A0 {w.WarningType}{nodeSourceTag}{nodeLegacyTag} \u2014 up to {FormatBenefitPercent(w.MaxBenefitPercent.Value)}% benefit"

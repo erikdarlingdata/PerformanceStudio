@@ -39,6 +39,13 @@ public class AnalysisSummary
     [JsonPropertyName("critical_warnings")]
     public int CriticalWarnings { get; set; }
 
+    /// <summary>
+    /// Findings a suppression in .planview.json matched (#651). They are left out of
+    /// total_warnings, critical_warnings and warning_types.
+    /// </summary>
+    [JsonPropertyName("suppressed_warnings")]
+    public int SuppressedWarnings { get; set; }
+
     [JsonPropertyName("missing_indexes")]
     public int MissingIndexes { get; set; }
 
@@ -269,6 +276,20 @@ public class WarningResult
     /// </summary>
     [JsonPropertyName("is_legacy")]
     public bool IsLegacy { get; set; }
+
+    /// <summary>
+    /// The analyzer rule number that produced this finding. Omitted for the engine's own warnings
+    /// and for the wait-stats findings, which no numbered rule produces.
+    /// </summary>
+    [JsonPropertyName("rule")]
+    public int? Rule { get; set; }
+
+    /// <summary>True when a suppression in .planview.json matched this finding (#651).</summary>
+    [JsonPropertyName("suppressed")]
+    public bool IsSuppressed { get; set; }
+
+    [JsonPropertyName("suppression_reason")]
+    public string? SuppressionReason { get; set; }
 
     /// <summary>
     /// "SqlServer" when the engine wrote this into the plan's own &lt;Warnings&gt; element, or

@@ -71,6 +71,8 @@ internal static class PlanAnalysisPipeline
         cancellationToken.ThrowIfCancellationRequested();
         BenefitScorer.ScoreCancellable(plan, cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
+        // Last, so the scorer's wait-stats findings can be suppressed too (#651).
+        SuppressionApplier.Apply(plan, config);
         return plan;
     }
 }
