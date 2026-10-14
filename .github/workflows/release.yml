@@ -61,6 +61,9 @@ jobs:
       #    release. The push to nuget.org is the last step of the job, after
       #    every App asset is up. The package ID, tool name and metadata live
       #    in PlanViewer.Cli.csproj; the version comes from Directory.Build.props.
+      #    The install at the end is a smoke test: a package that does not
+      #    install and run as a tool is not pushed, and the warning step at
+      #    the end of the job says so.
       - name: Pack the planview CLI as a .NET tool
         id: pack-cli
         continue-on-error: true
@@ -69,9 +72,16 @@ jobs:
           VERSION: ${{ steps.version.outputs.VERSION }}
         run: |
           dotnet pack src/PlanViewer.Cli/PlanViewer.Cli.csproj -c Release -o releases/nuget
-          if (-not (Test-Path "releases/nuget/PerformanceStudio.Cli.$env:VERSION.nupkg")) {
-            throw "dotnet pack did not produce releases/nuget/PerformanceStudio.Cli.$env:VERSION.nupkg"
+          $package = "releases/nuget/PerformanceStudio.Cli.$env:VERSION.nupkg"
+          if (-not (Test-Path $package)) {
+            throw "dotnet pack did not produce $package"
           }
+          dotnet tool install PerformanceStudio.Cli --version $env:VERSION --tool-path tool-smoke --add-source releases/nuget --ignore-failed-sources
+          $reported = & tool-smoke/planview --version
+          if ($LASTEXITCODE -ne 0 -or -not "$reported".StartsWith($env:VERSION)) {
+            throw "the installed tool did not run or reported '$reported' instead of version $env:VERSION"
+          }
+          Write-Host "planview $reported installed from $package and ran."
 
       - name: Publish App (all platforms)
         run: |

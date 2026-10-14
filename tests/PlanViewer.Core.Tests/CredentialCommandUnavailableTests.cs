@@ -24,7 +24,7 @@ public sealed class CredentialCommandUnavailableTests
         Console.SetError(captured);
         try
         {
-            var code = await CliRoot.Create(null).Parse(args).InvokeAsync();
+            var code = await CliRoot.Create(null).Parse(args).InvokeAsync(cancellationToken: TestContext.Current.CancellationToken);
 
             Assert.Equal(1, code);
             Assert.Equal(CredentialCommand.NoStoreMessage, captured.ToString().Trim());
