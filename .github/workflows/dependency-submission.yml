@@ -65,14 +65,18 @@ jobs:
       - name: Add MSBuild to PATH
         uses: microsoft/setup-msbuild@30375c66a4eea26614e0d39710365f22f8b0af57 # v3.0.0
 
-      # bash runs with -eo pipefail, so the first failing restore fails the step (pwsh would only
-      # report the last command's exit code). msbuild is on PATH from the step above.
+      # pwsh, because the msbuild folder that setup-msbuild adds to PATH reaches pwsh steps but not
+      # bash steps on the Windows runner (run 38660830104 failed with "msbuild: command not found").
+      # pwsh only reports the last command's exit code, so each command checks its own.
       - name: Restore SSMS projects
-        shell: bash
+        shell: pwsh
         run: |
           dotnet restore src/PlanViewer.Ssms.Installer/PlanViewer.Ssms.Installer.csproj -p:NuGetAudit=false
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           dotnet restore tests/PlanViewer.Ssms.Installer.Tests/PlanViewer.Ssms.Installer.Tests.csproj -p:NuGetAudit=false
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           msbuild src/PlanViewer.Ssms/PlanViewer.Ssms.csproj -t:Restore -p:Configuration=Release -p:NuGetAudit=false
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
 
       # Fails when there is no assets file or no resolved package, so a broken restore cannot
       # replace the graph with an empty snapshot, and when an assets file records a restore error.
