@@ -114,9 +114,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           # sha, ref and run id come from this run, not from the artifact.
-          jq --arg sha "$GITHUB_SHA" --arg ref "$GITHUB_REF" --arg id "$GITHUB_RUN_ID"             '.sha = $sha | .ref = $ref | .job.id = $id' snapshot.json > body.json
+          jq --arg sha "$GITHUB_SHA" --arg ref "$GITHUB_REF" --arg id "$GITHUB_RUN_ID" \
+            '.sha = $sha | .ref = $ref | .job.id = $id' snapshot.json > body.json
           # On an HTTP error gh writes the error body to stdout, so print it.
-          if ! gh api --method POST -H "Accept: application/vnd.github+json"             "repos/$GITHUB_REPOSITORY/dependency-graph/snapshots"             --input body.json > response.json; then
+          if ! gh api --method POST -H "Accept: application/vnd.github+json" \
+               "repos/$GITHUB_REPOSITORY/dependency-graph/snapshots" \
+               --input body.json > response.json; then
             cat response.json
             exit 1
           fi
