@@ -1,3 +1,4 @@
+#Requires -Version 7.0
 <#
 .SYNOPSIS
     Builds a GitHub dependency snapshot from the obj/project.assets.json files NuGet wrote.
@@ -10,7 +11,9 @@
 
     The resolved map is keyed by package URL and dependencies list package URLs, as in the
     snapshots GitHub accepted from the component-detection action. Packages in tests/ projects
-    get scope 'development', all others 'runtime'.
+    get scope 'development'; every other project's packages get 'runtime'. The assets file does
+    not mark build-time packages in product projects (ILLink, the WASM DevServer,
+    VSSDK.BuildTools), so they are listed as 'runtime' too. That only affects alert triage.
 
     One manifest per project per target framework. The manifest is named after the project file
     (relative to the repository root, forward slashes), with the target framework appended in
@@ -91,13 +94,21 @@ $totalResolved = 0
 foreach ($file in $assetsFiles) {
     $assets = Get-Content -LiteralPath $file.FullName -Raw | ConvertFrom-Json
 
+    # NuGet writes the assets file even when the restore failed, with the packages it could
+    # resolve and an Error entry in logs. A partial graph must not replace the full one.
+    $restoreErrors = @($assets.logs | Where-Object { $_.level -eq 'Error' })
+    if ($restoreErrors.Count -gt 0) {
+        throw "$($file.FullName): restore logged $($restoreErrors.Count) error(s), first $($restoreErrors[0].code). The snapshot would be incomplete."
+    }
+
     $projectPath = $assets.project.restore.projectPath
     if ([string]::IsNullOrWhiteSpace($projectPath)) {
         Write-Warning "Skipping $($file.FullName): no project.restore.projectPath."
         continue
     }
     $projectFile = Get-RelativePath $projectPath
-    # Test-only packages are development dependencies; everything else ships.
+    # Packages in tests/ projects are development; everything else is reported as runtime,
+    # build-only tools in product projects included (the assets file does not mark them).
     $scope = $(if ($projectFile -like 'tests/*') { 'development' } else { 'runtime' })
 
     # The direct references: names listed for the target framework, plus the framework-less group.

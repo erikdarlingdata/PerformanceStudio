@@ -24,6 +24,12 @@ on:
 
 permissions: {}
 
+# A newer push cancels an older run still in progress, so the latest commit's graph is the last
+# one submitted and an older sha cannot overwrite it.
+concurrency:
+  group: dependency-submission-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   detect:
     # Windows, so the old-format SSMS add-in project can be restored with MSBuild too.
@@ -52,19 +58,29 @@ jobs:
       - name: Restore solution
         run: dotnet restore PlanViewer.sln -p:NuGetAudit=false
 
+      # server/PlanShare is not in PlanViewer.sln and is the internet-facing component.
+      - name: Restore PlanShare
+        run: dotnet restore server/PlanShare/PlanShare.csproj -p:NuGetAudit=false
+
       - name: Add MSBuild to PATH
         uses: microsoft/setup-msbuild@30375c66a4eea26614e0d39710365f22f8b0af57 # v3.0.0
 
+      # bash runs with -eo pipefail, so the first failing restore fails the step (pwsh would only
+      # report the last command's exit code). msbuild is on PATH from the step above.
       - name: Restore SSMS projects
+        shell: bash
         run: |
           dotnet restore src/PlanViewer.Ssms.Installer/PlanViewer.Ssms.Installer.csproj -p:NuGetAudit=false
           dotnet restore tests/PlanViewer.Ssms.Installer.Tests/PlanViewer.Ssms.Installer.Tests.csproj -p:NuGetAudit=false
           msbuild src/PlanViewer.Ssms/PlanViewer.Ssms.csproj -t:Restore -p:Configuration=Release -p:NuGetAudit=false
 
       # Fails when there is no assets file or no resolved package, so a broken restore cannot
-      # replace the graph with an empty snapshot. The correlator is the one the previous action
-      # used by default (the job id, "submit"), so this snapshot replaces its snapshot instead of
-      # adding a second view. Values reach the script through env vars, never spliced into the script text.
+      # replace the graph with an empty snapshot, and when an assets file records a restore error.
+      # GitHub keeps the latest snapshot per correlator plus detector name. The correlator stays
+      # "submit" so it is stable for this workflow, but the detector name differs from the old
+      # action's, so this snapshot does not replace that one: the old action's snapshot exists only
+      # on dev and stays beside this one (main never received one).
+      # Values reach the script through env vars, never spliced into the script text.
       - name: Build dependency snapshot
         shell: pwsh
         env:
@@ -97,14 +113,19 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh api --method POST -H "Accept: application/vnd.github+json" \
-            "repos/${{ github.repository }}/dependency-graph/snapshots" \
-            --input snapshot.json > response.json
+          # sha, ref and run id come from this run, not from the artifact.
+          jq --arg sha "$GITHUB_SHA" --arg ref "$GITHUB_REF" --arg id "$GITHUB_RUN_ID"             '.sha = $sha | .ref = $ref | .job.id = $id' snapshot.json > body.json
+          # On an HTTP error gh writes the error body to stdout, so print it.
+          if ! gh api --method POST -H "Accept: application/vnd.github+json"             "repos/$GITHUB_REPOSITORY/dependency-graph/snapshots"             --input body.json > response.json; then
+            cat response.json
+            exit 1
+          fi
           cat response.json
           echo
-          result=$(jq -r '.result' response.json)
+          result=$(jq -r '.result // empty' response.json)
           echo "result: $result"
-          echo "message: $(jq -r '.message' response.json)"
-          if [ "$result" = "INVALID" ]; then
+          echo "message: $(jq -r '.message // empty' response.json)"
+          if [ "$result" != "SUCCESS" ] && [ "$result" != "ACCEPTED" ]; then
+            echo "unexpected result: '$result'"
             exit 1
           fi
