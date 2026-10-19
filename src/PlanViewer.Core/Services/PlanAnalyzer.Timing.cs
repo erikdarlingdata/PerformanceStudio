@@ -53,7 +53,7 @@ public static partial class PlanAnalyzer
     /// </summary>
     internal static long GetOperatorOwnElapsedMs(PlanNode node)
     {
-        if (node.ActualExecutionMode == "Batch")
+        if ((node.ActualExecutionMode ?? node.ExecutionMode) == "Batch")
             return node.ActualElapsedMs;
 
         // Parallel plan with per-thread data: calculate self-time per thread
@@ -204,7 +204,7 @@ public static partial class PlanAnalyzer
 
         // Batch mode reports each thread's own CPU directly. Subtracting the
         // children would take their standalone CPU off a number that never held it.
-        if (node.ActualExecutionMode == "Batch")
+        if ((node.ActualExecutionMode ?? node.ExecutionMode) == "Batch")
             return WorkThreads(node).Select(t => t.ActualCPUMs).DefaultIfEmpty(0).Max();
 
         if (node.PerThreadStats.Count > 1)
@@ -229,7 +229,7 @@ public static partial class PlanAnalyzer
     {
         if (!node.HasActualStats || node.ActualCPUMs <= 0) return 0;
 
-        if (node.ActualExecutionMode == "Batch")
+        if ((node.ActualExecutionMode ?? node.ExecutionMode) == "Batch")
             return node.ActualCPUMs;
 
         if (node.PerThreadStats.Count > 1)
