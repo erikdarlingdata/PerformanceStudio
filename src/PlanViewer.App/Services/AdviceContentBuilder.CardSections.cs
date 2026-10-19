@@ -382,8 +382,9 @@ internal static partial class AdviceContentBuilder
     /// takes — deliberately the same three lines <see cref="TextFormatter"/> writes for this
     /// statement, character for character.
     ///
-    /// <para>The attribution below mirrors TextFormatter's, which owns it for the text view and
-    /// keeps it private. Rather than trust two copies to stay in step,
+    /// <para>Both read the own times PlanAnalyzer put on each <see cref="OperatorResult"/>, but the
+    /// filtering, ranking and formatting below mirror TextFormatter's, which keeps its copy
+    /// private. Rather than trust two copies to stay in step,
     /// <c>AdviceCardsTests.TheCardsOperatorLinesAreTheReportsOperatorLines</c> reads the report
     /// and asserts these strings appear in it, so a change to one copy fails loudly instead of
     /// showing two different top-five lists in the same window.</para>

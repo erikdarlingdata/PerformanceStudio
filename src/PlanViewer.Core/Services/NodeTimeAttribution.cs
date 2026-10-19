@@ -15,8 +15,9 @@ namespace PlanViewer.Core.Services;
 /// <remarks>
 /// This is the display-grade attribution used for node coloring and the
 /// properties panel. The analysis pipeline uses the more elaborate per-thread
-/// calculation in <see cref="PlanAnalyzer"/> (GetOperatorOwnElapsedMs /
-/// GetOperatorMaxThreadOwnCpuMs); the two are intentionally separate.
+/// calculation in <see cref="PlanAnalyzer"/> (GetOperatorOwnElapsedMs,
+/// GetOperatorOwnCpuMs, GetOperatorMaxThreadOwnCpuMs); the two are intentionally
+/// separate.
 /// </remarks>
 public static class NodeTimeAttribution
 {
