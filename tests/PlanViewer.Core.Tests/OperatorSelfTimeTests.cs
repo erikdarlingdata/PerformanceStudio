@@ -1,5 +1,6 @@
 using System.Linq;
 using PlanViewer.Core.Models;
+using PlanViewer.Core.Output;
 using PlanViewer.Core.Services;
 
 namespace PlanViewer.Core.Tests;
@@ -130,5 +131,62 @@ public class OperatorSelfTimeTests
             Assert.Equal(0, withStats.PerThreadStats[0].ThreadId);
             Assert.True(withStats.ActualElapsedMs >= 0);
         }
+    }
+
+    [Fact]
+    public void SerialRowModeParentAboveBatchZoneDoesNotAbsorbItsCpu()
+    {
+        // A serial row-mode Stream Aggregate (node 4) sits above a batch Sort (node 5)
+        // over a row-mode Nested Loops (node 6). Batch CPU is standalone, so the zone
+        // under the aggregate used 14,142 + 11,659 ms. Subtracting only the Sort's
+        // 14,142 left 14,771 ms of "self" CPU beside 3,059 ms of self elapsed.
+        var root = RootOf("param-sniffing-posttypeid2.sqlplan");
+        var aggregate = TryFindNode(root, 4)!;
+
+        Assert.InRange(PlanAnalyzer.GetOperatorOwnElapsedMs(aggregate), 3_000, 3_100);
+        Assert.InRange(PlanAnalyzer.GetOperatorOwnCpuMs(aggregate), 3_050, 3_200);
+        Assert.InRange(PlanAnalyzer.GetOperatorMaxThreadOwnCpuMs(aggregate), 3_050, 3_200);
+        Assert.InRange(NodeTimeAttribution.GetOwnCpuMs(aggregate), 3_050, 3_200);
+    }
+
+    [Fact]
+    public void ParallelOwnCpuSumsThreadsAndMaxThreadKeepsTheBusiestOne()
+    {
+        // A DOP 8 Clustered Index Scan (node 1) burned 624 ms across its workers in a
+        // 629 ms query. Its own CPU is the sum. The busiest thread alone had 79 ms,
+        // which is what the external-wait formula wants from the max-thread figure.
+        var root = RootOf("case_predicate_plan.sqlplan");
+        var scan = TryFindNode(root, 1)!;
+
+        Assert.InRange(PlanAnalyzer.GetOperatorOwnCpuMs(scan), 600, 640);
+        Assert.InRange(PlanAnalyzer.GetOperatorMaxThreadOwnCpuMs(scan), 70, 90);
+    }
+
+    [Fact]
+    public void BatchOperatorMaxThreadCpuIsNotReducedByItsChildren()
+    {
+        // Batch mode reports each thread's own CPU. The max-thread figure used to
+        // subtract the children's CPU from it, though the batch number never held it.
+        var root = RootOf("parallel_row_over_batch_plan.sqlplan");
+        var hashMatch = TryFindNode(root, 2)!;
+        var busiest = hashMatch.PerThreadStats.Where(t => t.ThreadId > 0).Max(t => t.ActualCPUMs);
+
+        Assert.Equal(busiest, PlanAnalyzer.GetOperatorMaxThreadOwnCpuMs(hashMatch));
+    }
+
+    [Fact]
+    public void ExpensiveOperatorsTextUsesTheAnalyzersOwnTimes()
+    {
+        // The CLI's "Expensive operators" list did its own row-mode subtraction and
+        // charged the Stream Aggregate with 14,771 ms CPU and 14,720 ms elapsed. Its
+        // CPU shares added up to 159%.
+        var plan = PlanTestHelper.LoadAndAnalyze("param-sniffing-posttypeid2.sqlplan");
+        var text = TextFormatter.Format(ResultMapper.Map(plan, "param-sniffing-posttypeid2.sqlplan"));
+        var lines = text.Split('\n');
+        var at = System.Array.FindIndex(lines, l => l.Contains("Stream Aggregate (Node 4)"));
+
+        Assert.True(at >= 0, "node 4 is no longer listed as an expensive operator");
+        Assert.Contains("3,112ms CPU", lines[at + 1]);
+        Assert.Contains("3,059ms elapsed", lines[at + 1]);
     }
 }

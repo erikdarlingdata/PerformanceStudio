@@ -449,33 +449,12 @@ public static class TextFormatter
         // Skip exchanges — negligible own work, misleading elapsed times
         if (node.PhysicalOp != "Parallelism")
         {
-            var mode = node.ActualExecutionMode ?? node.ExecutionMode;
-
-            // Compute own CPU
-            long ownCpu = 0;
-            if (node.ActualCpuMs.HasValue)
-            {
-                if (mode == "Batch")
-                    ownCpu = node.ActualCpuMs.Value;
-                else
-                {
-                    var childCpuSum = GetChildCpuSum(node, cancellationToken);
-                    ownCpu = Math.Max(0, node.ActualCpuMs.Value - childCpuSum);
-                }
-            }
-
-            // Compute own elapsed
-            long ownElapsed = 0;
-            if (node.ActualElapsedMs.HasValue)
-            {
-                if (mode == "Batch")
-                    ownElapsed = node.ActualElapsedMs.Value;
-                else
-                {
-                    var childSum = GetChildElapsedSum(node, cancellationToken);
-                    ownElapsed = Math.Max(0, node.ActualElapsedMs.Value - childSum);
-                }
-            }
+            // Own times come from the analyzer (PlanAnalyzer.Timing), which works per thread,
+            // looks through pass-through operators and subtracts whole batch zones. The row-mode
+            // subtraction that used to live here took only a batch child's own time, so a
+            // Stream Aggregate over a batch Sort was charged the Sort's whole subtree.
+            var ownCpu = node.OwnCpuMs ?? 0;
+            var ownElapsed = node.OwnElapsedMs ?? 0;
 
             // When CPU data is available, only include operators that did real CPU work.
             // Row-mode elapsed with 0 CPU is a cumulative timing artifact, not real work.
@@ -493,65 +472,6 @@ public static class TextFormatter
 
         foreach (var child in node.Children)
             CollectNodeTimings(child, timings, cancellationToken);
-    }
-
-    /// <summary>
-    /// Sums CPU time from all direct children, skipping through transparent
-    /// operators (Compute Scalar, etc.) that have no runtime stats.
-    /// </summary>
-    private static long GetChildCpuSum(
-        OperatorResult node,
-        CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        long sum = 0;
-        foreach (var child in node.Children)
-        {
-            if (child.ActualCpuMs.HasValue)
-            {
-                sum += child.ActualCpuMs.Value;
-            }
-            else
-            {
-                // Transparent operator (e.g. Compute Scalar) — skip through
-                sum += GetChildCpuSum(child, cancellationToken);
-            }
-        }
-        return sum;
-    }
-
-    /// <summary>
-    /// Sums elapsed time from all direct children, skipping through exchange
-    /// and transparent operators.
-    /// </summary>
-    private static long GetChildElapsedSum(
-        OperatorResult node,
-        CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        long sum = 0;
-        foreach (var child in node.Children)
-        {
-            long childTime;
-            if (child.PhysicalOp == "Parallelism" && child.Children.Count > 0)
-            {
-                childTime = child.Children
-                    .Where(c => c.ActualElapsedMs.HasValue)
-                    .Select(c => c.ActualElapsedMs!.Value)
-                    .DefaultIfEmpty(0)
-                    .Max();
-            }
-            else if (child.ActualElapsedMs.HasValue)
-            {
-                childTime = child.ActualElapsedMs.Value;
-            }
-            else
-            {
-                childTime = GetChildElapsedSum(child, cancellationToken);
-            }
-            sum += childTime;
-        }
-        return sum;
     }
 
 }
