@@ -439,6 +439,20 @@ public class OperatorResult
     [JsonPropertyName("actual_cpu_ms")]
     public long? ActualCpuMs { get; set; }
 
+    /// <summary>
+    /// This operator's own elapsed time, children subtracted (slowest worker thread).
+    /// <see cref="ActualElapsedMs"/> is cumulative in row mode and is not this.
+    /// </summary>
+    [JsonPropertyName("own_elapsed_ms")]
+    public long? OwnElapsedMs { get; set; }
+
+    /// <summary>
+    /// This operator's own CPU, children subtracted, summed across threads.
+    /// <see cref="ActualCpuMs"/> is cumulative in row mode and is not this.
+    /// </summary>
+    [JsonPropertyName("own_cpu_ms")]
+    public long? OwnCpuMs { get; set; }
+
     [JsonPropertyName("actual_logical_reads")]
     public long? ActualLogicalReads { get; set; }
 

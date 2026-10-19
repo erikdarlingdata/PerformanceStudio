@@ -372,6 +372,8 @@ public static class ResultMapper
             result.ExpectedRows = RowEstimateHelper.GetExpectedRows(node);
             result.ActualElapsedMs = node.ActualElapsedMs;
             result.ActualCpuMs = node.ActualCPUMs;
+            result.OwnElapsedMs = PlanAnalyzer.GetOperatorOwnElapsedMs(node);
+            result.OwnCpuMs = PlanAnalyzer.GetOperatorOwnCpuMs(node);
             result.ActualLogicalReads = node.ActualLogicalReads;
             result.ActualPhysicalReads = node.ActualPhysicalReads;
         }

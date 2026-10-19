@@ -15,8 +15,9 @@ namespace PlanViewer.Core.Services;
 /// <remarks>
 /// This is the display-grade attribution used for node coloring and the
 /// properties panel. The analysis pipeline uses the more elaborate per-thread
-/// calculation in <see cref="PlanAnalyzer"/> (GetOperatorOwnElapsedMs /
-/// GetOperatorMaxThreadOwnCpuMs); the two are intentionally separate.
+/// calculation in <see cref="PlanAnalyzer"/> (GetOperatorOwnElapsedMs,
+/// GetOperatorOwnCpuMs, GetOperatorMaxThreadOwnCpuMs); the two are intentionally
+/// separate.
 /// </remarks>
 public static class NodeTimeAttribution
 {
@@ -78,10 +79,33 @@ public static class NodeTimeAttribution
         long sum = 0;
         foreach (var child in node.Children)
         {
-            if (child.ActualCPUMs > 0)
+            if ((child.ActualExecutionMode ?? child.ExecutionMode) == "Batch")
+                sum += SumBatchSubtreeCpuMs(child); // standalone CPU: the zone adds up
+            else if (child.ActualCPUMs > 0)
                 sum += child.ActualCPUMs;
             else
                 sum += GetChildCpuMsSum(child); // skip through transparent operators
+        }
+        return sum;
+    }
+
+    /// <summary>
+    /// Sums CPU across a contiguous batch-mode zone, stopping at exchange boundaries.
+    /// The CPU twin of <see cref="SumBatchSubtreeElapsedMs"/>.
+    /// </summary>
+    private static long SumBatchSubtreeCpuMs(PlanNode node)
+    {
+        long sum = node.ActualCPUMs;
+        foreach (var child in node.Children)
+        {
+            if (child.PhysicalOp == "Parallelism") continue; // zone boundary
+
+            if ((child.ActualExecutionMode ?? child.ExecutionMode) == "Batch")
+                sum += SumBatchSubtreeCpuMs(child);
+            else if (child.ActualCPUMs > 0)
+                sum += child.ActualCPUMs; // row mode: already cumulative
+            else
+                sum += GetChildCpuMsSum(child); // pass-through, no stats
         }
         return sum;
     }
