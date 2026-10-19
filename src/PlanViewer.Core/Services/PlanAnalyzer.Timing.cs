@@ -204,8 +204,9 @@ public static partial class PlanAnalyzer
 
         // Batch mode reports each thread's own CPU directly. Subtracting the
         // children would take their standalone CPU off a number that never held it.
+        // A node with no per-thread rows (built in code, not parsed) keeps its total.
         if ((node.ActualExecutionMode ?? node.ExecutionMode) == "Batch")
-            return WorkThreads(node).Select(t => t.ActualCPUMs).DefaultIfEmpty(0).Max();
+            return WorkThreads(node).Select(t => t.ActualCPUMs).DefaultIfEmpty(node.ActualCPUMs).Max();
 
         if (node.PerThreadStats.Count > 1)
             return GetPerThreadOwn(node, t => t.ActualCPUMs, n => n.ActualCPUMs);
