@@ -106,6 +106,12 @@ internal partial class SettingsWindow : Window
 
 	private void SectionList_SelectionChanged(object? sender, SelectionChangedEventArgs e)
 	{
+		/* Avalonia 12.1.4 raises SelectionChanged while the XAML loads (the first item has
+		   IsSelected="True"), before the named fields are assigned. The constructors call
+		   ShowSection(0) themselves, so the load-time event can be ignored. */
+		if (SectionList == null || DetailPanel == null)
+			return;
+
 		if (SectionList.SelectedIndex >= 0)
 			ShowSection(SectionList.SelectedIndex);
 	}
