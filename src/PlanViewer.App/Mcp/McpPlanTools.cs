@@ -227,7 +227,10 @@ public sealed class McpPlanTools
 
     [McpServerTool(Name = "get_expensive_operators")]
     [Description("Returns the top N most expensive operators from a loaded plan, ranked by cost percentage " +
-        "or actual elapsed time (if available). Useful for quickly finding bottleneck operators.")]
+        "for estimated plans, or by own (self) time for actual plans: children subtracted, the larger of own CPU " +
+        "and own elapsed (own_time_ms), with exchange (Parallelism) operators excluded. actual_elapsed_ms and " +
+        "actual_cpu_ms are cumulative in row mode; use own_elapsed_ms and own_cpu_ms for the operator's own work. " +
+        "Useful for quickly finding bottleneck operators.")]
     public static string GetExpensiveOperators(
         PlanSessionManager sessionManager,
         PlanOperations operations,
