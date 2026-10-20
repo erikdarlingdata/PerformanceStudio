@@ -312,6 +312,7 @@ public sealed class PlanOperations
             TotalStatements = analysis.Summary.TotalStatements,
             TotalWarnings = analysis.Summary.TotalWarnings,
             CriticalWarnings = analysis.Summary.CriticalWarnings,
+            SuppressedWarnings = analysis.Summary.SuppressedWarnings,
             MissingIndexes = analysis.Summary.MissingIndexes,
             HasActualStats = analysis.Summary.HasActualStats,
             MaxEstimatedCost = analysis.Summary.MaxEstimatedCost,
@@ -427,7 +428,8 @@ public sealed class PlanOperations
             {
                 var candidate = new RankedOperator(node, statementText);
                 hasActuals |= node.ActualElapsedMs > 0;
-                AddRanked(topByActual, candidate, top, rankByActuals: true);
+                if (IsEligibleForOwnTimeRanking(node))
+                    AddRanked(topByActual, candidate, top, rankByActuals: true);
                 AddRanked(topByCost, candidate, top, rankByActuals: false);
             });
         }
@@ -436,7 +438,7 @@ public sealed class PlanOperations
         return new ExpensiveOperatorsResult
         {
             SessionId = session.SessionId,
-            RankedBy = hasActuals ? "actual_elapsed_ms" : "cost_percent",
+            RankedBy = hasActuals ? "own_time_ms" : "cost_percent",
             Operators = ranked.Select(item => new ExpensiveOperatorItem
             {
                 NodeId = item.Node.NodeId,
@@ -447,6 +449,8 @@ public sealed class PlanOperations
                 ActualRows = item.Node.ActualRows ?? 0,
                 ActualElapsedMs = item.Node.ActualElapsedMs ?? 0,
                 ActualCpuMs = item.Node.ActualCpuMs ?? 0,
+                OwnElapsedMs = item.Node.OwnElapsedMs ?? 0,
+                OwnCpuMs = item.Node.OwnCpuMs ?? 0,
                 LogicalReads = item.Node.ActualLogicalReads ?? 0,
                 PhysicalReads = item.Node.ActualPhysicalReads ?? 0,
                 ObjectName = useBareObjectNames ? item.Node.BareObjectName : item.Node.ObjectName,
@@ -651,6 +655,20 @@ public sealed class PlanOperations
         }
     }
 
+    // Same inclusion rule as the "Expensive operators" list in TextFormatter.CollectNodeTimings:
+    // exchanges are skipped; with CPU data only nodes with own CPU count, otherwise own elapsed.
+    private static bool IsEligibleForOwnTimeRanking(OperatorResult node)
+    {
+        if (node.PhysicalOp == "Parallelism")
+            return false;
+        return node.ActualCpuMs.HasValue
+            ? (node.OwnCpuMs ?? 0) > 0
+            : (node.OwnElapsedMs ?? 0) > 0;
+    }
+
+    private static long OwnTimeScore(OperatorResult node) =>
+        Math.Max(node.OwnCpuMs ?? 0, node.OwnElapsedMs ?? 0);
+
     private static void AddRanked(
         List<RankedOperator> ranked,
         RankedOperator candidate,
@@ -658,13 +676,13 @@ public sealed class PlanOperations
         bool rankByActuals)
     {
         var candidateScore = rankByActuals
-            ? candidate.Node.ActualElapsedMs ?? 0
+            ? OwnTimeScore(candidate.Node)
             : candidate.Node.CostPercent;
         var insertAt = 0;
         while (insertAt < ranked.Count)
         {
             var item = ranked[insertAt];
-            var score = rankByActuals ? item.Node.ActualElapsedMs ?? 0 : item.Node.CostPercent;
+            var score = rankByActuals ? OwnTimeScore(item.Node) : item.Node.CostPercent;
             if (candidateScore > score)
             {
                 break;
@@ -685,7 +703,12 @@ public sealed class PlanOperations
         Message = Truncate(warning.Message, DefaultMaxResponseTextLength),
         NodeId = warning.NodeId,
         Operator = warning.Operator is null ? null : Truncate(warning.Operator, 512),
-        Statement = statement
+        Statement = statement,
+        Rule = warning.Rule,
+        IsSuppressed = warning.IsSuppressed,
+        SuppressionReason = warning.SuppressionReason is null
+            ? null
+            : Truncate(warning.SuppressionReason, DefaultMaxResponseTextLength)
     };
 
     private static BoundedColumnList BoundColumns(IEnumerable<string> columns)

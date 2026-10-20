@@ -1,0 +1,138 @@
+name: Dependency submission
+
+# Dependabot's dependency graph cannot read versions from Directory.Packages.props (central
+# package management) and no project has a packages.lock.json, so the graph lists direct
+# packages with no version and no transitive packages at all. That means no Dependabot
+# alerts for a vulnerable transitive package (issue #650). This workflow restores the projects
+# and submits what NuGet actually resolved, transitive packages included.
+#
+# Two jobs, so the token that can write to the repository never sits next to build-time code:
+#   detect  contents: read. Restores the projects (package and MSBuild code runs here) and turns
+#           the obj/project.assets.json files into a snapshot with
+#           .github/scripts/New-DependencySnapshot.ps1.
+#   submit  contents: write. Checks out nothing and runs no repository code. It only downloads the
+#           snapshot artifact and posts it with the gh CLI that ships on the runner (issue #655).
+#
+# Dependabot alerts read the default branch (main), so transitive alerts start after the next
+# dev-to-main release merge. Snapshots from dev feed no alerts; the dev trigger exists to
+# exercise this workflow before a release merge.
+
+on:
+  push:
+    branches: [main, dev]
+  workflow_dispatch:
+
+permissions: {}
+
+# A newer push cancels an older run still in progress, so the latest commit's graph is the last
+# one submitted and an older sha cannot overwrite it.
+concurrency:
+  group: dependency-submission-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  detect:
+    # Windows, so the old-format SSMS add-in project can be restored with MSBuild too.
+    runs-on: windows-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup .NET 10.0
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.x
+
+      # ci.yml does the same before restoring the solution (Blazor WASM project).
+      - name: Install WASM workload
+        run: dotnet workload install wasm-tools
+
+      # The snapshot script reads project.assets.json, which only exists after a restore. Every
+      # restore here passes -p:NuGetAudit=false: with the audit gate on, a new high advisory fails
+      # the restore, the snapshot is never submitted, and the graph goes stale exactly when an
+      # alert is needed. Resolution is unchanged, and GitHub matches advisories on the submitted graph.
+      - name: Restore solution
+        run: dotnet restore PlanViewer.sln -p:NuGetAudit=false
+
+      # server/PlanShare is not in PlanViewer.sln and is the internet-facing component.
+      - name: Restore PlanShare
+        run: dotnet restore server/PlanShare/PlanShare.csproj -p:NuGetAudit=false
+
+      - name: Add MSBuild to PATH
+        uses: microsoft/setup-msbuild@30375c66a4eea26614e0d39710365f22f8b0af57 # v3.0.0
+
+      # pwsh, because the msbuild folder that setup-msbuild adds to PATH reaches pwsh steps but not
+      # bash steps on the Windows runner (run 38660830104 failed with "msbuild: command not found").
+      # pwsh only reports the last command's exit code, so each command checks its own.
+      - name: Restore SSMS projects
+        shell: pwsh
+        run: |
+          dotnet restore src/PlanViewer.Ssms.Installer/PlanViewer.Ssms.Installer.csproj -p:NuGetAudit=false
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          dotnet restore tests/PlanViewer.Ssms.Installer.Tests/PlanViewer.Ssms.Installer.Tests.csproj -p:NuGetAudit=false
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          msbuild src/PlanViewer.Ssms/PlanViewer.Ssms.csproj -t:Restore -p:Configuration=Release -p:NuGetAudit=false
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+
+      # Fails when there is no assets file or no resolved package, so a broken restore cannot
+      # replace the graph with an empty snapshot, and when an assets file records a restore error.
+      # GitHub keeps the latest snapshot per correlator plus detector name. The correlator stays
+      # "submit" so it is stable for this workflow, but the detector name differs from the old
+      # action's, so this snapshot does not replace that one: the old action's snapshot exists only
+      # on dev and stays beside this one (main never received one).
+      # Values reach the script through env vars, never spliced into the script text.
+      - name: Build dependency snapshot
+        shell: pwsh
+        env:
+          SNAPSHOT_SHA: ${{ github.sha }}
+          SNAPSHOT_REF: ${{ github.ref }}
+          SNAPSHOT_RUN_ID: ${{ github.run_id }}
+        run: ./.github/scripts/New-DependencySnapshot.ps1 -Sha $env:SNAPSHOT_SHA -Ref $env:SNAPSHOT_REF -RunId $env:SNAPSHOT_RUN_ID -Correlator 'submit' -OutputPath snapshot.json
+
+      - name: Upload snapshot
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dependency-snapshot
+          path: snapshot.json
+          if-no-files-found: error
+          retention-days: 7
+
+  submit:
+    needs: detect
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download snapshot
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dependency-snapshot
+
+      - name: Submit dependency snapshot
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # sha, ref and run id come from this run, not from the artifact.
+          jq --arg sha "$GITHUB_SHA" --arg ref "$GITHUB_REF" --arg id "$GITHUB_RUN_ID" \
+            '.sha = $sha | .ref = $ref | .job.id = $id' snapshot.json > body.json
+          # On an HTTP error gh writes the error body to stdout, so print it.
+          if ! gh api --method POST -H "Accept: application/vnd.github+json" \
+               "repos/$GITHUB_REPOSITORY/dependency-graph/snapshots" \
+               --input body.json > response.json; then
+            cat response.json
+            exit 1
+          fi
+          cat response.json
+          echo
+          result=$(jq -r '.result // empty' response.json)
+          echo "result: $result"
+          echo "message: $(jq -r '.message // empty' response.json)"
+          if [ "$result" != "SUCCESS" ] && [ "$result" != "ACCEPTED" ]; then
+            echo "unexpected result: '$result'"
+            exit 1
+          fi

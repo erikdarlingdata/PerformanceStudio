@@ -252,7 +252,10 @@ public static class ResultMapper
                 Message = message,
                 MaxBenefitPercent = w.MaxBenefitPercent,
                 ActionableFix = w.ActionableFix,
+                Rule = w.RuleNumber,
                 IsLegacy = w.IsLegacy,
+                IsSuppressed = w.IsSuppressed,
+                SuppressionReason = w.SuppressionReason,
                 Source = w.Source.ToString(),
                 OriginNodeIds = w.OriginNodeIds
             });
@@ -369,6 +372,8 @@ public static class ResultMapper
             result.ExpectedRows = RowEstimateHelper.GetExpectedRows(node);
             result.ActualElapsedMs = node.ActualElapsedMs;
             result.ActualCpuMs = node.ActualCPUMs;
+            result.OwnElapsedMs = PlanAnalyzer.GetOperatorOwnElapsedMs(node);
+            result.OwnCpuMs = PlanAnalyzer.GetOperatorOwnCpuMs(node);
             result.ActualLogicalReads = node.ActualLogicalReads;
             result.ActualPhysicalReads = node.ActualPhysicalReads;
         }
@@ -381,11 +386,14 @@ public static class ResultMapper
                 Type = w.WarningType,
                 Severity = w.Severity.ToString(),
                 Message = w.Message,
-                Operator = FormatOperatorLabel(node),
+                Operator = OperatorLabel.Format(node),
                 NodeId = node.NodeId,
                 MaxBenefitPercent = w.MaxBenefitPercent,
                 ActionableFix = w.ActionableFix,
+                Rule = w.RuleNumber,
                 IsLegacy = w.IsLegacy,
+                IsSuppressed = w.IsSuppressed,
+                SuppressionReason = w.SuppressionReason,
                 Source = w.Source.ToString(),
                 OriginNodeIds = w.OriginNodeIds
             });
@@ -407,17 +415,21 @@ public static class ResultMapper
             CollectNodeWarnings(stmt.OperatorTree, allWarnings, cancellationToken);
         }
 
+        // Suppressed findings (#651) stay in the output but do not count toward the totals.
+        var activeWarnings = allWarnings.Where(w => !w.IsSuppressed).ToList();
+
         return new AnalysisSummary
         {
             TotalStatements = result.Statements.Count,
-            TotalWarnings = allWarnings.Count,
-            CriticalWarnings = allWarnings.Count(w => w.Severity == "Critical"),
+            TotalWarnings = activeWarnings.Count,
+            CriticalWarnings = activeWarnings.Count(w => w.Severity == "Critical"),
+            SuppressedWarnings = allWarnings.Count - activeWarnings.Count,
             MissingIndexes = result.Statements.Sum(s => s.MissingIndexes.Count),
             HasActualStats = result.Statements.Any(s => s.QueryTime != null),
             MaxEstimatedCost = result.Statements.Count > 0
                 ? result.Statements.Max(s => s.EstimatedCost)
                 : 0,
-            WarningTypes = allWarnings.Select(w => w.Type).Distinct().OrderBy(t => t).ToList()
+            WarningTypes = activeWarnings.Select(w => w.Type).Distinct().OrderBy(t => t).ToList()
         };
     }
 
@@ -440,21 +452,4 @@ public static class ResultMapper
         }
     }
 
-    /// <summary>
-    /// Formats an operator label for the Operator field on warnings.
-    /// Includes object name for data access operators (scans, seeks, lookups)
-    /// where it helps identify which table/index is involved.
-    /// </summary>
-    private static string FormatOperatorLabel(PlanNode node)
-    {
-        if (!string.IsNullOrEmpty(node.ObjectName))
-        {
-            var objRef = !string.IsNullOrEmpty(node.DatabaseName)
-                ? $"{node.DatabaseName}.{node.ObjectName}"
-                : node.ObjectName;
-            return $"{node.PhysicalOp} on {objRef} (Node {node.NodeId})";
-        }
-
-        return $"{node.PhysicalOp} (Node {node.NodeId})";
-    }
 }

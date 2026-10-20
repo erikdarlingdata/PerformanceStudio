@@ -183,13 +183,14 @@ public sealed class PlanOperationsTests
 
 
     [Fact]
-    public void GetExpensiveOperators_UsesActualElapsedTimeAndKeepsStableTies()
+    public void GetExpensiveOperators_UsesOwnTimeAndKeepsStableTies()
     {
         var firstTie = new PlanViewer.Core.Output.OperatorResult
         {
             NodeId = 2,
             PhysicalOp = "First tie",
             ActualElapsedMs = 10,
+            OwnElapsedMs = 10,
             CostPercent = 1
         };
         var secondTie = new PlanViewer.Core.Output.OperatorResult
@@ -197,6 +198,7 @@ public sealed class PlanOperationsTests
             NodeId = 3,
             PhysicalOp = "Second tie",
             ActualElapsedMs = 10,
+            OwnElapsedMs = 10,
             CostPercent = 99
         };
         var root = new PlanViewer.Core.Output.OperatorResult
@@ -229,10 +231,82 @@ public sealed class PlanOperationsTests
 
         var result = operations.GetExpensiveOperators(session, top: 2, TestContext.Current.CancellationToken);
 
-        Assert.Equal("actual_elapsed_ms", result.RankedBy);
+        Assert.Equal("own_time_ms", result.RankedBy);
         Assert.Equal([2, 3], result.Operators.Select(item => item.NodeId));
     }
 
+
+    private static async Task<(PlanOperations Operations, PlanViewer.Core.Models.PlanSession Session)> OpenFixtureAsync(string planFile)
+    {
+        var catalog = new InMemoryPlanCatalog();
+        var operations = new PlanOperations(catalog);
+        var opened = await operations.OpenAsync(
+            Path.GetFullPath(Path.Combine("Plans", planFile)), TestContext.Current.CancellationToken);
+        var session = Assert.IsType<PlanViewer.Core.Models.PlanSession>(catalog.GetSession(opened.SessionId));
+        return (operations, session);
+    }
+
+    private static List<int> ExpensiveOperatorNodeIdsFromText(string text)
+    {
+        var ids = new List<int>();
+        var lines = text.Split('\n');
+        var at = Array.FindIndex(lines, l => l.TrimEnd() == "Expensive operators:");
+        Assert.True(at >= 0, "no Expensive operators section");
+        for (var i = at + 1; i < lines.Length && lines[i].StartsWith("  "); i++)
+        {
+            var match = System.Text.RegularExpressions.Regex.Match(lines[i], @"^  \S.*\(Node (\d+)\):\s*$");
+            if (match.Success)
+                ids.Add(int.Parse(match.Groups[1].Value));
+        }
+        return ids;
+    }
+
+    [Theory]
+    [InlineData("param-sniffing-posttypeid2.sqlplan")]
+    [InlineData("case_predicate_plan.sqlplan")]
+    public async Task GetExpensiveOperators_MatchesTheTextSummaryExpensiveOperators(string planFile)
+    {
+        var (operations, session) = await OpenFixtureAsync(planFile);
+        var plan = PlanViewer.Core.Tests.PlanTestHelper.LoadAndAnalyze(planFile);
+        var text = PlanViewer.Core.Output.TextFormatter.Format(PlanViewer.Core.Output.ResultMapper.Map(plan, planFile));
+
+        var result = operations.GetExpensiveOperators(session, top: 5, TestContext.Current.CancellationToken);
+
+        var expected = ExpensiveOperatorNodeIdsFromText(text);
+        Assert.NotEmpty(expected);
+        Assert.Equal("own_time_ms", result.RankedBy);
+        Assert.Equal(expected, result.Operators.Select(item => item.NodeId));
+        Assert.DoesNotContain(result.Operators, item => item.PhysicalOp == "Parallelism");
+    }
+
+    [Fact]
+    public async Task GetExpensiveOperators_WorkerOutranksItsCumulativeParents()
+    {
+        var (operations, session) = await OpenFixtureAsync("case_predicate_plan.sqlplan");
+
+        var result = operations.GetExpensiveOperators(session, top: 5, TestContext.Current.CancellationToken);
+
+        var first = result.Operators[0];
+        Assert.Equal(1, first.NodeId);
+        Assert.Contains("Clustered Index Scan", first.PhysicalOp);
+        Assert.True(first.OwnCpuMs > 0);
+        Assert.DoesNotContain(result.Operators, item => item.PhysicalOp == "Parallelism");
+    }
+
+    [Fact]
+    public async Task GetExpensiveOperators_RanksActualPlansByOwnTimeAndEstimatedPlansByCost()
+    {
+        var (operations, actual) = await OpenFixtureAsync("case_predicate_plan.sqlplan");
+        Assert.Equal("own_time_ms",
+            operations.GetExpensiveOperators(actual, top: 3, TestContext.Current.CancellationToken).RankedBy);
+
+        var estimatedCatalog = new InMemoryPlanCatalog();
+        var estimatedOps = new PlanOperations(estimatedCatalog);
+        var opened = await estimatedOps.OpenAsync(
+            Path.GetFullPath(Path.Combine("Plans", "row_goal_plan.sqlplan")), TestContext.Current.CancellationToken);
+        Assert.Equal("cost_percent",
+            estimatedOps.GetExpensiveOperators(opened.SessionId, 3, TestContext.Current.CancellationToken).RankedBy);
+    }
     [Fact]
     public async Task GetMissingIndexes_BoundsTheReturnedItemsAndReportsTruncation()
     {

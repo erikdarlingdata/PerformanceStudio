@@ -53,7 +53,7 @@ public static partial class PlanAnalyzer
     /// </summary>
     internal static long GetOperatorOwnElapsedMs(PlanNode node)
     {
-        if (node.ActualExecutionMode == "Batch")
+        if ((node.ActualExecutionMode ?? node.ExecutionMode) == "Batch")
             return node.ActualElapsedMs;
 
         // Parallel plan with per-thread data: calculate self-time per thread
@@ -89,25 +89,30 @@ public static partial class PlanAnalyzer
     private static long GetPerThreadOwn(
         PlanNode node,
         Func<PerThreadRuntimeInfo, long> pick,
+        Func<PlanNode, long> nodeTotal) =>
+        GetPerThreadOwnByThread(node, pick, nodeTotal).Values.DefaultIfEmpty(0).Max();
+
+    /// <summary>
+    /// Self time on each worker thread: the thread's time minus the same thread's time
+    /// in the children. Elapsed takes the max of these; total CPU takes the sum.
+    /// </summary>
+    private static Dictionary<int, long> GetPerThreadOwnByThread(
+        PlanNode node,
+        Func<PerThreadRuntimeInfo, long> pick,
         Func<PlanNode, long> nodeTotal)
     {
-        var parentByThread = new Dictionary<int, long>();
-        foreach (var ts in WorkThreads(node))
-            parentByThread[ts.ThreadId] = pick(ts);
-
         var childSumByThread = new Dictionary<int, long>();
         foreach (var child in node.Children)
             AddEffectiveChildByThread(child, pick, nodeTotal, childSumByThread);
 
-        var maxSelf = 0L;
-        foreach (var (threadId, parentMs) in parentByThread)
+        var selfByThread = new Dictionary<int, long>();
+        foreach (var ts in WorkThreads(node))
         {
-            childSumByThread.TryGetValue(threadId, out var childMs);
-            var self = Math.Max(0, parentMs - childMs);
-            if (self > maxSelf) maxSelf = self;
+            childSumByThread.TryGetValue(ts.ThreadId, out var childMs);
+            selfByThread[ts.ThreadId] = Math.Max(0, pick(ts) - childMs);
         }
 
-        return maxSelf;
+        return selfByThread;
     }
 
     /// <summary>
@@ -197,6 +202,12 @@ public static partial class PlanAnalyzer
     {
         if (!node.HasActualStats || node.ActualCPUMs <= 0) return 0;
 
+        // Batch mode reports each thread's own CPU directly. Subtracting the
+        // children would take their standalone CPU off a number that never held it.
+        // A node with no per-thread rows (built in code, not parsed) keeps its total.
+        if ((node.ActualExecutionMode ?? node.ExecutionMode) == "Batch")
+            return WorkThreads(node).Select(t => t.ActualCPUMs).DefaultIfEmpty(node.ActualCPUMs).Max();
+
         if (node.PerThreadStats.Count > 1)
             return GetPerThreadOwn(node, t => t.ActualCPUMs, n => n.ActualCPUMs);
 
@@ -207,10 +218,43 @@ public static partial class PlanAnalyzer
         return Math.Max(0, node.ActualCPUMs - totalChildCpu);
     }
 
+    /// <summary>
+    /// The operator's own CPU, children subtracted, summed across threads. CPU sums
+    /// because every thread burned its own, so this is the figure to set beside
+    /// QueryTimeStats CpuTime, and self CPU above self elapsed means parallelism.
+    /// Serial and batch operators get the same value as
+    /// <see cref="GetOperatorMaxThreadOwnCpuMs"/>; a parallel row-mode operator gets
+    /// all of its threads instead of the busiest one.
+    /// </summary>
+    internal static long GetOperatorOwnCpuMs(PlanNode node)
+    {
+        if (!node.HasActualStats || node.ActualCPUMs <= 0) return 0;
+
+        if ((node.ActualExecutionMode ?? node.ExecutionMode) == "Batch")
+            return node.ActualCPUMs;
+
+        if (node.PerThreadStats.Count > 1)
+            return GetPerThreadOwnByThread(node, t => t.ActualCPUMs, n => n.ActualCPUMs).Values.Sum();
+
+        var totalChildCpu = 0L;
+        foreach (var child in node.Children)
+            totalChildCpu += GetEffectiveChildCpuMs(child);
+        return Math.Max(0, node.ActualCPUMs - totalChildCpu);
+    }
+
     private static long GetEffectiveChildCpuMs(PlanNode child)
     {
         if (child.PhysicalOp == "Parallelism" && child.Children.Count > 0)
             return child.Children.Max(GetEffectiveChildCpuMs);
+
+        // Batch CPU is standalone, exactly like batch elapsed, so subtract the whole
+        // zone. Taking only the child's own value left the rest of the zone in a
+        // row-mode parent: a serial Stream Aggregate over a batch Sort reported
+        // 14,771 ms of self CPU next to 3,059 ms of self elapsed. The zone gives 3,112.
+        var mode = child.ActualExecutionMode ?? child.ExecutionMode;
+        if (mode == "Batch" && child.HasActualStats)
+            return SumBatchSubtreeCpuMs(child);
+
         if (child.ActualCPUMs > 0)
             return child.ActualCPUMs;
         if (child.Children.Count == 0)
@@ -289,6 +333,26 @@ public static partial class PlanAnalyzer
                 sum += SumBatchSubtreeElapsedMs(child);
             else
                 sum += GetEffectiveChildElapsedMs(child);
+        }
+        return sum;
+    }
+
+    /// <summary>
+    /// The CPU twin of <see cref="SumBatchSubtreeElapsedMs"/>: batch operators report
+    /// standalone CPU, so a zone's CPU adds up. Stops at exchange zone boundaries.
+    /// </summary>
+    private static long SumBatchSubtreeCpuMs(PlanNode node)
+    {
+        long sum = node.ActualCPUMs;
+        foreach (var child in node.Children)
+        {
+            if (child.PhysicalOp == "Parallelism") continue;
+
+            var childMode = child.ActualExecutionMode ?? child.ExecutionMode;
+            if (childMode == "Batch" && child.HasActualStats)
+                sum += SumBatchSubtreeCpuMs(child);
+            else
+                sum += GetEffectiveChildCpuMs(child);
         }
         return sum;
     }

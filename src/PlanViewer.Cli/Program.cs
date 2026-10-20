@@ -3,10 +3,21 @@ using PlanViewer.Cli;
 using PlanViewer.Core.Services;
 using PlanViewer.Core.Interfaces;
 using PlanViewer.Cli.ReplSurface;
+using Repl;
 
 if (CliRouting.ShouldUseRepl(args))
 {
-    var repl = PlanReplApp.Create();
+    // The REPL builds its operations, and so reads .planview.json, while it is created.
+    ReplApp repl;
+    try
+    {
+        repl = PlanReplApp.Create();
+    }
+    catch (Exception ex) when (ex is System.IO.FileNotFoundException or System.IO.InvalidDataException)
+    {
+        Console.Error.WriteLine(ex.Message);
+        return 1;
+    }
     return await repl.RunAsync(CliRouting.GetReplArgs(args));
 }
 

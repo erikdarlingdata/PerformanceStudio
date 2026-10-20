@@ -43,7 +43,7 @@ internal static class McpInstructions
         | `get_plan_warnings` | Warnings only, filterable by severity |
         | `get_missing_indexes` | Missing index suggestions with CREATE INDEX statements |
         | `get_plan_parameters` | Parameter details with compiled vs runtime value comparison |
-        | `get_expensive_operators` | Top N costly operators by cost or actual elapsed time |
+        | `get_expensive_operators` | Top N operators by cost (estimated plans) or own time (actual plans: self time with children subtracted, the larger of own CPU and own elapsed, exchanges excluded) |
         | `get_plan_xml` | Raw showplan XML |
         | `compare_plans` | Side-by-side comparison of two plans |
         | `get_repro_script` | Generates paste-ready T-SQL reproduction script |

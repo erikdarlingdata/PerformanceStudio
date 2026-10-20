@@ -32,6 +32,9 @@ public sealed class PlanSummaryResult
     [JsonPropertyName("critical_warnings")]
     public int CriticalWarnings { get; init; }
 
+    [JsonPropertyName("suppressed_warnings")]
+    public int SuppressedWarnings { get; init; }
+
     [JsonPropertyName("missing_indexes")]
     public int MissingIndexes { get; init; }
 
@@ -83,6 +86,15 @@ public sealed class PlanWarningItem
 
     [JsonPropertyName("statement")]
     public string Statement { get; init; } = "";
+
+    [JsonPropertyName("rule")]
+    public int? Rule { get; init; }
+
+    [JsonPropertyName("suppressed")]
+    public bool IsSuppressed { get; init; }
+
+    [JsonPropertyName("suppression_reason")]
+    public string? SuppressionReason { get; init; }
 }
 
 
@@ -118,11 +130,27 @@ public sealed class ExpensiveOperatorItem
     [JsonPropertyName("actual_rows")]
     public long ActualRows { get; init; }
 
+    /// <summary>
+    /// Elapsed time reported for the operator. In row mode this is cumulative (it includes every
+    /// operator below it), so it is not the operator's own work; see <see cref="OwnElapsedMs"/>.
+    /// </summary>
     [JsonPropertyName("actual_elapsed_ms")]
     public long ActualElapsedMs { get; init; }
 
+    /// <summary>
+    /// CPU time reported for the operator. In row mode this is cumulative (it includes every
+    /// operator below it), so it is not the operator's own work; see <see cref="OwnCpuMs"/>.
+    /// </summary>
     [JsonPropertyName("actual_cpu_ms")]
     public long ActualCpuMs { get; init; }
+
+    /// <summary>The operator's own elapsed time, children subtracted. 0 when unavailable (estimated plans).</summary>
+    [JsonPropertyName("own_elapsed_ms")]
+    public long OwnElapsedMs { get; init; }
+
+    /// <summary>The operator's own CPU time, children subtracted. 0 when unavailable (estimated plans).</summary>
+    [JsonPropertyName("own_cpu_ms")]
+    public long OwnCpuMs { get; init; }
 
     [JsonPropertyName("logical_reads")]
     public long LogicalReads { get; init; }

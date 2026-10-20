@@ -36,6 +36,8 @@ public static class TextFormatter
         writer.WriteLine("=== Summary ===");
         writer.WriteLine($"Statements: {result.Summary.TotalStatements}");
         writer.WriteLine($"Warnings: {result.Summary.TotalWarnings} ({result.Summary.CriticalWarnings} critical)");
+        if (result.Summary.SuppressedWarnings > 0)
+            writer.WriteLine($"Suppressed warnings: {result.Summary.SuppressedWarnings}");
         writer.WriteLine($"Missing indexes: {result.Summary.MissingIndexes}");
         writer.WriteLine($"Actual stats: {(result.Summary.HasActualStats ? "yes" : "no (estimated plan)")}");
         if (result.Summary.WarningTypes.Count > 0)
@@ -193,7 +195,7 @@ public static class TextFormatter
                         ? $" (up to {(w.MaxBenefitPercent.Value >= 100 ? w.MaxBenefitPercent.Value.ToString("N0") : w.MaxBenefitPercent.Value.ToString("N1"))}% benefit)"
                         : "";
                     var legacyTag = w.IsLegacy ? " [legacy]" : "";
-                    writer.WriteLine($"  [{w.Severity}] {w.Type}{SourceTag(w.Source)}{legacyTag}{benefitTag}: {EscapeNewlines(w.Message)}");
+                    writer.WriteLine($"  [{w.Severity}] {w.Type}{SourceTag(w.Source)}{legacyTag}{SuppressedTag(w)}{benefitTag}: {EscapeNewlines(w.Message)}");
                     if (!string.IsNullOrEmpty(w.ActionableFix))
                         writer.WriteLine($"    Fix: {EscapeNewlines(w.ActionableFix)}");
                 }
@@ -339,7 +341,7 @@ public static class TextFormatter
 
         // Split each message into "data | explanation" at the last sentence boundary
         // that starts with "The " (the harm assessment). Group by shared explanation.
-        var entries = new List<(string Severity, string Operator, string Data, string? Explanation, double? Benefit, bool IsLegacy, string Source)>();
+        var entries = new List<(string Severity, string Operator, string Data, string? Explanation, double? Benefit, bool IsLegacy, string Source, string SuppressedTag)>();
         foreach (var w in sorted)
         {
             var msg = w.Message;
@@ -358,7 +360,7 @@ public static class TextFormatter
                 data = msg;
             }
 
-            entries.Add((w.Severity, w.Operator ?? "?", data, explanation, w.MaxBenefitPercent, w.IsLegacy, w.Source));
+            entries.Add((w.Severity, w.Operator ?? "?", data, explanation, w.MaxBenefitPercent, w.IsLegacy, w.Source, SuppressedTag(w)));
         }
 
         // Group entries that share the same severity, type, and explanation
@@ -380,7 +382,7 @@ public static class TextFormatter
                     var benefitTag = item.Benefit.HasValue
                         ? $" (up to {(item.Benefit.Value >= 100 ? item.Benefit.Value.ToString("N0") : item.Benefit.Value.ToString("N1"))}% benefit)"
                         : "";
-                    writer.WriteLine($"  [{item.Severity}] {item.Operator}{SourceTag(item.Source)}{legacyTag}{benefitTag}: {EscapeNewlines(item.Data)}");
+                    writer.WriteLine($"  [{item.Severity}] {item.Operator}{SourceTag(item.Source)}{legacyTag}{item.SuppressedTag}{benefitTag}: {EscapeNewlines(item.Data)}");
                 }
                 writer.WriteLine($"  -> {group.Key.Item2}");
             }
@@ -394,7 +396,7 @@ public static class TextFormatter
                     var benefitTag = item.Benefit.HasValue
                         ? $" (up to {(item.Benefit.Value >= 100 ? item.Benefit.Value.ToString("N0") : item.Benefit.Value.ToString("N1"))}% benefit)"
                         : "";
-                    writer.WriteLine($"  [{item.Severity}] {item.Operator}{SourceTag(item.Source)}{legacyTag}{benefitTag}: {EscapeNewlines(full)}");
+                    writer.WriteLine($"  [{item.Severity}] {item.Operator}{SourceTag(item.Source)}{legacyTag}{item.SuppressedTag}{benefitTag}: {EscapeNewlines(full)}");
                 }
             }
         }
@@ -428,6 +430,14 @@ public static class TextFormatter
     private static string SourceTag(string? source) =>
         source == nameof(PlanViewer.Core.Models.PlanWarningSource.SqlServer) ? " [SQL Server]" : "";
 
+    /// <summary>The " [suppressed: reason]" tag for a finding a .planview.json suppression matched (#651).</summary>
+    private static string SuppressedTag(WarningResult w) =>
+        w.IsSuppressed
+            ? string.IsNullOrWhiteSpace(w.SuppressionReason)
+                ? " [suppressed]"
+                : $" [suppressed: {EscapeNewlines(w.SuppressionReason)}]"
+            : "";
+
     private static string EscapeNewlines(string text) => text.Replace('\n', '\x1F');
 
     private static void CollectNodeTimings(
@@ -439,33 +449,12 @@ public static class TextFormatter
         // Skip exchanges — negligible own work, misleading elapsed times
         if (node.PhysicalOp != "Parallelism")
         {
-            var mode = node.ActualExecutionMode ?? node.ExecutionMode;
-
-            // Compute own CPU
-            long ownCpu = 0;
-            if (node.ActualCpuMs.HasValue)
-            {
-                if (mode == "Batch")
-                    ownCpu = node.ActualCpuMs.Value;
-                else
-                {
-                    var childCpuSum = GetChildCpuSum(node, cancellationToken);
-                    ownCpu = Math.Max(0, node.ActualCpuMs.Value - childCpuSum);
-                }
-            }
-
-            // Compute own elapsed
-            long ownElapsed = 0;
-            if (node.ActualElapsedMs.HasValue)
-            {
-                if (mode == "Batch")
-                    ownElapsed = node.ActualElapsedMs.Value;
-                else
-                {
-                    var childSum = GetChildElapsedSum(node, cancellationToken);
-                    ownElapsed = Math.Max(0, node.ActualElapsedMs.Value - childSum);
-                }
-            }
+            // Own times come from the analyzer (PlanAnalyzer.Timing), which works per thread,
+            // looks through pass-through operators and subtracts whole batch zones. The row-mode
+            // subtraction that used to live here took only a batch child's own time, so a
+            // Stream Aggregate over a batch Sort was charged the Sort's whole subtree.
+            var ownCpu = node.OwnCpuMs ?? 0;
+            var ownElapsed = node.OwnElapsedMs ?? 0;
 
             // When CPU data is available, only include operators that did real CPU work.
             // Row-mode elapsed with 0 CPU is a cumulative timing artifact, not real work.
@@ -483,65 +472,6 @@ public static class TextFormatter
 
         foreach (var child in node.Children)
             CollectNodeTimings(child, timings, cancellationToken);
-    }
-
-    /// <summary>
-    /// Sums CPU time from all direct children, skipping through transparent
-    /// operators (Compute Scalar, etc.) that have no runtime stats.
-    /// </summary>
-    private static long GetChildCpuSum(
-        OperatorResult node,
-        CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        long sum = 0;
-        foreach (var child in node.Children)
-        {
-            if (child.ActualCpuMs.HasValue)
-            {
-                sum += child.ActualCpuMs.Value;
-            }
-            else
-            {
-                // Transparent operator (e.g. Compute Scalar) — skip through
-                sum += GetChildCpuSum(child, cancellationToken);
-            }
-        }
-        return sum;
-    }
-
-    /// <summary>
-    /// Sums elapsed time from all direct children, skipping through exchange
-    /// and transparent operators.
-    /// </summary>
-    private static long GetChildElapsedSum(
-        OperatorResult node,
-        CancellationToken cancellationToken)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        long sum = 0;
-        foreach (var child in node.Children)
-        {
-            long childTime;
-            if (child.PhysicalOp == "Parallelism" && child.Children.Count > 0)
-            {
-                childTime = child.Children
-                    .Where(c => c.ActualElapsedMs.HasValue)
-                    .Select(c => c.ActualElapsedMs!.Value)
-                    .DefaultIfEmpty(0)
-                    .Max();
-            }
-            else if (child.ActualElapsedMs.HasValue)
-            {
-                childTime = child.ActualElapsedMs.Value;
-            }
-            else
-            {
-                childTime = GetChildElapsedSum(child, cancellationToken);
-            }
-            sum += childTime;
-        }
-        return sum;
     }
 
 }

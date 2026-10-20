@@ -39,6 +39,13 @@ public class AnalysisSummary
     [JsonPropertyName("critical_warnings")]
     public int CriticalWarnings { get; set; }
 
+    /// <summary>
+    /// Findings a suppression in .planview.json matched (#651). They are left out of
+    /// total_warnings, critical_warnings and warning_types.
+    /// </summary>
+    [JsonPropertyName("suppressed_warnings")]
+    public int SuppressedWarnings { get; set; }
+
     [JsonPropertyName("missing_indexes")]
     public int MissingIndexes { get; set; }
 
@@ -271,6 +278,20 @@ public class WarningResult
     public bool IsLegacy { get; set; }
 
     /// <summary>
+    /// The analyzer rule number that produced this finding. Omitted for the engine's own warnings
+    /// and for the wait-stats findings, which no numbered rule produces.
+    /// </summary>
+    [JsonPropertyName("rule")]
+    public int? Rule { get; set; }
+
+    /// <summary>True when a suppression in .planview.json matched this finding (#651).</summary>
+    [JsonPropertyName("suppressed")]
+    public bool IsSuppressed { get; set; }
+
+    [JsonPropertyName("suppression_reason")]
+    public string? SuppressionReason { get; set; }
+
+    /// <summary>
     /// "SqlServer" when the engine wrote this into the plan's own &lt;Warnings&gt; element, or
     /// "PerformanceStudio" when it is one of our rules inferring it from plan shape (#436). Values
     /// match <see cref="PlanViewer.Core.Models.PlanWarningSource"/>, spelled the same way
@@ -417,6 +438,20 @@ public class OperatorResult
 
     [JsonPropertyName("actual_cpu_ms")]
     public long? ActualCpuMs { get; set; }
+
+    /// <summary>
+    /// This operator's own elapsed time, children subtracted (slowest worker thread).
+    /// <see cref="ActualElapsedMs"/> is cumulative in row mode and is not this.
+    /// </summary>
+    [JsonPropertyName("own_elapsed_ms")]
+    public long? OwnElapsedMs { get; set; }
+
+    /// <summary>
+    /// This operator's own CPU, children subtracted, summed across threads.
+    /// <see cref="ActualCpuMs"/> is cumulative in row mode and is not this.
+    /// </summary>
+    [JsonPropertyName("own_cpu_ms")]
+    public long? OwnCpuMs { get; set; }
 
     [JsonPropertyName("actual_logical_reads")]
     public long? ActualLogicalReads { get; set; }

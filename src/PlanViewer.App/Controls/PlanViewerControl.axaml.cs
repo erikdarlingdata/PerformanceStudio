@@ -472,7 +472,26 @@ public partial class PlanViewerControl : UserControl
             return false;
         }
 
-        PlanAnalysisPipeline.AnalyzeParsed(_currentPlan, ConfigLoader.Load(), _serverMetadata);
+        /* A .planview.json that cannot be used (a bad suppression, malformed JSON) must not stop a
+           plan from opening. Analyze with the defaults and say so in the toolbar; the message
+           names the file at fault. */
+        AnalyzerConfig analyzerConfig;
+        try
+        {
+            analyzerConfig = ConfigLoader.Load();
+            ConfigNoticeText.IsVisible = false;
+            ConfigNoticeText.Text = "";
+            ToolTip.SetTip(ConfigNoticeText, null);
+        }
+        catch (Exception ex) when (ex is InvalidDataException or FileNotFoundException)
+        {
+            analyzerConfig = AnalyzerConfig.Default;
+            ConfigNoticeText.Text = "Config ignored: " + ex.Message;
+            ConfigNoticeText.Foreground = FindBrushResource("WarningBrush");
+            ConfigNoticeText.IsVisible = true;
+            ToolTip.SetTip(ConfigNoticeText, ex.Message);
+        }
+        PlanAnalysisPipeline.AnalyzeParsed(_currentPlan, analyzerConfig, _serverMetadata);
 
         /* #456 gave the analysis pipeline and Human/Robot Advice (ResultMapper) the shared
            PlanStatements.EnumerateAll traversal, which descends into stored procedure and UDF
@@ -515,8 +534,9 @@ public partial class PlanViewerControl : UserControl
         foreach (var entry in everyStatement)
         {
             var s = entry.Statement;
-            warningCount += s.PlanWarnings.Count;
-            criticalCount += s.PlanWarnings.Count(w => w.Severity == PlanWarningSeverity.Critical);
+            // Suppressed findings (#651) do not count, matching the analysis summary.
+            warningCount += s.PlanWarnings.Count(w => !w.IsSuppressed);
+            criticalCount += s.PlanWarnings.Count(w => !w.IsSuppressed && w.Severity == PlanWarningSeverity.Critical);
             if (s.RootNode != null)
                 CountNodeWarnings(s.RootNode, ref warningCount, ref criticalCount);
         }
@@ -575,6 +595,7 @@ public partial class PlanViewerControl : UserControl
         ShowEmptyState("No Plan Loaded", null);
         InsightsPanel.IsVisible = false;
         CostText.Text = "";
+        ConfigNoticeText.IsVisible = false;
         CloseStatementsPanel();
         // Button and divider both belong to the overflow — see ShowStatementsPanel.
         Overflow.SetAvailable(StatementsButton, false);

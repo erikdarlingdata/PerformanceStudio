@@ -21,7 +21,7 @@ dotnet tool install --tool-path ./tools PerformanceStudio.Cli --version <version
 ```bash
 planview analyze my_query.sqlplan
 planview analyze my_query.sqlplan --output text --warnings-only
-planview analyze ./queries/ --server sql2022 --database AdventureWorks --login sa --password-stdin --output-dir ./results/
+planview analyze ./queries/ --server sql2025 --database AdventureWorks --login sa --password-stdin --output-dir ./results/
 planview repl
 ```
 

@@ -205,6 +205,10 @@ internal static partial class AdviceContentBuilder
             tags.Add("SQL Server");
         if (w.IsLegacy)
             tags.Add("legacy");
+        if (w.IsSuppressed)
+            tags.Add(string.IsNullOrWhiteSpace(w.SuppressionReason)
+                ? "suppressed"
+                : $"suppressed: {w.SuppressionReason}");
         if (w.MaxBenefitPercent.HasValue)
             tags.Add($"up to {FormatBenefit(w.MaxBenefitPercent.Value)}% benefit");
         if (tags.Count > 0)
@@ -378,8 +382,9 @@ internal static partial class AdviceContentBuilder
     /// takes — deliberately the same three lines <see cref="TextFormatter"/> writes for this
     /// statement, character for character.
     ///
-    /// <para>The attribution below mirrors TextFormatter's, which owns it for the text view and
-    /// keeps it private. Rather than trust two copies to stay in step,
+    /// <para>Both read the own times PlanAnalyzer put on each <see cref="OperatorResult"/>, but the
+    /// filtering, ranking and formatting below mirror TextFormatter's, which keeps its copy
+    /// private. Rather than trust two copies to stay in step,
     /// <c>AdviceCardsTests.TheCardsOperatorLinesAreTheReportsOperatorLines</c> reads the report
     /// and asserts these strings appear in it, so a change to one copy fails loudly instead of
     /// showing two different top-five lists in the same window.</para>
@@ -443,19 +448,11 @@ internal static partial class AdviceContentBuilder
         // Exchanges do negligible own work and carry misleading elapsed times.
         if (node.PhysicalOp != "Parallelism")
         {
-            var mode = node.ActualExecutionMode ?? node.ExecutionMode;
-
-            long ownCpu = 0;
-            if (node.ActualCpuMs.HasValue)
-                ownCpu = mode == "Batch"
-                    ? node.ActualCpuMs.Value
-                    : Math.Max(0, node.ActualCpuMs.Value - ChildCpuSum(node));
-
-            long ownElapsed = 0;
-            if (node.ActualElapsedMs.HasValue)
-                ownElapsed = mode == "Batch"
-                    ? node.ActualElapsedMs.Value
-                    : Math.Max(0, node.ActualElapsedMs.Value - ChildElapsedSum(node));
+            /* Own times come from the analyzer, which subtracts whole batch zones and works per
+               thread. Subtracting only a batch child's own time charged a row-mode parent with the
+               rest of the zone. */
+            var ownCpu = node.OwnCpuMs ?? 0;
+            var ownElapsed = node.OwnElapsedMs ?? 0;
 
             /* With CPU data present, elapsed-without-CPU is a cumulative timing artifact rather
                than work this operator did. Without it (an estimated plan) elapsed is all there
@@ -473,32 +470,5 @@ internal static partial class AdviceContentBuilder
 
         foreach (var child in node.Children)
             CollectNodeTimings(child, timings);
-    }
-
-    private static long ChildCpuSum(OperatorResult node)
-    {
-        long sum = 0;
-        foreach (var child in node.Children)
-            sum += child.ActualCpuMs ?? ChildCpuSum(child);
-        return sum;
-    }
-
-    private static long ChildElapsedSum(OperatorResult node)
-    {
-        long sum = 0;
-        foreach (var child in node.Children)
-        {
-            if (child.PhysicalOp == "Parallelism" && child.Children.Count > 0)
-                sum += child.Children
-                    .Where(c => c.ActualElapsedMs.HasValue)
-                    .Select(c => c.ActualElapsedMs!.Value)
-                    .DefaultIfEmpty(0)
-                    .Max();
-            else if (child.ActualElapsedMs.HasValue)
-                sum += child.ActualElapsedMs.Value;
-            else
-                sum += ChildElapsedSum(child);
-        }
-        return sum;
     }
 }

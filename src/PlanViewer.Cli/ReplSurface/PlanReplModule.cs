@@ -53,7 +53,7 @@ public sealed class PlanReplModule(IPlanCatalog catalog, PlanOperations operatio
                             (string id, CancellationToken cancellationToken,
                                 [Description("Number of operators to return (1-100)")] int top = 10) =>
                                 Execute(() => operations.GetExpensiveOperators(id, top, cancellationToken)))
-                        .WithDescription("List the most expensive operators")
+                        .WithDescription("List the most expensive operators (cost for estimated plans; own time, children subtracted, for actual plans)")
                         .ReadOnly();
 
                     scope.Map(
