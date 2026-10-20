@@ -21,7 +21,7 @@
     Directory.Build.props directly and never see the version block below.
   -->
   <PropertyGroup>
-    <Version>1.30.0</Version>
+    <Version>1.31.0</Version>
     <Authors>Erik Darling</Authors>
     <Company>Darling Data LLC</Company>
     <Product>Performance Studio</Product>
