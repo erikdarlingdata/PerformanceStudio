@@ -120,7 +120,9 @@ jobs:
           # lacks the Visual Studio extension-development workload.
           $msbuildLog = Join-Path $env:RUNNER_TEMP 'ssms-msbuild.log'
           msbuild src/PlanViewer.Ssms/PlanViewer.Ssms.csproj -restore -t:Build -p:Configuration=Release -p:DeployExtension=false | Tee-Object -FilePath $msbuildLog
-          $auditHit = Select-String -Path $msbuildLog -Pattern 'NU1903|NU1904' | Select-Object -First 1
+          # Match the diagnostic itself: Directory.Build.props puts NU1903;NU1904 in
+          # WarningsAsErrors, so the bare codes also appear in csc's /warnaserror+ list.
+          $auditHit = Select-String -Path $msbuildLog -Pattern '(warning|error) NU190[34]:' | Select-Object -First 1
           if ($auditHit) {
             Write-Host "::warning::SSMS restore failed the NuGet audit: $($auditHit.Line.Trim())"
           }
