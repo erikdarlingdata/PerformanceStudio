@@ -47,7 +47,7 @@ public sealed class McpSmokeTests
             transport,
             clientOptions,
             cancellationToken: cancellationToken);
-        Assert.Equal("planview", client.ServerInfo.Name);
+        Assert.Equal("planview", client.ServerInfo?.Name);
         var tools = await client.ListToolsAsync(cancellationToken: cancellationToken);
         var names = tools.Select(tool => tool.Name).Order(StringComparer.Ordinal).ToArray();
 
