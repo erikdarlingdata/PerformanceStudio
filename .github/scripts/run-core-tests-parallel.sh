@@ -3,8 +3,8 @@
 #
 # Why processes and not threads: the headless UI tests share a single dispatcher thread
 # (tests/PlanViewer.Core.Tests/HeadlessUi.cs), so more threads in one process do not help.
-# Each process gets its own dispatcher. Measured locally with this split: one process
-# ~129s on CI, three processes ~57s.
+# Each process gets its own dispatcher. Measured on CI: the test step took ~129s as one
+# process and 39-47s as these three (run 41318217649).
 #
 # The split is by class-name initial. Every class is in PlanViewer.Core.Tests.
 #   process 1: classes starting A-N
