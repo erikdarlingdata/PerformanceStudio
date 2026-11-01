@@ -1,6 +1,10 @@
 name: CI
 
 on:
+  # No push trigger, deliberately. This job does not re-test a merge on dev or main. A merge
+  # onto a base that moved after the PR ran is caught later: nightly.yml tests dev, and on a
+  # release the dev-to-main PR runs this job and release.yml tests again before publishing.
+  #
   # No paths-ignore here, deliberately. A required status check has to REPORT on every
   # PR, and a workflow skipped by a path filter reports nothing at all -- GitHub then
   # shows the check as forever pending and the PR can never merge. A docs-only PR would
