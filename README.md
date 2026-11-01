@@ -7,7 +7,7 @@
   <a href="https://github.com/erikdarlingdata/PerformanceStudio/releases/latest"><img src="https://img.shields.io/github/v/release/erikdarlingdata/PerformanceStudio?style=for-the-badge" alt="Latest Release"></a>
   <a href="https://github.com/erikdarlingdata/PerformanceStudio/issues"><img src="https://img.shields.io/github/issues/erikdarlingdata/PerformanceStudio?style=for-the-badge" alt="Open Issues"></a>
   <a href="https://github.com/erikdarlingdata/PerformanceStudio/commits/main"><img src="https://img.shields.io/github/last-commit/erikdarlingdata/PerformanceStudio?style=for-the-badge" alt="Last Commit"></a>
-  <a href="https://github.com/erikdarlingdata/PerformanceStudio/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/erikdarlingdata/PerformanceStudio/ci.yml?style=for-the-badge&label=CI" alt="CI"></a>
+  <a href="https://github.com/erikdarlingdata/PerformanceStudio/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/erikdarlingdata/PerformanceStudio/ci.yml?style=for-the-badge&label=CI&branch=dev" alt="CI"></a>
 </p>
 <p align="center">
   <a href="https://x.com/erikdarlingdata"><img src="https://img.shields.io/badge/Follow_%40ErikDarlingData-black?style=for-the-badge&logo=x&logoColor=white" alt="Follow @ErikDarlingData on X"></a>

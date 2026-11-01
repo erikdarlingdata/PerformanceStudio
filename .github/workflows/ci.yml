@@ -1,8 +1,10 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
+  # No push trigger, deliberately. This job does not re-test a merge on dev or main. A merge
+  # onto a base that moved after the PR ran is caught later: nightly.yml tests dev, and on a
+  # release the dev-to-main PR runs this job and release.yml tests again before publishing.
+  #
   # No paths-ignore here, deliberately. A required status check has to REPORT on every
   # PR, and a workflow skipped by a path filter reports nothing at all -- GitHub then
   # shows the check as forever pending and the PR can never merge. A docs-only PR would
@@ -47,20 +49,13 @@ jobs:
               - 'PlanViewer.sln'
               - 'global.json'
               - '.github/workflows/ci.yml'
+              - '.github/scripts/run-core-tests-parallel.sh'
 
       - name: Setup .NET 10.0
         if: steps.filter.outputs.code == 'true'
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: 10.0.x
-          cache: true
-          cache-dependency-path: |
-            **/*.csproj
-            Directory.Packages.props
-
-      - name: Install WASM workload
-        if: steps.filter.outputs.code == 'true'
-        run: dotnet workload install wasm-tools
 
       - name: Restore solution
         if: steps.filter.outputs.code == 'true'
@@ -72,4 +67,4 @@ jobs:
 
       - name: Run tests
         if: steps.filter.outputs.code == 'true'
-        run: dotnet test tests/PlanViewer.Core.Tests/PlanViewer.Core.Tests.csproj -c Release --no-build --verbosity normal -- --hangdump --hangdump-timeout 5m --hangdump-type none
+        run: bash .github/scripts/run-core-tests-parallel.sh

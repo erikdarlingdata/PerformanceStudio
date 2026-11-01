@@ -47,10 +47,6 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
-      # ci.yml does the same before restoring the solution (Blazor WASM project).
-      - name: Install WASM workload
-        run: dotnet workload install wasm-tools
-
       # The snapshot script reads project.assets.json, which only exists after a restore. Every
       # restore here passes -p:NuGetAudit=false: with the audit gate on, a new high advisory fails
       # the restore, the snapshot is never submitted, and the graph goes stale exactly when an
