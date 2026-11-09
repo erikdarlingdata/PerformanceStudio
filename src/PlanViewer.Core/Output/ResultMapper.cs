@@ -444,6 +444,7 @@ public static class ResultMapper
             LogicalOp = node.LogicalOp,
             CostPercent = node.CostPercent,
             EstimatedRows = node.EstimateRows,
+            EstimatedExecutions = RowEstimateHelper.GetEstimatedExecutions(node),
             EstimatedCost = node.EstimatedOperatorCost,
             EstimatedIO = node.EstimateIO,
             EstimatedCPU = node.EstimateCPU,

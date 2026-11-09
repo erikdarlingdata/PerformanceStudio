@@ -1822,6 +1822,23 @@ public class PlanAnalyzerTests
         Assert.Single(warnings);
     }
 
+    [Fact]
+    public void Rule35_ExpensiveOperator_OperatorAboveASkewedExchange_IsNotNamed()
+    {
+        // serially-parallel: the Sort (node 2) is 17,111 ms on every worker thread, but the branch
+        // below its Repartition Streams ran on thread 1 alone. Across an exchange the slowest producer
+        // thread comes off every thread above it (#680), so the Sort owns 1 ms of a 17,112 ms
+        // statement and Rule 35 has nothing to say about it. Pairing threads by number gave it all
+        // 17,111 ms and named it the plan's most expensive operator.
+        var plan = PlanTestHelper.LoadAndAnalyze("serially-parallel.sqlplan");
+        var sort = PlanTestHelper.FindNode(PlanTestHelper.FirstStatement(plan).RootNode!, 2)!;
+
+        Assert.Equal("Sort", sort.PhysicalOp);
+        Assert.Equal(1, PlanAnalyzer.GetOperatorOwnElapsedMs(sort));
+        Assert.DoesNotContain(PlanTestHelper.WarningsOfType(plan, "Expensive Operator"),
+            w => w.Message.StartsWith("Sort took"));
+    }
+
     #region Rule 38 — Standard Edition DOP Limitation
 
     private static PlanStatement BuildBatchModeDop2Statement()
