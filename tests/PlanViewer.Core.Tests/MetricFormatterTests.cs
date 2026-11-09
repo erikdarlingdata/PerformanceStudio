@@ -154,6 +154,20 @@ public class MetricFormatterTests
         Assert.Equal(expected, MetricFormatter.FormatEstimatedRows(rows, Invariant));
     }
 
+    [Theory]
+    // An execution count with the decimals it has (#677): rebind and rewind estimates are
+    // routinely fractional, so a count of 11.5 prints "11.5" rather than rounding to "12" beside
+    // a row total computed from the unrounded 11.5, while a whole count stays whole.
+    [InlineData(1.0, "1")]
+    [InlineData(1001.0, "1,001")]
+    [InlineData(11.5, "11.5")]
+    [InlineData(6022824.87, "6,022,824.9")]
+    [InlineData(1e12, "1,000,000,000,000")]
+    public void FormatEstimatedExecutions_KeepsAFractionAndSeparatesThousands(double executions, string expected)
+    {
+        Assert.Equal(expected, MetricFormatter.FormatEstimatedExecutions(executions, Invariant));
+    }
+
     [Fact]
     public void FormatDuration_AgreesWithItselfWhicheverOverloadIsCalled()
     {

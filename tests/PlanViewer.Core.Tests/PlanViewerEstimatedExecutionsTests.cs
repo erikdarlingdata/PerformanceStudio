@@ -10,6 +10,7 @@ using PlanViewer.App.Controls;
 using PlanViewer.Core.Models;
 using PlanViewer.Core.Output;
 using PlanViewer.Core.Services;
+using PlanViewer.Web;
 
 namespace PlanViewer.Core.Tests;
 
@@ -26,14 +27,14 @@ public class PlanViewerEstimatedExecutionsTests
     private const BindingFlags Instance = BindingFlags.Instance | BindingFlags.NonPublic;
 
     /* An inner-side lazy spool: 10 rows per run, rebound 10 times and rewound 990 times, so 1,001 runs and 10,010 rows in all. */
-    private static PlanNode Spool() => new()
+    private static PlanNode Spool(double rebinds = 10, double rewinds = 990) => new()
     {
         NodeId = 7,
         PhysicalOp = "Table Spool",
         LogicalOp = "Lazy Spool",
         EstimateRows = 10,
-        EstimateRebinds = 10,
-        EstimateRewinds = 990,
+        EstimateRebinds = rebinds,
+        EstimateRewinds = rewinds,
     };
 
     [Fact]
@@ -49,6 +50,23 @@ public class PlanViewerEstimatedExecutionsTests
 
         Assert.Equal(1001.0.ToString("N0", CultureInfo.CurrentCulture), rows["Est. Executions"]);
         Assert.Equal(10010.0.ToString("N1", CultureInfo.CurrentCulture), rows["Est. Rows All Execs"]);
+    }
+
+    /// <summary>Rebind and rewind estimates are fractional, so the count is too: 10.5 rebinds is 11.5 runs, printed with
+    /// its decimal rather than rounded to 12 beside a row total that was computed from 11.5.</summary>
+    [Fact]
+    public void ThePropertiesPanel_PrintsAFractionalCountWithItsDecimals()
+    {
+        Dictionary<string, string> rows = null!;
+        HeadlessUi.Run(() =>
+        {
+            var control = new PlanViewerControl();
+            ShowProperties(control, Spool(rebinds: 10.5, rewinds: 0));
+            rows = PropertyRows(control);
+        });
+
+        Assert.Equal(11.5.ToString("#,##0.#", CultureInfo.CurrentCulture), rows["Est. Executions"]);
+        Assert.Equal(115.0.ToString("N1", CultureInfo.CurrentCulture), rows["Est. Rows All Execs"]);
     }
 
     [Fact]
@@ -91,41 +109,82 @@ public class PlanViewerEstimatedExecutionsTests
     [Fact]
     public void TheHtmlExport_CountsRewindsAsExecutions()
     {
-        var plan = ShowPlanParser.Parse(EstimatedSpoolPlan());
-        PlanAnalyzer.Analyze(plan);
-        BenefitScorer.Score(plan);
-        var result = ResultMapper.Map(plan, "estimated_spool.sqlplan");
-
-        var html = HtmlExporter.Export(result, TextFormatter.Format(result));
+        var html = ExportEstimatedSpoolPlan(rebinds: "10", rewinds: "990");
 
         var culture = CultureInfo.CurrentCulture;
         Assert.Contains(
-            $"{10.0.ToString("N1", culture)} est. rows &times; {1001.0.ToString("N0", culture)} est. execs = {10010.0.ToString("N1", culture)} est. rows",
+            $"{10010.0.ToString("N1", culture)} est. rows over {1001.0.ToString("#,##0.#", culture)} est. execs ({10.0.ToString("N1", culture)} per exec)",
             html);
         Assert.DoesNotContain(">10 est. rows<", html);
     }
 
-    /// <summary>The Web viewer is not referenced by this project, so this pins its Operator Properties panel to the shared
-    /// helpers instead of rendering it.</summary>
+    /// <summary>A fractional count prints with its decimal: 10.5 rebinds is 11.5 runs, and the line says so rather than
+    /// rounding it to 12 beside a row total that was computed from 11.5.</summary>
+    [Fact]
+    public void TheHtmlExport_PrintsAFractionalCountWithItsDecimals()
+    {
+        var html = ExportEstimatedSpoolPlan(rebinds: "10.5", rewinds: "0");
+
+        var culture = CultureInfo.CurrentCulture;
+        Assert.Contains(
+            $"{115.0.ToString("N1", culture)} est. rows over {11.5.ToString("#,##0.#", culture)} est. execs ({10.0.ToString("N1", culture)} per exec)",
+            html);
+        Assert.DoesNotContain("12 est. execs", html);
+    }
+
+    /// <summary>The Web node tooltip (the node's title text) prints the estimate through the shared formatter, so it reads
+    /// "10.0" like the Operator Properties panel and the HTML export, not "10".</summary>
+    [Fact]
+    public void WebNodeTooltip_PrintsTheEstimateThroughTheFormatter()
+    {
+        var tooltip = PlanViewFormat.BuildTooltip(Spool());
+
+        Assert.Contains($"Estimated rows: {10.0.ToString("N1", CultureInfo.CurrentCulture)}", tooltip);
+    }
+
+    /// <summary>The Web viewer's razor is not compiled by this project, so this pins its Operator Properties panel and its
+    /// canvas node label to the shared helpers instead of rendering them.</summary>
     [Fact]
     public void WebOperatorProperties_UseTheSharedHelpers()
     {
         var razor = File.ReadAllText(Path.Combine(SolutionRoot(), "src", "PlanViewer.Web", "Pages", "OperatorPropertiesPanel.razor"));
 
-        Assert.Contains("RowEstimateHelper.GetEstimatedExecutions(Node)", razor);
+        Assert.Contains("MetricFormatter.FormatEstimatedExecutions(RowEstimateHelper.GetEstimatedExecutions(Node))", razor);
         Assert.Contains("RowEstimateHelper.GetEstimatedRowsAllExecutions(Node)", razor);
         Assert.Contains("MetricFormatter.FormatEstimatedRows(Node.EstimateRows)", razor);
+        Assert.Contains("MetricFormatter.FormatEstimatedRows(Node.EstimatedRowsRead)", razor);
+        Assert.Contains("MetricFormatter.FormatEstimatedRows(Node.EstimateRowsWithoutRowGoal)", razor);
         Assert.DoesNotContain("1 + Node.EstimateRebinds", razor);
+        Assert.DoesNotContain("Node.EstimatedRowsRead.ToString(\"N0\")", razor);
+        Assert.DoesNotContain("Node.EstimateRowsWithoutRowGoal.ToString(\"N0\")", razor);
+    }
+
+    [Fact]
+    public void WebCanvasNodeLabel_UsesTheSharedFormatter()
+    {
+        var razor = File.ReadAllText(Path.Combine(SolutionRoot(), "src", "PlanViewer.Web", "Pages", "Index.razor"));
+
+        Assert.Contains("{MetricFormatter.FormatEstimatedRows(node.EstimateRows)} est. rows", razor);
+        Assert.DoesNotContain("{node.EstimateRows:N0}", razor);
+    }
+
+    private static string ExportEstimatedSpoolPlan(string rebinds, string rewinds)
+    {
+        var plan = ShowPlanParser.Parse(EstimatedSpoolPlan(rebinds, rewinds));
+        PlanAnalyzer.Analyze(plan);
+        BenefitScorer.Score(plan);
+        var result = ResultMapper.Map(plan, "estimated_spool.sqlplan");
+        return HtmlExporter.Export(result, TextFormatter.Format(result));
     }
 
     /// <summary>An estimated plan (no runtime counters): a Nested Loops join whose inner side is the lazy spool above a Constant Scan.</summary>
-    private static string EstimatedSpoolPlan() =>
+    private static string EstimatedSpoolPlan(string rebinds, string rewinds) =>
         "<ShowPlanXML xmlns=\"http://schemas.microsoft.com/sqlserver/2004/07/showplan\" Version=\"1.6\" Build=\"17.0.1000.7\"><BatchSequence><Batch><Statements>"
         + "<StmtSimple StatementText=\"SELECT 1\" StatementId=\"1\" StatementCompId=\"1\" StatementType=\"SELECT\" StatementSubTreeCost=\"10\" StatementEstRows=\"10\">"
         + "<QueryPlan DegreeOfParallelism=\"1\" CachedPlanSize=\"16\">"
         + "<RelOp NodeId=\"0\" PhysicalOp=\"Nested Loops\" LogicalOp=\"Inner Join\" EstimateRows=\"10\" EstimatedTotalSubtreeCost=\"10\" EstimateCPU=\"0.001\" EstimateIO=\"0\" AvgRowSize=\"11\" Parallel=\"0\" EstimateRebinds=\"0\" EstimateRewinds=\"0\"><OutputList /><NestedLoops Optimized=\"0\">"
         + "<RelOp NodeId=\"1\" PhysicalOp=\"Constant Scan\" LogicalOp=\"Constant Scan\" EstimateRows=\"1000\" EstimatedTotalSubtreeCost=\"0.001\" EstimateCPU=\"0.001\" EstimateIO=\"0\" AvgRowSize=\"9\" Parallel=\"0\" EstimateRebinds=\"0\" EstimateRewinds=\"0\"><OutputList /><ConstantScan /></RelOp>"
-        + "<RelOp NodeId=\"7\" PhysicalOp=\"Table Spool\" LogicalOp=\"Lazy Spool\" EstimateRows=\"10\" EstimatedTotalSubtreeCost=\"9\" EstimateCPU=\"0.001\" EstimateIO=\"0\" AvgRowSize=\"9\" Parallel=\"0\" EstimateRebinds=\"10\" EstimateRewinds=\"990\"><OutputList /><Spool>"
+        + $"<RelOp NodeId=\"7\" PhysicalOp=\"Table Spool\" LogicalOp=\"Lazy Spool\" EstimateRows=\"10\" EstimatedTotalSubtreeCost=\"9\" EstimateCPU=\"0.001\" EstimateIO=\"0\" AvgRowSize=\"9\" Parallel=\"0\" EstimateRebinds=\"{rebinds}\" EstimateRewinds=\"{rewinds}\"><OutputList /><Spool>"
         + "<RelOp NodeId=\"8\" PhysicalOp=\"Constant Scan\" LogicalOp=\"Constant Scan\" EstimateRows=\"10\" EstimatedTotalSubtreeCost=\"0.001\" EstimateCPU=\"0.001\" EstimateIO=\"0\" AvgRowSize=\"9\" Parallel=\"0\" EstimateRebinds=\"0\" EstimateRewinds=\"0\"><OutputList /><ConstantScan /></RelOp>"
         + "</Spool></RelOp></NestedLoops></RelOp>"
         + "</QueryPlan></StmtSimple></Statements></Batch></BatchSequence></ShowPlanXML>";
