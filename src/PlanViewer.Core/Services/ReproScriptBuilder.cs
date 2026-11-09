@@ -56,7 +56,7 @@ public static class ReproScriptBuilder
         }
         else
         {
-            warnings.Add("Plan XML not available — parameters could not be extracted");
+            warnings.Add("Plan XML not available: parameters could not be extracted");
         }
 
         /* Plan XML is untrusted input: names, types, and compiled values come straight
@@ -121,7 +121,7 @@ public static class ReproScriptBuilder
         var droppedCount = parameters.Count - validParameters.Count;
         if (droppedCount > 0)
         {
-            warnings.Add($"{droppedCount} parameter(s) omitted — the plan's parameter name or data type was not a valid T-SQL identifier. Declare them manually before executing.");
+            warnings.Add($"{droppedCount} parameter(s) omitted: the plan's parameter name or data type was not a valid T-SQL identifier. Declare them manually before executing.");
         }
 
         if (conflictingNames.Count > 0)
@@ -146,7 +146,7 @@ public static class ReproScriptBuilder
         var unresolvedVars = FindUnresolvedVariables(cleanedQuery, parameters);
         if (unresolvedVars.Count > 0)
         {
-            warnings.Add($"Variables in query without values: {string.Join(", ", unresolvedVars)}. These may be local variables — fill in values before executing.");
+            warnings.Add($"Variables in query without values: {string.Join(", ", unresolvedVars)}. These may be local variables: fill in values before executing.");
         }
 
         /* Header comment. Every value in it goes through CommentSafe: the database name
@@ -278,7 +278,7 @@ public static class ReproScriptBuilder
         {
             if (Regex.IsMatch(queryText, pattern, RegexOptions.IgnoreCase))
             {
-                warnings.Add("Query references temp table(s) — reproduction may require creating the temp table first");
+                warnings.Add("Query references temp table(s): reproduction may require creating the temp table first");
                 break;
             }
         }
@@ -300,7 +300,7 @@ public static class ReproScriptBuilder
         {
             if (Regex.IsMatch(queryText, pattern, RegexOptions.IgnoreCase))
             {
-                warnings.Add("Query may reference table variable(s) — reproduction may require declaring and populating the table variable first");
+                warnings.Add("Query may reference table variable(s): reproduction may require declaring and populating the table variable first");
                 break;
             }
         }

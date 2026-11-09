@@ -33,7 +33,7 @@ public sealed class McpPlanTools
     }
 
     [McpServerTool(Name = "get_connections")]
-    [Description("Lists saved SQL Server connections. Returns server names and authentication types only — " +
+    [Description("Lists saved SQL Server connections. Returns server names and authentication types only: " +
         "credentials are never exposed. Use connection names with Query Store tools.")]
     public static string GetConnections(ConnectionStore connectionStore)
     {

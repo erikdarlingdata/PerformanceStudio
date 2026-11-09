@@ -523,7 +523,7 @@ pre.query-text, pre.text-output {
                 sb.AppendLine($"<span class=\"warn-op\">{Encode(w.Operator)}</span>");
             sb.AppendLine($"<span class=\"warn-type\">{Encode(w.Type)}</span>");
             if (w.IsLegacy)
-                sb.AppendLine("<span class=\"warn-legacy\" title=\"Legacy rule — predates the benefit-scoring framework\">legacy</span>");
+                sb.AppendLine("<span class=\"warn-legacy\" title=\"Legacy rule: predates the benefit-scoring framework\">legacy</span>");
             if (w.IsSuppressed)
                 sb.AppendLine($"<span class=\"warn-suppressed\" title=\"Suppressed in .planview.json\">suppressed{(string.IsNullOrWhiteSpace(w.SuppressionReason) ? "" : ": " + Encode(w.SuppressionReason))}</span>");
             if (w.MaxBenefitPercent.HasValue)

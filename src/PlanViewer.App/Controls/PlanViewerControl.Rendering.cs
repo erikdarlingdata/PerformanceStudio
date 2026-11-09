@@ -550,7 +550,7 @@ public partial class PlanViewerControl : UserControl
         header.Background = Brushes.Transparent;
         ToolTip.SetTip(header, originNodeIds.Count == 1
             ? $"Go to operator (Node {originNodeIds[0]})"
-            : $"Go to Node {originNodeIds[0]} — also from {string.Join(", ", originNodeIds.Skip(1).Select(id => "Node " + id))}");
+            : $"Go to Node {originNodeIds[0]}, also from {string.Join(", ", originNodeIds.Skip(1).Select(id => "Node " + id))}");
 
         header.PointerPressed += (_, e) =>
         {
