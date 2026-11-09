@@ -208,7 +208,10 @@ public partial class PlanViewerControl : UserControl
         var contentColumns = columns[0].ActualWidth + columns[1].ActualWidth;
         var starMinimums = columns.Skip(2).Sum(c => c.MinWidth);
         var width = Math.Max(stripWidth, contentColumns + starMinimums);
-        if (double.IsNaN(InsightsGrid.Width) || Math.Abs(InsightsGrid.Width - width) > 0.5)
+        /* Compared exactly: a grid wider than its strip by any amount, half a pixel at 200% scaling included,
+           shows a horizontal scroll bar. The bound is a function of sizes the pass has already settled, so
+           setting it once is the last pass. */
+        if (double.IsNaN(InsightsGrid.Width) || InsightsGrid.Width != width)
             InsightsGrid.Width = width;
     }
 
