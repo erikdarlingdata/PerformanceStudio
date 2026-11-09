@@ -10,6 +10,7 @@ using Avalonia.Media;
 using PlanViewer.App.Helpers;
 using PlanViewer.App.Services;
 using PlanViewer.Core.Models;
+using PlanViewer.Core.Output;
 using PlanViewer.Core.Services;
 using AvaloniaPath = Avalonia.Controls.Shapes.Path;
 
@@ -483,11 +484,10 @@ public partial class PlanViewerControl : UserControl
         if (child.HasActualStats)
             AddRow("Actual Number of Rows for All Executions", $"{child.ActualRows:N0}");
 
-        AddRow("Estimated Number of Rows Per Execution", $"{child.EstimateRows:N0}");
+        AddRow("Estimated Number of Rows Per Execution", MetricFormatter.FormatEstimatedRows(child.EstimateRows));
 
-        var executions = 1.0 + child.EstimateRebinds + child.EstimateRewinds;
-        var estimatedRowsAllExec = child.EstimateRows * executions;
-        AddRow("Estimated Number of Rows for All Executions", $"{estimatedRowsAllExec:N0}");
+        var estimatedRowsAllExec = RowEstimateHelper.GetEstimatedRowsAllExecutions(child);
+        AddRow("Estimated Number of Rows for All Executions", MetricFormatter.FormatEstimatedRows(estimatedRowsAllExec));
 
         if (child.EstimatedRowSize > 0)
         {

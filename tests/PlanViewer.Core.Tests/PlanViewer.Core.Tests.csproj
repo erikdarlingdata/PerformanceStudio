@@ -54,6 +54,9 @@
     <!-- The web client's share service is plain C#. It is compiled here, as PlanViewer.Web itself
          links Core sources, because the Blazor WASM project is not referenced by the tests. -->
     <Compile Include="..\..\src\PlanViewer.Web\Services\PlanShareService.cs" Link="Web\PlanShareService.cs" />
+    <!-- The web viewer's formatting helpers depend on Core alone, so its node tooltip is tested
+         here as rendered text rather than pinned by reading the source. -->
+    <Compile Include="..\..\src\PlanViewer.Web\PlanViewFormat.cs" Link="Web\PlanViewFormat.cs" />
   </ItemGroup>
 
   <ItemGroup>

@@ -136,6 +136,38 @@ public class MetricFormatterTests
         Assert.Equal(expected, MetricFormatter.FormatDuration(ms, Invariant));
     }
 
+    [Theory]
+    // One decimal with thousands separators, so the same estimate reads the same on every surface
+    // (#677): 1.1 never reads as "1" on one tooltip and "1.1" on the next, and a whole number
+    // keeps its ".0" rather than printing "10" here and "10.0" there.
+    [InlineData(1.1, "1.1")]
+    [InlineData(10.0, "10.0")]
+    [InlineData(10010.0, "10,010.0")]
+    [InlineData(2983.02, "2,983.0")]
+    [InlineData(0.0, "0.0")]
+    // Past one decimal it rounds; a tiny per-execution estimate reads "0.0" rather than an exponent.
+    [InlineData(1.26, "1.3")]
+    [InlineData(0.00964372, "0.0")]
+    [InlineData(1e12, "1,000,000,000,000.0")]
+    public void FormatEstimatedRows_PrintsOneDecimalWithSeparators(double rows, string expected)
+    {
+        Assert.Equal(expected, MetricFormatter.FormatEstimatedRows(rows, Invariant));
+    }
+
+    [Theory]
+    // An execution count with the decimals it has (#677): rebind and rewind estimates are
+    // routinely fractional, so a count of 11.5 prints "11.5" rather than rounding to "12" beside
+    // a row total computed from the unrounded 11.5, while a whole count stays whole.
+    [InlineData(1.0, "1")]
+    [InlineData(1001.0, "1,001")]
+    [InlineData(11.5, "11.5")]
+    [InlineData(6022824.87, "6,022,824.9")]
+    [InlineData(1e12, "1,000,000,000,000")]
+    public void FormatEstimatedExecutions_KeepsAFractionAndSeparatesThousands(double executions, string expected)
+    {
+        Assert.Equal(expected, MetricFormatter.FormatEstimatedExecutions(executions, Invariant));
+    }
+
     [Fact]
     public void FormatDuration_AgreesWithItselfWhicheverOverloadIsCalled()
     {
