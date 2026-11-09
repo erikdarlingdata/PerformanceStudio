@@ -17,9 +17,14 @@ public sealed class HistoricalCliContractTests
        Rolled a third time for #651, again additively: every warning gains "suppressed" (always
        written) and "rule" (written when a numbered rule produced it), and the summary gains
        "suppressed_warnings". Verified by removing exactly those keys from the new output, which
-       gives back the previous hash, 779a85036b74dc7cc7d26d4bad3d7e2b327e4ff89a5ed79b00b78cfae3717cab. */
+       gives back the previous hash, 779a85036b74dc7cc7d26d4bad3d7e2b327e4ff89a5ed79b00b78cfae3717cab.
+
+       Rolled a fourth time for #677, again additively: every operator gains "estimated_executions",
+       one plus its rebinds plus its rewinds, the count the plan viewer multiplies estimated_rows by.
+       Verified the same way: removing exactly those keys from the new output gives back the previous
+       hash, 0eeb5da0bc69ceb162100f4326eee446e07234b4cc1b6660dda19221f951f01a. */
     private const string ExpectedCompactOutputSha256 =
-        "0eeb5da0bc69ceb162100f4326eee446e07234b4cc1b6660dda19221f951f01a";
+        "4c1277391674128e0ac172121d8bcb1d3f52184812acf431621fcc08253b9aa6";
 
     [Fact]
     public async Task AnalyzeCompact_PreservesHistoricalOutputBytes()

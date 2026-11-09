@@ -125,9 +125,9 @@
                 <details class="prop-section" open>
                     <summary>Rows</summary>
                     <div class="prop-grid">
-                        <div class="prop-row"><span class="prop-label">Est. Executions</span><span class="prop-value">@((1 + Node.EstimateRebinds).ToString("N0"))</span></div>
-                        <div class="prop-row"><span class="prop-label">Est. Rows Per Exec</span><span class="prop-value">@Node.EstimateRows.ToString("N1")</span></div>
-                        <div class="prop-row"><span class="prop-label">Est. Rows All Execs</span><span class="prop-value">@((Node.EstimateRows * Math.Max(1, 1 + Node.EstimateRebinds)).ToString("N1"))</span></div>
+                        <div class="prop-row"><span class="prop-label">Est. Executions</span><span class="prop-value">@RowEstimateHelper.GetEstimatedExecutions(Node).ToString("N0")</span></div>
+                        <div class="prop-row"><span class="prop-label">Est. Rows Per Exec</span><span class="prop-value">@MetricFormatter.FormatEstimatedRows(Node.EstimateRows)</span></div>
+                        <div class="prop-row"><span class="prop-label">Est. Rows All Execs</span><span class="prop-value">@MetricFormatter.FormatEstimatedRows(RowEstimateHelper.GetEstimatedRowsAllExecutions(Node))</span></div>
                         @if (Node.EstimatedRowsRead > 0)
                         {
                             <div class="prop-row"><span class="prop-label">Est. Rows Read</span><span class="prop-value">@Node.EstimatedRowsRead.ToString("N0")</span></div>

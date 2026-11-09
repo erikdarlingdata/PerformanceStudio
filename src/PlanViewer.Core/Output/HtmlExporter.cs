@@ -585,9 +585,17 @@ pre.query-text, pre.text-output {
             var accuracy = percent != null ? $" ({percent}%)" : "";
             sb.Append($" <span class=\"op-rows\">{actualText} of {expectedText} rows{accuracy}</span>");
         }
+        else if (node.EstimatedExecutions > 1)
+        {
+            // #677: the same count the viewer's Properties panel and arrow tooltip show, so an
+            // inner-side spool's rows for all executions read the same in the download.
+            var perExecution = MetricFormatter.FormatEstimatedRows(node.EstimatedRows);
+            var allExecutions = MetricFormatter.FormatEstimatedRows(node.EstimatedRows * node.EstimatedExecutions);
+            sb.Append($" <span class=\"op-rows\">{perExecution} est. rows &times; {node.EstimatedExecutions:N0} est. execs = {allExecutions} est. rows</span>");
+        }
         else
         {
-            sb.Append($" <span class=\"op-rows\">{node.EstimatedRows:N0} est. rows</span>");
+            sb.Append($" <span class=\"op-rows\">{MetricFormatter.FormatEstimatedRows(node.EstimatedRows)} est. rows</span>");
         }
 
         // Timing (actual plans)
