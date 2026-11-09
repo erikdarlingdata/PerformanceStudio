@@ -400,6 +400,7 @@ public static partial class ShowPlanParser
 
         // Table cardinality and rows to be read (on <RelOp> per XSD)
         node.TableCardinality = ParseDouble(relOpEl.Attribute("TableCardinality")?.Value);
+        node.HasTableCardinality = relOpEl.Attribute("TableCardinality") != null;
         node.EstimatedRowsRead = ParseDouble(relOpEl.Attribute("EstimatedRowsRead")?.Value);
         node.EstimateRowsWithoutRowGoal = ParseDouble(relOpEl.Attribute("EstimateRowsWithoutRowGoal")?.Value);
         if (node.EstimatedRowsRead == 0)

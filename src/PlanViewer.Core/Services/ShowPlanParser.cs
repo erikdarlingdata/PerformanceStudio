@@ -402,6 +402,7 @@ public static partial class ShowPlanParser
             return stmt;
         }
 
+        stmt.HasQueryPlan = true;
         ParseStmtAttributes(stmt, stmtEl);
         ParseQueryPlanElements(stmt, stmtEl, queryPlanEl);
 
@@ -514,6 +515,7 @@ public static partial class ShowPlanParser
             StatementSubTreeCost = ParseDouble(stmtEl.Attribute("StatementSubTreeCost")?.Value)
         };
 
+        stmt.HasQueryPlan = true;
         ParseStmtAttributes(stmt, stmtEl);
         ParseQueryPlanElements(stmt, stmtEl, queryPlanEl);
 
@@ -692,6 +694,7 @@ public static partial class ShowPlanParser
 
         // OptimizerStatsUsage
         var statsUsageEl = queryPlanEl.Element(Ns + "OptimizerStatsUsage");
+        stmt.HasStatsUsage = statsUsageEl != null;
         if (statsUsageEl != null)
         {
             foreach (var statEl in statsUsageEl.Elements(Ns + "StatisticsInfo"))
@@ -699,7 +702,8 @@ public static partial class ShowPlanParser
                 stmt.StatsUsage.Add(new OptimizerStatsUsageItem
                 {
                     StatisticsName = statEl.Attribute("Statistics")?.Value?.Replace("[", "").Replace("]", "") ?? "",
-                    TableName = statEl.Attribute("Table")?.Value?.Replace("[", "").Replace("]", "") ?? "",
+                    // A temp table's statistic names the table the padded internal way an operator's Object does.
+                    TableName = CleanTempTableName(statEl.Attribute("Table")?.Value?.Replace("[", "").Replace("]", "") ?? ""),
                     DatabaseName = statEl.Attribute("Database")?.Value?.Replace("[", "").Replace("]", ""),
                     SchemaName = statEl.Attribute("Schema")?.Value?.Replace("[", "").Replace("]", ""),
                     ModificationCount = ParseLong(statEl.Attribute("ModificationCount")?.Value),
