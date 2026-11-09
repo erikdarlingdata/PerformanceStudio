@@ -515,6 +515,18 @@ public static partial class PlanAnalyzer
     /// and nothing when it carries neither: the rows returned are what the predicate kept, not what the
     /// scan read. The impact details come out either way, so the caller does not build them twice.
     /// </summary>
+    /// <summary>
+    /// How many times the scan read its table, for the TableCardinality stand-in. The parser sums
+    /// ActualExecutions across threads, and a plain parallel scan reports one execution on each worker
+    /// thread for one pass over the table, so a node with per-thread entries takes the largest
+    /// per-thread count. That is exact for a parallel scan and undercounts a parallel Nested Loops inner
+    /// side by at most the DOP, in the direction the floor already errs.
+    /// </summary>
+    private static long ScanExecutions(PlanNode node) =>
+        node.PerThreadStats.Count > 1
+            ? node.PerThreadStats.Max(t => t.ActualExecutions)
+            : node.ActualExecutions;
+
     private static bool ScanPredicateIsWorthReporting(PlanNode node, PlanStatement stmt, out ScanImpact details)
     {
         details = BuildScanImpactDetails(node, stmt);
@@ -526,7 +538,7 @@ public static partial class PlanAnalyzer
             if (Math.Max(node.ActualRowsRead, node.ActualRows) < ScanRuleMinRows)
                 return false;
         }
-        else if (node.HasTableCardinality && node.TableCardinality * Math.Max(1, node.ActualExecutions) < ScanRuleMinRows)
+        else if (node.HasTableCardinality && node.TableCardinality * Math.Max(1, ScanExecutions(node)) < ScanRuleMinRows)
         {
             return false;
         }
