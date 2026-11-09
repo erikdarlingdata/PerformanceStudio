@@ -26,12 +26,20 @@ public class InsightsStripLayoutTests
 {
     private const double CardCap = 360;
 
-    /// <summary>In the wide window the strip has nothing to scroll and the trailing Wait Stats card still
-    /// reaches the viewer's right edge, as it fills the width the capped cards leave.</summary>
+    /// <summary>The MinWidths of the Missing Indexes, Parameters and Wait Stats columns: 200 + 200 + 280.</summary>
+    private const double StarColumnMinimums = 680;
+
+    /// <summary>At every width the grid is bounded: as wide as the strip, or as wide as its two content-sized
+    /// cards plus the other three columns' minimums when the strip is narrower than that. So the Wait Stats
+    /// card never sizes to its longest row. With this fixture's long edition both content-sized cards sit at
+    /// the 360 px cap, so the bound is 1,400 px: at 1280 the strip scrolls by the 120 px it must, and at 1600
+    /// and 1920 it has nothing to scroll and the trailing Wait Stats card reaches the viewer's right edge.</summary>
     [Theory]
     [InlineData(700, 600)]
     [InlineData(640, 480)]
     [InlineData(1280, 800)]
+    [InlineData(1600, 900)]
+    [InlineData(1920, 1080)]
     public void TheInsightCards_StayReachable_InANarrowWindow(double width, double height)
     {
         HeadlessUi.Run(() =>
@@ -62,8 +70,23 @@ public class InsightsStripLayoutTests
                 if (double.IsNaN(right) || (right > viewerWidth + 0.5 && !canScroll))
                     problems.Add($"a card ends at {right:F0} px in a {viewerWidth:F0} px viewer with no way to scroll to it (strip {(strip is null ? "absent" : $"extent {strip.Extent.Width:F0}, viewport {strip.Viewport.Width:F0}")})");
             }
-            if (!canScroll && rightEdges.Max() < viewerWidth - 0.5)
-                problems.Add($"the strip does not scroll and its last card ends at {rightEdges.Max():F0} px in a {viewerWidth:F0} px viewer: the Wait Stats card no longer fills the remaining width");
+            /* The grid's width is the strip's, or the two content-sized columns plus the star columns' 680 px
+               of minimums when the strip is narrower than that; never the Wait Stats card's longest row. */
+            var grid = Named<Grid>(viewer, "InsightsGrid");
+            var contentColumns = grid.ColumnDefinitions[0].ActualWidth + grid.ColumnDefinitions[1].ActualWidth;
+            var stripWidth = strip?.Viewport.Width ?? viewerWidth;
+            var bound = Math.Max(stripWidth, contentColumns + StarColumnMinimums);
+            if (Math.Abs(grid.Bounds.Width - bound) > 0.5)
+                problems.Add($"the insights grid is {grid.Bounds.Width:F0} px wide in a {stripWidth:F0} px strip whose two content-sized cards take {contentColumns:F0} px: it is bounded at {bound:F0} px (the strip, or those cards plus {StarColumnMinimums} px of minimums) so the Wait Stats card fills the remaining width and its rows ellipsize");
+
+            /* Where the strip holds its columns' minimums it has nothing to scroll, and the last card ends at
+               the strip's own right edge (the strip sits a pixel inside the viewer on each side). */
+            var columnsFit = contentColumns + StarColumnMinimums <= stripWidth + 0.5;
+            var stripRight = strip is null ? viewerWidth : strip.TranslatePoint(new Point(strip.Bounds.Width, 0), viewer)?.X ?? double.NaN;
+            if (columnsFit && canScroll)
+                problems.Add($"the strip scrolls (extent {strip!.Extent.Width:F0} px) in a {stripWidth:F0} px strip that holds its columns' minimums ({contentColumns:F0} + {StarColumnMinimums} px)");
+            if (columnsFit && Math.Abs(rightEdges.Max() - stripRight) > 0.5)
+                problems.Add($"the last card ends at {rightEdges.Max():F0} px in a strip that ends at {stripRight:F0} px: the Wait Stats card does not fill the remaining width");
 
             /* The Server row is as long as the edition makes it. Inside the card it is shown whole: on one
                line when it fits, else wrapped onto more lines, never cut off where the card ends. */
