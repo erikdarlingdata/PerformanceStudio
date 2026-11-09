@@ -366,9 +366,18 @@ public sealed class McpPlanToolsContractTests
         Assert.Equal(
             McpPlanTools.ComparePlans(legacyManager, sessionId, sessionId),
             McpPlanTools.ComparePlans(capturedManager, sessionId, sessionId));
-        Assert.Equal(
-            McpPlanTools.GetReproScript(legacyManager, sessionId),
-            McpPlanTools.GetReproScript(capturedManager, sessionId));
+
+        /* #697: the repro script stamps the second it was generated in, so the two scripts are
+           generated in different seconds here, the way they are when the two calls happen to
+           straddle a second boundary, and the comparison must hold all the same. */
+        var legacyScript = McpPlanTools.GetReproScript(legacyManager, sessionId);
+        var second = DateTime.Now.Second;
+        Assert.True(
+            SpinWait.SpinUntil(() => DateTime.Now.Second != second, TimeSpan.FromSeconds(3)),
+            "the wall clock did not reach the next second");
+        var capturedScript = McpPlanTools.GetReproScript(capturedManager, sessionId);
+        Assert.Contains("Generated: ", legacyScript);
+        Assert.Equal(legacyScript, capturedScript);
     }
 
     /// <summary>
