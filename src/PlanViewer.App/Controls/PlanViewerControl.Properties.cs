@@ -373,13 +373,13 @@ public partial class PlanViewerControl : UserControl
 
         // === Estimated Rows Section ===
         AddPropertySection("Estimated Rows");
-        AddPropertyRow("Est. Executions", $"{RowEstimateHelper.GetEstimatedExecutions(node):N0}");
+        AddPropertyRow("Est. Executions", MetricFormatter.FormatEstimatedExecutions(RowEstimateHelper.GetEstimatedExecutions(node)));
         AddPropertyRow("Est. Rows Per Exec", MetricFormatter.FormatEstimatedRows(node.EstimateRows));
         AddPropertyRow("Est. Rows All Execs", MetricFormatter.FormatEstimatedRows(RowEstimateHelper.GetEstimatedRowsAllExecutions(node)));
         if (node.EstimatedRowsRead > 0)
-            AddPropertyRow("Est. Rows to Read", $"{node.EstimatedRowsRead:N1}");
+            AddPropertyRow("Est. Rows to Read", MetricFormatter.FormatEstimatedRows(node.EstimatedRowsRead));
         if (node.EstimateRowsWithoutRowGoal > 0)
-            AddPropertyRow("Est. Rows (No Row Goal)", $"{node.EstimateRowsWithoutRowGoal:N1}");
+            AddPropertyRow("Est. Rows (No Row Goal)", MetricFormatter.FormatEstimatedRows(node.EstimateRowsWithoutRowGoal));
         if (node.TableCardinality > 0)
             AddPropertyRow("Table Cardinality", $"{node.TableCardinality:N0}");
         AddPropertyRow("Avg Row Size", $"{node.EstimatedRowSize} B");

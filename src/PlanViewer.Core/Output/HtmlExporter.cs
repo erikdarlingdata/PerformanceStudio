@@ -588,10 +588,13 @@ pre.query-text, pre.text-output {
         else if (node.EstimatedExecutions > 1)
         {
             // #677: the same count the viewer's Properties panel and arrow tooltip show, so an
-            // inner-side spool's rows for all executions read the same in the download.
-            var perExecution = MetricFormatter.FormatEstimatedRows(node.EstimatedRows);
+            // inner-side spool's rows for all executions read the same in the download. The count
+            // is routinely fractional and every figure here is rounded for print, so the line
+            // states the total over the count rather than an equation the rounding could break.
             var allExecutions = MetricFormatter.FormatEstimatedRows(node.EstimatedRows * node.EstimatedExecutions);
-            sb.Append($" <span class=\"op-rows\">{perExecution} est. rows &times; {node.EstimatedExecutions:N0} est. execs = {allExecutions} est. rows</span>");
+            var executions = MetricFormatter.FormatEstimatedExecutions(node.EstimatedExecutions);
+            var perExecution = MetricFormatter.FormatEstimatedRows(node.EstimatedRows);
+            sb.Append($" <span class=\"op-rows\">{allExecutions} est. rows over {executions} est. execs ({perExecution} per exec)</span>");
         }
         else
         {

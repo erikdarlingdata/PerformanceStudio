@@ -57,6 +57,17 @@ public static class MetricFormatter
         => rows.ToString("N1", provider ?? CultureInfo.CurrentCulture);
 
     /// <summary>
+    /// An operator's estimated execution count (<c>RowEstimateHelper.GetEstimatedExecutions</c>)
+    /// as the plan viewer prints it (#677): thousands separators, and one decimal only when the
+    /// count has one. Rebind and rewind estimates are routinely fractional, so 10.5 rebinds is
+    /// 11.5 runs and reads "11.5" in the Properties panels and the HTML export alike, never a
+    /// rounded "12" beside a row total that was computed from 11.5. A whole count stays whole:
+    /// 1,001 runs is "1,001", not "1,001.0".
+    /// </summary>
+    public static string FormatEstimatedExecutions(double executions, IFormatProvider? provider = null)
+        => executions.ToString("#,##0.#", provider ?? CultureInfo.CurrentCulture);
+
+    /// <summary>
     /// A duration in milliseconds on the ladder the statements grid already uses:
     /// under a second stays in milliseconds ("847ms"), under a minute scales to seconds
     /// with one decimal ("3.5s"), and anything longer splits into minutes and seconds

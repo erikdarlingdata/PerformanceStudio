@@ -125,12 +125,12 @@
                 <details class="prop-section" open>
                     <summary>Rows</summary>
                     <div class="prop-grid">
-                        <div class="prop-row"><span class="prop-label">Est. Executions</span><span class="prop-value">@RowEstimateHelper.GetEstimatedExecutions(Node).ToString("N0")</span></div>
+                        <div class="prop-row"><span class="prop-label">Est. Executions</span><span class="prop-value">@MetricFormatter.FormatEstimatedExecutions(RowEstimateHelper.GetEstimatedExecutions(Node))</span></div>
                         <div class="prop-row"><span class="prop-label">Est. Rows Per Exec</span><span class="prop-value">@MetricFormatter.FormatEstimatedRows(Node.EstimateRows)</span></div>
                         <div class="prop-row"><span class="prop-label">Est. Rows All Execs</span><span class="prop-value">@MetricFormatter.FormatEstimatedRows(RowEstimateHelper.GetEstimatedRowsAllExecutions(Node))</span></div>
                         @if (Node.EstimatedRowsRead > 0)
                         {
-                            <div class="prop-row"><span class="prop-label">Est. Rows Read</span><span class="prop-value">@Node.EstimatedRowsRead.ToString("N0")</span></div>
+                            <div class="prop-row"><span class="prop-label">Est. Rows Read</span><span class="prop-value">@MetricFormatter.FormatEstimatedRows(Node.EstimatedRowsRead)</span></div>
                         }
                         @if (Node.EstimatedRowSize > 0)
                         {
@@ -150,7 +150,7 @@
                         }
                         @if (Node.EstimateRowsWithoutRowGoal > 0 && Math.Abs(Node.EstimateRowsWithoutRowGoal - Node.EstimateRows) > 0.01)
                         {
-                            <div class="prop-row"><span class="prop-label">Est. Rows (No Goal)</span><span class="prop-value">@Node.EstimateRowsWithoutRowGoal.ToString("N0")</span></div>
+                            <div class="prop-row"><span class="prop-label">Est. Rows (No Goal)</span><span class="prop-value">@MetricFormatter.FormatEstimatedRows(Node.EstimateRowsWithoutRowGoal)</span></div>
                         }
                     </div>
                 </details>
