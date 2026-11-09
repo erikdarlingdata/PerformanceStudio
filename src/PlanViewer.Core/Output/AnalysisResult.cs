@@ -436,6 +436,14 @@ public class OperatorResult
     [JsonPropertyName("estimated_rows")]
     public double EstimatedRows { get; set; }
 
+    /// <summary>
+    /// How often the optimizer expects the operator to run: one plus its rebinds plus its rewinds,
+    /// from <see cref="Services.RowEstimateHelper.GetEstimatedExecutions"/> (#677).
+    /// <see cref="EstimatedRows"/> is per execution; this is what it multiplies by.
+    /// </summary>
+    [JsonPropertyName("estimated_executions")]
+    public double EstimatedExecutions { get; set; }
+
     [JsonPropertyName("estimated_cost")]
     public double EstimatedCost { get; set; }
 

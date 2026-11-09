@@ -46,7 +46,7 @@ public partial class PlanViewerControl : UserControl
 
         // Rows
         AddTooltipSection(stack, "Rows");
-        AddTooltipRow(stack, "Estimated Rows", $"{node.EstimateRows:N1}");
+        AddTooltipRow(stack, "Estimated Rows", MetricFormatter.FormatEstimatedRows(node.EstimateRows));
         if (node.HasActualStats)
         {
             AddTooltipRow(stack, "Actual Rows", $"{node.ActualRows:N0}");

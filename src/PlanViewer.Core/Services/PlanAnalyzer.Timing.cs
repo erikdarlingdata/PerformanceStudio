@@ -79,40 +79,83 @@ public static partial class PlanAnalyzer
     }
 
     /// <summary>
+    /// Which per-thread counter the own-time helpers attribute, and how a child on the
+    /// producer side of an exchange comes off the parent's threads.
+    ///
+    /// Elapsed takes the slowest producer thread below the exchange off every thread
+    /// above it. An exchange moves rows between threads, so thread t above it is not
+    /// doing thread t's work below it; every consumer thread waits on all the producers
+    /// and none finishes before the slowest does. This is the per-thread form of the
+    /// serial path's max child (#680).
+    ///
+    /// CPU keeps the same-thread pairing. A consumer thread never burns a producer
+    /// thread's CPU, so taking the slowest producer's CPU off every consumer thread would
+    /// subtract CPU the thread never held. The pairing can only run low, never high, so
+    /// it cannot crown the wrong operator the way the elapsed pairing did.
+    /// </summary>
+    private sealed record ThreadMetric(
+        Func<PerThreadRuntimeInfo, long> Pick,
+        Func<PlanNode, long> NodeTotal,
+        bool SlowestProducerOffEveryThread)
+    {
+        public static readonly ThreadMetric Elapsed =
+            new(t => t.ActualElapsedMs, n => n.ActualElapsedMs, SlowestProducerOffEveryThread: true);
+
+        public static readonly ThreadMetric Cpu =
+            new(t => t.ActualCPUMs, n => n.ActualCPUMs, SlowestProducerOffEveryThread: false);
+    }
+
+    /// <summary>
     /// Per-thread self-time calculation for parallel row mode operators.
-    /// For each worker thread: self = parent[t] - sum(effective children[t]).
-    /// Returns max across worker threads.
+    /// For each worker thread: self = parent[t] - sum(effective children[t]), less the
+    /// slowest producer thread below any exchange among the children, which comes off
+    /// every thread alike. Returns max across worker threads.
     /// </summary>
     private static long GetPerThreadOwnElapsed(PlanNode node) =>
-        GetPerThreadOwn(node, t => t.ActualElapsedMs, n => n.ActualElapsedMs);
+        GetPerThreadOwn(node, ThreadMetric.Elapsed);
 
-    private static long GetPerThreadOwn(
-        PlanNode node,
-        Func<PerThreadRuntimeInfo, long> pick,
-        Func<PlanNode, long> nodeTotal) =>
-        GetPerThreadOwnByThread(node, pick, nodeTotal).Values.DefaultIfEmpty(0).Max();
+    private static long GetPerThreadOwn(PlanNode node, ThreadMetric metric) =>
+        GetPerThreadOwnByThread(node, metric).Values.DefaultIfEmpty(0).Max();
 
     /// <summary>
     /// Self time on each worker thread: the thread's time minus the same thread's time
-    /// in the children. Elapsed takes the max of these; total CPU takes the sum.
+    /// in the children, minus the time that comes off every thread alike (the slowest
+    /// producer below an exchange). Elapsed takes the max of these; total CPU takes the sum.
     /// </summary>
-    private static Dictionary<int, long> GetPerThreadOwnByThread(
-        PlanNode node,
-        Func<PerThreadRuntimeInfo, long> pick,
-        Func<PlanNode, long> nodeTotal)
+    private static Dictionary<int, long> GetPerThreadOwnByThread(PlanNode node, ThreadMetric metric)
     {
         var childSumByThread = new Dictionary<int, long>();
+        var everyThreadMs = 0L;
         foreach (var child in node.Children)
-            AddEffectiveChildByThread(child, pick, nodeTotal, childSumByThread);
+        {
+            // An exchange's own children run on the other side of it, on other threads.
+            if (node.PhysicalOp == "Parallelism" && metric.SlowestProducerOffEveryThread)
+                everyThreadMs += SlowestThread(child, metric);
+            else
+                AddEffectiveChildByThread(child, metric, childSumByThread, ref everyThreadMs);
+        }
 
         var selfByThread = new Dictionary<int, long>();
         foreach (var ts in WorkThreads(node))
         {
             childSumByThread.TryGetValue(ts.ThreadId, out var childMs);
-            selfByThread[ts.ThreadId] = Math.Max(0, pick(ts) - childMs);
+            selfByThread[ts.ThreadId] = Math.Max(0, metric.Pick(ts) - childMs - everyThreadMs);
         }
 
         return selfByThread;
+    }
+
+    /// <summary>
+    /// The longest any one worker thread spent in a subtree that runs on the producer
+    /// side of an exchange, by the same look-through rules as
+    /// <see cref="AddEffectiveChildByThread"/>.
+    /// </summary>
+    private static long SlowestThread(PlanNode node, ThreadMetric metric)
+    {
+        var byThread = new Dictionary<int, long>();
+        var everyThreadMs = 0L;
+        AddEffectiveChildByThread(node, metric, byThread, ref everyThreadMs);
+        return (byThread.Count > 0 ? byThread.Values.Max() : 0) + everyThreadMs;
     }
 
     /// <summary>
@@ -127,41 +170,55 @@ public static partial class PlanAnalyzer
     ///
     /// Together these crowned a row-mode Nested Loops above a batch Hash Aggregate
     /// as the hottest operator in its plan, with the aggregate's time counted twice.
+    ///
+    /// An exchange child whose metric takes the slowest producer off every thread adds
+    /// to <paramref name="everyThreadMs"/> instead of <paramref name="acc"/>: what is
+    /// below it ran on other threads (#680).
     /// </summary>
     private static void AddEffectiveChildByThread(
         PlanNode child,
-        Func<PerThreadRuntimeInfo, long> pick,
-        Func<PlanNode, long> nodeTotal,
-        Dictionary<int, long> acc)
+        ThreadMetric metric,
+        Dictionary<int, long> acc,
+        ref long everyThreadMs)
     {
-        // Exchange operators have unreliable times — look through to their child.
         if (child.PhysicalOp == "Parallelism" && child.Children.Count > 0)
         {
-            var dominant = child.Children.OrderByDescending(nodeTotal).First();
-            AddEffectiveChildByThread(dominant, pick, nodeTotal, acc);
+            // The exchange's own time is not used. It soaks up time a spilling parent
+            // spends (sql.kiwi/2021/03), and subtracting it would hand that time to the
+            // exchange instead of the parent. Elapsed takes the slowest producer thread
+            // below it off every thread above; CPU pairs the dominant producer by thread.
+            if (metric.SlowestProducerOffEveryThread)
+            {
+                everyThreadMs += child.Children.Max(c => SlowestThread(c, metric));
+            }
+            else
+            {
+                var dominant = child.Children.OrderByDescending(metric.NodeTotal).First();
+                AddEffectiveChildByThread(dominant, metric, acc, ref everyThreadMs);
+            }
             return;
         }
 
         var mode = child.ActualExecutionMode ?? child.ExecutionMode;
         if (mode == "Batch" && child.HasActualStats)
         {
-            AddBatchSubtreeByThread(child, pick, nodeTotal, acc);
+            AddBatchSubtreeByThread(child, metric, acc, ref everyThreadMs);
             return;
         }
 
-        if (child.HasActualStats && nodeTotal(child) > 0)
+        if (child.HasActualStats && metric.NodeTotal(child) > 0)
         {
             foreach (var ts in WorkThreads(child))
             {
                 acc.TryGetValue(ts.ThreadId, out var existing);
-                acc[ts.ThreadId] = existing + pick(ts);
+                acc[ts.ThreadId] = existing + metric.Pick(ts);
             }
             return;
         }
 
         // No runtime stats: look through to the descendants that have them.
         foreach (var grandchild in child.Children)
-            AddEffectiveChildByThread(grandchild, pick, nodeTotal, acc);
+            AddEffectiveChildByThread(grandchild, metric, acc, ref everyThreadMs);
     }
 
     /// <summary>
@@ -170,14 +227,14 @@ public static partial class PlanAnalyzer
     /// </summary>
     private static void AddBatchSubtreeByThread(
         PlanNode node,
-        Func<PerThreadRuntimeInfo, long> pick,
-        Func<PlanNode, long> nodeTotal,
-        Dictionary<int, long> acc)
+        ThreadMetric metric,
+        Dictionary<int, long> acc,
+        ref long everyThreadMs)
     {
         foreach (var ts in WorkThreads(node))
         {
             acc.TryGetValue(ts.ThreadId, out var existing);
-            acc[ts.ThreadId] = existing + pick(ts);
+            acc[ts.ThreadId] = existing + metric.Pick(ts);
         }
 
         foreach (var child in node.Children)
@@ -186,9 +243,9 @@ public static partial class PlanAnalyzer
 
             var childMode = child.ActualExecutionMode ?? child.ExecutionMode;
             if (childMode == "Batch" && child.HasActualStats)
-                AddBatchSubtreeByThread(child, pick, nodeTotal, acc);
+                AddBatchSubtreeByThread(child, metric, acc, ref everyThreadMs);
             else
-                AddEffectiveChildByThread(child, pick, nodeTotal, acc);
+                AddEffectiveChildByThread(child, metric, acc, ref everyThreadMs);
         }
     }
 
@@ -209,7 +266,7 @@ public static partial class PlanAnalyzer
             return WorkThreads(node).Select(t => t.ActualCPUMs).DefaultIfEmpty(node.ActualCPUMs).Max();
 
         if (node.PerThreadStats.Count > 1)
-            return GetPerThreadOwn(node, t => t.ActualCPUMs, n => n.ActualCPUMs);
+            return GetPerThreadOwn(node, ThreadMetric.Cpu);
 
         // Serial: operator_cpu - Σ effective child cpu
         var totalChildCpu = 0L;
@@ -234,7 +291,7 @@ public static partial class PlanAnalyzer
             return node.ActualCPUMs;
 
         if (node.PerThreadStats.Count > 1)
-            return GetPerThreadOwnByThread(node, t => t.ActualCPUMs, n => n.ActualCPUMs).Values.Sum();
+            return GetPerThreadOwnByThread(node, ThreadMetric.Cpu).Values.Sum();
 
         var totalChildCpu = 0L;
         foreach (var child in node.Children)
