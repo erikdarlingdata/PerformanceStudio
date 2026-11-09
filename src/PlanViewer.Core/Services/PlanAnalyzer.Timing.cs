@@ -506,16 +506,6 @@ public static partial class PlanAnalyzer
             : null;
 
     /// <summary>
-    /// Rule 11's gate. An estimated plan is always reported. An actual plan must have read at least
-    /// ScanRuleMinRows rows, returned under ScanPredicateMaxSelectivity of what it read when the plan
-    /// says how many it read, and spent at least ScanRuleMinOwnTimeSharePct of the statement's time in
-    /// the scan when the plan carries statement time. The rows floor reads ActualRowsRead when the plan
-    /// carries it, the table's cardinality times the scan's executions when it carries that instead
-    /// (ActualRowsRead is a total across executions, and TableCardinality is one pass over the table),
-    /// and nothing when it carries neither: the rows returned are what the predicate kept, not what the
-    /// scan read. The impact details come out either way, so the caller does not build them twice.
-    /// </summary>
-    /// <summary>
     /// How many times the scan read its table, for the TableCardinality stand-in. The parser sums
     /// ActualExecutions across threads, and a plain parallel scan reports one execution on each worker
     /// thread for one pass over the table, so a node with per-thread entries takes the largest
@@ -527,6 +517,16 @@ public static partial class PlanAnalyzer
             ? node.PerThreadStats.Max(t => t.ActualExecutions)
             : node.ActualExecutions;
 
+    /// <summary>
+    /// Rule 11's gate. An estimated plan is always reported. An actual plan must have read at least
+    /// ScanRuleMinRows rows, returned under ScanPredicateMaxSelectivity of what it read when the plan
+    /// says how many it read, and spent at least ScanRuleMinOwnTimeSharePct of the statement's time in
+    /// the scan when the plan carries statement time. The rows floor reads ActualRowsRead when the plan
+    /// carries it, the table's cardinality times the scan's executions when it carries that instead
+    /// (ActualRowsRead is a total across executions, and TableCardinality is one pass over the table),
+    /// and nothing when it carries neither: the rows returned are what the predicate kept, not what the
+    /// scan read. The impact details come out either way, so the caller does not build them twice.
+    /// </summary>
     private static bool ScanPredicateIsWorthReporting(PlanNode node, PlanStatement stmt, out ScanImpact details)
     {
         details = BuildScanImpactDetails(node, stmt);
