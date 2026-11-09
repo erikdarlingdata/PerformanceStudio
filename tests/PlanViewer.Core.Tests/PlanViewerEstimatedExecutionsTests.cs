@@ -5,6 +5,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Text.RegularExpressions;
 using Avalonia.Controls;
 using PlanViewer.App.Controls;
 using PlanViewer.Core.Models;
@@ -131,6 +132,24 @@ public class PlanViewerEstimatedExecutionsTests
             html);
         Assert.DoesNotContain("12 est. execs", html);
     }
+
+    /// <summary>A count that prints as one takes the single-run line. 0.0183 rewinds (an outer side estimated at 1.0183
+    /// rows) is 1.0183 runs, which prints as "1", so the spool reads "10.0 est. rows" like every other single-run
+    /// operator rather than "10.2 est. rows over 1 est. execs", a line that contradicts itself.</summary>
+    [Fact]
+    public void TheHtmlExport_ACountThatPrintsAsOne_TakesTheSingleRunLine()
+    {
+        var html = ExportEstimatedSpoolPlan(rebinds: "0", rewinds: "0.0183");
+
+        var culture = CultureInfo.CurrentCulture;
+        Assert.DoesNotContain("over 1 est. execs", html);
+        Assert.DoesNotContain($"{10.183.ToString("N1", culture)} est. rows", html);
+        // Every row line reads as it does when the spool has no rewinds at all.
+        Assert.Equal(RowLines(ExportEstimatedSpoolPlan(rebinds: "0", rewinds: "0")), RowLines(html));
+    }
+
+    private static List<string> RowLines(string html)
+        => Regex.Matches(html, "<span class=\"op-rows\">[^<]*</span>").Select(m => m.Value).ToList();
 
     /// <summary>The Web node tooltip (the node's title text) prints the estimate through the shared formatter, so it reads
     /// "10.0" like the Operator Properties panel and the HTML export, not "10".</summary>
