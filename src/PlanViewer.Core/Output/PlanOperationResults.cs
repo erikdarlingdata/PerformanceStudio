@@ -124,11 +124,27 @@ public sealed class ExpensiveOperatorItem
     [JsonPropertyName("cost_percent")]
     public int CostPercent { get; init; }
 
+    /// <summary>The optimizer's estimate for one execution of the operator.</summary>
     [JsonPropertyName("estimated_rows")]
     public double EstimatedRows { get; init; }
 
+    /// <summary>
+    /// The estimate to set beside <see cref="ActualRows"/>: <see cref="EstimatedRows"/> times
+    /// <see cref="ActualExecutions"/> on the inner side of a Nested Loops join, where the executions
+    /// are a true loop count, and <see cref="EstimatedRows"/> itself everywhere else; the figure the
+    /// viewer's node label and the analyzer's row-estimate rules share through
+    /// <c>RowEstimateHelper.GetExpectedRows</c>. Null on an estimated plan.
+    /// </summary>
+    [JsonPropertyName("expected_rows")]
+    public double? ExpectedRows { get; init; }
+
+    /// <summary>The total rows across every execution. 0 on an estimated plan.</summary>
     [JsonPropertyName("actual_rows")]
     public long ActualRows { get; init; }
+
+    /// <summary>How many times the operator ran, summed across threads. Null on an estimated plan.</summary>
+    [JsonPropertyName("actual_executions")]
+    public long? ActualExecutions { get; init; }
 
     /// <summary>
     /// Elapsed time reported for the operator. In row mode this is cumulative (it includes every
