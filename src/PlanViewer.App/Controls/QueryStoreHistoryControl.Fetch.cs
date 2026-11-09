@@ -63,9 +63,7 @@ public partial class QueryStoreHistoryControl : UserControl
 				var totalExec = _historyData.Sum(r => r.CountExecutions);
 				var first = TimeDisplayHelper.ConvertForDisplay(_historyData.Min(r => r.IntervalStartUtc), _serverOffset.Minutes);
 				var last = TimeDisplayHelper.ConvertForDisplay(_historyData.Max(r => r.IntervalStartUtc), _serverOffset.Minutes);
-				StatusText.Text = $"{_historyData.Count} {(_historyData.Count == 1 ? "interval" : "intervals")}, {planCount} {(planCount == 1 ? "plan" : "plans")}, " +
-								  $"{totalExec:N0} total executions | " +
-								  $"{first:MM/dd HH:mm} to {last:MM/dd HH:mm}";
+				StatusText.Text = FormatHistoryStatus(_historyData.Count, planCount, totalExec, first, last);
 					_dataSummaryText = StatusText.Text;
 			}
 			else
@@ -92,5 +90,14 @@ public partial class QueryStoreHistoryControl : UserControl
 			LoadingPanel.IsVisible = false;
 		}
 	}
+
+	/// <summary>
+	/// The status strip's summary of a fetched history: each count agrees with its noun, so one
+	/// interval, one plan and one execution read "1 interval, 1 plan, 1 total execution".
+	/// </summary>
+	internal static string FormatHistoryStatus(int intervals, int plans, long totalExecutions, DateTime first, DateTime last) =>
+		$"{intervals} {(intervals == 1 ? "interval" : "intervals")}, {plans} {(plans == 1 ? "plan" : "plans")}, " +
+		$"{totalExecutions:N0} total {(totalExecutions == 1 ? "execution" : "executions")} | " +
+		$"{first:MM/dd HH:mm} to {last:MM/dd HH:mm}";
 
 }

@@ -1,5 +1,8 @@
 using System;
+using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
+using PlanViewer.App.Controls;
 using PlanViewer.Core.Services;
 
 namespace PlanViewer.Core.Tests;
@@ -35,6 +38,55 @@ public class CountOfOneTextTests
         Assert.NotEmpty(warnings);
         Assert.Contains(warnings, w => w.Message.Contains(expected, StringComparison.Ordinal));
         Assert.All(warnings, w => Assert.DoesNotContain("(s)", w.Message, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ExchangeSpill_OneWrite_ReadsSingular()
+    {
+        // No checked-in plan spills a single write, so the fixture's ExchangeSpillDetails is
+        // rewritten to one write before it is parsed; everything else in the plan is as recorded.
+        var xml = Regex.Replace(ExchangeSpillPlanXml(), "(<ExchangeSpillDetails WritesToTempDb=\")\\d+(\")", "${1}1$2");
+        var warnings = PlanTestHelper.WarningsOfType(ShowPlanParser.Parse(xml), "Exchange Spill");
+
+        Assert.NotEmpty(warnings);
+        Assert.All(warnings, w => Assert.StartsWith("Exchange spill: 1 write to TempDB.", w.Message, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ExchangeSpill_ManyWrites_ReadsPlural()
+    {
+        var warnings = PlanTestHelper.WarningsOfType(ShowPlanParser.Parse(ExchangeSpillPlanXml()), "Exchange Spill");
+
+        Assert.NotEmpty(warnings);
+        Assert.Contains(warnings, w => w.Message.StartsWith("Exchange spill: 5,000,000 writes to TempDB.", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void HistoryStatus_OneOfEach_ReadsSingular()
+    {
+        var at = new DateTime(2026, 11, 9, 9, 0, 0);
+
+        Assert.Equal(
+            "1 interval, 1 plan, 1 total execution | 11/09 09:00 to 11/09 09:00",
+            QueryStoreHistoryControl.FormatHistoryStatus(1, 1, 1, at, at));
+    }
+
+    [Fact]
+    public void HistoryStatus_ManyOfEach_ReadsPlural()
+    {
+        var first = new DateTime(2026, 11, 9, 9, 0, 0);
+        var last = new DateTime(2026, 11, 9, 11, 0, 0);
+
+        Assert.Equal(
+            "3 intervals, 2 plans, 1,250 total executions | 11/09 09:00 to 11/09 11:00",
+            QueryStoreHistoryControl.FormatHistoryStatus(3, 2, 1250, first, last));
+    }
+
+    private static string ExchangeSpillPlanXml()
+    {
+        var path = Path.Combine("Plans", "exchange_spill_plan.sqlplan");
+        Assert.True(File.Exists(path), $"Test plan not found: {path}");
+        return File.ReadAllText(path).Replace("encoding=\"utf-16\"", "encoding=\"utf-8\"");
     }
 
     [Fact]
