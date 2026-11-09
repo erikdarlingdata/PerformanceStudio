@@ -312,7 +312,10 @@ public static partial class PlanAnalyzer
         // Parameters with no CompiledValue are likely local variables — the optimizer
         // cannot sniff their values and uses density-based ("unknown") estimates.
         // Skip statements with cost < 1 (can't go parallel, estimate quality rarely matters).
-        if (!cfg.IsRuleDisabled(20) && stmt.Parameters.Count > 0 && stmt.StatementSubTreeCost >= 1.0)
+        // OPTIMIZE FOR UNKNOWN also leaves a parameter without a compiled value, and rule 27
+        // reports the hint, so rule 20 leaves those statements to it.
+        if (!cfg.IsRuleDisabled(20) && stmt.Parameters.Count > 0 && stmt.StatementSubTreeCost >= 1.0
+            && !HasOptimizeForUnknown(stmt))
         {
             var unsnifffedParams = stmt.Parameters
                 .Where(p => string.IsNullOrEmpty(p.CompiledValue))
@@ -342,11 +345,18 @@ public static partial class PlanAnalyzer
 
     }
 
+    /// <summary>
+    /// Rule 27's test, shared with rule 20: the OPTIMIZE FOR UNKNOWN hint in the statement's code.
+    /// The masked text (#579) keeps the phrase inside a comment or a string literal from counting.
+    /// </summary>
+    private static bool HasOptimizeForUnknown(PlanStatement stmt) =>
+        !string.IsNullOrEmpty(stmt.StatementText) &&
+        Regex.IsMatch(MaskCommentsAndLiterals(stmt.StatementText), @"OPTIMIZE\s+FOR\s+UNKNOWN", RegexOptions.IgnoreCase);
+
     private static void Rule27_OptimizeForUnknown(PlanStatement stmt, AnalyzerConfig cfg, ServerMetadata? serverMetadata)
     {
         // Rule 27: OPTIMIZE FOR UNKNOWN in statement text
-        if (!cfg.IsRuleDisabled(27) && !string.IsNullOrEmpty(stmt.StatementText) &&
-            Regex.IsMatch(MaskCommentsAndLiterals(stmt.StatementText), @"OPTIMIZE\s+FOR\s+UNKNOWN", RegexOptions.IgnoreCase)) // #579
+        if (!cfg.IsRuleDisabled(27) && HasOptimizeForUnknown(stmt))
         {
             stmt.PlanWarnings.Add(new PlanWarning
             {

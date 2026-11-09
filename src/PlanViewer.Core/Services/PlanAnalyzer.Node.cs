@@ -491,17 +491,25 @@ public static partial class PlanAnalyzer
         // A PROBE() alone is just a bitmap filter — not a real residual predicate.
         // Skip for 0-execution nodes — the operator never ran
         if (!cfg.IsRuleDisabled(11) && GetNonSargableReason(node, cfg) == null && IsRowstoreScan(node) && !string.IsNullOrEmpty(node.Predicate) &&
-            !IsProbeOnly(node.Predicate) && !(node.HasActualStats && node.ActualExecutions == 0))
+            !IsProbeOnly(node.Predicate) && !(node.HasActualStats && node.ActualExecutions == 0) &&
+            ScanPredicateIsWorthReporting(node, stmt, out var details))
         {
             var displayPredicate = StripProbeExpressions(node.Predicate);
-            var details = BuildScanImpactDetails(node, stmt);
             var severity = PlanWarningSeverity.Warning;
 
+            /* An actual plan's share is the scan's elapsed time. The cost share is the optimizer's
+               estimate, and the plans worth reading are the ones where that estimate was wrong. An
+               estimated plan, or an actual plan that carries no statement time, has only the cost
+               share. */
+            var sharePct = node.HasActualStats && HasStatementElapsed(stmt) ? details.ElapsedPct : details.CostPct;
+
             // Elevate to Critical if the scan dominates the plan
-            if (details.CostPct >= 90 || details.ElapsedPct >= 90)
+            if (sharePct >= 90)
                 severity = PlanWarningSeverity.Critical;
 
-            var message = "Scan with residual predicate — SQL Server is reading every row and filtering after the fact.";
+            var message = node.HasActualStats && node.ActualRowsRead > 0
+                ? $"Scan with residual predicate — SQL Server read {node.ActualRowsRead:N0} rows to return {node.ActualRows:N0}, filtering after the fact."
+                : "Scan with residual predicate — SQL Server is reading every row and filtering after the fact.";
             if (!string.IsNullOrEmpty(details.Summary))
                 message += $" {details.Summary}";
 
@@ -516,7 +524,7 @@ public static partial class PlanAnalyzer
                 message += " Check that you have appropriate indexes.";
 
             // I/O waits specifically confirm the scan is hitting disk — elevate
-            if (HasSignificantIoWaits(stmt.WaitStats) && details.CostPct >= 50
+            if (HasSignificantIoWaits(stmt.WaitStats) && sharePct >= 50
                 && severity != PlanWarningSeverity.Critical)
                 severity = PlanWarningSeverity.Critical;
 
@@ -613,9 +621,24 @@ public static partial class PlanAnalyzer
         if (!cfg.IsRuleDisabled(34) && isBareScanCandidate)
         {
             var colCount = node.OutputColumns!.Split(',').Length;
-            var isSignificant = node.HasActualStats
-                ? GetOperatorOwnElapsedMs(node) > 0
-                : node.CostPercent >= 20;
+
+            /* A scan under the rows floor is a few hundred pages at most, and a narrower index cannot
+               make it cheaper. An actual plan is judged on the rows it read and the scan's own share of
+               the statement's time, with any own time at all standing in when the plan carries no
+               statement time. An estimated plan is judged on the table's cardinality, when the plan
+               carries it, and the scan's share of the plan's cost. */
+            bool isSignificant;
+            if (node.HasActualStats)
+            {
+                var ownShare = OwnTimeSharePct(node, stmt);
+                isSignificant = Math.Max(node.ActualRowsRead, node.ActualRows) >= ScanRuleMinRows
+                    && (ownShare.HasValue ? ownShare.Value >= ScanRuleMinOwnTimeSharePct : GetOperatorOwnElapsedMs(node) > 0);
+            }
+            else
+            {
+                isSignificant = (!node.HasTableCardinality || node.TableCardinality >= ScanRuleMinRows)
+                    && node.CostPercent >= 20;
+            }
 
             if (isSignificant)
             {
@@ -666,9 +689,12 @@ public static partial class PlanAnalyzer
 
             if (hasMismatch || hasConvert)
             {
+                /* GetRangeWithMismatchedTypes and GetRangeThroughConvert are the functions the optimizer
+                   uses to build a dynamic seek range through the conversion, so the index is still
+                   sought. The cost of the mismatch is the wider range and the guessed estimate for it. */
                 var reason = hasMismatch
-                    ? "Mismatched data types between the column and the parameter/literal. SQL Server is converting every row to compare, preventing index seeks. Match your data types — don't pass nvarchar to a varchar column, or int to a bigint column."
-                    : "CONVERT/CAST wrapping a column in the predicate. SQL Server is converting every row to compare, preventing index seeks. Match your data types — convert the parameter/literal instead of the column.";
+                    ? "Mismatched data types between the column and the parameter/literal. The optimizer built a dynamic seek range through the conversion, so the index is still sought, but the range is wider than an exact match and the row estimate for it is a guess. Match your data types — don't pass nvarchar to a varchar column, or int to a bigint column."
+                    : "CONVERT/CAST wrapping a column in the predicate. The optimizer built a dynamic seek range through the conversion, so the index is still sought, but the range is wider than an exact match and the row estimate for it is a guess. Match your data types — convert the parameter/literal instead of the column.";
 
                 node.Warnings.Add(new PlanWarning
                 {
@@ -863,7 +889,7 @@ public static partial class PlanAnalyzer
             {
                 RuleNumber = 23,
                 WarningType = "Table-Valued Function",
-                Message = $"Table-valued function: {funcName}. Multi-statement TVFs have no statistics — SQL Server guesses 1 row (pre-2017) or 100 rows (2017+) regardless of actual size. Rewrite as an inline table-valued function if possible, or dump the function results into a #temp table and join to that instead.",
+                Message = $"Table-valued function: {funcName}. Multi-statement TVFs have no statistics — SQL Server guesses 1 row (before SQL Server 2014) or 100 rows (SQL Server 2014 and later) regardless of actual size, unless interleaved execution (SQL Server 2017 and later) runs the function first and uses its real row count. Rewrite as an inline table-valued function if possible, or dump the function results into a #temp table and join to that instead.",
                 Severity = PlanWarningSeverity.Warning
             });
         }
@@ -889,7 +915,14 @@ public static partial class PlanAnalyzer
                     && scanCandidate.Children.Count > 0)
                     scanCandidate = scanCandidate.Children[0];
 
-                if (IsScanOperator(scanCandidate))
+                /* A plain Top over an Ordered scan, reached through streaming operators only, is the
+                   shape SELECT TOP (n) ... ORDER BY <index key> compiles to. The Top stops the scan
+                   after n rows, so there is no scan and sort to index away. A Top N Sort reads the
+                   whole scan before it returns a row, and an unordered scan carries no such
+                   guarantee, so both keep the finding. */
+                var topStopsScanEarly = isTop && scanCandidate.Ordered;
+
+                if (IsScanOperator(scanCandidate) && !topStopsScanEarly)
                 {
                     var topLabel = isTopNSort ? "Top N Sort" : "Top";
                     var onInner = node.Parent?.PhysicalOp == "Nested Loops" && node.Parent.Children.Count >= 2

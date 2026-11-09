@@ -132,10 +132,15 @@ public partial class PlanViewerControl : UserControl
         if (allCompiledNull && parameters.Count > 0)
         {
             // #579: the phrase inside a string literal or a comment is not a hint.
+            var maskedText = PlanAnalyzer.MaskCommentsAndLiterals(statement.StatementText);
             var hasOptimizeForUnknown = statement.StatementText
                 .Contains("OPTIMIZE", StringComparison.OrdinalIgnoreCase)
-                && Regex.IsMatch(PlanAnalyzer.MaskCommentsAndLiterals(statement.StatementText),
-                    @"OPTIMIZE\s+FOR\s+UNKNOWN", RegexOptions.IgnoreCase);
+                && Regex.IsMatch(maskedText, @"OPTIMIZE\s+FOR\s+UNKNOWN", RegexOptions.IgnoreCase);
+
+            // RECOMPILE is named only when the statement carries it. Compiled values are also absent
+            // when the plan was captured without them, and the card says so rather than naming a
+            // hint the statement does not have.
+            var hasRecompile = maskedText.Contains("RECOMPILE", StringComparison.OrdinalIgnoreCase);
 
             if (hasOptimizeForUnknown)
             {
@@ -143,10 +148,16 @@ public partial class PlanViewerControl : UserControl
                     "OPTIMIZE FOR UNKNOWN — optimizer used average density estimates instead of sniffed values",
                     "AccentBrush");
             }
-            else
+            else if (hasRecompile)
             {
                 AddParameterAnnotation(
                     "OPTION(RECOMPILE) — parameter values embedded as literals, not sniffed",
+                    "WarningBrush");
+            }
+            else
+            {
+                AddParameterAnnotation(
+                    "Parameter values not captured in the plan — no compiled values, so the values the optimizer sniffed are not known",
                     "WarningBrush");
             }
         }
