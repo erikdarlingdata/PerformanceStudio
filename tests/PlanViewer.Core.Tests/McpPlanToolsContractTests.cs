@@ -130,6 +130,74 @@ public sealed class McpPlanToolsContractTests
         Assert.Equal(0, item.GetProperty("actual_elapsed_ms").GetInt64());
     }
 
+    /// <summary>
+    /// #689: estimated_rows is the optimizer's estimate for one execution and actual_rows is the total
+    /// across every execution, so on the inner side of a Nested Loops join the pair alone reads an exact
+    /// estimate as a misestimate by the execution count. Node 4 of key_lookup_plan.sqlplan is that case:
+    /// a Key Lookup estimated at 0.00964372 rows per execution that ran 117 times for 1 row. The item
+    /// carries expected_rows, the figure the viewer's node label divides by (1 of 1.128), and
+    /// actual_executions, the count it was multiplied by, and expected_rows is the same number
+    /// RowEstimateHelper.GetExpectedRows gives the viewer for the node.
+    /// </summary>
+    [Fact]
+    public void GetExpensiveOperators_InnerSideKeyLookup_CarriesExpectedRowsAndActualExecutions()
+    {
+        var manager = new PlanSessionManager();
+        var session = CreateSession("key_lookup_plan.sqlplan");
+        Assert.True(session.HasActualStats);
+        manager.Register(session);
+
+        var json = McpPlanTools.GetExpensiveOperators(manager, new PlanOperations(manager), session.SessionId, 10);
+
+        using var document = JsonDocument.Parse(json);
+        var lookup = document.RootElement.GetProperty("operators")
+            .EnumerateArray()
+            .Single(element => element.GetProperty("node_id").GetInt32() == 4);
+
+        Assert.Equal(0.00964372, lookup.GetProperty("estimated_rows").GetDouble(), precision: 8);
+        Assert.Equal(1L, lookup.GetProperty("actual_rows").GetInt64());
+
+        Assert.True(lookup.TryGetProperty("actual_executions", out var executions), "the operator carries no actual_executions");
+        Assert.Equal(117L, executions.GetInt64());
+
+        Assert.True(lookup.TryGetProperty("expected_rows", out var expected), "the operator carries no expected_rows");
+        Assert.Equal(1.12831524, expected.GetDouble(), precision: 8);
+
+        var node = PlanTestHelper.FindNode(PlanTestHelper.FirstStatement(session.Plan).RootNode!, 4);
+        Assert.NotNull(node);
+        Assert.True(RowEstimateHelper.IsInnerSideOfNestedLoops(node));
+        Assert.Equal(RowEstimateHelper.GetExpectedRows(node), expected.GetDouble(), precision: 8);
+    }
+
+    /// <summary>
+    /// #689: an estimated plan has no execution counts, so expected_rows and actual_executions are
+    /// null, not 0, on every operator, while estimated_rows stays the per-execution estimate.
+    /// </summary>
+    [Fact]
+    public void GetExpensiveOperators_EstimatedPlan_CarriesNullExpectedRowsAndNullActualExecutions()
+    {
+        var manager = new PlanSessionManager();
+        var session = CreateEstimatedSession();
+        Assert.False(session.HasActualStats);
+        manager.Register(session);
+
+        var json = McpPlanTools.GetExpensiveOperators(manager, new PlanOperations(manager), session.SessionId, 10);
+
+        using var document = JsonDocument.Parse(json);
+        var operators = document.RootElement.GetProperty("operators").EnumerateArray().ToList();
+        Assert.NotEmpty(operators);
+        Assert.All(operators, item =>
+        {
+            Assert.Equal(JsonValueKind.Number, item.GetProperty("estimated_rows").ValueKind);
+
+            Assert.True(item.TryGetProperty("expected_rows", out var expected), "the operator carries no expected_rows");
+            Assert.Equal(JsonValueKind.Null, expected.ValueKind);
+
+            Assert.True(item.TryGetProperty("actual_executions", out var executions), "the operator carries no actual_executions");
+            Assert.Equal(JsonValueKind.Null, executions.ValueKind);
+        });
+    }
+
 
     [Fact]
 #pragma warning disable xUnit1051 // Intentionally verify an independently cancelled MCP request token.
@@ -264,15 +332,17 @@ public sealed class McpPlanToolsContractTests
 
 
 
-    private static CorePlanSession CreateEstimatedSession()
+    private static CorePlanSession CreateEstimatedSession() => CreateSession("row_goal_plan.sqlplan");
+
+    private static CorePlanSession CreateSession(string planFileName)
     {
-        var plan = PlanTestHelper.LoadAndAnalyze("row_goal_plan.sqlplan");
-        var analysis = ResultMapper.Map(plan, "row_goal_plan.sqlplan");
+        var plan = PlanTestHelper.LoadAndAnalyze(planFileName);
+        var analysis = ResultMapper.Map(plan, planFileName);
         return new CorePlanSession
         {
             SessionId = $"contract-{Guid.NewGuid():N}",
-            Label = "row_goal_plan.sqlplan",
-            Source = "row_goal_plan.sqlplan",
+            Label = planFileName,
+            Source = planFileName,
             Plan = plan,
             StatementCount = analysis.Summary.TotalStatements,
             HasActualStats = analysis.Summary.HasActualStats,
