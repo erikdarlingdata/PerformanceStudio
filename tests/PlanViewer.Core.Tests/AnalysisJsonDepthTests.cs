@@ -44,6 +44,57 @@ public class AnalysisJsonDepthTests
         Assert.Contains("depth", exception.Message, System.StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// #681: the analysis JSON carries, per statement, the statistics the optimizer loaded while
+    /// compiling it and a status for the statements whose plan recorded none or had no plan. The
+    /// fixture's second statement loads three statistics: one on a table the plan scans (1,000 rows,
+    /// 250 modified), one on a temp table (200 rows, 40 modified) and one on a table no operator reads
+    /// (rows unknown). The first statement is a DECLARE with no QueryPlan; the third has a QueryPlan
+    /// and no OptimizerStatsUsage.
+    /// </summary>
+    [Fact]
+    public void TheSharedOptionsWriteTheStatisticsEachStatementLoaded()
+    {
+        var plan = PlanTestHelper.LoadAndAnalyze("stats_usage_plan.sqlplan");
+        var json = JsonSerializer.Serialize(ResultMapper.Map(plan, "stats_usage_plan.sqlplan"), AnalysisJson.Indented);
+
+        using var document = JsonDocument.Parse(json);
+        var statements = document.RootElement.GetProperty("statements").EnumerateArray().ToList();
+        Assert.Equal(3, statements.Count);
+
+        Assert.Equal("no_query_plan", statements[0].GetProperty("statistics_status").GetString());
+        Assert.Empty(statements[0].GetProperty("statistics_loaded").EnumerateArray());
+
+        var recorded = statements[1];
+        Assert.Equal("recorded", recorded.GetProperty("statistics_status").GetString());
+        Assert.Equal(JsonValueKind.Null, recorded.GetProperty("statistics_note").ValueKind);
+        Assert.Equal(3, recorded.GetProperty("total_statistics").GetInt32());
+        Assert.Equal(3, recorded.GetProperty("statistics_returned").GetInt32());
+        Assert.False(recorded.GetProperty("statistics_truncated").GetBoolean());
+
+        var rows = recorded.GetProperty("statistics_loaded").EnumerateArray().ToList();
+        Assert.Equal(new[] { "PK_Customers", "IX_Orders_CustomerId", "_WA_Sys_00000001_0" }, rows.Select(r => r.GetProperty("statistic").GetString()));
+
+        Assert.Equal(JsonValueKind.Null, rows[0].GetProperty("table_rows").ValueKind);
+        Assert.Equal(JsonValueKind.Null, rows[0].GetProperty("stale_at_compile").ValueKind);
+        Assert.Equal(JsonValueKind.Null, rows[0].GetProperty("last_update").ValueKind);
+        Assert.Equal(42.5, rows[0].GetProperty("sampling_percent").GetDouble());
+
+        Assert.Equal(1000, rows[1].GetProperty("table_rows").GetDouble());
+        Assert.Equal(25.0, rows[1].GetProperty("modified_percent").GetDouble());
+        Assert.False(rows[1].GetProperty("stale_at_compile").GetBoolean());
+        Assert.Equal("2026-10-30T02:14:07.53", rows[1].GetProperty("last_update").GetString());
+
+        Assert.Equal("#orders", rows[2].GetProperty("table").GetString());
+        Assert.Equal(200, rows[2].GetProperty("table_rows").GetDouble());
+        Assert.Equal(20.0, rows[2].GetProperty("modified_percent").GetDouble());
+
+        var notInPlan = statements[2];
+        Assert.Equal("not_in_plan", notInPlan.GetProperty("statistics_status").GetString());
+        Assert.Contains("state at compile is unknown", notInPlan.GetProperty("statistics_note").GetString());
+        Assert.Empty(notInPlan.GetProperty("statistics_loaded").EnumerateArray());
+    }
+
     /// <summary>The fix: the shared options carry the plan that used to crash the app.</summary>
     [Theory]
     [InlineData(60)]
