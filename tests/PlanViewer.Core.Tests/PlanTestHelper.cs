@@ -1,3 +1,4 @@
+using System;
 using System.IO;
 using System.Linq;
 using PlanViewer.Core.Models;
@@ -79,6 +80,38 @@ public static class PlanTestHelper
         xml = pattern.Replace(xml, $"GrantWaitTime=\"{seconds}\"");
 
         var plan = ShowPlanParser.Parse(xml);
+        PlanAnalyzer.Analyze(plan);
+        BenefitScorer.Score(plan);
+        return plan;
+    }
+
+    /// <summary>
+    /// Same load + analyze + score, with the scan at each node id lifted past rule 11's actual-plan
+    /// gates before analysis: at least 10,000 rows read, and the statement's elapsed time as the scan's
+    /// own time when the plan carries statement time. For tests whose fixture is a small repro table
+    /// and whose subject is another rule's decision about the same scan, proven by rule 11 reporting
+    /// the predicate as a plain residual one.
+    /// </summary>
+    public static ParsedPlan LoadAndAnalyzeWithReportableScan(string planFileName, params int[] nodeIds)
+    {
+        var path = Path.Combine("Plans", planFileName);
+        Assert.True(File.Exists(path), $"Test plan not found: {path}");
+
+        var xml = File.ReadAllText(path);
+        xml = xml.Replace("encoding=\"utf-16\"", "encoding=\"utf-8\"");
+        var plan = ShowPlanParser.Parse(xml);
+
+        var stmt = FirstStatement(plan);
+        Assert.NotNull(stmt.RootNode);
+        foreach (var nodeId in nodeIds)
+        {
+            var node = FindNode(stmt.RootNode, nodeId);
+            Assert.NotNull(node);
+            node.ActualRowsRead = Math.Max(node.ActualRowsRead, 10_000);
+            if (stmt.QueryTimeStats is { ElapsedTimeMs: > 0 } time)
+                node.ActualElapsedMs = time.ElapsedTimeMs;
+        }
+
         PlanAnalyzer.Analyze(plan);
         BenefitScorer.Score(plan);
         return plan;

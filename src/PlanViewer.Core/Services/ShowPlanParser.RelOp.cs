@@ -398,13 +398,13 @@ public static partial class ShowPlanParser
             node.IconName = isHeap ? "rid_lookup" : "bookmark_lookup";
         }
 
-        // Table cardinality and rows to be read (on <RelOp> per XSD)
+        // Table cardinality and rows to be read (on <RelOp> per XSD). EstimatedRowsRead stays 0 when
+        // the plan does not carry it: EstimateRowsWithoutRowGoal is a different quantity (the output
+        // estimate before the row goal), and the viewer shows each only when the plan has it.
         node.TableCardinality = ParseDouble(relOpEl.Attribute("TableCardinality")?.Value);
         node.HasTableCardinality = relOpEl.Attribute("TableCardinality") != null;
         node.EstimatedRowsRead = ParseDouble(relOpEl.Attribute("EstimatedRowsRead")?.Value);
         node.EstimateRowsWithoutRowGoal = ParseDouble(relOpEl.Attribute("EstimateRowsWithoutRowGoal")?.Value);
-        if (node.EstimatedRowsRead == 0)
-            node.EstimatedRowsRead = node.EstimateRowsWithoutRowGoal;
 
         // TOP operator properties
         var topExprEl = physicalOpEl.Element(Ns + "TopExpression")?.Descendants(Ns + "ScalarOperator").FirstOrDefault();

@@ -318,12 +318,15 @@ public class PlanAnalyzerTests
     // ---------------------------------------------------------------
 
     [Fact]
-    public void Rule11_ScanWithPredicate_DetectedInJoinOrClausePlan()
+    public void Rule11_ScanWithPredicate_DetectedInLocalVariablePlan()
     {
-        var plan = PlanTestHelper.LoadAndAnalyze("join_or_clause_plan.sqlplan");
+        // An actual scan that read 17 million rows to return 5.4 million in all of the statement's
+        // time. join_or_clause_plan's scans are under the rule's 10,000 row floor.
+        var plan = PlanTestHelper.LoadAndAnalyze("local_variable_plan.sqlplan");
         var warnings = PlanTestHelper.WarningsOfType(plan, "Scan With Predicate");
 
         Assert.NotEmpty(warnings);
+        Assert.Contains(warnings, w => w.Message.Contains("read 17,142,169 rows to return 5,413,518"));
     }
 
     [Fact]
@@ -780,7 +783,7 @@ public class PlanAnalyzerTests
     [Fact]
     public void Rule12j_NonSargable_OuterReferenceFunctionAliased_GetsScanWithPredicate()
     {
-        var plan = PlanTestHelper.LoadAndAnalyze("outer_reference_function_aliased_plan.sqlplan");
+        var plan = PlanTestHelper.LoadAndAnalyzeWithReportableScan("outer_reference_function_aliased_plan.sqlplan", 3);
         AssertScanWarnings(plan, nodeId: 3, expectNonSargable: false);
     }
 
@@ -795,7 +798,7 @@ public class PlanAnalyzerTests
     [Fact]
     public void Rule12j_NonSargable_OuterReferenceFunctionUnaliased_GetsScanWithPredicate()
     {
-        var plan = PlanTestHelper.LoadAndAnalyze("outer_reference_function_unaliased_plan.sqlplan");
+        var plan = PlanTestHelper.LoadAndAnalyzeWithReportableScan("outer_reference_function_unaliased_plan.sqlplan", 3);
         AssertScanWarnings(plan, nodeId: 3, expectNonSargable: false);
     }
 
@@ -803,7 +806,7 @@ public class PlanAnalyzerTests
     [Fact]
     public void Rule12j_NonSargable_OuterReferenceFunctionSelfJoin_GetsScanWithPredicate()
     {
-        var plan = PlanTestHelper.LoadAndAnalyze("outer_reference_function_self_join_plan.sqlplan");
+        var plan = PlanTestHelper.LoadAndAnalyzeWithReportableScan("outer_reference_function_self_join_plan.sqlplan", 3);
         AssertScanWarnings(plan, nodeId: 3, expectNonSargable: false);
     }
 
@@ -811,35 +814,35 @@ public class PlanAnalyzerTests
     [Fact]
     public void Rule12j_NonSargable_OuterReferenceSelfJoinUnaliasedInner_GetsScanWithPredicate()
     {
-        var plan = PlanTestHelper.LoadAndAnalyze("outer_reference_self_join_unaliased_inner_plan.sqlplan");
+        var plan = PlanTestHelper.LoadAndAnalyzeWithReportableScan("outer_reference_self_join_unaliased_inner_plan.sqlplan", 3);
         AssertScanWarnings(plan, nodeId: 3, expectNonSargable: false);
     }
 
     [Fact]
     public void Rule12j_NonSargable_OuterReferenceImplicitConversion_GetsScanWithPredicate()
     {
-        var plan = PlanTestHelper.LoadAndAnalyze("outer_reference_implicit_conversion_plan.sqlplan");
+        var plan = PlanTestHelper.LoadAndAnalyzeWithReportableScan("outer_reference_implicit_conversion_plan.sqlplan", 3);
         AssertScanWarnings(plan, nodeId: 3, expectNonSargable: false);
     }
 
     [Fact]
     public void Rule12j_NonSargable_OuterReferenceIsnull_GetsScanWithPredicate()
     {
-        var plan = PlanTestHelper.LoadAndAnalyze("outer_reference_isnull_plan.sqlplan");
+        var plan = PlanTestHelper.LoadAndAnalyzeWithReportableScan("outer_reference_isnull_plan.sqlplan", 3);
         AssertScanWarnings(plan, nodeId: 3, expectNonSargable: false);
     }
 
     [Fact]
     public void Rule12j_NonSargable_OuterReferenceTempTable_GetsScanWithPredicate()
     {
-        var plan = PlanTestHelper.LoadAndAnalyze("outer_reference_temp_table_plan.sqlplan");
+        var plan = PlanTestHelper.LoadAndAnalyzeWithReportableScan("outer_reference_temp_table_plan.sqlplan", 3);
         AssertScanWarnings(plan, nodeId: 3, expectNonSargable: false);
     }
 
     [Fact]
     public void Rule12j_NonSargable_OuterReferenceTableVariableAliased_GetsScanWithPredicate()
     {
-        var plan = PlanTestHelper.LoadAndAnalyze("outer_reference_table_variable_aliased_plan.sqlplan");
+        var plan = PlanTestHelper.LoadAndAnalyzeWithReportableScan("outer_reference_table_variable_aliased_plan.sqlplan", 3);
         AssertScanWarnings(plan, nodeId: 3, expectNonSargable: false);
     }
 
@@ -850,7 +853,7 @@ public class PlanAnalyzerTests
     [Fact]
     public void Rule12j_NonSargable_OuterReferenceTableVariableUnaliased_GetsScanWithPredicate()
     {
-        var plan = PlanTestHelper.LoadAndAnalyze("outer_reference_table_variable_unaliased_plan.sqlplan");
+        var plan = PlanTestHelper.LoadAndAnalyzeWithReportableScan("outer_reference_table_variable_unaliased_plan.sqlplan", 3);
         AssertScanWarnings(plan, nodeId: 3, expectNonSargable: false);
     }
 
@@ -862,7 +865,7 @@ public class PlanAnalyzerTests
     [Fact]
     public void Rule12j_NonSargable_OuterReferenceOuterSideScan_OuterScanStaysNonSargable_InnerScanUnaffected()
     {
-        var plan = PlanTestHelper.LoadAndAnalyze("outer_reference_outer_side_scan_plan.sqlplan");
+        var plan = PlanTestHelper.LoadAndAnalyzeWithReportableScan("outer_reference_outer_side_scan_plan.sqlplan", 4);
         AssertScanWarnings(plan, nodeId: 2, expectNonSargable: true, messageContains: "Function call (ABS)");
         AssertScanWarnings(plan, nodeId: 4, expectNonSargable: false);
     }
@@ -883,7 +886,7 @@ public class PlanAnalyzerTests
     [Fact]
     public void Rule12g_NonSargable_ParameterSideConvertAfterAnotherComparison_NotFlagged()
     {
-        var plan = PlanTestHelper.LoadAndAnalyze("non_sargable_compound_predicate_plan.sqlplan");
+        var plan = PlanTestHelper.LoadAndAnalyzeWithReportableScan("non_sargable_compound_predicate_plan.sqlplan", 2);
 
         Assert.Empty(PlanTestHelper.WarningsOfType(plan, "Non-SARGable Predicate"));
         Assert.NotEmpty(PlanTestHelper.WarningsOfType(plan, "Scan With Predicate"));

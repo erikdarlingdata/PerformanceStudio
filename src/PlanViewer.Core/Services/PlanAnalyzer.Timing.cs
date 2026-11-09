@@ -420,6 +420,56 @@ public static partial class PlanAnalyzer
     // falling as the table grows).
     private const double CeGuessMinTableRows = 100_000;
 
+    /* Rules 11 and 34 are about reads a scan does that an index could spare. Under this many rows a
+       table is a few hundred pages, its scan is a buffer pool read of a millisecond or two, and the
+       index either rule proposes costs more on every write than it saves on the read. */
+    private const long ScanRuleMinRows = 10_000;
+
+    /* An index that removed the scan outright saves at most the scan's own share of the statement's
+       elapsed time. Under a tenth, the saving sits inside a statement's run-to-run variance and the
+       finding points at nothing a person could measure. Rule 35 needs twice this share before it
+       calls an operator expensive with nothing else to say about it. */
+    private const double ScanRuleMinOwnTimeSharePct = 10;
+
+    /* Rule 11 reports rows a scan read and then discarded. When at least half of the rows read were
+       returned, a seek on the predicate columns would touch most of the same pages, so the predicate
+       is not the cost the rule describes. */
+    private const double ScanPredicateMaxSelectivity = 0.5;
+
+    private static bool HasStatementElapsed(PlanStatement stmt) =>
+        stmt.QueryTimeStats != null && stmt.QueryTimeStats.ElapsedTimeMs > 0;
+
+    /// <summary>
+    /// The operator's own elapsed time as a share of the statement's, or null when the plan carries
+    /// no statement time and there is no share to measure.
+    /// </summary>
+    private static double? OwnTimeSharePct(PlanNode node, PlanStatement stmt) =>
+        HasStatementElapsed(stmt)
+            ? (double)GetOperatorOwnElapsedMs(node) / stmt.QueryTimeStats!.ElapsedTimeMs * 100
+            : null;
+
+    /// <summary>
+    /// Rule 11's gate. An estimated plan is always reported. An actual plan must have read at least
+    /// ScanRuleMinRows rows, returned under ScanPredicateMaxSelectivity of what it read when the plan
+    /// says how many it read, and spent at least ScanRuleMinOwnTimeSharePct of the statement's time in
+    /// the scan when the plan carries statement time. The impact details come out either way, so the
+    /// caller does not build them twice.
+    /// </summary>
+    private static bool ScanPredicateIsWorthReporting(PlanNode node, PlanStatement stmt, out ScanImpact details)
+    {
+        details = BuildScanImpactDetails(node, stmt);
+        if (!node.HasActualStats)
+            return true;
+
+        if (Math.Max(node.ActualRowsRead, node.ActualRows) < ScanRuleMinRows)
+            return false;
+        if (node.ActualRowsRead > 0 && (double)node.ActualRows / node.ActualRowsRead >= ScanPredicateMaxSelectivity)
+            return false;
+
+        var ownShare = OwnTimeSharePct(node, stmt);
+        return ownShare is null || ownShare.Value >= ScanRuleMinOwnTimeSharePct;
+    }
+
     /// <summary>
     /// Detects well-known CE default selectivity guesses by comparing EstimateRows to TableCardinality.
     /// Returns a description of the guess pattern, or null if no known pattern matches.
