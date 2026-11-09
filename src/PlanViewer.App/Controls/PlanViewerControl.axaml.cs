@@ -164,9 +164,81 @@ public partial class PlanViewerControl : UserControl
     /// </summary>
     public ToolbarOverflow Overflow { get; }
 
+    private bool _insightsFitPending;
+    private bool _insightsSetByUser;
+    private bool _applyingInsightsFit;
+
+    /// <summary>
+    /// Opens or collapses the insights panel by the viewer's height (<see cref="PlanInsightsLayout.StartsExpanded"/>)
+    /// as a plan shows it: in a small window the plan graph keeps most of the height and the panel starts
+    /// collapsed. A panel the person has opened or closed themselves stays as they left it. Before the
+    /// first layout pass the fit waits for the first real height.
+    /// </summary>
+    private void FitInsightsToHeight()
+    {
+        if (_insightsSetByUser)
+            return;
+        if (Bounds.Height > 0)
+            ApplyInsightsFit(Bounds.Height);
+        else
+            _insightsFitPending = true;
+    }
+
+    private void ApplyInsightsFit(double height)
+    {
+        _insightsFitPending = false;
+        _applyingInsightsFit = true;
+        InsightsExpander.IsExpanded = PlanInsightsLayout.StartsExpanded(height);
+        _applyingInsightsFit = false;
+    }
+
+    /// <summary>
+    /// Bounds the insights grid's width: the strip's width, so in a wide window the star columns share it
+    /// and the Wait Stats rows ellipsize as their column allows; or, when the strip is narrower than that,
+    /// the two content-sized columns (Server Context and Runtime Summary, each capped at 360 px) plus the
+    /// star columns' minimums, so the grid keeps its minimums and the strip scrolls to the rest.
+    /// </summary>
+    private void BoundInsightsGridToStrip()
+    {
+        var stripWidth = InsightsStrip.Viewport.Width > 0 ? InsightsStrip.Viewport.Width : InsightsStrip.Bounds.Width;
+        if (stripWidth <= 0)
+            return;
+
+        var columns = InsightsGrid.ColumnDefinitions;
+        var contentColumns = columns[0].ActualWidth + columns[1].ActualWidth;
+        var starMinimums = columns.Skip(2).Sum(c => c.MinWidth);
+        var width = Math.Max(stripWidth, contentColumns + starMinimums);
+        /* Compared exactly: a grid wider than its strip by any amount, half a pixel at 200% scaling included,
+           shows a horizontal scroll bar. The bound is a function of sizes the pass has already settled, so
+           setting it once is the last pass. */
+        if (double.IsNaN(InsightsGrid.Width) || InsightsGrid.Width != width)
+            InsightsGrid.Width = width;
+    }
+
     public PlanViewerControl()
     {
         InitializeComponent();
+
+        /* A plan shown before the first layout pass fits its insights panel on the first real height. A
+           toggle of the expander that is not this fit is the person's choice, and the fit then leaves the
+           panel alone. */
+        SizeChanged += (_, e) =>
+        {
+            if (_insightsFitPending && e.NewSize.Height > 0)
+                ApplyInsightsFit(e.NewSize.Height);
+        };
+        InsightsExpander.PropertyChanged += (_, e) =>
+        {
+            if (e.Property == Expander.IsExpandedProperty && !_applyingInsightsFit)
+                _insightsSetByUser = true;
+        };
+
+        /* The insights strip scrolls sideways, so it measures its grid with no width limit, and a star
+           column measured that way sizes to its content: the Wait Stats card would take its longest row
+           and its rows would never ellipsize. The grid's width is set instead (BoundInsightsGridToStrip),
+           after each layout pass, since the content-sized columns change with the statement and the
+           server metadata, and only when the bound has moved, so the pass that applies it is the last. */
+        InsightsGrid.LayoutUpdated += (_, _) => BoundInsightsGridToStrip();
 
         /* Icon adoption for the XAML-declared toolbar buttons. Set here rather than in the
            XAML because a bare PathIcon does not inherit the button's foreground (its stock
