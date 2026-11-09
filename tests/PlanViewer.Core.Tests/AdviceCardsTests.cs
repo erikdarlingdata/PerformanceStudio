@@ -153,12 +153,16 @@ public class AdviceCardsTests
     /// A warning hanging off an operator counts towards the edge exactly as a statement warning
     /// does. The report keeps them in two sections, which is why the first cut of the edge only
     /// looked at one of them and left a plan whose only critical finding was on a Key Lookup —
-    /// this fixture — reading as clean.
+    /// this fixture — reading as clean. The analyzer now grades this fixture's lookup Info (#678),
+    /// so the test raises that one operator warning to Critical on the model: the statement's
+    /// own warning list stays empty, and the edge can only turn red by walking the operator tree.
     /// </summary>
     [Fact]
     public void AnOperatorsCriticalFindingReachesTheCardEdge()
     {
         var result = Analyze(GoldenPlan);
+        Assert.Empty(result.Statements[0].Warnings);
+        OperatorWarning(result.Statements[0].OperatorTree!, "Key Lookup").Severity = "Critical";
 
         HeadlessUi.Run(() =>
         {
@@ -227,7 +231,10 @@ public class AdviceCardsTests
 
             Assert.Contains("SQL Server 16.0.4222.2", text);
             Assert.Contains("1 statement", text);
-            Assert.Contains("1 critical", text);
+            // The fixture's one finding is an Info-grade Key Lookup (#678), so the strip counts it
+            // among the non-critical warnings and shows no critical chip at all.
+            Assert.Contains("1 warning", text);
+            Assert.DoesNotContain("critical", text);
             Assert.Contains("actual stats", text);
             // The warning-type taxonomy, now a tag rather than a list to work through.
             Assert.Contains("Key Lookup", text);
@@ -405,6 +412,15 @@ public class AdviceCardsTests
 
     private static AnalysisResult Analyze(string planFile) =>
         ResultMapper.Map(PlanTestHelper.LoadAndAnalyze(planFile), planFile);
+
+    /// <summary>The one warning of the named type anywhere in the operator tree.</summary>
+    private static WarningResult OperatorWarning(OperatorResult root, string type)
+    {
+        static IEnumerable<OperatorResult> Walk(OperatorResult node) =>
+            new[] { node }.Concat(node.Children.SelectMany(Walk));
+
+        return Assert.Single(Walk(root).SelectMany(n => n.Warnings), w => w.Type == type);
+    }
 
     /// <summary>A statement carrying one finding per severity named.</summary>
     private static StackPanel Warned(params string[] severities)
