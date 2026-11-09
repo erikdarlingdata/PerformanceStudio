@@ -398,13 +398,13 @@ public static partial class ShowPlanParser
             node.IconName = isHeap ? "rid_lookup" : "bookmark_lookup";
         }
 
-        // Table cardinality and rows to be read (on <RelOp> per XSD)
+        // Table cardinality and rows to be read (on <RelOp> per XSD). EstimatedRowsRead stays 0 when
+        // the plan does not carry it: EstimateRowsWithoutRowGoal is a different quantity (the output
+        // estimate before the row goal), and the viewer shows each only when the plan has it.
         node.TableCardinality = ParseDouble(relOpEl.Attribute("TableCardinality")?.Value);
         node.HasTableCardinality = relOpEl.Attribute("TableCardinality") != null;
         node.EstimatedRowsRead = ParseDouble(relOpEl.Attribute("EstimatedRowsRead")?.Value);
         node.EstimateRowsWithoutRowGoal = ParseDouble(relOpEl.Attribute("EstimateRowsWithoutRowGoal")?.Value);
-        if (node.EstimatedRowsRead == 0)
-            node.EstimatedRowsRead = node.EstimateRowsWithoutRowGoal;
 
         // TOP operator properties
         var topExprEl = physicalOpEl.Element(Ns + "TopExpression")?.Descendants(Ns + "ScalarOperator").FirstOrDefault();
@@ -699,12 +699,17 @@ public static partial class ShowPlanParser
             long totalUdfCpu = 0, maxUdfElapsed = 0;
             long maxInputMemoryGrant = 0, maxOutputMemoryGrant = 0, maxUsedMemoryGrant = 0;
             string? actualExecMode = null;
+            // Whether any thread carries ActualRowsRead: older builds write none, and a sum of 0 cannot
+            // say whether the scan read nothing or the plan never recorded it.
+            var hasRowsRead = false;
 
             foreach (var thread in runtimeEl.Elements(Ns + "RunTimeCountersPerThread"))
             {
                 totalRows += ParseLong(thread.Attribute("ActualRows")?.Value);
                 totalExecutions += ParseLong(thread.Attribute("ActualExecutions")?.Value);
-                totalRowsRead += ParseLong(thread.Attribute("ActualRowsRead")?.Value);
+                var rowsReadAttr = thread.Attribute("ActualRowsRead");
+                hasRowsRead |= rowsReadAttr != null;
+                totalRowsRead += ParseLong(rowsReadAttr?.Value);
                 totalRebinds += ParseLong(thread.Attribute("ActualRebinds")?.Value);
                 totalRewinds += ParseLong(thread.Attribute("ActualRewinds")?.Value);
                 totalCpu += ParseLong(thread.Attribute("ActualCPUms")?.Value);
@@ -749,6 +754,7 @@ public static partial class ShowPlanParser
             node.ActualRows = totalRows;
             node.ActualExecutions = totalExecutions;
             node.ActualRowsRead = totalRowsRead;
+            node.HasActualRowsRead = hasRowsRead;
             node.ActualRebinds = totalRebinds;
             node.ActualRewinds = totalRewinds;
             node.ActualElapsedMs = sawWorkerThread ? maxWorkerElapsed : maxElapsed;

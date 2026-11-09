@@ -11,7 +11,7 @@ Compile Memory Exceeded | Critical | Optimization was aborted early because the 
 Non-SARGable Predicate | Warning | Function call (DATEPART) on column prevents an index seek. Remove the function from the column side — apply it to the parameter instead, or create a computed column with the expression and index that.\nPredicate: CONVERT_IMPLICIT(int,[@0],0)=datepart(year,[TestDB].[dbo].[Orders].[OrderDate])
 
 ### convert_implicit_parameter_side_plan.sqlplan
-Scan With Predicate | Critical | Scan with residual predicate — SQL Server is reading every row and filtering after the fact. This scan is 100% of the plan cost. This scan took 100% of elapsed time. Only 0.100% of rows survived filtering (50 of 50,000). Check that you have appropriate indexes.\nPredicate: [TestDB].[dbo].[IB03_GARANZ].[UNIV_SEZIONI] as [IB03].[UNIV_SEZIONI]=CONVERT_IMPLICIT(numeric(18,0),[@0],0)
+Scan With Predicate | Critical | Scan with residual predicate — SQL Server read 50,000 rows to return 50, filtering after the fact. This scan is 100% of the plan cost. This scan took 100% of elapsed time. Only 0.100% of rows survived filtering (50 of 50,000). Check that you have appropriate indexes.\nPredicate: [TestDB].[dbo].[IB03_GARANZ].[UNIV_SEZIONI] as [IB03].[UNIV_SEZIONI]=CONVERT_IMPLICIT(numeric(18,0),[@0],0)
 
 ### convert_implicit_plan.sqlplan
 Implicit Conversion | Critical | Seek Plan: CONVERT_IMPLICIT(nvarchar(40),[ub].[DisplayName],0)=[@d]
@@ -37,13 +37,11 @@ Wait: EXECSYNC | Critical | EXECSYNC Observed 123,292 ms across 7 waits.
 Wait: SOS_SCHEDULER_YIELD | Info | SOS_SCHEDULER_YIELD Observed 777 ms across 4,263 waits.
 Wait: CXSYNC_PORT | Info | CXSYNC_PORT Observed 41 ms across 9 waits.
 Wait: MEMORY_ALLOCATION_EXT | Info | MEMORY_ALLOCATION_EXT Observed 9 ms across 24,330 waits.
-Scan With Predicate | Warning | Scan with residual predicate — SQL Server is reading every row and filtering after the fact. Only 0.025% of rows survived filtering (613 of 2,465,713). Check that you have appropriate indexes.\nPredicate: [StackOverflow2013].[dbo].[Users].[Reputation] as [u].[Reputation]>(100000)
 Eager Index Spool | Critical | SQL Server is building a temporary index in TempDB at runtime because no suitable permanent index exists. This is expensive — it builds the index from scratch on every execution. Create a permanent index on the underlying table to eliminate this operator entirely.\n\nCreate this index:\nCREATE INDEX [UserId] ON dbo.Badges (UserId) INCLUDE (Name);
 Parallel Skew | Warning | Thread 3 processed 100% of rows (8,042,005/8,042,005). Work is heavily skewed to one thread, so parallelism isn't helping much. Common causes: uneven data distribution across partitions or hash buckets, or a scan/seek whose predicate sends most rows to one range. Reducing DOP or rewriting the query to avoid the skewed operation may help.
-Bare Scan | Warning | Clustered index scan reads the full table with no predicate, outputting 2 column(s): Badges.Name, Badges.UserId. Consider a nonclustered index on the output columns (as key or INCLUDE) so SQL Server can read a narrower structure. For analytical workloads, a columnstore index may be a better fit.
 
 ### eager_table_spool_plan.sqlplan
-Data Type Mismatch | Warning | Mismatched data types between the column and the parameter/literal. SQL Server is converting every row to compare, preventing index seeks. Match your data types — don't pass nvarchar to a varchar column, or int to a bigint column.
+Data Type Mismatch | Warning | Mismatched data types between the column and the parameter/literal. The optimizer built a dynamic seek range through the conversion, so the index is still sought, but the range is wider than an exact match and the row estimate for it is a guess. Match your data types — don't pass nvarchar to a varchar column, or int to a bigint column.
 Filter Operator | Warning | Filter operator discarding rows late in the plan.\nPredicate: [Act1007]<>(1)
 Scan With Predicate | Warning | Scan with residual predicate — SQL Server is reading every row and filtering after the fact. Check that you have appropriate indexes.\nPredicate: [RebuildVsReorg].[dbo].[RealBigTest].[Sequence] as [R].[Sequence]>[@hkey] AND [RebuildVsReorg].[dbo].[RealBigTest].[Sequence] as [R].[Sequence]<=[@bmax]
 
@@ -61,18 +59,14 @@ Exchange Spill | Warning | Exchange spill — 4 writes to TempDB. The parallel e
 Expensive Operator | Critical | Merge Join took 127,479ms (56.4% of statement elapsed) but no specific rule identified a fix. Worth investigating: is the row volume necessary? Are upstream estimates driving this operator harder than it should be?
 Spill to TempDb | Warning | Spill level 0, 4 thread(s)
 Exchange Spill | Critical | Exchange spill — 5,786,565 writes to TempDB. The parallel exchange operator ran out of memory buffers and spilled rows to disk. This typically means the memory grant was too small for the data volume flowing through this exchange. Operator time: 114,331ms (51% of statement).
-Bare Scan | Warning | Clustered index scan reads the full table with no predicate, outputting 14 columns. A nonclustered rowstore index isn't a great fit for wide outputs, but if this is an analytical or aggregate-style query, a columnstore index (CCI or NCCI) can scan the same data far more cheaply — column count doesn't penalize columnstore the way it does rowstore indexes.
 Spill to TempDb | Warning | Spill level 0, 1 thread(s)
 Exchange Spill | Warning | Exchange spill — 8,890 writes to TempDB. The parallel exchange operator ran out of memory buffers and spilled rows to disk. This typically means the memory grant was too small for the data volume flowing through this exchange. Operator time: 12,939ms (6% of statement).
 Parallel Skew | Warning | Thread 1 processed 100% of rows (1,531,307/1,531,307). Work is heavily skewed to one thread, so parallelism isn't helping much. Common causes: uneven data distribution across partitions or hash buckets, or a scan/seek whose predicate sends most rows to one range. Reducing DOP or rewriting the query to avoid the skewed operation may help.
 Parallel Skew | Warning | Thread 1 processed 100% of rows (1,531,307/1,531,307). Work is heavily skewed to one thread, so parallelism isn't helping much. Common causes: uneven data distribution across partitions or hash buckets, or a scan/seek whose predicate sends most rows to one range. Reducing DOP or rewriting the query to avoid the skewed operation may help.
-Scan With Predicate | Warning | Scan with residual predicate — SQL Server is reading every row and filtering after the fact. Check that you have appropriate indexes.\nPredicate: [StackOverflow2013].[dbo].[Users].[CreationDate] as [u].[CreationDate]>'2011-09-01 00:00:00.000' AND [StackOverflow2013].[dbo].[Users].[Reputation] as [u].[Reputation]>(100)
-Scan With Predicate | Warning | Scan with residual predicate — SQL Server is reading every row and filtering after the fact. Check that you have appropriate indexes.\nPredicate: [StackOverflow2013].[dbo].[Posts].[PostTypeId] as [p].[PostTypeId]=(1)
 
 ### exchange_spill_plan.sqlplan
 Exchange Spill | Critical | Exchange spill — 5,000,000 writes to TempDB. The parallel exchange operator ran out of memory buffers and spilled rows to disk. This typically means the memory grant was too small for the data volume flowing through this exchange. Operator time: 10,000ms (12% of statement).
 Expensive Operator | Critical | Sort took 65,000ms (81.2% of statement elapsed) but no specific rule identified a fix. Worth investigating: is the row volume necessary? Are upstream estimates driving this operator harder than it should be?
-Bare Scan | Warning | Clustered index scan reads the full table with no predicate, outputting 1 column(s): Test.Col1. Consider a nonclustered index on the output columns (as key or INCLUDE) so SQL Server can read a narrower structure. For analytical workloads, a columnstore index may be a better fit.
 
 ### exec_stored_procedure_plan.sqlplan
 Non-SARGable Predicate | Warning | Implicit conversion (CONVERT_IMPLICIT) prevents an index seek. Match the parameter or variable data type to the column data type.\nPredicate: CONVERT_IMPLICIT(nvarchar(20),[ps455].[dbo].[Orders].[Code],0)=[@code]
@@ -109,7 +103,6 @@ Wait: BPSORT | Info | BPSORT Observed 185 ms across 210 waits.
 Wait: HTDELETE | Info | HTDELETE Observed 33 ms across 14 waits.
 Filter Operator | Warning | Filter operator discarding rows late in the plan.\n• 1,440,204 of 1,440,301 rows discarded (100%)\n• 93,307,943 logical reads below\n• 1,783ms elapsed below\nPredicate: [Expr1002]>=(5000)
 Nested Loops High Executions | Critical | Nested Loops inner side executed 17,091,572 times (DOP 8). Inner side total: 93,279,732 logical reads. Inner side time: 30,655ms (93% of statement). Consider whether a hash or merge join would be more appropriate for this row count.
-Scan With Predicate | Warning | Scan with residual predicate — SQL Server is reading every row and filtering after the fact. Check that you have appropriate indexes.\nPredicate: [StackOverflow2013].[dbo].[Posts].[PostTypeId] as [p].[PostTypeId]=(1) OR [StackOverflow2013].[dbo].[Posts].[PostTypeId] as [p].[PostTypeId]=(2)
 Nested Loops High Executions | Critical | Nested Loops inner side executed 30,700,008 times (DOP 8). Inner side total: 93,279,732 logical reads. Inner side time: 14,355ms (43% of statement). Consider whether a hash or merge join would be more appropriate for this row count.
 Expensive Operator | Critical | Sort took 18,580ms (56.2% of statement elapsed) but no specific rule identified a fix. Worth investigating: is the row volume necessary? Are upstream estimates driving this operator harder than it should be?
 Join OR Clause | Warning | OR in a join predicate. SQL Server rewrote the OR as 2 separate lookups, each evaluated independently — this multiplies the work on the inner side. Rewrite as separate queries joined with UNION ALL. For example, change "FROM a JOIN b ON a.x = b.x OR a.y = b.y" to "FROM a JOIN b ON a.x = b.x UNION ALL FROM a JOIN b ON a.y = b.y".
@@ -132,10 +125,8 @@ Wait: MEMORY_ALLOCATION_EXT | Info | MEMORY_ALLOCATION_EXT Observed 271 ms acros
 Wait: ASYNC_NETWORK_IO | Info | ASYNC_NETWORK_IO Observed 5 ms across 1 wait.
 Wait: PAGEIOLATCH_EX | Info | PAGEIOLATCH_EX Observed 1 ms across 1 wait. Effective latency: 1.0 ms per wait.
 Nested Loops High Executions | Critical | Nested Loops inner side executed 6,000,223 times (DOP 1). Inner side total: 59,711,931 logical reads. Inner side time: 37,690ms (85% of statement). Consider whether a hash or merge join would be more appropriate for this row count.
-Scan With Predicate | Warning | Scan with residual predicate — SQL Server is reading every row and filtering after the fact. Check that you have appropriate indexes.\nPredicate: [StackOverflow2013].[dbo].[Posts].[PostTypeId] as [p].[PostTypeId]=(1)
 Expensive Operator | Warning | Lazy Index Spool took 12,029ms (27.3% of statement elapsed) but no specific rule identified a fix. Worth investigating: is the row volume necessary? Are upstream estimates driving this operator harder than it should be?
 Eager Index Spool | Critical | SQL Server is building a temporary index in TempDB at runtime because no suitable permanent index exists. This is expensive — it builds the index from scratch on every execution. Create a permanent index on the underlying table to eliminate this operator entirely.\n\nCreate this index:\nCREATE INDEX [UserId] ON dbo.Badges (UserId) INCLUDE (Id, Date);
-Bare Scan | Warning | Clustered index scan reads the full table with no predicate, outputting 3 column(s): Badges.Id, Badges.UserId, Badges.Date. Consider a nonclustered index on the output columns (as key or INCLUDE) so SQL Server can read a narrower structure. For analytical workloads, a columnstore index may be a better fit.
 
 ### leading_wildcard_like_plan.sqlplan
 Wait: CXSYNC_PORT | Info | CXSYNC_PORT Observed 1 ms across 9 waits.
@@ -150,7 +141,7 @@ Wait: SOS_SCHEDULER_YIELD | Info | SOS_SCHEDULER_YIELD Observed 4 ms across 1,32
 Wait: HTBUILD | Info | HTBUILD Observed 4 ms across 14 waits.
 Wait: HTDELETE | Info | HTDELETE Observed 1 ms across 14 waits.
 Wait: CXSYNC_PORT | Info | CXSYNC_PORT Observed 1 ms across 9 waits.
-Scan With Predicate | Critical | Scan with residual predicate — SQL Server is reading every row and filtering after the fact. This scan is 100% of the plan cost. This scan took 100% of elapsed time. Check that you have appropriate indexes.\nPredicate: [StackOverflow2013].[dbo].[Posts].[CreationDate]>=[@date]
+Scan With Predicate | Critical | Scan with residual predicate — SQL Server read 17,142,169 rows to return 5,413,518, filtering after the fact. This scan is 100% of the plan cost. This scan took 100% of elapsed time. Check that you have appropriate indexes.\nPredicate: [StackOverflow2013].[dbo].[Posts].[CreationDate]>=[@date]
 
 ### many_to_many_merge_plan.sqlplan
 Serial Plan | Warning | Query running serially: MAXDOP is set to 1 using a query hint.
@@ -176,22 +167,20 @@ Wait: PAGEIOLATCH_EX | Info | PAGEIOLATCH_EX Observed 873 ms across 2 waits. Eff
 Wait: MEMORY_ALLOCATION_EXT | Info | MEMORY_ALLOCATION_EXT Observed 256 ms across 243,262 waits.
 Wait: PAGEIOLATCH_SH | Info | PAGEIOLATCH_SH Observed 225 ms across 690 waits. Effective latency: 326 µs per wait.
 Wait: SOS_SCHEDULER_YIELD | Info | SOS_SCHEDULER_YIELD Observed 83 ms across 1,268 waits.
-Scan With Predicate | Warning | Scan with residual predicate — SQL Server is reading every row and filtering after the fact. Only 0.236% of rows survived filtering (5,829 of 2,465,713). Check that you have appropriate indexes.\nPredicate: [StackOverflow2013].[dbo].[Users].[Reputation] as [u].[Reputation]>=(20000)
 Row Estimate Mismatch | Critical | Estimated 8,820,150 vs Actual 5,723 — 1541x overestimated. The overestimate may have caused the optimizer to make poor choices.
 Filter Operator | Warning | Filter operator discarding rows late in the plan.\n• 4,184,508 logical reads below\nPredicate: [Expr1002]=(1)
 Row Estimate Mismatch | Warning | Estimated 8,820,150 vs Actual 569,368 — 15x overestimated. The overestimate may have caused the optimizer to make poor choices.
 Sort Spill | Critical | Sort spill level 1, 8 thread(s) — Granted: 10,815,552 KB, Used: 10,220,984 KB, Writes: 1,512,936, Reads: 1,512,936 Operator time: 24,938ms (93% of statement).
-Scan With Predicate | Warning | Scan with residual predicate — SQL Server is reading every row and filtering after the fact. Check that you have appropriate indexes.\nPredicate: [StackOverflow2013].[dbo].[Posts].[PostTypeId] as [p].[PostTypeId]=(2) AND [StackOverflow2013].[dbo].[Posts].[Score] as [p].[Score]>(0)
 
 ### mismatched_data_type_plan.sqlplan
 Wait: SOS_SCHEDULER_YIELD | Info | SOS_SCHEDULER_YIELD Observed 2 ms across 1,168 waits.
-Data Type Mismatch | Warning | Mismatched data types between the column and the parameter/literal. SQL Server is converting every row to compare, preventing index seeks. Match your data types — don't pass nvarchar to a varchar column, or int to a bigint column.
+Data Type Mismatch | Warning | Mismatched data types between the column and the parameter/literal. The optimizer built a dynamic seek range through the conversion, so the index is still sought, but the range is wider than an exact match and the row estimate for it is a guess. Match your data types — don't pass nvarchar to a varchar column, or int to a bigint column.
 Expensive Operator | Critical | Index Seek took 3,760ms (80.4% of statement elapsed) but no specific rule identified a fix. Worth investigating: is the row volume necessary? Are upstream estimates driving this operator harder than it should be?
 
 ### missing-join-predicate.sqlplan
 Duplicate Index Suggestions | Warning | 2 missing index suggestions target Comments. Multiple suggestions for the same table often overlap — consolidate into fewer, broader indexes rather than creating all of them.
 No Join Predicate | Warning | This join triggered a no join predicate warning, which is worth checking on, but is often misleading. The optimizer may have removed a redundant predicate after simplification.
-Scan With Predicate | Critical | Scan with residual predicate — SQL Server is reading every row and filtering after the fact. This scan is 85% of the plan cost. This scan took 100% of elapsed time. Only 0.005% of rows survived filtering (1 of 19,787). Check that you have appropriate indexes.\nPredicate: [StackOverflow2013].[dbo].[Comments].[UserId] as [c].[UserId]=(22656)
+Scan With Predicate | Critical | Scan with residual predicate — SQL Server read 19,787 rows to return 1, filtering after the fact. This scan is 85% of the plan cost. This scan took 100% of elapsed time. Only 0.005% of rows survived filtering (1 of 19,787). Check that you have appropriate indexes.\nPredicate: [StackOverflow2013].[dbo].[Comments].[UserId] as [c].[UserId]=(22656)
 
 ### multi_index_delete_plan.sqlplan
 
@@ -200,7 +189,6 @@ Scan With Predicate | Critical | Scan with residual predicate — SQL Server is 
 ### multi_index_update_plan.sqlplan
 
 ### non_sargable_compound_predicate_plan.sqlplan
-Scan With Predicate | Critical | Scan with residual predicate — SQL Server is reading every row and filtering after the fact. This scan is 100% of the plan cost. Check that you have appropriate indexes.\nPredicate: [Repro].[dbo].[T].[A] as [t].[A]=CONVERT_IMPLICIT(int,[@1],0) AND [Repro].[dbo].[T].[B] as [t].[B]=CONVERT(tinyint,[@2],0)
 
 ### non_sargable_function_plan.sqlplan
 Wait: LATCH_EX | Info | LATCH_EX Observed 22 ms across 121 waits.
@@ -216,7 +204,6 @@ Bare Scan | Warning | Clustered index scan reads the full table with no predicat
 
 ### outer_reference_function_aliased_plan.sqlplan
 Top Above Scan | Critical | Top reads from Table Scan on ReproOuterRef.dbo.I (Node 3). This is on the inner side of Nested Loops (Node 0), so the scan repeats for every outer row. The scan has a residual predicate, so it may read many rows before the Top is satisfied. An index on the ORDER BY columns could eliminate the scan and sort entirely.
-Scan With Predicate | Warning | Scan with residual predicate — SQL Server is reading every row and filtering after the fact. This scan is 51% of the plan cost. Check that you have appropriate indexes.\nPredicate: [ReproOuterRef].[dbo].[I].[X] as [i].[X]=abs([ReproOuterRef].[dbo].[O].[a] as [o].[a])
 
 ### outer_reference_function_on_scanned_column_plan.sqlplan
 Top Above Scan | Critical | Top reads from Table Scan on ReproOuterRef.dbo.I (Node 4). This is on the inner side of Nested Loops (Node 0), so the scan repeats for every outer row. The scan has a residual predicate, so it may read many rows before the Top is satisfied. An index on the ORDER BY columns could eliminate the scan and sort entirely.
@@ -224,43 +211,34 @@ Non-SARGable Predicate | Warning | Function call (ABS) on column prevents an ind
 
 ### outer_reference_function_self_join_plan.sqlplan
 Top Above Scan | Critical | Top reads from Table Scan on ReproOuterRef.dbo.I (Node 3). This is on the inner side of Nested Loops (Node 0), so the scan repeats for every outer row. The scan has a residual predicate, so it may read many rows before the Top is satisfied. An index on the ORDER BY columns could eliminate the scan and sort entirely.
-Scan With Predicate | Warning | Scan with residual predicate — SQL Server is reading every row and filtering after the fact. This scan is 51% of the plan cost. Check that you have appropriate indexes.\nPredicate: [ReproOuterRef].[dbo].[I].[X] as [i2].[X]=abs([ReproOuterRef].[dbo].[I].[X] as [i1].[X])
 
 ### outer_reference_function_unaliased_plan.sqlplan
 Top Above Scan | Critical | Top reads from Table Scan on ReproOuterRef.dbo.I (Node 3). This is on the inner side of Nested Loops (Node 0), so the scan repeats for every outer row. The scan has a residual predicate, so it may read many rows before the Top is satisfied. An index on the ORDER BY columns could eliminate the scan and sort entirely.
-Scan With Predicate | Warning | Scan with residual predicate — SQL Server is reading every row and filtering after the fact. This scan is 51% of the plan cost. Check that you have appropriate indexes.\nPredicate: [ReproOuterRef].[dbo].[I].[X]=abs([ReproOuterRef].[dbo].[O].[a])
 
 ### outer_reference_implicit_conversion_plan.sqlplan
 Top Above Scan | Critical | Top reads from Table Scan on ReproOuterRef.dbo.I (Node 3). This is on the inner side of Nested Loops (Node 0), so the scan repeats for every outer row. The scan has a residual predicate, so it may read many rows before the Top is satisfied. An index on the ORDER BY columns could eliminate the scan and sort entirely.
-Scan With Predicate | Warning | Scan with residual predicate — SQL Server is reading every row and filtering after the fact. This scan is 51% of the plan cost. Check that you have appropriate indexes.\nPredicate: [ReproOuterRef].[dbo].[I].[S] as [i].[S]=CONVERT_IMPLICIT(nvarchar(20),[ReproOuterRef].[dbo].[O].[N] as [o].[N],0)
 
 ### outer_reference_isnull_plan.sqlplan
 Top Above Scan | Critical | Top reads from Table Scan on ReproOuterRef.dbo.I (Node 3). This is on the inner side of Nested Loops (Node 0), so the scan repeats for every outer row. The scan has a residual predicate, so it may read many rows before the Top is satisfied. An index on the ORDER BY columns could eliminate the scan and sort entirely.
-Scan With Predicate | Warning | Scan with residual predicate — SQL Server is reading every row and filtering after the fact. This scan is 51% of the plan cost. Check that you have appropriate indexes.\nPredicate: [ReproOuterRef].[dbo].[I].[X] as [i].[X]=isnull([ReproOuterRef].[dbo].[O].[a] as [o].[a],(0))
 
 ### outer_reference_outer_side_scan_plan.sqlplan
 Table Variable | Warning | Table variable detected. Table variables lack column-level statistics, which causes bad row estimates, join choices, and memory grant decisions. Replace with a #temp table.
 Non-SARGable Predicate | Warning | Function call (ABS) on column prevents an index seek. Remove the function from the column side — apply it to the parameter instead, or create a computed column with the expression and index that.\nPredicate: abs([A])=(1)
 Top Above Scan | Critical | Top reads from Table Scan on @b (Node 4). This is on the inner side of Nested Loops (Node 0), so the scan repeats for every outer row. The scan has a residual predicate, so it may read many rows before the Top is satisfied. An index on the ORDER BY columns could eliminate the scan and sort entirely.
-Scan With Predicate | Warning | Scan with residual predicate — SQL Server is reading every row and filtering after the fact. This scan is 50% of the plan cost. Only 0.000% of rows survived filtering (0 of 2). Check that you have appropriate indexes.\nPredicate: [Y]=[A]
 
 ### outer_reference_self_join_unaliased_inner_plan.sqlplan
 Top Above Scan | Critical | Top reads from Table Scan on ReproOuterRef.dbo.I (Node 3). This is on the inner side of Nested Loops (Node 0), so the scan repeats for every outer row. The scan has a residual predicate, so it may read many rows before the Top is satisfied. An index on the ORDER BY columns could eliminate the scan and sort entirely.
-Scan With Predicate | Warning | Scan with residual predicate — SQL Server is reading every row and filtering after the fact. This scan is 51% of the plan cost. Check that you have appropriate indexes.\nPredicate: [ReproOuterRef].[dbo].[I].[X]=abs([ReproOuterRef].[dbo].[I].[X] as [i1].[X])
 
 ### outer_reference_table_variable_aliased_plan.sqlplan
 Table Variable | Warning | Table variable detected. Table variables lack column-level statistics, which causes bad row estimates, join choices, and memory grant decisions. Replace with a #temp table.
 Top Above Scan | Critical | Top reads from Table Scan on @b (Node 3). This is on the inner side of Nested Loops (Node 0), so the scan repeats for every outer row. The scan has a residual predicate, so it may read many rows before the Top is satisfied. An index on the ORDER BY columns could eliminate the scan and sort entirely.
-Scan With Predicate | Warning | Scan with residual predicate — SQL Server is reading every row and filtering after the fact. This scan is 51% of the plan cost. Check that you have appropriate indexes.\nPredicate: @b.[Y] as [b].[Y]=abs(@a.[A] as [a].[A])
 
 ### outer_reference_table_variable_unaliased_plan.sqlplan
 Table Variable | Warning | Table variable detected. Table variables lack column-level statistics, which causes bad row estimates, join choices, and memory grant decisions. Replace with a #temp table.
 Top Above Scan | Critical | Top reads from Table Scan on @b (Node 3). This is on the inner side of Nested Loops (Node 0), so the scan repeats for every outer row. The scan has a residual predicate, so it may read many rows before the Top is satisfied. An index on the ORDER BY columns could eliminate the scan and sort entirely.
-Scan With Predicate | Warning | Scan with residual predicate — SQL Server is reading every row and filtering after the fact. This scan is 51% of the plan cost. Check that you have appropriate indexes.\nPredicate: [Y]=abs([A])
 
 ### outer_reference_temp_table_plan.sqlplan
 Top Above Scan | Critical | Top reads from Table Scan on tempdb.dbo.#u (Node 3). This is on the inner side of Nested Loops (Node 0), so the scan repeats for every outer row. The scan has a residual predicate, so it may read many rows before the Top is satisfied. An index on the ORDER BY columns could eliminate the scan and sort entirely.
-Scan With Predicate | Warning | Scan with residual predicate — SQL Server is reading every row and filtering after the fact. This scan is 51% of the plan cost. Check that you have appropriate indexes.\nPredicate: [#u].[X]=abs([#t].[a])
 
 ### parallel-skew.sqlplan
 Wide Index Suggestion | Warning | Missing index suggestion for Posts has 17 INCLUDE columns. This is a "kitchen sink" index — SQL Server suggests covering every column the query touches, but the resulting index would be very wide and expensive to maintain. Evaluate which columns are actually needed, or consider a narrower index with fewer includes.
@@ -277,7 +255,7 @@ Wait: CXPACKET | Warning | CXPACKET Observed 9,276 ms across 9,446 waits.
 Parallel Skew | Info | Thread 1 processed 100% of rows (53,946/53,946). Work is heavily skewed to one thread, so parallelism isn't helping much. Batch mode sorts produce all output rows on a single thread by design, unless feeding a batch mode Window Aggregate.
 Parallel Skew | Warning | Thread 3 processed 100% of rows (53,946/53,946). Work is heavily skewed to one thread, so parallelism isn't helping much. Common causes: uneven data distribution across partitions or hash buckets, or a scan/seek whose predicate sends most rows to one range. Reducing DOP or rewriting the query to avoid the skewed operation may help.
 Parallel Skew | Warning | Thread 4 processed 100% of rows (47,575/47,575). Work is heavily skewed to one thread, so parallelism isn't helping much. Common causes: uneven data distribution across partitions or hash buckets, or a scan/seek whose predicate sends most rows to one range. Reducing DOP or rewriting the query to avoid the skewed operation may help.
-Scan With Predicate | Warning | Scan with residual predicate — SQL Server is reading every row and filtering after the fact. This scan is 52% of the plan cost. This scan took 53% of elapsed time. Only 0.278% of rows survived filtering (47,575 of 17,142,169). Check that you have appropriate indexes.\nPredicate: [StackOverflow2013].[dbo].[Posts].[PostTypeId] as [p].[PostTypeId]=(2) AND [StackOverflow2013].[dbo].[Posts].[CreationDate] as [p].[CreationDate]>='2013-12-25 00:00:00.000'
+Scan With Predicate | Warning | Scan with residual predicate — SQL Server read 17,142,169 rows to return 47,575, filtering after the fact. This scan is 52% of the plan cost. This scan took 53% of elapsed time. Only 0.278% of rows survived filtering (47,575 of 17,142,169). Check that you have appropriate indexes.\nPredicate: [StackOverflow2013].[dbo].[Posts].[PostTypeId] as [p].[PostTypeId]=(2) AND [StackOverflow2013].[dbo].[Posts].[CreationDate] as [p].[CreationDate]>='2013-12-25 00:00:00.000'
 Filter Operator | Warning | Filter operator discarding rows late in the plan.\n• 52,874,774 of 52,928,720 rows discarded (100%)\n• 243,866 logical reads below\n• 1,719ms elapsed below\nPredicate: PROBE([Opt_Bitmap1006],[StackOverflow2013].[dbo].[Votes].[PostId] as [v].[PostId])
 Row Estimate Mismatch | Warning | Estimated 5,292,870 vs Actual 53,946 — 98x overestimated. The overestimate may have caused the optimizer to make poor choices.
 Parallel Skew | Warning | Thread 3 processed 100% of rows (53,946/53,946). Work is heavily skewed to one thread, so parallelism isn't helping much. Common causes: uneven data distribution across partitions or hash buckets, or a scan/seek whose predicate sends most rows to one range. Reducing DOP or rewriting the query to avoid the skewed operation may help.
@@ -317,18 +295,17 @@ Wait: PAGELATCH_SH | Info | PAGELATCH_SH Observed 412 ms across 12,480 waits.
 Wait: SOS_SCHEDULER_YIELD | Info | SOS_SCHEDULER_YIELD Observed 9,529 ms across 2,337,712 waits.
 Wait: CXPACKET | Info | CXPACKET Observed 1,573,612 ms across 3,824 waits.
 Hash Spill | Warning | Hash spill level 1, 6 thread(s) — Granted: 41,879,040 KB, Used: 9,923,968 KB, Writes: 188,928, Reads: 188,928 Operator time: 824ms (0% of statement).
-Bare Scan | Warning | Heap table scan reads the full table with no predicate, outputting 1 column(s): #OldUsers.UserId. Consider a clustered or nonclustered index on the output columns so SQL Server can read a narrower structure. For analytical workloads, a columnstore index may be a better fit.
 Nested Loops High Executions | Critical | Nested Loops inner side executed 24,198,656 times (DOP 6). Inner side total: 165,360 logical reads. Inner side time: 949ms (0% of statement). Consider whether a hash or merge join would be more appropriate for this row count.
 Nested Loops High Executions | Critical | Nested Loops inner side executed 24,534,730 times (DOP 6). Inner side total: 24,534,730 logical reads. Inner side time: 1,563,621ms (100% of statement). Consider whether a hash or merge join would be more appropriate for this row count.
-Bare Scan | Warning | Heap table scan reads the full table with no predicate, outputting 1 column(s): #NewUsers.UserId. Consider a clustered or nonclustered index on the output columns so SQL Server can read a narrower structure. For analytical workloads, a columnstore index may be a better fit.
 Top Above Scan | Critical | Top reads from Table Scan on tempdb.dbo.#OldUsers (Node 14). This is on the inner side of Nested Loops (Node 11), so the scan repeats for every outer row. An index on the ORDER BY columns could eliminate the scan and sort entirely.
 Expensive Operator | Critical | Table Scan took 1,562,674ms (99.5% of statement elapsed) but no specific rule identified a fix. Worth investigating: is the row volume necessary? Are upstream estimates driving this operator harder than it should be?
 NOT IN with Nullable Column | Critical | Row Count Spool with 24,198,650 rewinds. This pattern occurs when NOT IN is used with a nullable column — SQL Server cannot use an efficient Anti Semi Join because it must check for NULL values on every outer row. Rewrite as NOT EXISTS, or add WHERE column IS NOT NULL to the subquery.
-Scan With Predicate | Warning | Scan with residual predicate — SQL Server is reading every row and filtering after the fact. Only 0.000% of rows survived filtering (0 of 102,853,014). Check that you have appropriate indexes.\nPredicate: [tempdb].[dbo].[#OldUsers].[UserId] as [ou].[UserId] IS NULL
 
 ### row_goal_plan.sqlplan
 Top Above Scan | Warning | Top reads from Index Scan on TestDB.dbo.Users (Node 1). An index on the ORDER BY columns could eliminate the scan and sort entirely.
 Row Goal | Info | Row goal active: estimate reduced from 2,500,000 to 1 (2,500,000x reduction) due to TOP. The optimizer chose this plan shape expecting to stop reading early. If the query reads all rows anyway, the plan choice may be suboptimal.
+
+### scan_gate_plan.sqlplan
 
 ### serially-parallel.sqlplan
 Wait: CXSYNC_PORT | Critical | CXSYNC_PORT Observed 17,121 ms across 35 waits.
@@ -339,7 +316,6 @@ Row Estimate Mismatch | Critical | Estimated 3,279 vs Actual 21 — 156x overest
 Parallel Skew | Warning | Thread 1 processed 100% of rows (27,026/27,026). Work is heavily skewed to one thread, so parallelism isn't helping much. Common causes: uneven data distribution across partitions or hash buckets, or a scan/seek whose predicate sends most rows to one range. Reducing DOP or rewriting the query to avoid the skewed operation may help.
 Nested Loops High Executions | Critical | Nested Loops inner side executed 10,810,787 times (DOP 8). Inner side total: 41,216,099 logical reads. Inner side time: 10,156ms (59% of statement). Consider whether a hash or merge join would be more appropriate for this row count.
 Parallel Skew | Warning | Thread 1 processed 100% of rows (10,810,787/10,810,787). Work is heavily skewed to one thread, so parallelism isn't helping much. Common causes: uneven data distribution across partitions or hash buckets, or a scan/seek whose predicate sends most rows to one range. Reducing DOP or rewriting the query to avoid the skewed operation may help.
-Top Above Scan | Warning | Top reads from Index Scan on StackOverflow2013.dbo.Posts (Node 15). An index on the ORDER BY columns could eliminate the scan and sort entirely.
 Parallel Skew | Warning | Thread 1 processed 100% of rows (10,810,787/10,810,787). Work is heavily skewed to one thread, so parallelism isn't helping much. Common causes: uneven data distribution across partitions or hash buckets, or a scan/seek whose predicate sends most rows to one range. Reducing DOP or rewriting the query to avoid the skewed operation may help.
 Parallel Skew | Warning | Thread 1 processed 100% of rows (27,026/27,026). Work is heavily skewed to one thread, so parallelism isn't helping much. Common causes: uneven data distribution across partitions or hash buckets, or a scan/seek whose predicate sends most rows to one range. Reducing DOP or rewriting the query to avoid the skewed operation may help.
 Key Lookup | Critical | Key Lookup — SQL Server found rows via a nonclustered index but had to go back to the clustered index for additional columns.\nResidual predicate (filtered 10,783,761 rows): [StackOverflow2013].[dbo].[Posts].[OwnerUserId] as [q].[OwnerUserId]=(22656)\nOperator time: 10,156ms (59% of statement) over 10,810,787 lookups.\nTo eliminate the lookup, consider adding the needed columns as INCLUDE columns on the nonclustered index. This widens the index, so weigh the read benefit against write and storage overhead.
@@ -365,15 +341,12 @@ Wait: PAGEIOLATCH_EX | Info | PAGEIOLATCH_EX Observed 873 ms across 2 waits. Eff
 Wait: MEMORY_ALLOCATION_EXT | Info | MEMORY_ALLOCATION_EXT Observed 256 ms across 243,262 waits.
 Wait: PAGEIOLATCH_SH | Info | PAGEIOLATCH_SH Observed 225 ms across 690 waits. Effective latency: 326 µs per wait.
 Wait: SOS_SCHEDULER_YIELD | Info | SOS_SCHEDULER_YIELD Observed 83 ms across 1,268 waits.
-Scan With Predicate | Warning | Scan with residual predicate — SQL Server is reading every row and filtering after the fact. Only 0.236% of rows survived filtering (5,829 of 2,465,713). Check that you have appropriate indexes.\nPredicate: [StackOverflow2013].[dbo].[Users].[Reputation] as [u].[Reputation]>=(20000)
 Row Estimate Mismatch | Critical | Estimated 8,820,150 vs Actual 5,723 — 1541x overestimated. The overestimate may have caused the optimizer to make poor choices.
 Filter Operator | Warning | Filter operator discarding rows late in the plan.\n• 4,184,508 logical reads below\nPredicate: [Expr1002]=(1)
 Row Estimate Mismatch | Warning | Estimated 8,820,150 vs Actual 569,368 — 15x overestimated. The overestimate may have caused the optimizer to make poor choices.
 Sort Spill | Critical | Sort spill level 1, 8 thread(s) — Granted: 10,815,552 KB, Used: 10,220,984 KB, Writes: 1,512,936, Reads: 1,512,936 Operator time: 24,938ms (93% of statement).
-Scan With Predicate | Warning | Scan with residual predicate — SQL Server is reading every row and filtering after the fact. Check that you have appropriate indexes.\nPredicate: [StackOverflow2013].[dbo].[Posts].[PostTypeId] as [p].[PostTypeId]=(2) AND [StackOverflow2013].[dbo].[Posts].[Score] as [p].[Score]>(0)
 
 ### stats_usage_plan.sqlplan
-Bare Scan | Warning | Heap table scan reads the full table with no predicate, outputting 1 column(s): Orders.OrderId. Consider a clustered or nonclustered index on the output columns so SQL Server can read a narrower structure. For analytical workloads, a columnstore index may be a better fit.
 
 ### table_variable_aliased_function_plan.sqlplan
 Table Variable | Warning | Table variable detected. Table variables lack column-level statistics, which causes bad row estimates, join choices, and memory grant decisions. Replace with a #temp table.
@@ -393,10 +366,12 @@ Non-SARGable Predicate | Warning | Function call (ABS) on column prevents an ind
 ### top_above_scan_plan.sqlplan
 Wait: SOS_SCHEDULER_YIELD | Info | SOS_SCHEDULER_YIELD Observed 3 ms across 1,269 waits.
 Top Above Scan | Critical | Top reads from Clustered Index Scan on StackOverflow2013.dbo.Votes (Node 5). This is on the inner side of Nested Loops (Node 1), so the scan repeats for every outer row. The scan has a residual predicate, so it may read many rows before the Top is satisfied. An index on the ORDER BY columns could eliminate the scan and sort entirely.
-Scan With Predicate | Critical | Scan with residual predicate — SQL Server is reading every row and filtering after the fact. This scan is 100% of the plan cost. This scan took 100% of elapsed time. Only 0.000% of rows survived filtering (0 of 52,928,720). Check that you have appropriate indexes.\nPredicate: [StackOverflow2013].[dbo].[Votes].[PostId] as [v].[PostId]=[StackOverflow2013].[dbo].[Posts].[Id] as [p].[Id]
+Scan With Predicate | Critical | Scan with residual predicate — SQL Server read 52,928,720 rows to return 0, filtering after the fact. This scan is 100% of the plan cost. This scan took 100% of elapsed time. Only 0.000% of rows survived filtering (0 of 52,928,720). Check that you have appropriate indexes.\nPredicate: [StackOverflow2013].[dbo].[Votes].[PostId] as [v].[PostId]=[StackOverflow2013].[dbo].[Posts].[Id] as [p].[Id]
+
+### top_ordered_scan_plan.sqlplan
 
 ### tvf_plan.sqlplan
-Table-Valued Function | Warning | Table-valued function: dbo.GetTopPosts. Multi-statement TVFs have no statistics — SQL Server guesses 1 row (pre-2017) or 100 rows (2017+) regardless of actual size. Rewrite as an inline table-valued function if possible, or dump the function results into a #temp table and join to that instead.
+Table-Valued Function | Warning | Table-valued function: dbo.GetTopPosts. Multi-statement TVFs have no statistics — SQL Server guesses 1 row (before SQL Server 2014) or 100 rows (SQL Server 2014 and later) regardless of actual size, unless interleaved execution (SQL Server 2017 and later) runs the function first and uses its real row count. Rewrite as an inline table-valued function if possible, or dump the function results into a #temp table and join to that instead.
 
 ### udf_plan.sqlplan
 Serial Plan | Warning | Query running serially: T-SQL scalar UDF prevents parallelism. Rewrite as an inline table-valued function, or on SQL Server 2019+ check if the UDF is eligible for automatic inlining.
@@ -404,5 +379,4 @@ UDF Execution | Critical | Scalar UDF cost in this statement: 2,402ms elapsed, 2
 Wait: SOS_SCHEDULER_YIELD | Info | SOS_SCHEDULER_YIELD Observed 133 ms across 715 waits.
 Wait: MEMORY_ALLOCATION_EXT | Info | MEMORY_ALLOCATION_EXT Observed 15 ms across 40,676 waits.
 Expensive Operator | Critical | Compute Scalar took 2,406ms (79.4% of statement elapsed) but no specific rule identified a fix. Worth investigating: is the row volume necessary? Are upstream estimates driving this operator harder than it should be?
-Scan With Predicate | Warning | Scan with residual predicate — SQL Server is reading every row and filtering after the fact. This scan is 70% of the plan cost. Only 0.236% of rows survived filtering (5,829 of 2,465,713). Check that you have appropriate indexes.\nPredicate: [StackOverflow2013].[dbo].[Users].[Reputation] as [u].[Reputation]>=(20000)
 
