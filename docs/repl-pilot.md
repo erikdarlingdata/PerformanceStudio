@@ -2,7 +2,7 @@
 
 ## Goal
 
-Add a Repl 0.11.0 command surface for loaded SQL Server plans while preserving the existing System.CommandLine CLI and its JSON contracts.
+Add a Repl 0.12.0 command surface for loaded SQL Server plans while preserving the existing System.CommandLine CLI and its JSON contracts.
 
 Read-only describes the analyzed plans and external systems: the pilot never writes a plan file, database, Query Store, or credential. `open` and `close` do mutate the process-local session catalog and are therefore not annotated as read-only MCP operations.
 
@@ -11,7 +11,7 @@ Read-only describes the analyzed plans and external systems: the pilot never wri
 1. Put detached analysis snapshots plus `IPlanCatalog` and its thread-safe in-memory implementation in `PlanViewer.Core`. REPL sessions retain the analyzed projection rather than the mutable parser graph; desktop sessions keep their UI graph and expose a separately captured MCP projection.
 2. Put typed, renderer-free operations (`open`, `close`, `list`, `summary`, `warnings`, `missing indexes`, `expensive operators`) and the shared parse/analyze/score pipeline in `PlanViewer.Core`.
 3. Keep the Avalonia `PlanSessionManager` as a thin compatibility singleton over the Core catalog. Existing App MCP tools delegate to Core operations using the already-resolved session snapshot, avoiding a second catalog lookup while preserving their historical output behavior.
-4. Add a Repl `IReplModule` in `PlanViewer.Cli`, pinned to the stable `Repl`/`Repl.Mcp`/`Repl.Testing` 0.11.0 release. Launch Repl only for explicit `repl`, `plan`, `open`, or `mcp` prefixes; zero arguments and existing prefixes remain on System.CommandLine.
+4. Add a Repl `IReplModule` in `PlanViewer.Cli`, pinned to the stable `Repl`/`Repl.Mcp`/`Repl.Testing` 0.12.0 release. Launch Repl only for explicit `repl`, `plan`, `open`, or `mcp` prefixes; zero arguments and existing prefixes remain on System.CommandLine.
 5. Return typed values from Repl handlers so text, JSON, tests, and MCP are renderer concerns rather than handler concerns.
 
 ## Security and resource boundaries
@@ -79,6 +79,6 @@ The generated MCP server identifies itself as `planview`. It exports the canonic
 
 ## Dependency status
 
-The pilot is pinned to the stable `0.11.0` packages. The CLI, persistent-session, and real MCP tests exercise the Repl APIs used by this integration.
+The pilot is pinned to the stable `0.12.0` packages. The CLI, persistent-session, and real MCP tests exercise the Repl APIs used by this integration.
 
-The Repl repository is MIT licensed. The `0.11.0` NuGet packages still omit license metadata; correcting `PackageLicenseExpression` requires a subsequent Repl package publication and remains an upstream packaging follow-up rather than being represented as fixed by this repository.
+The Repl repository is MIT licensed, and the `0.12.0` NuGet packages carry that as their license expression.

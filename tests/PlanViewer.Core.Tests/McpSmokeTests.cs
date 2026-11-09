@@ -2,10 +2,16 @@ using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
 // The MCP spec deprecated the Roots feature (SEP-2577, spec version 2026-07-28), so the SDK's
-// Roots types are marked obsolete (MCP9005). Roots is still the contract the server's plan-path
-// sandbox enforces (McpPlanPathPolicy via Repl.Mcp), and these tests are the regression coverage
-// for that guard, so they must keep exercising it. Remove this suppression when the sandbox
-// migrates off Roots — tracked in issue #514.
+// Roots types are marked obsolete (MCP9005). The deprecation is advisory: it changes nothing on
+// the wire, the spec keeps Roots for at least twelve months, and the earliest removal is the first
+// revision released on or after 2027-07-28. ModelContextProtocol 2.4.0 still ships every Roots
+// type, and Repl.Mcp 0.12.0 still resolves client roots through IMcpClientRoots; it has adopted
+// neither multi-round-trip requests (SEP-2322) nor any other scoping mechanism in their place.
+// Roots is therefore still the contract the server's plan-path sandbox enforces (McpPlanPathPolicy
+// via Repl.Mcp), and these tests are the regression coverage for that guard, so they must keep
+// exercising it. Remove this suppression when the sandbox migrates off Roots — tracked in issue
+// #514, which waits for an SDK release that removes the Roots types, a Repl.Mcp release that adopts
+// a replacement, or the 2027-07-28 removal window.
 #pragma warning disable MCP9005
 
 namespace PlanViewer.Core.Tests;
@@ -20,56 +26,62 @@ public sealed class McpSmokeTests
         timeout.CancelAfter(TimeSpan.FromSeconds(20));
         var cancellationToken = timeout.Token;
         var assemblyPath = GetCliAssemblyPath();
-        var plansRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "Plans"));
-        var transport = new StdioClientTransport(new StdioClientTransportOptions
-        {
-            Name = "PerformanceStudio test",
-            Command = "dotnet",
-            Arguments = [assemblyPath, "mcp", "serve"],
-            WorkingDirectory = Path.GetDirectoryName(assemblyPath)
-        });
-        var clientOptions = new McpClientOptions
-        {
-            Capabilities = new ClientCapabilities
-            {
-                Roots = new RootsCapability { ListChanged = true }
-            },
-            Handlers = new McpClientHandlers
-            {
-                RootsHandler = (_, _) => ValueTask.FromResult(new ListRootsResult
-                {
-                    Roots = [new Root { Uri = new Uri(plansRoot + Path.DirectorySeparatorChar).AbsoluteUri, Name = "plans" }]
-                })
-            }
-        };
-
-        await using var client = await McpClient.CreateAsync(
-            transport,
-            clientOptions,
-            cancellationToken: cancellationToken);
-        Assert.Equal("planview", client.ServerInfo?.Name);
-        var tools = await client.ListToolsAsync(cancellationToken: cancellationToken);
-        var names = tools.Select(tool => tool.Name).Order(StringComparer.Ordinal).ToArray();
-
-        Assert.Equal(
-            [
-                "plan_close",
-                "plan_expensive-operators",
-                "plan_list",
-                "plan_missing-indexes",
-                "plan_open",
-                "plan_summary",
-                "plan_warnings"
-            ],
-            names);
-        Assert.NotEqual(true, tools.Single(tool => tool.Name == "plan_open").ProtocolTool.Annotations?.ReadOnlyHint);
-        Assert.True(tools.Single(tool => tool.Name == "plan_summary").ProtocolTool.Annotations?.ReadOnlyHint);
-        Assert.Empty(await client.ListResourcesAsync(cancellationToken: cancellationToken));
-
+        var fixture = Path.Combine(AppContext.BaseDirectory, "Plans", "top_above_scan_plan.sqlplan");
+        // The advertised root is a directory of this test's own rather than the shared Plans fixture
+        // directory: the escape probe below plants a symbolic link inside the root, and the
+        // characterization tests enumerate Plans/*.sqlplan while this test runs.
+        var plansRoot = Path.Combine(Path.GetTempPath(), $"mcp-smoke-root-{Guid.NewGuid():N}");
         var outsidePath = Path.Combine(Path.GetTempPath(), $"outside-{Guid.NewGuid():N}.sqlplan");
+        Directory.CreateDirectory(plansRoot);
         try
         {
-            File.Copy(Path.Combine(plansRoot, "top_above_scan_plan.sqlplan"), outsidePath);
+            File.Copy(fixture, Path.Combine(plansRoot, "top_above_scan_plan.sqlplan"));
+            var transport = new StdioClientTransport(new StdioClientTransportOptions
+            {
+                Name = "PerformanceStudio test",
+                Command = "dotnet",
+                Arguments = [assemblyPath, "mcp", "serve"],
+                WorkingDirectory = Path.GetDirectoryName(assemblyPath)
+            });
+            var clientOptions = new McpClientOptions
+            {
+                Capabilities = new ClientCapabilities
+                {
+                    Roots = new RootsCapability { ListChanged = true }
+                },
+                Handlers = new McpClientHandlers
+                {
+                    RootsHandler = (_, _) => ValueTask.FromResult(new ListRootsResult
+                    {
+                        Roots = [new Root { Uri = new Uri(plansRoot + Path.DirectorySeparatorChar).AbsoluteUri, Name = "plans" }]
+                    })
+                }
+            };
+
+            await using var client = await McpClient.CreateAsync(
+                transport,
+                clientOptions,
+                cancellationToken: cancellationToken);
+            Assert.Equal("planview", client.ServerInfo?.Name);
+            var tools = await client.ListToolsAsync(cancellationToken: cancellationToken);
+            var names = tools.Select(tool => tool.Name).Order(StringComparer.Ordinal).ToArray();
+
+            Assert.Equal(
+                [
+                    "plan_close",
+                    "plan_expensive-operators",
+                    "plan_list",
+                    "plan_missing-indexes",
+                    "plan_open",
+                    "plan_summary",
+                    "plan_warnings"
+                ],
+                names);
+            Assert.NotEqual(true, tools.Single(tool => tool.Name == "plan_open").ProtocolTool.Annotations?.ReadOnlyHint);
+            Assert.True(tools.Single(tool => tool.Name == "plan_summary").ProtocolTool.Annotations?.ReadOnlyHint);
+            Assert.Empty(await client.ListResourcesAsync(cancellationToken: cancellationToken));
+
+            File.Copy(fixture, outsidePath);
             var denied = await client.CallToolAsync(
                 "plan_open",
                 new Dictionary<string, object?> { ["path"] = outsidePath },
@@ -131,6 +143,7 @@ public sealed class McpSmokeTests
         finally
         {
             File.Delete(outsidePath);
+            Directory.Delete(plansRoot, recursive: true);
         }
     }
 

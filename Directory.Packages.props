@@ -35,11 +35,11 @@
          directly so 2.5.307 wins. Drop this pin and the Ssms reference once a Microsoft.VisualStudio.SDK
          release depends on MessagePack 2.5.301 or later. -->
     <PackageVersion Include="MessagePack" Version="2.5.307" />
-    <PackageVersion Include="ModelContextProtocol" Version="2.3.0" />
-    <PackageVersion Include="ModelContextProtocol.AspNetCore" Version="2.3.0" />
-    <PackageVersion Include="Repl" Version="0.11.0" />
-    <PackageVersion Include="Repl.Mcp" Version="0.11.0" />
-    <PackageVersion Include="Repl.Testing" Version="0.11.0" />
+    <PackageVersion Include="ModelContextProtocol" Version="2.4.0" />
+    <PackageVersion Include="ModelContextProtocol.AspNetCore" Version="2.4.0" />
+    <PackageVersion Include="Repl" Version="0.12.0" />
+    <PackageVersion Include="Repl.Mcp" Version="0.12.0" />
+    <PackageVersion Include="Repl.Testing" Version="0.12.0" />
     <PackageVersion Include="ScottPlot.Avalonia" Version="5.1.59" />
     <PackageVersion Include="SkiaSharp.NativeAssets.Linux" Version="3.119.4" />
     <PackageVersion Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />
