@@ -19,12 +19,21 @@ public sealed class HistoricalCliContractTests
        "suppressed_warnings". Verified by removing exactly those keys from the new output, which
        gives back the previous hash, 779a85036b74dc7cc7d26d4bad3d7e2b327e4ff89a5ed79b00b78cfae3717cab.
 
-       Rolled a fourth time for #677, again additively: every operator gains "estimated_executions",
+       Rolled a fourth time for #681, again additively: every statement gains "statistics_status",
+       "statistics_note", "statistics_cap", "statistics_returned", "total_statistics",
+       "statistics_truncated" and "statistics_loaded". Verified by removing exactly those seven keys
+       from the new output, which gives back the previous hash,
+       0eeb5da0bc69ceb162100f4326eee446e07234b4cc1b6660dda19221f951f01a.
+
+       Rolled a fifth time for #677, again additively: every operator gains "estimated_executions",
        one plus its rebinds plus its rewinds, the count the plan viewer multiplies estimated_rows by.
-       Verified the same way: removing exactly those keys from the new output gives back the previous
-       hash, 0eeb5da0bc69ceb162100f4326eee446e07234b4cc1b6660dda19221f951f01a. */
+       #677 and #681 landed side by side, so the constant is the hash of the output with both.
+       Verified both ways: removing exactly the estimated_executions keys gives back #681's hash,
+       e18af9cfcd1b2a58fd52114cc81f5d36c5de16032337e2f83d67113113c36f00, and removing those and the
+       seven statistics keys together gives back the hash before either,
+       0eeb5da0bc69ceb162100f4326eee446e07234b4cc1b6660dda19221f951f01a. */
     private const string ExpectedCompactOutputSha256 =
-        "4c1277391674128e0ac172121d8bcb1d3f52184812acf431621fcc08253b9aa6";
+        "86715ce5aaed53d288380521aff355061d2c58fd7e88c6c426ce5575b27b5676";
 
     [Fact]
     public async Task AnalyzeCompact_PreservesHistoricalOutputBytes()

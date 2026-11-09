@@ -79,6 +79,18 @@ public class PlanStatement
     // QueryPlan sub-elements
     public OptimizerHardwareInfo? HardwareProperties { get; set; }
     public List<OptimizerStatsUsageItem> StatsUsage { get; set; } = new();
+    /// <summary>
+    /// The statement carried a QueryPlan element, its own or a condition's or a cursor operation's.
+    /// False for DECLARE/ASSIGN shells, the EXEC shell of a procedure call, and MULTIPLE PLAN
+    /// statements whose plan was never captured.
+    /// </summary>
+    public bool HasQueryPlan { get; set; }
+    /// <summary>
+    /// The QueryPlan carried an OptimizerStatsUsage element, even an empty one. False means the plan
+    /// does not record which statistics it loaded (SQL Server before 2017 / 2016 SP2), which is not
+    /// the same as loading none.
+    /// </summary>
+    public bool HasStatsUsage { get; set; }
     public ThreadStatInfo? ThreadStats { get; set; }
     public SetOptionsInfo? SetOptions { get; set; }
     public List<PlanParameter> Parameters { get; set; } = new();
@@ -239,6 +251,8 @@ public class PlanNode
     public string? PartitionColumns { get; set; }
     public string? DefinedValues { get; set; }
     public double TableCardinality { get; set; }
+    /// <summary>The RelOp recorded a TableCardinality, so a 0 is a measured 0 rather than an absent attribute.</summary>
+    public bool HasTableCardinality { get; set; }
     public double EstimatedRowsRead { get; set; }
     public string? TopExpression { get; set; }
     public bool IsPercent { get; set; }
