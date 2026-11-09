@@ -177,6 +177,68 @@ public class AnalysisTextPunctuationTests
     }
 
     [Fact]
+    public void WaitStatsCard_NodeTooltip_AndPropertiesWarningHeaders_ReadAsTheRuleSays()
+    {
+        HeadlessUi.Run(() =>
+        {
+            // The wait-type tooltip is a name and the clause that describes it; the card header is a name and a figure.
+            var waits = Show(Load(FixtureXml("cte_multi_ref_plan.sqlplan")));
+            var card = waits.GetLogicalDescendants().OfType<StackPanel>().First(p => p.Name == "WaitStatsContent");
+            var waitTips = card.GetLogicalDescendants().OfType<TextBlock>().Select(ToolTip.GetTip).OfType<string>()
+                .Where(t => t.EndsWith(" wait", StringComparison.Ordinal)).ToList();
+            Assert.NotEmpty(waitTips);
+            Assert.All(waitTips, t => Assert.Matches(@"^\S+: [A-Za-z/ ]+ wait$", t));
+            var header = waits.GetLogicalDescendants().OfType<TextBlock>().First(t => t.Name == "WaitStatsHeader");
+            Assert.StartsWith("Wait Stats — ", header.Text, StringComparison.Ordinal);
+
+            // A scored operator warning: its benefit reads as a clause on the node tooltip and on the Properties header.
+            var (fixture, scored) = ScoredNode();
+            var viewer = Show(Load(FixtureXml(fixture)));
+            var nodeTipTexts = viewer.GetLogicalDescendants().OfType<Border>()
+                .Select(ToolTip.GetTip).OfType<Control>()
+                .SelectMany(tip => tip.GetLogicalDescendants().OfType<TextBlock>())
+                .Select(t => t.Text ?? string.Empty)
+                .Where(t => t.StartsWith("⚠", StringComparison.Ordinal)).ToList();
+            Assert.Contains(nodeTipTexts, t => t.Contains(": up to ", StringComparison.Ordinal));
+
+            viewer.NavigateToNode(scored.NodeId);
+            var properties = viewer.GetLogicalDescendants().OfType<StackPanel>().First(p => p.Name == "PropertiesContent");
+            var warningHeaders = properties.GetLogicalDescendants().OfType<TextBlock>()
+                .Select(t => t.Text ?? string.Empty)
+                .Where(t => t.StartsWith("⚠ ", StringComparison.Ordinal)).ToList();
+            Assert.Contains(warningHeaders, t => t.Contains(": up to ", StringComparison.Ordinal) && t.EndsWith("% benefit", StringComparison.Ordinal));
+
+            foreach (var text in waitTips.Concat(nodeTipTexts).Concat(warningHeaders))
+                Assert.DoesNotContain(EmDash, text, StringComparison.Ordinal);
+        });
+    }
+
+    /// <summary>The first committed fixture, by name, with an operator warning that carries a benefit, and that operator.</summary>
+    private static (string Fixture, PlanViewer.Core.Models.PlanNode Node) ScoredNode()
+    {
+        var plansDir = Path.Combine(AppContext.BaseDirectory, "Plans");
+        foreach (var file in Directory.GetFiles(plansDir, "*.sqlplan").OrderBy(Path.GetFileName, StringComparer.Ordinal))
+        {
+            var name = Path.GetFileName(file);
+            var node = PlanTestHelper.LoadAndAnalyze(name).Batches.SelectMany(b => b.Statements)
+                .Where(s => s.RootNode != null).SelectMany(s => Nodes(s.RootNode!))
+                .FirstOrDefault(n => n.Warnings.Any(w => w.MaxBenefitPercent.HasValue));
+            if (node != null)
+                return (name, node);
+        }
+
+        throw new InvalidOperationException("No committed fixture carries a scored operator warning.");
+    }
+
+    private static IEnumerable<PlanViewer.Core.Models.PlanNode> Nodes(PlanViewer.Core.Models.PlanNode node)
+    {
+        yield return node;
+        foreach (var child in node.Children)
+            foreach (var n in Nodes(child))
+                yield return n;
+    }
+
+    [Fact]
     public async Task McpInstructionsAndToolDescriptions_ReadWithPlainPunctuation()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
