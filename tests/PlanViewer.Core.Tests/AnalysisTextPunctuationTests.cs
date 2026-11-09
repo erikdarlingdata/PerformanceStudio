@@ -45,8 +45,8 @@ public class AnalysisTextPunctuationTests
 
     [Theory]
     [InlineData("key_lookup_plan.sqlplan", "Key Lookup", "Key Lookup: SQL Server found rows via a nonclustered index")]
-    [InlineData("spill_plan.sqlplan", "Sort Spill", "thread(s). Granted:")]
-    [InlineData("row-count-spool-slow.sqlplan", "Hash Spill", "thread(s). Granted:")]
+    [InlineData("spill_plan.sqlplan", "Sort Spill", "threads. Granted:")]
+    [InlineData("row-count-spool-slow.sqlplan", "Hash Spill", "threads. Granted:")]
     [InlineData("exchange_spill_plan.sqlplan", "Exchange Spill", "Exchange spill: ")]
     public void WarningText_ReadsWithPlainPunctuation(string fixture, string warningType, string expected)
     {
