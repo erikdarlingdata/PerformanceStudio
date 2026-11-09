@@ -373,6 +373,9 @@ Row Estimate Mismatch | Warning | Estimated 8,820,150 vs Actual 569,368 — 15x 
 Sort Spill | Critical | Sort spill level 1, 8 thread(s) — Granted: 10,815,552 KB, Used: 10,220,984 KB, Writes: 1,512,936, Reads: 1,512,936 Operator time: 25,148ms (94% of statement).
 Scan With Predicate | Warning | Scan with residual predicate — SQL Server is reading every row and filtering after the fact. Check that you have appropriate indexes.\nPredicate: [StackOverflow2013].[dbo].[Posts].[PostTypeId] as [p].[PostTypeId]=(2) AND [StackOverflow2013].[dbo].[Posts].[Score] as [p].[Score]>(0)
 
+### stats_usage_plan.sqlplan
+Bare Scan | Warning | Heap table scan reads the full table with no predicate, outputting 1 column(s): Orders.OrderId. Consider a clustered or nonclustered index on the output columns so SQL Server can read a narrower structure. For analytical workloads, a columnstore index may be a better fit.
+
 ### table_variable_aliased_function_plan.sqlplan
 Table Variable | Warning | Table variable detected. Table variables lack column-level statistics, which causes bad row estimates, join choices, and memory grant decisions. Replace with a #temp table.
 Non-SARGable Predicate | Warning | Function call (ABS) on column prevents an index seek. Remove the function from the column side — apply it to the parameter instead, or create a computed column with the expression and index that.\nPredicate: abs(@tv.[X] as [v].[X])=(1)
