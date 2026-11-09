@@ -506,6 +506,18 @@ public static partial class PlanAnalyzer
             : null;
 
     /// <summary>
+    /// How many times the scan read its table, for the TableCardinality stand-in. The parser sums
+    /// ActualExecutions across threads, and a plain parallel scan reports one execution on each worker
+    /// thread for one pass over the table, so a node with per-thread entries takes the largest
+    /// per-thread count. That is exact for a parallel scan and undercounts a parallel Nested Loops inner
+    /// side by at most the DOP, in the direction the floor already errs.
+    /// </summary>
+    private static long ScanExecutions(PlanNode node) =>
+        node.PerThreadStats.Count > 1
+            ? node.PerThreadStats.Max(t => t.ActualExecutions)
+            : node.ActualExecutions;
+
+    /// <summary>
     /// Rule 11's gate. An estimated plan is always reported. An actual plan must have read at least
     /// ScanRuleMinRows rows, returned under ScanPredicateMaxSelectivity of what it read when the plan
     /// says how many it read, and spent at least ScanRuleMinOwnTimeSharePct of the statement's time in
@@ -526,7 +538,7 @@ public static partial class PlanAnalyzer
             if (Math.Max(node.ActualRowsRead, node.ActualRows) < ScanRuleMinRows)
                 return false;
         }
-        else if (node.HasTableCardinality && node.TableCardinality * Math.Max(1, node.ActualExecutions) < ScanRuleMinRows)
+        else if (node.HasTableCardinality && node.TableCardinality * Math.Max(1, ScanExecutions(node)) < ScanRuleMinRows)
         {
             return false;
         }
