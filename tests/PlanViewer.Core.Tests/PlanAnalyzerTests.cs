@@ -234,6 +234,21 @@ public class PlanAnalyzerTests
         Assert.Contains(warnings, w => w.Message.Contains("INCLUDE column"));
     }
 
+    /// <summary>
+    /// #678: the grade follows what the lookup cost. This fixture's statement recorded no elapsed
+    /// time, so the lookup is graded on its 117 executions: well under the thousand that would make
+    /// it a Warning, and never Critical on that path. The message says which figure graded it.
+    /// </summary>
+    [Fact]
+    public void Rule10_KeyLookup_IsGradedOnWhatItCost_NotAlwaysCritical()
+    {
+        var plan = PlanTestHelper.LoadAndAnalyze("key_lookup_plan.sqlplan");
+        var warning = Assert.Single(PlanTestHelper.WarningsOfType(plan, "Key Lookup"));
+
+        Assert.Equal(PlanWarningSeverity.Info, warning.Severity);
+        Assert.Contains("Lookups performed: 117. The plan recorded no statement time to grade them against.", warning.Message);
+    }
+
     // ---------------------------------------------------------------
     // Rule 11: Scan With Predicate
     // ---------------------------------------------------------------
