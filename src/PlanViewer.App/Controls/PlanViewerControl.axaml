@@ -195,18 +195,27 @@
                                FontWeight="SemiBold"
                                Foreground="{DynamicResource ForegroundBrush}"/>
                 </Expander.Header>
-                <Grid MaxHeight="220" HorizontalAlignment="Stretch">
+                <!-- The cards' minimum widths sum to 860 px and the Server Context card sizes to its
+                     text, so a narrow window cannot hold the strip: it scrolls sideways to the rest,
+                     and each of the first four cards stops growing at 360 px (the cap sits on the card
+                     itself, which is what makes its text wrap inside it). The grid is kept at least as
+                     wide as the strip from code-behind, so in a wide window the Wait Stats column still
+                     fills the remaining width. -->
+                <ScrollViewer x:Name="InsightsStrip"
+                              HorizontalScrollBarVisibility="Auto"
+                              VerticalScrollBarVisibility="Disabled">
+                <Grid x:Name="InsightsGrid" MaxHeight="220" HorizontalAlignment="Stretch">
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" MinWidth="0"/>
-                        <ColumnDefinition Width="Auto" MinWidth="180"/>
-                        <ColumnDefinition Width="*" MinWidth="200"/>
-                        <ColumnDefinition Width="*" MinWidth="200"/>
+                        <ColumnDefinition Width="Auto" MinWidth="0" MaxWidth="360"/>
+                        <ColumnDefinition Width="Auto" MinWidth="180" MaxWidth="360"/>
+                        <ColumnDefinition Width="*" MinWidth="200" MaxWidth="360"/>
+                        <ColumnDefinition Width="*" MinWidth="200" MaxWidth="360"/>
                         <ColumnDefinition Width="2*" MinWidth="280"/>
                     </Grid.ColumnDefinitions>
 
                     <!-- Server Context (first, placeholder when no metadata) -->
                     <Border x:Name="ServerContextBorder" Grid.Column="0" Classes="insightCard"
-                            IsVisible="False">
+                            MaxWidth="360" IsVisible="False">
                         <DockPanel>
                             <Border x:Name="ServerContextAccent" DockPanel.Dock="Left"
                                     Classes="insightAccent server"/>
@@ -227,7 +236,7 @@
                     </Border>
 
                     <!-- Runtime Summary (neutral centre: no accent, just the alignment gutter) -->
-                    <Border Grid.Column="1" Classes="insightCard">
+                    <Border Grid.Column="1" Classes="insightCard" MaxWidth="360">
                         <DockPanel>
                             <Border x:Name="RuntimeSummaryAccent" DockPanel.Dock="Left"
                                     Classes="insightAccent"/>
@@ -244,7 +253,7 @@
                     </Border>
 
                     <!-- Missing Indexes (center) -->
-                    <Border Grid.Column="2" Classes="insightCard">
+                    <Border Grid.Column="2" Classes="insightCard" MaxWidth="360">
                         <DockPanel>
                             <Border x:Name="MissingIndexAccent" DockPanel.Dock="Left"
                                     Classes="insightAccent indexes"/>
@@ -265,7 +274,7 @@
                     </Border>
 
                     <!-- Parameters -->
-                    <Border Grid.Column="3" Classes="insightCard">
+                    <Border Grid.Column="3" Classes="insightCard" MaxWidth="360">
                         <DockPanel>
                             <Border x:Name="ParametersAccent" DockPanel.Dock="Left"
                                     Classes="insightAccent parameters"/>
@@ -308,6 +317,7 @@
                         </DockPanel>
                     </Border>
                 </Grid>
+                </ScrollViewer>
             </Expander>
         </Border>
 

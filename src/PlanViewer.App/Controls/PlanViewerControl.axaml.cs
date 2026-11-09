@@ -164,9 +164,57 @@ public partial class PlanViewerControl : UserControl
     /// </summary>
     public ToolbarOverflow Overflow { get; }
 
+    private bool _insightsFitPending;
+    private bool _insightsSetByUser;
+    private bool _applyingInsightsFit;
+
+    /// <summary>
+    /// Opens or collapses the insights panel by the viewer's height (<see cref="PlanInsightsLayout.StartsExpanded"/>)
+    /// as a plan shows it: in a small window the plan graph keeps most of the height and the panel starts
+    /// collapsed. A panel the person has opened or closed themselves stays as they left it. Before the
+    /// first layout pass the fit waits for the first real height.
+    /// </summary>
+    private void FitInsightsToHeight()
+    {
+        if (_insightsSetByUser)
+            return;
+        if (Bounds.Height > 0)
+            ApplyInsightsFit(Bounds.Height);
+        else
+            _insightsFitPending = true;
+    }
+
+    private void ApplyInsightsFit(double height)
+    {
+        _insightsFitPending = false;
+        _applyingInsightsFit = true;
+        InsightsExpander.IsExpanded = PlanInsightsLayout.StartsExpanded(height);
+        _applyingInsightsFit = false;
+    }
+
     public PlanViewerControl()
     {
         InitializeComponent();
+
+        /* A plan shown before the first layout pass fits its insights panel on the first real height. A
+           toggle of the expander that is not this fit is the person's choice, and the fit then leaves the
+           panel alone. */
+        SizeChanged += (_, e) =>
+        {
+            if (_insightsFitPending && e.NewSize.Height > 0)
+                ApplyInsightsFit(e.NewSize.Height);
+        };
+        InsightsExpander.PropertyChanged += (_, e) =>
+        {
+            if (e.Property == Expander.IsExpandedProperty && !_applyingInsightsFit)
+                _insightsSetByUser = true;
+        };
+
+        /* The insights strip scrolls sideways, so its grid is measured with no width limit and the star
+           column (Wait Stats) would size to its content. The grid is kept at least as wide as the strip:
+           in a window wider than the cards' minimums the Wait Stats card still fills the remaining width,
+           and in a narrower one the grid keeps its minimums and the strip scrolls. */
+        InsightsStrip.SizeChanged += (_, e) => InsightsGrid.MinWidth = e.NewSize.Width;
 
         /* Icon adoption for the XAML-declared toolbar buttons. Set here rather than in the
            XAML because a bare PathIcon does not inherit the button's foreground (its stock

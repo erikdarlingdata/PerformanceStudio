@@ -1642,6 +1642,7 @@ public partial class PlanViewerControl : UserControl
     {
         InsightsPanel.IsVisible = true;
         InsightsHeader.Text = "  Plan Insights";
+        FitInsightsToHeight();
     }
 
 }
