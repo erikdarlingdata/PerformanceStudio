@@ -115,6 +115,22 @@ public class ScanRuleGateTests
         Assert.NotNull(Finding(EstimatedScan(tableRows: 1_000_000, withPredicate: false), "Bare Scan"));
     }
 
+    [Fact]
+    public void BareScan_Estimated_NoTableCardinality_FullCost_Warns()
+    {
+        // A plan with no TableCardinality attribute does not say how big the table is, so the rows
+        // floor has nothing to read and the scan is judged on its cost share alone, as before.
+        var xml = ActualScanTemplate
+            .Replace(" TableCardinality=\"{TABLE}\"", "")
+            .Replace("{WHERE}", "").Replace("{COST}", "10").Replace("{ROWS}", "100000")
+            .Replace("{TABLE}", "100000").Replace("{TIME}", "").Replace("{RUNTIME}", "").Replace("{PREDICATE}", "");
+        var plan = ShowPlanParser.Parse(xml);
+        Assert.False(ScanNode(plan).HasTableCardinality);
+        PlanAnalyzer.Analyze(plan);
+
+        Assert.NotNull(Finding(plan, "Bare Scan"));
+    }
+
     // ---- rule 11: Scan With Predicate ------------------------------------------------------------
 
     [Fact]
@@ -160,6 +176,28 @@ public class ScanRuleGateTests
         Assert.NotNull(finding);
         Assert.Equal(PlanWarningSeverity.Critical, finding.Severity);
         Assert.Contains("read 1,000,000 rows to return 100", finding.Message);
+    }
+
+    [Fact]
+    public void ScanWithPredicate_NoActualRowsRead_NoStatementTime_TenMillionRowTable_Warns()
+    {
+        // An actual plan from a build that writes neither ActualRowsRead nor QueryTimeStats: the rows
+        // floor reads the table's cardinality instead of falling back to the rows returned, which a
+        // selective predicate makes small. Ten million rows, 100 returned, so the scan is reported.
+        var xml = ActualScanTemplate
+            .Replace("{WHERE}", " WHERE b = 1").Replace("{COST}", "10").Replace("{ROWS}", "100")
+            .Replace("{TABLE}", "10000000").Replace("{TIME}", "")
+            .Replace("{RUNTIME}", "<RunTimeInformation><RunTimeCountersPerThread Thread=\"0\" ActualRows=\"100\" Batches=\"0\" ActualEndOfScans=\"1\" ActualExecutions=\"1\" ActualExecutionMode=\"Row\" ActualElapsedms=\"900\" ActualCPUms=\"900\" ActualScans=\"1\" ActualLogicalReads=\"100000\" ActualPhysicalReads=\"0\" ActualReadAheads=\"0\" ActualLobLogicalReads=\"0\" ActualLobPhysicalReads=\"0\" ActualLobReadAheads=\"0\" /></RunTimeInformation>")
+            .Replace("{PREDICATE}", "<Predicate><ScalarOperator ScalarString=\"[g].[dbo].[t].[b]=(1)\" /></Predicate>");
+        var plan = ShowPlanParser.Parse(xml);
+        var scan = ScanNode(plan);
+        Assert.True(scan.HasActualStats);
+        Assert.Equal(0, scan.ActualRowsRead);
+        PlanAnalyzer.Analyze(plan);
+
+        var finding = Finding(plan, "Scan With Predicate");
+        Assert.NotNull(finding);
+        Assert.Contains("reading every row", finding.Message);
     }
 
     [Fact]

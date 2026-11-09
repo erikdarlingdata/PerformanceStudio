@@ -321,7 +321,9 @@ public class PlanAnalyzerTests
     public void Rule11_ScanWithPredicate_DetectedInLocalVariablePlan()
     {
         // An actual scan that read 17 million rows to return 5.4 million in all of the statement's
-        // time. join_or_clause_plan's scans are under the rule's 10,000 row floor.
+        // time. join_or_clause_plan's Index Scan (Node 5) read 17,142,169 rows but returned
+        // 17,091,572 of them (99.7%, over the 50% selectivity ceiling) in 3.2% of the statement's
+        // time (under the 10% share), so the rule leaves it out.
         var plan = PlanTestHelper.LoadAndAnalyze("local_variable_plan.sqlplan");
         var warnings = PlanTestHelper.WarningsOfType(plan, "Scan With Predicate");
 
