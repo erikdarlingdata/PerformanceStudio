@@ -108,6 +108,7 @@ public static class PlanTestHelper
             var node = FindNode(stmt.RootNode, nodeId);
             Assert.NotNull(node);
             node.ActualRowsRead = Math.Max(node.ActualRowsRead, 10_000);
+            node.HasActualRowsRead = true;
             if (stmt.QueryTimeStats is { ElapsedTimeMs: > 0 } time)
                 node.ActualElapsedMs = time.ElapsedTimeMs;
         }

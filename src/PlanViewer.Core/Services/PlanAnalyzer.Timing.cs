@@ -509,8 +509,10 @@ public static partial class PlanAnalyzer
     /// Rule 11's gate. An estimated plan is always reported. An actual plan must have read at least
     /// ScanRuleMinRows rows, returned under ScanPredicateMaxSelectivity of what it read when the plan
     /// says how many it read, and spent at least ScanRuleMinOwnTimeSharePct of the statement's time in
-    /// the scan when the plan carries statement time. The impact details come out either way, so the
-    /// caller does not build them twice.
+    /// the scan when the plan carries statement time. The rows floor reads ActualRowsRead when the plan
+    /// carries it, the table's cardinality when it carries that instead, and nothing when it carries
+    /// neither: the rows returned are what the predicate kept, not what the scan read. The impact
+    /// details come out either way, so the caller does not build them twice.
     /// </summary>
     private static bool ScanPredicateIsWorthReporting(PlanNode node, PlanStatement stmt, out ScanImpact details)
     {
@@ -518,8 +520,16 @@ public static partial class PlanAnalyzer
         if (!node.HasActualStats)
             return true;
 
-        if (Math.Max(node.ActualRowsRead, node.ActualRows) < ScanRuleMinRows)
+        if (node.HasActualRowsRead)
+        {
+            if (Math.Max(node.ActualRowsRead, node.ActualRows) < ScanRuleMinRows)
+                return false;
+        }
+        else if (node.HasTableCardinality && node.TableCardinality < ScanRuleMinRows)
+        {
             return false;
+        }
+
         if (node.ActualRowsRead > 0 && (double)node.ActualRows / node.ActualRowsRead >= ScanPredicateMaxSelectivity)
             return false;
 

@@ -190,6 +190,8 @@ public class PlanNode
     public long ActualRows { get; set; }
     public long ActualExecutions { get; set; }
     public long ActualRowsRead { get; set; }
+    /// <summary>True when the plan carries ActualRowsRead on at least one thread; a 0 with this false means the plan never recorded it.</summary>
+    public bool HasActualRowsRead { get; set; }
     public long ActualRebinds { get; set; }
     public long ActualRewinds { get; set; }
     public long ActualElapsedMs { get; set; }

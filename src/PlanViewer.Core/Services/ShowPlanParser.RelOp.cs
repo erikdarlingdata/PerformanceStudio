@@ -699,12 +699,17 @@ public static partial class ShowPlanParser
             long totalUdfCpu = 0, maxUdfElapsed = 0;
             long maxInputMemoryGrant = 0, maxOutputMemoryGrant = 0, maxUsedMemoryGrant = 0;
             string? actualExecMode = null;
+            // Whether any thread carries ActualRowsRead: older builds write none, and a sum of 0 cannot
+            // say whether the scan read nothing or the plan never recorded it.
+            var hasRowsRead = false;
 
             foreach (var thread in runtimeEl.Elements(Ns + "RunTimeCountersPerThread"))
             {
                 totalRows += ParseLong(thread.Attribute("ActualRows")?.Value);
                 totalExecutions += ParseLong(thread.Attribute("ActualExecutions")?.Value);
-                totalRowsRead += ParseLong(thread.Attribute("ActualRowsRead")?.Value);
+                var rowsReadAttr = thread.Attribute("ActualRowsRead");
+                hasRowsRead |= rowsReadAttr != null;
+                totalRowsRead += ParseLong(rowsReadAttr?.Value);
                 totalRebinds += ParseLong(thread.Attribute("ActualRebinds")?.Value);
                 totalRewinds += ParseLong(thread.Attribute("ActualRewinds")?.Value);
                 totalCpu += ParseLong(thread.Attribute("ActualCPUms")?.Value);
@@ -749,6 +754,7 @@ public static partial class ShowPlanParser
             node.ActualRows = totalRows;
             node.ActualExecutions = totalExecutions;
             node.ActualRowsRead = totalRowsRead;
+            node.HasActualRowsRead = hasRowsRead;
             node.ActualRebinds = totalRebinds;
             node.ActualRewinds = totalRewinds;
             node.ActualElapsedMs = sawWorkerThread ? maxWorkerElapsed : maxElapsed;

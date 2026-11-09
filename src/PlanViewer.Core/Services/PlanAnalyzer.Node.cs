@@ -625,8 +625,8 @@ public static partial class PlanAnalyzer
             /* A scan under the rows floor is a few hundred pages at most, and a narrower index cannot
                make it cheaper. An actual plan is judged on the rows it read and the scan's own share of
                the statement's time, with any own time at all standing in when the plan carries no
-               statement time. An estimated plan is judged on the table's cardinality and the scan's
-               share of the plan's cost. */
+               statement time. An estimated plan is judged on the table's cardinality, when the plan
+               carries it, and the scan's share of the plan's cost. */
             bool isSignificant;
             if (node.HasActualStats)
             {
@@ -636,7 +636,8 @@ public static partial class PlanAnalyzer
             }
             else
             {
-                isSignificant = node.TableCardinality >= ScanRuleMinRows && node.CostPercent >= 20;
+                isSignificant = (!node.HasTableCardinality || node.TableCardinality >= ScanRuleMinRows)
+                    && node.CostPercent >= 20;
             }
 
             if (isSignificant)
