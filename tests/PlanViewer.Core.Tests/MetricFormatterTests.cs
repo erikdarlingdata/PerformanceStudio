@@ -136,6 +136,24 @@ public class MetricFormatterTests
         Assert.Equal(expected, MetricFormatter.FormatDuration(ms, Invariant));
     }
 
+    [Theory]
+    // One decimal with thousands separators, so the same estimate reads the same on every surface
+    // (#677): 1.1 never reads as "1" on one tooltip and "1.1" on the next, and a whole number
+    // keeps its ".0" rather than printing "10" here and "10.0" there.
+    [InlineData(1.1, "1.1")]
+    [InlineData(10.0, "10.0")]
+    [InlineData(10010.0, "10,010.0")]
+    [InlineData(2983.02, "2,983.0")]
+    [InlineData(0.0, "0.0")]
+    // Past one decimal it rounds; a tiny per-execution estimate reads "0.0" rather than an exponent.
+    [InlineData(1.26, "1.3")]
+    [InlineData(0.00964372, "0.0")]
+    [InlineData(1e12, "1,000,000,000,000.0")]
+    public void FormatEstimatedRows_PrintsOneDecimalWithSeparators(double rows, string expected)
+    {
+        Assert.Equal(expected, MetricFormatter.FormatEstimatedRows(rows, Invariant));
+    }
+
     [Fact]
     public void FormatDuration_AgreesWithItselfWhicheverOverloadIsCalled()
     {
