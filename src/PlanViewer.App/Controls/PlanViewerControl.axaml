@@ -198,9 +198,11 @@
                 <!-- The cards' minimum widths sum to 860 px and the Server Context card sizes to its
                      text, so a narrow window cannot hold the strip: it scrolls sideways to the rest,
                      and each of the first four cards stops growing at 360 px (the cap sits on the card
-                     itself, which is what makes its text wrap inside it). The grid is kept at least as
-                     wide as the strip from code-behind, so in a wide window the Wait Stats column still
-                     fills the remaining width. -->
+                     itself, which is what makes its text wrap inside it). The code-behind bounds the grid
+                     to the strip's width, or to the two content-sized columns plus the other columns'
+                     minimums when the strip is narrower than that, so in a wide window the Wait Stats
+                     column fills the remaining width and its rows ellipsize, and in a narrow one the
+                     grid keeps its minimums and scrolls. -->
                 <ScrollViewer x:Name="InsightsStrip"
                               HorizontalScrollBarVisibility="Auto"
                               VerticalScrollBarVisibility="Disabled">
