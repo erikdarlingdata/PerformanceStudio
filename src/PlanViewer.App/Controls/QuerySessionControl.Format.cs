@@ -100,7 +100,7 @@ public partial class QuerySessionControl : UserControl
                         {
                             new TextBlock
                             {
-                                Text = $"Could not format: {errors.Count} parse error(s)",
+                                Text = $"Could not format: {errors.Count} parse {(errors.Count == 1 ? "error" : "errors")}",
                                 FontWeight = Avalonia.Media.FontWeight.Bold,
                                 FontSize = 14,
                                 Margin = new Avalonia.Thickness(0, 0, 0, 10)
@@ -115,7 +115,7 @@ public partial class QuerySessionControl : UserControl
                     }
                 };
                 await dialog.ShowDialog(GetParentWindow());
-                SetErrorStatus($"Format failed: {errors.Count} error(s)");
+                SetErrorStatus($"Format failed: {errors.Count} {(errors.Count == 1 ? "error" : "errors")}");
                 return;
             }
 

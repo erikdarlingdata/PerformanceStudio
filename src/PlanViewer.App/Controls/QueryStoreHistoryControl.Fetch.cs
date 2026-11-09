@@ -63,7 +63,7 @@ public partial class QueryStoreHistoryControl : UserControl
 				var totalExec = _historyData.Sum(r => r.CountExecutions);
 				var first = TimeDisplayHelper.ConvertForDisplay(_historyData.Min(r => r.IntervalStartUtc), _serverOffset.Minutes);
 				var last = TimeDisplayHelper.ConvertForDisplay(_historyData.Max(r => r.IntervalStartUtc), _serverOffset.Minutes);
-				StatusText.Text = $"{_historyData.Count} intervals, {planCount} plan(s), " +
+				StatusText.Text = $"{_historyData.Count} {(_historyData.Count == 1 ? "interval" : "intervals")}, {planCount} {(planCount == 1 ? "plan" : "plans")}, " +
 								  $"{totalExec:N0} total executions | " +
 								  $"{first:MM/dd HH:mm} to {last:MM/dd HH:mm}";
 					_dataSummaryText = StatusText.Text;

@@ -123,7 +123,7 @@ public static class ReproScriptBuilder
         var droppedCount = parameters.Count - validParameters.Count;
         if (droppedCount > 0)
         {
-            warnings.Add($"{droppedCount} parameter(s) omitted: the plan's parameter name or data type was not a valid T-SQL identifier. Declare them manually before executing.");
+            warnings.Add($"{droppedCount} {(droppedCount == 1 ? "parameter" : "parameters")} omitted: the plan's parameter name or data type was not a valid T-SQL identifier. Declare {(droppedCount == 1 ? "it" : "them")} manually before executing.");
         }
 
         if (conflictingNames.Count > 0)
