@@ -101,8 +101,12 @@ public class AnalysisTextPunctuationTests
         var localVariables = Export("local_variable_plan.sqlplan");
         Assert.Contains("title=\"Legacy rule: predates the benefit-scoring framework\"", localVariables, StringComparison.Ordinal);
 
+        // rid_lookup_plan has no runtime information, so the export renders the wait-stats card's estimated-plan line.
+        var estimated = Export("rid_lookup_plan.sqlplan");
+        Assert.Contains("Estimated plan: no wait stats", estimated, StringComparison.Ordinal);
+
         // The page <title> is a "Plan Analysis — source" label and keeps its separator; everything after it is prose.
-        foreach (var html in new[] { keyLookup, localVariables })
+        foreach (var html in new[] { keyLookup, localVariables, estimated })
         {
             var titleEnd = html.IndexOf("</title>", StringComparison.Ordinal);
             Assert.True(titleEnd > 0);
