@@ -35,7 +35,8 @@ public static class ReproScriptBuilder
     };
 
     /// <summary>
-    /// Builds a complete reproduction script from available query data.
+    /// Builds a complete reproduction script from available query data. The header's Generated: line
+    /// reads <paramref name="clock"/>, the system clock when null.
     /// </summary>
     public static string BuildReproScript(
         string queryText,
@@ -43,7 +44,8 @@ public static class ReproScriptBuilder
         string? planXml,
         string? isolationLevel,
         string source = "Query",
-        bool isAzureSqlDb = false)
+        bool isAzureSqlDb = false,
+        TimeProvider? clock = null)
     {
         var sb = new StringBuilder();
         var warnings = new List<string>();
@@ -158,7 +160,7 @@ public static class ReproScriptBuilder
         {
             sb.AppendLine($"Database: [{CommentSafe(databaseName)}]");
         }
-        sb.AppendLine($"Generated: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+        sb.AppendLine($"Generated: {(clock ?? TimeProvider.System).GetLocalNow():yyyy-MM-dd HH:mm:ss}");
 
         if (warnings.Count > 0)
         {
