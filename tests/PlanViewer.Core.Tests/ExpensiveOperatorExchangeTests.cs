@@ -9,8 +9,9 @@ namespace PlanViewer.Core.Tests;
 /// Rule 35 (Expensive Operator) used to rank exchanges by their self-time. An exchange's elapsed
 /// time is mostly spent waiting on the operators that feed it and drain it, so it could be named the
 /// expensive operator when the operator next to it was the real problem. serially-parallel.sqlplan
-/// shows it plainly: the Sort took 17,111 ms and the Repartition Streams below it, which feeds the
-/// Sort, was given the same 17,111 ms as if it had done the same work.
+/// showed it plainly: the Repartition Streams below the Sort was given the same 17,111 ms as the Sort.
+/// Both figures came from pairing threads by number across the exchange (#680): the branch below it
+/// ran on thread 1 only, so the Sort and the exchange each did about 1 ms of work of their own.
 /// </summary>
 public class ExpensiveOperatorExchangeTests
 {
@@ -44,14 +45,18 @@ public class ExpensiveOperatorExchangeTests
     }
 
     [Fact]
-    public void SeriallyParallelPlan_StillNamesTheSort()
+    public void SeriallyParallelPlan_DoesNotNameTheSort()
     {
-        // The Sort is the operator that did the work, and it keeps its Rule 35 warning. Only the
-        // exchange that mirrored its time drops out.
+        // #680: the Sort above the skewed Repartition Streams did about 1 ms of work. Its 17,111 ms
+        // per thread is the wait for the one producer thread below the exchange, so Rule 35 does not
+        // name it.
         var plan = PlanTestHelper.LoadAndAnalyze("serially-parallel.sqlplan");
 
-        var warning = Assert.Single(PlanTestHelper.WarningsOfType(plan, "Expensive Operator"));
-        Assert.StartsWith("Sort took", warning.Message);
+        var sort = Assert.Single(PlanStatements.EnumerateAll(plan)
+            .Where(s => s.RootNode != null)
+            .SelectMany(s => Nodes(s.RootNode!)), n => n.NodeId == 2);
+        Assert.Equal("Sort", sort.PhysicalOp);
+        Assert.DoesNotContain(sort.Warnings, w => w.WarningType == "Expensive Operator");
     }
 
     // ---- built in code: the same timing on an exchange and on an ordinary operator ---------------
