@@ -309,7 +309,17 @@ public sealed class McpPlanTools
         "Extracts parameters, SET options, and database context into a runnable sp_executesql call.")]
     public static string GetReproScript(
         PlanSessionManager sessionManager,
-        [Description("The session_id from list_plans.")] string session_id)
+        [Description("The session_id from list_plans.")] string session_id) =>
+        GetReproScript(sessionManager, session_id, TimeProvider.System);
+
+    /// <summary>
+    /// get_repro_script with the clock its Generated: line reads, so a test can hold or move the
+    /// second the script is stamped with.
+    /// </summary>
+    internal static string GetReproScript(
+        PlanSessionManager sessionManager,
+        string session_id,
+        TimeProvider clock)
     {
         var session = sessionManager.GetSession(session_id);
         if (session == null)
@@ -336,7 +346,7 @@ public sealed class McpPlanTools
             var databaseName = session.DatabaseName ?? statement.OperatorTree?.DatabaseName;
 
             return ReproScriptBuilder.BuildReproScript(
-                queryText, databaseName, GetRawPlanXml(session), null);
+                queryText, databaseName, GetRawPlanXml(session), null, clock: clock);
         }
         catch (Exception ex)
         {

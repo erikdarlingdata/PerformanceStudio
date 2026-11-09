@@ -367,17 +367,17 @@ public sealed class McpPlanToolsContractTests
             McpPlanTools.ComparePlans(legacyManager, sessionId, sessionId),
             McpPlanTools.ComparePlans(capturedManager, sessionId, sessionId));
 
-        /* #697: the repro script stamps the second it was generated in, so the two scripts are
-           generated in different seconds here, the way they are when the two calls happen to
-           straddle a second boundary, and the comparison must hold all the same. */
-        var legacyScript = McpPlanTools.GetReproScript(legacyManager, sessionId);
-        var second = DateTime.Now.Second;
-        Assert.True(
-            SpinWait.SpinUntil(() => DateTime.Now.Second != second, TimeSpan.FromSeconds(3)),
-            "the wall clock did not reach the next second");
-        var capturedScript = McpPlanTools.GetReproScript(capturedManager, sessionId);
-        Assert.Contains("Generated: ", legacyScript);
-        Assert.Equal(legacyScript, capturedScript);
+        /* #697: the repro script stamps the second it was generated in, so the captured script is
+           generated one second after the legacy one, the way the two are when the calls happen to
+           straddle a second boundary, and the scripts are compared exactly on everything but that
+           stamp. */
+        var clock = new HandClock(new DateTimeOffset(2026, 11, 9, 21, 54, 2, TimeSpan.Zero));
+        var legacyScript = McpPlanTools.GetReproScript(legacyManager, sessionId, clock);
+        clock.Advance(TimeSpan.FromSeconds(1));
+        var capturedScript = McpPlanTools.GetReproScript(capturedManager, sessionId, clock);
+        Assert.Contains("Generated: 2026-11-09 21:54:02", legacyScript);
+        Assert.Contains("Generated: 2026-11-09 21:54:03", capturedScript);
+        Assert.Equal(WithoutGeneratedLine(legacyScript), WithoutGeneratedLine(capturedScript));
     }
 
     /// <summary>
@@ -422,6 +422,30 @@ public sealed class McpPlanToolsContractTests
         Assert.Equal("#orders", rows[2].GetProperty("table").GetString());
         Assert.Equal(JsonValueKind.Null, statements[1].GetProperty("statistics_note").ValueKind);
         Assert.Equal(JsonValueKind.String, statements[2].GetProperty("statistics_note").ValueKind);
+    }
+
+    /// <summary>
+    /// The script without its one Generated: line, so a comparison reads every other line exactly.
+    /// </summary>
+    private static string WithoutGeneratedLine(string script)
+    {
+        var lines = script.Split('\n');
+        Assert.Single(lines, line => line.StartsWith("Generated: ", StringComparison.Ordinal));
+        return string.Join('\n', lines.Where(line => !line.StartsWith("Generated: ", StringComparison.Ordinal)));
+    }
+
+    /// <summary>
+    /// A clock the test moves by hand, read in UTC so the Generated: text it produces is fixed.
+    /// </summary>
+    private sealed class HandClock(DateTimeOffset now) : TimeProvider
+    {
+        private DateTimeOffset _now = now;
+
+        public override DateTimeOffset GetUtcNow() => _now;
+
+        public override TimeZoneInfo LocalTimeZone => TimeZoneInfo.Utc;
+
+        public void Advance(TimeSpan by) => _now += by;
     }
 
     private static CorePlanSession CreateEstimatedSession() => CreateSession("row_goal_plan.sqlplan");
