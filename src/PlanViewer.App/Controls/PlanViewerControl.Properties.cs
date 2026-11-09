@@ -861,7 +861,7 @@ public partial class PlanViewerControl : UserControl
                     var legacyTag = (w.IsLegacy ? " [legacy]" : "") + SuppressedWarningTag(w);
                     var sourceTag = WarningSourceTag(w);
                     var planWarnHeader = w.MaxBenefitPercent.HasValue
-                        ? $"\u26A0 {w.WarningType}{sourceTag}{legacyTag} \u2014 up to {FormatBenefitPercent(w.MaxBenefitPercent.Value)}% benefit"
+                        ? $"\u26A0 {w.WarningType}{sourceTag}{legacyTag}: up to {FormatBenefitPercent(w.MaxBenefitPercent.Value)}% benefit"
                         : $"\u26A0 {w.WarningType}{sourceTag}{legacyTag}";
                     var planWarnHeaderBlock = new TextBlock
                     {
@@ -941,7 +941,7 @@ public partial class PlanViewerControl : UserControl
                 {
                     var opWarnPanel = new StackPanel { Margin = new Thickness(10, 2, 10, 2) };
                     var opBenefit = w.MaxBenefitPercent.HasValue
-                        ? $" \u2014 up to {FormatBenefitPercent(w.MaxBenefitPercent.Value)}% benefit"
+                        ? $": up to {FormatBenefitPercent(w.MaxBenefitPercent.Value)}% benefit"
                         : "";
                     var opHeaderText =
                         $"\u26A0 {w.WarningType}{WarningSourceTag(w)}{(w.IsLegacy ? " [legacy]" : "")}{SuppressedWarningTag(w)}{opBenefit}";
@@ -1023,7 +1023,7 @@ public partial class PlanViewerControl : UserControl
                 var nodeLegacyTag = (w.IsLegacy ? " [legacy]" : "") + SuppressedWarningTag(w);
                 var nodeSourceTag = WarningSourceTag(w);
                 var nodeWarnHeader = w.MaxBenefitPercent.HasValue
-                    ? $"\u26A0 {w.WarningType}{nodeSourceTag}{nodeLegacyTag} \u2014 up to {FormatBenefitPercent(w.MaxBenefitPercent.Value)}% benefit"
+                    ? $"\u26A0 {w.WarningType}{nodeSourceTag}{nodeLegacyTag}: up to {FormatBenefitPercent(w.MaxBenefitPercent.Value)}% benefit"
                     : $"\u26A0 {w.WarningType}{nodeSourceTag}{nodeLegacyTag}";
                 warnPanel.Children.Add(new TextBlock
                 {

@@ -100,7 +100,7 @@ public static partial class PlanAnalyzer
     /// - A parent Sort/Hash spilled (downstream estimate caused bad grant)
     /// </summary>
     /// <summary>
-    /// Returns a short label describing what a wait type means (e.g., "I/O — reading from disk").
+    /// Returns a short label describing what a wait type means (e.g., "I/O: reading from disk").
     /// Public for use by UI components that annotate wait stats inline.
     /// </summary>
     public static string GetWaitLabel(string waitType)
@@ -108,23 +108,23 @@ public static partial class PlanAnalyzer
         var wt = waitType.ToUpperInvariant();
         return wt switch
         {
-            _ when wt.StartsWith("PAGEIOLATCH") => "I/O — reading data from disk",
-            _ when wt.Contains("IO_COMPLETION") => "I/O — spills to TempDB or eager writes",
-            _ when wt == "SOS_SCHEDULER_YIELD" => "CPU — scheduler yielding",
-            _ when wt.StartsWith("CXPACKET") || wt.StartsWith("CXCONSUMER") => "parallelism — thread skew",
-            _ when wt.StartsWith("CXSYNC") => "parallelism — exchange synchronization",
-            _ when wt == "HTBUILD" => "hash — building hash table",
-            _ when wt == "HTDELETE" => "hash — cleaning up hash table",
-            _ when wt == "HTREPARTITION" => "hash — repartitioning",
+            _ when wt.StartsWith("PAGEIOLATCH") => "I/O: reading data from disk",
+            _ when wt.Contains("IO_COMPLETION") => "I/O: spills to TempDB or eager writes",
+            _ when wt == "SOS_SCHEDULER_YIELD" => "CPU: scheduler yielding",
+            _ when wt.StartsWith("CXPACKET") || wt.StartsWith("CXCONSUMER") => "parallelism: thread skew",
+            _ when wt.StartsWith("CXSYNC") => "parallelism: exchange synchronization",
+            _ when wt == "HTBUILD" => "hash: building hash table",
+            _ when wt == "HTDELETE" => "hash: cleaning up hash table",
+            _ when wt == "HTREPARTITION" => "hash: repartitioning",
             _ when wt.StartsWith("HT") => "hash operation",
             _ when wt == "BPSORT" => "batch sort",
             _ when wt == "BMPBUILD" => "bitmap filter build",
             _ when wt.Contains("MEMORY_ALLOCATION_EXT") => "memory allocation",
-            _ when wt.StartsWith("PAGELATCH") => "page latch — in-memory contention",
+            _ when wt.StartsWith("PAGELATCH") => "page latch: in-memory contention",
             _ when wt.StartsWith("LATCH_") => "latch contention",
             _ when wt.StartsWith("LCK_") => "lock contention",
             _ when wt == "LOGBUFFER" => "transaction log writes",
-            _ when wt == "ASYNC_NETWORK_IO" => "network — client not consuming results",
+            _ when wt == "ASYNC_NETWORK_IO" => "network: client not consuming results",
             _ when wt == "SOS_PHYS_PAGE_CACHE" => "physical page cache contention",
             _ => ""
         };

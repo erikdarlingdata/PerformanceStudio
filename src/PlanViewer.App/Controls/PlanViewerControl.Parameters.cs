@@ -31,7 +31,7 @@ public partial class PlanViewerControl : UserControl
             {
                 // Local variables are still something to say, so this card stays lit.
                 AddParameterAnnotation(
-                    $"Local variables detected ({string.Join(", ", localVars)}) — values not captured in plan XML",
+                    $"Local variables detected ({string.Join(", ", localVars)}): values not captured in plan XML",
                     "WarningBrush");
                 SetInsightQuiet(ParametersHeader, ParametersAccent, false);
             }
@@ -117,7 +117,7 @@ public partial class PlanViewerControl : UserControl
                     && param.CompiledValue != null
                     && param.RuntimeValue != param.CompiledValue;
                 var tooltip = sniffed
-                    ? "Runtime value differs from compiled — possible parameter sniffing"
+                    ? "Runtime value differs from compiled: possible parameter sniffing"
                     : null;
                 AddParamCell(grid, rowIndex, runtimeCol, runtimeText,
                     sniffed ? sniffedBrush : valueBrush, tooltip: tooltip);
@@ -145,19 +145,19 @@ public partial class PlanViewerControl : UserControl
             if (hasOptimizeForUnknown)
             {
                 AddParameterAnnotation(
-                    "OPTIMIZE FOR UNKNOWN — optimizer used average density estimates instead of sniffed values",
+                    "OPTIMIZE FOR UNKNOWN: optimizer used average density estimates instead of sniffed values",
                     "AccentBrush");
             }
             else if (hasRecompile)
             {
                 AddParameterAnnotation(
-                    "OPTION(RECOMPILE) — parameter values embedded as literals, not sniffed",
+                    "OPTION(RECOMPILE): parameter values embedded as literals, not sniffed",
                     "WarningBrush");
             }
             else
             {
                 AddParameterAnnotation(
-                    "Parameter values not captured in the plan — no compiled values, so the values the optimizer sniffed are not known",
+                    "Parameter values not captured in the plan: no compiled values, so the values the optimizer sniffed are not known",
                     "WarningBrush");
             }
         }
@@ -166,7 +166,7 @@ public partial class PlanViewerControl : UserControl
         if (unresolved.Count > 0)
         {
             AddParameterAnnotation(
-                $"Unresolved variables: {string.Join(", ", unresolved)} — not in parameter list",
+                $"Unresolved variables: {string.Join(", ", unresolved)}, not in parameter list",
                 "WarningBrush");
         }
     }
