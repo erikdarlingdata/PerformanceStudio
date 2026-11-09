@@ -91,7 +91,7 @@ public partial class PlanViewerControl : UserControl
                 Margin = new Thickness(0, 2, 10, 2),
                 Background = Brushes.Transparent
             };
-            ToolTip.SetTip(nameText, $"{w.WaitType} \u2014 {category} wait");
+            ToolTip.SetTip(nameText, $"{w.WaitType}: {category} wait");
             Grid.SetRow(nameText, i);
             Grid.SetColumn(nameText, 0);
             grid.Children.Add(nameText);

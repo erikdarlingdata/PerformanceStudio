@@ -480,7 +480,7 @@ pre.query-text, pre.text-output {
         }
         else
         {
-            sb.AppendLine($"<div class=\"card-empty\">{(hasActualStats ? "No waits recorded" : "Estimated plan — no wait stats")}</div>");
+            sb.AppendLine($"<div class=\"card-empty\">{(hasActualStats ? "No waits recorded" : "Estimated plan: no wait stats")}</div>");
         }
         sb.AppendLine("</div>");
         sb.AppendLine("</details>");

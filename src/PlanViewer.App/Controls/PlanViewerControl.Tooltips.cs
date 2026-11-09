@@ -188,7 +188,7 @@ public partial class PlanViewerControl : UserControl
 
                 foreach (var (type, severity, count, maxBenefit) in distinct)
                 {
-                    var benefitSuffix = maxBenefit >= 0 ? $" \u2014 up to {maxBenefit:N0}%" : "";
+                    var benefitSuffix = maxBenefit >= 0 ? $": up to {maxBenefit:N0}%" : "";
                     var label = count > 1 ? $"\u26A0 {type} ({count}){benefitSuffix}" : $"\u26A0 {type}{benefitSuffix}";
                     stack.Children.Add(new TextBlock
                     {
