@@ -2,10 +2,16 @@ using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
 // The MCP spec deprecated the Roots feature (SEP-2577, spec version 2026-07-28), so the SDK's
-// Roots types are marked obsolete (MCP9005). Roots is still the contract the server's plan-path
-// sandbox enforces (McpPlanPathPolicy via Repl.Mcp), and these tests are the regression coverage
-// for that guard, so they must keep exercising it. Remove this suppression when the sandbox
-// migrates off Roots — tracked in issue #514.
+// Roots types are marked obsolete (MCP9005). The deprecation is advisory: it changes nothing on
+// the wire, the spec keeps Roots for at least twelve months, and the earliest removal is the first
+// revision released on or after 2027-07-28. ModelContextProtocol 2.4.0 still ships every Roots
+// type, and Repl.Mcp 0.12.0 still resolves client roots through IMcpClientRoots; it has adopted
+// neither multi-round-trip requests (SEP-2322) nor any other scoping mechanism in their place.
+// Roots is therefore still the contract the server's plan-path sandbox enforces (McpPlanPathPolicy
+// via Repl.Mcp), and these tests are the regression coverage for that guard, so they must keep
+// exercising it. Remove this suppression when the sandbox migrates off Roots — tracked in issue
+// #514, which waits for an SDK release that removes the Roots types, a Repl.Mcp release that adopts
+// a replacement, or the 2027-07-28 removal window.
 #pragma warning disable MCP9005
 
 namespace PlanViewer.Core.Tests;
