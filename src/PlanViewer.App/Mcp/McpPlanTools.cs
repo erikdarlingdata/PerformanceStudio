@@ -242,7 +242,7 @@ public sealed class McpPlanTools
         "estimated_rows is the optimizer's estimate for one execution and actual_rows is the total across every " +
         "execution, so set actual_rows beside expected_rows, the estimate times actual_executions on the inner side " +
         "of a Nested Loops join and the estimate itself everywhere else; expected_rows and actual_executions are null " +
-        "on an estimated plan. Useful for quickly finding bottleneck operators.")]
+        "without runtime statistics. Useful for quickly finding bottleneck operators.")]
     public static string GetExpensiveOperators(
         PlanSessionManager sessionManager,
         PlanOperations operations,

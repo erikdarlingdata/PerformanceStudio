@@ -133,16 +133,17 @@ public sealed class ExpensiveOperatorItem
     /// <see cref="ActualExecutions"/> on the inner side of a Nested Loops join, where the executions
     /// are a true loop count, and <see cref="EstimatedRows"/> itself everywhere else; the figure the
     /// viewer's node label and the analyzer's row-estimate rules share through
-    /// <c>RowEstimateHelper.GetExpectedRows</c>. Null on an estimated plan.
+    /// <c>RowEstimateHelper.GetExpectedRows</c>. Null without runtime statistics: on an estimated
+    /// plan, and on an operator of an actual plan that reports no RunTimeInformation of its own.
     /// </summary>
     [JsonPropertyName("expected_rows")]
     public double? ExpectedRows { get; init; }
 
-    /// <summary>The total rows across every execution. 0 on an estimated plan.</summary>
+    /// <summary>The total rows across every execution. 0 without runtime statistics.</summary>
     [JsonPropertyName("actual_rows")]
     public long ActualRows { get; init; }
 
-    /// <summary>How many times the operator ran, summed across threads. Null on an estimated plan.</summary>
+    /// <summary>How many times the operator ran, summed across threads. Null without runtime statistics.</summary>
     [JsonPropertyName("actual_executions")]
     public long? ActualExecutions { get; init; }
 
