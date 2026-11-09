@@ -4,8 +4,10 @@ using System.IO;
 using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Layout;
 using Avalonia.LogicalTree;
 using Avalonia.Media;
+using Avalonia.Threading;
 using PlanViewer.App.Controls;
 using PlanViewer.Core.Models;
 
@@ -123,6 +125,37 @@ public class InsightsStripLayoutTests
         });
     }
 
+    /// <summary>A strip that shrinks by half a pixel (a window at 200% scaling, layout rounding off) still gets
+    /// a grid exactly its width: a grid wider than its strip by any amount shows a horizontal scroll bar.</summary>
+    [Fact]
+    public void TheInsightsGrid_FollowsAHalfPixelStripChange_WithLayoutRoundingOff()
+    {
+        HeadlessUi.Run(() =>
+        {
+            var viewer = LoadPlan();
+            viewer.Metadata = LongEditionMetadata();
+            // A shown headless window keeps its size, so the viewer's host is what goes from 1600 to 1599.5 px.
+            var host = new Border { Child = viewer, Width = 1600, Height = 900, HorizontalAlignment = HorizontalAlignment.Left };
+            var window = new Window { Content = host, Width = 1700, Height = 900, UseLayoutRounding = false };
+            window.Show();
+            window.UpdateLayout();
+            Named<Expander>(viewer, "InsightsExpander").IsExpanded = true;
+            window.UpdateLayout();
+
+            var strip = Named<ScrollViewer>(viewer, "InsightsStrip");
+            var grid = Named<Grid>(viewer, "InsightsGrid");
+            var before = strip.Viewport.Width;
+            Assert.True(grid.Bounds.Width == before, $"at 1600 px the grid is {grid.Bounds.Width} px wide in a {before} px strip");
+
+            host.Width = 1599.5;
+            SettleLayout(window);
+
+            Assert.True(strip.Viewport.Width < before - 0.4, $"the strip is still {strip.Viewport.Width} px wide after the viewer went to 1599.5 px");
+            Assert.True(grid.Bounds.Width == strip.Viewport.Width && strip.Extent.Width <= strip.Viewport.Width,
+                $"after the strip went from {before} to {strip.Viewport.Width} px the grid is {grid.Bounds.Width} px wide and the strip's extent is {strip.Extent.Width} px: a grid wider than its strip by any amount shows a scroll bar");
+        });
+    }
+
     [Theory]
     [InlineData(700, 600, false)]
     [InlineData(640, 480, false)]
@@ -183,6 +216,15 @@ public class InsightsStripLayoutTests
 
             Assert.Equal(personsChoice, expander.IsExpanded);
         });
+    }
+
+    /// <summary>Runs layout until it is quiet. The grid's bound is applied from <c>LayoutUpdated</c>, so a width
+    /// set on one pass takes effect on the next, which the dispatcher runs on its own in the app.</summary>
+    private static void SettleLayout(Window window)
+    {
+        window.UpdateLayout();
+        Dispatcher.UIThread.RunJobs();
+        window.UpdateLayout();
     }
 
     private const string PlanName = "memory_grant_wait_plan.sqlplan";
