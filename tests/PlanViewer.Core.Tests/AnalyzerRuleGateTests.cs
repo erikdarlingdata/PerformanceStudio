@@ -213,6 +213,26 @@ public class AnalyzerRuleGateTests
     }
 
     [Theory]
+    [InlineData("SELECT a FROM dbo.t WHERE b = @b OPTION (OPTIMIZE FOR UNKNOWN)", false)]
+    [InlineData("SELECT a FROM dbo.t WHERE b = @b /* OPTION (OPTIMIZE FOR UNKNOWN) */", true)]
+    public void Rule20_YieldsToOptimizeForUnknown(string text, bool expectLocalVariables)
+    {
+        // OPTIMIZE FOR UNKNOWN also leaves a parameter without a compiled value. Rule 27 reports the
+        // hint, so rule 20 leaves the statement to it rather than calling the parameter a local
+        // variable as well. The hint inside a comment is not a hint, and rule 20 still reports.
+        var stmt = new PlanStatement
+        {
+            StatementSubTreeCost = 10,
+            StatementText = text,
+            Parameters = [new PlanParameter { Name = "@b" }]
+        };
+        Analyze(stmt);
+
+        Assert.Equal(expectLocalVariables, Has(stmt, "Local Variables"));
+        Assert.Equal(!expectLocalVariables, Has(stmt, "Optimize For Unknown"));
+    }
+
+    [Theory]
     [InlineData("-- DECLARE c CURSOR FOR SELECT a FROM dbo.t\nSELECT a FROM dbo.t", false)]
     [InlineData("DECLARE c CURSOR /* LOCAL */ FOR SELECT a FROM dbo.t", true)]
     [InlineData("DECLARE c CURSOR LOCAL FOR SELECT a FROM dbo.t", false)]

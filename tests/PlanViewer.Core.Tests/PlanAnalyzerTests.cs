@@ -1070,6 +1070,20 @@ public class PlanAnalyzerTests
         Assert.Contains("Mismatched data types", warnings[0].Message);
     }
 
+    [Fact]
+    public void Rule13_DataTypeMismatch_SaysTheSeekRangeWasBuilt_NotThatSeeksArePrevented()
+    {
+        // GetRangeWithMismatchedTypes exists because the optimizer built a dynamic seek range
+        // through the conversion, so the index is still sought. The message must not claim
+        // the conversion prevents seeks or converts every row.
+        var plan = PlanTestHelper.LoadAndAnalyze("mismatched_data_type_plan.sqlplan");
+        var warning = Assert.Single(PlanTestHelper.WarningsOfType(plan, "Data Type Mismatch"));
+
+        Assert.Contains("built a dynamic seek range", warning.Message);
+        Assert.DoesNotContain("preventing index seeks", warning.Message);
+        Assert.DoesNotContain("converting every row", warning.Message);
+    }
+
     // ---------------------------------------------------------------
     // Rule 14: Lazy Spool Ineffective
     // ---------------------------------------------------------------
@@ -1310,6 +1324,19 @@ public class PlanAnalyzerTests
     }
 
     [Fact]
+    public void Rule23_DatesTheHundredRowGuessToSqlServer2014()
+    {
+        // The 100 row guess is the SQL Server 2014 cardinality estimator's. SQL Server 2017 added
+        // interleaved execution, which uses the function's real row count instead.
+        var plan = PlanTestHelper.LoadAndAnalyze("tvf_plan.sqlplan");
+        var warning = Assert.Single(PlanTestHelper.WarningsOfType(plan, "Table-Valued Function"));
+
+        Assert.Contains("100 rows (SQL Server 2014 and later)", warning.Message);
+        Assert.Contains("interleaved execution (SQL Server 2017 and later)", warning.Message);
+        Assert.DoesNotContain("2017+", warning.Message);
+    }
+
+    [Fact]
     public void Rule23_EngineFunction_IsNotFlagged()
     {
         // sys.dm_db_index_physical_stats runs as the engine's INDEXANALYSIS function. Its Object
@@ -1370,6 +1397,47 @@ public class PlanAnalyzerTests
         Assert.Contains("Clustered Index Scan", warnings[0].Message);
         Assert.Contains("inner side of Nested Loops", warnings[0].Message);
         Assert.Contains("residual predicate", warnings[0].Message);
+    }
+
+    [Fact]
+    public void Rule24_TopAboveScan_PlainTopOverOrderedScanDoesNotWarn()
+    {
+        // SELECT TOP (1) p.Id FROM dbo.Posts AS p ORDER BY p.Id DESC compiles to a Top over a
+        // backward clustered index scan with Ordered="true" and no Sort. The Top stops the scan
+        // after one row, so there is no scan and sort for an index to remove.
+        var plan = PlanTestHelper.LoadAndAnalyze("top_ordered_scan_plan.sqlplan");
+
+        Assert.Empty(PlanTestHelper.WarningsOfType(plan, "Top Above Scan"));
+    }
+
+    // ---------------------------------------------------------------
+    // Rules 11 and 34: the scan gates (rows read, own time share, selectivity)
+    // ---------------------------------------------------------------
+
+    [Fact]
+    public void Rule34_BareScan_SmallTableInOneMsOfFiveHundred_DoesNotWarn()
+    {
+        // Statement 1 of scan_gate_plan: a 200 row lookup table read in 1 ms of a 500 ms
+        // statement, two output columns. Under 10,000 rows the table is a few pages, and the
+        // index the rule proposes costs more on every write than it saves.
+        var plan = PlanTestHelper.LoadAndAnalyze("scan_gate_plan.sqlplan");
+        var stmt = PlanTestHelper.FirstStatement(plan);
+
+        Assert.Equal("SELECT l.Id, l.Name FROM dbo.Lookup AS l", stmt.StatementText);
+        Assert.DoesNotContain(PlanTestHelper.AllNodeWarnings(stmt), w => w.WarningType == "Bare Scan");
+    }
+
+    [Fact]
+    public void Rule11_ScanWithPredicate_ReadThousandReturnedNineHundred_DoesNotWarn()
+    {
+        // Statement 2 of scan_gate_plan: a scan that read 1,000 rows and returned 900 in 1 ms of
+        // a 500 ms statement. The predicate removed a tenth of the rows, so a seek on its columns
+        // would touch the same pages, and the scan is under the rows floor besides.
+        var plan = PlanTestHelper.LoadAndAnalyze("scan_gate_plan.sqlplan");
+        var stmt = plan.Batches[0].Statements[1];
+
+        Assert.Equal("SELECT s.Id FROM dbo.Settings AS s WHERE s.IsActive = 1", stmt.StatementText);
+        Assert.DoesNotContain(PlanTestHelper.AllNodeWarnings(stmt), w => w.WarningType == "Scan With Predicate");
     }
 
     // ---------------------------------------------------------------
