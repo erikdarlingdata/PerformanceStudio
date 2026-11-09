@@ -202,7 +202,7 @@ public static partial class PlanAnalyzer
                     // Note adaptive joins that chose Nested Loops at runtime — the grant
                     // was sized for a hash join that never happened.
                     if (stmt.RootNode != null && HasAdaptiveJoinChoseNestedLoop(stmt.RootNode))
-                        message += " An adaptive join in this plan executed as a Nested Loop at runtime — the memory grant was sized for the hash join alternative that wasn't used.";
+                        message += " An adaptive join in this plan executed as a Nested Loop at runtime: the memory grant was sized for the hash join alternative that wasn't used.";
 
                     stmt.PlanWarnings.Add(new PlanWarning
                     {
@@ -516,7 +516,7 @@ public static partial class PlanAnalyzer
                     {
                         RuleNumber = 30,
                         WarningType = "Wide Index Suggestion",
-                        Message = $"Missing index suggestion for {mi.Table} has {includeCount} INCLUDE columns. This is a \"kitchen sink\" index — SQL Server suggests covering every column the query touches, but the resulting index would be very wide and expensive to maintain. Evaluate which columns are actually needed, or consider a narrower index with fewer includes.",
+                        Message = $"Missing index suggestion for {mi.Table} has {includeCount} INCLUDE columns. This is a \"kitchen sink\" index: SQL Server suggests covering every column the query touches, but the resulting index would be very wide and expensive to maintain. Evaluate which columns are actually needed, or consider a narrower index with fewer includes.",
                         Severity = PlanWarningSeverity.Warning
                     });
                 }
@@ -539,7 +539,7 @@ public static partial class PlanAnalyzer
                     {
                         RuleNumber = 30,
                         WarningType = "Duplicate Index Suggestions",
-                        Message = $"{count} missing index suggestions target {mi.Table}. Multiple suggestions for the same table often overlap — consolidate into fewer, broader indexes rather than creating all of them.",
+                        Message = $"{count} missing index suggestions target {mi.Table}. Multiple suggestions for the same table often overlap: consolidate into fewer, broader indexes rather than creating all of them.",
                         Severity = PlanWarningSeverity.Warning
                     });
                     // Only warn once per table

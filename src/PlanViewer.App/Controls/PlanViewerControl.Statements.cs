@@ -67,7 +67,7 @@ public partial class PlanViewerControl : UserControl
            header out (round-1 finding V4: "Est. C...", "Cri...", "W..."). */
         StatementsGrid.Columns.Add(new DataGridTemplateColumn
         {
-            Header = GridHeader("Query", "Statement text — hover a row for the full text"),
+            Header = GridHeader("Query", "Statement text: hover a row for the full text"),
             CellTemplate = queryTemplate,
             Width = new DataGridLength(1, DataGridLengthUnitType.Star),
             MinWidth = 150,

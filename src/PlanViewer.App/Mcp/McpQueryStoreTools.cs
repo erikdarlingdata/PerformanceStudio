@@ -70,7 +70,7 @@ public sealed class McpQueryStoreTools
 
     [McpServerTool(Name = "get_query_store_top")]
     [Description("Fetches the top N queries from Query Store ranked by the specified metric. " +
-        "Uses the application's built-in Query Store query — no arbitrary SQL is executed. " +
+        "Uses the application's built-in Query Store query: no arbitrary SQL is executed. " +
         "Each fetched plan is automatically loaded into the application for further analysis " +
         "with analyze_plan, get_plan_warnings, etc. Returns summary stats and session IDs. " +
         "Optional filters narrow results server-side by query_id, plan_id, query_hash, " +

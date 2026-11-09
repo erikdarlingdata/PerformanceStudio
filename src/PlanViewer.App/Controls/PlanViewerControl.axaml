@@ -248,7 +248,7 @@
                                            Classes="insightHeader neutral"/>
                                 <StackPanel x:Name="RuntimeSummaryContent"/>
                                 <TextBlock x:Name="RuntimeSummaryEmpty"
-                                           Text="Estimated plan — no runtime stats"
+                                           Text="Estimated plan: no runtime stats"
                                            Classes="insightEmpty" IsVisible="False"/>
                             </StackPanel>
                         </DockPanel>

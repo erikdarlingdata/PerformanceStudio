@@ -528,7 +528,7 @@ public partial class PlanViewerControl : UserControl
         // (or a parse failure) as a silent "No Plan Loaded".
         if (string.IsNullOrWhiteSpace(planXml))
         {
-            LastLoadError = "The plan is empty — this source has no stored query plan XML.";
+            LastLoadError = "The plan is empty: this source has no stored query plan XML.";
             ShowEmptyState("Couldn't Load Plan", LastLoadError);
             return false;
         }
