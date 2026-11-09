@@ -221,6 +221,32 @@ public class ScanRuleGateTests
     }
 
     [Fact]
+    public void ScanWithPredicate_NoActualRowsRead_ParallelScanOfSmallTable_DoesNotWarn()
+    {
+        // The parser sums ActualExecutions across threads. A plain parallel scan over a 2,000 row
+        // table at DOP 8 reports 0 executions on thread 0 and 1 on each of threads 1 to 8, and the
+        // table was read once, not eight times, so the stand-in reads the largest per-thread count.
+        var threads = "<RunTimeCountersPerThread Thread=\"0\" ActualRows=\"0\" Batches=\"0\" ActualEndOfScans=\"0\" ActualExecutions=\"0\" ActualExecutionMode=\"Row\" ActualElapsedms=\"0\" ActualCPUms=\"0\" ActualScans=\"0\" ActualLogicalReads=\"0\" ActualPhysicalReads=\"0\" ActualReadAheads=\"0\" ActualLobLogicalReads=\"0\" ActualLobPhysicalReads=\"0\" ActualLobReadAheads=\"0\" />";
+        for (var thread = 1; thread <= 8; thread++)
+            threads += $"<RunTimeCountersPerThread Thread=\"{thread}\" ActualRows=\"10\" Batches=\"0\" ActualEndOfScans=\"1\" ActualExecutions=\"1\" ActualExecutionMode=\"Row\" ActualElapsedms=\"5\" ActualCPUms=\"5\" ActualScans=\"1\" ActualLogicalReads=\"6\" ActualPhysicalReads=\"0\" ActualReadAheads=\"0\" ActualLobLogicalReads=\"0\" ActualLobPhysicalReads=\"0\" ActualLobReadAheads=\"0\" />";
+
+        var xml = ActualScanTemplate
+            .Replace("Parallel=\"0\"", "Parallel=\"1\"")
+            .Replace("{WHERE}", " WHERE b = 1").Replace("{COST}", "10").Replace("{ROWS}", "80")
+            .Replace("{TABLE}", "2000").Replace("{TIME}", "")
+            .Replace("{RUNTIME}", $"<RunTimeInformation>{threads}</RunTimeInformation>")
+            .Replace("{PREDICATE}", "<Predicate><ScalarOperator ScalarString=\"[g].[dbo].[t].[b]=(1)\" /></Predicate>");
+        var plan = ShowPlanParser.Parse(xml);
+        var scan = ScanNode(plan);
+        Assert.Equal(9, scan.PerThreadStats.Count);
+        Assert.Equal(8, scan.ActualExecutions);
+        Assert.Equal(0, scan.ActualRowsRead);
+        PlanAnalyzer.Analyze(plan);
+
+        Assert.Null(Finding(plan, "Scan With Predicate"));
+    }
+
+    [Fact]
     public void ScanWithPredicate_Estimated_NinetyFivePercentOfCost_IsCritical()
     {
         // An estimated plan has only the cost share, and is reported as before.
