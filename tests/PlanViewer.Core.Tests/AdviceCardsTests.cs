@@ -189,7 +189,10 @@ public class AdviceCardsTests
 
     /// <summary>
     /// #651: a count excludes suppressed warnings, so the statement's "N critical" chip must not
-    /// count them. The warnings themselves still appear as cards.
+    /// count them, and a suppressed finding must not paint the card's edge. The warnings
+    /// themselves still appear as cards. The fixture's one live finding is an Info-grade Key
+    /// Lookup (#678), so with two suppressed Critical warnings added the only way "2 critical" or a
+    /// red edge can appear is by counting the suppressed ones.
     /// </summary>
     [Fact]
     public void TheStatementChipsDoNotCountSuppressedWarnings()
@@ -209,9 +212,11 @@ public class AdviceCardsTests
 
         HeadlessUi.Run(() =>
         {
-            var text = AllText(Show(AdviceContentBuilder.Build("", result)));
+            var panel = Show(AdviceContentBuilder.Build("", result));
+            var text = AllText(panel);
 
             Assert.DoesNotContain("2 critical", text);
+            Assert.Equal(Token("BorderBrush"), EdgeColour(panel));
             Assert.Contains("Suppressed Alpha", text);
         });
     }
