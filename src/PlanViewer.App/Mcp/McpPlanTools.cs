@@ -239,7 +239,10 @@ public sealed class McpPlanTools
         "for estimated plans, or by own (self) time for actual plans: children subtracted, the larger of own CPU " +
         "and own elapsed (own_time_ms), with exchange (Parallelism) operators excluded. actual_elapsed_ms and " +
         "actual_cpu_ms are cumulative in row mode; use own_elapsed_ms and own_cpu_ms for the operator's own work. " +
-        "Useful for quickly finding bottleneck operators.")]
+        "estimated_rows is the optimizer's estimate for one execution and actual_rows is the total across every " +
+        "execution, so set actual_rows beside expected_rows, the estimate times actual_executions on the inner side " +
+        "of a Nested Loops join and the estimate itself everywhere else; expected_rows and actual_executions are null " +
+        "without runtime statistics. Useful for quickly finding bottleneck operators.")]
     public static string GetExpensiveOperators(
         PlanSessionManager sessionManager,
         PlanOperations operations,
