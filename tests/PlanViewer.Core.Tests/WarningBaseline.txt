@@ -27,9 +27,9 @@ Serial Plan | Warning | Query running serially: MAXDOP is set to 1 using a query
 Wait: ASYNC_NETWORK_IO | Info | ASYNC_NETWORK_IO Observed 22 ms across 7 waits.
 Wait: SOS_SCHEDULER_YIELD | Info | SOS_SCHEDULER_YIELD Observed 2 ms across 282 waits.
 Top Above Scan | Warning | Top N Sort reads from Clustered Index Scan on StackOverflow2013.dbo.Users (Node 2). An index on the ORDER BY columns could eliminate the scan and sort entirely.
-Bare Scan | Warning | Clustered index scan reads the full table with no predicate, outputting 3 column(s): Users.Id, Users.DisplayName, Users.Reputation. Consider a nonclustered index on the output columns (as key or INCLUDE) so SQL Server can read a narrower structure. For analytical workloads, a columnstore index may be a better fit.
+Bare Scan | Warning | Clustered index scan reads the full table with no predicate, outputting 3 columns: Users.Id, Users.DisplayName, Users.Reputation. Consider a nonclustered index on the output columns (as key or INCLUDE) so SQL Server can read a narrower structure. For analytical workloads, a columnstore index may be a better fit.
 Top Above Scan | Warning | Top N Sort reads from Clustered Index Scan on StackOverflow2013.dbo.Users (Node 5). An index on the ORDER BY columns could eliminate the scan and sort entirely.
-Bare Scan | Warning | Clustered index scan reads the full table with no predicate, outputting 3 column(s): Users.Id, Users.DisplayName, Users.Reputation. Consider a nonclustered index on the output columns (as key or INCLUDE) so SQL Server can read a narrower structure. For analytical workloads, a columnstore index may be a better fit.
+Bare Scan | Warning | Clustered index scan reads the full table with no predicate, outputting 3 columns: Users.Id, Users.DisplayName, Users.Reputation. Consider a nonclustered index on the output columns (as key or INCLUDE) so SQL Server can read a narrower structure. For analytical workloads, a columnstore index may be a better fit.
 
 ### eager_index_spool_plan.sqlplan
 Low Impact Index | Info | Missing index suggestion for Users has only 11% estimated impact. Low-impact indexes add maintenance overhead (insert/update/delete cost) that may not justify the modest query improvement.
@@ -54,12 +54,12 @@ Wait: SOS_SCHEDULER_YIELD | Info | SOS_SCHEDULER_YIELD Observed 552 ms across 50
 Wait: MEMORY_ALLOCATION_EXT | Info | MEMORY_ALLOCATION_EXT Observed 871 ms across 1,148,085 waits.
 Wait: PAGEIOLATCH_EX | Warning | PAGEIOLATCH_EX Observed 40,801 ms across 347,915 waits. Effective latency: 117 µs per wait.
 Wait: CXPACKET | Critical | CXPACKET Observed 2,238,553 ms across 14,203 waits.
-Spill to TempDb | Warning | Spill level 0, 1 thread(s)
+Spill to TempDb | Warning | Spill level 0, 1 thread
 Exchange Spill | Warning | Exchange spill: 4 writes to TempDB. The parallel exchange operator ran out of memory buffers and spilled rows to disk. This typically means the memory grant was too small for the data volume flowing through this exchange. Operator time: 95,717ms (42% of statement).
 Expensive Operator | Critical | Merge Join took 127,479ms (56.4% of statement elapsed) but no specific rule identified a fix. Worth investigating: is the row volume necessary? Are upstream estimates driving this operator harder than it should be?
-Spill to TempDb | Warning | Spill level 0, 4 thread(s)
+Spill to TempDb | Warning | Spill level 0, 4 threads
 Exchange Spill | Critical | Exchange spill: 5,786,565 writes to TempDB. The parallel exchange operator ran out of memory buffers and spilled rows to disk. This typically means the memory grant was too small for the data volume flowing through this exchange. Operator time: 114,331ms (51% of statement).
-Spill to TempDb | Warning | Spill level 0, 1 thread(s)
+Spill to TempDb | Warning | Spill level 0, 1 thread
 Exchange Spill | Warning | Exchange spill: 8,890 writes to TempDB. The parallel exchange operator ran out of memory buffers and spilled rows to disk. This typically means the memory grant was too small for the data volume flowing through this exchange. Operator time: 12,939ms (6% of statement).
 Parallel Skew | Warning | Thread 1 processed 100% of rows (1,531,307/1,531,307). Work is heavily skewed to one thread, so parallelism isn't helping much. Common causes: uneven data distribution across partitions or hash buckets, or a scan/seek whose predicate sends most rows to one range. Reducing DOP or rewriting the query to avoid the skewed operation may help.
 Parallel Skew | Warning | Thread 1 processed 100% of rows (1,531,307/1,531,307). Work is heavily skewed to one thread, so parallelism isn't helping much. Common causes: uneven data distribution across partitions or hash buckets, or a scan/seek whose predicate sends most rows to one range. Reducing DOP or rewriting the query to avoid the skewed operation may help.
@@ -81,7 +81,7 @@ Scan With Predicate | Warning | Scan with residual predicate: SQL Server is read
 
 ### implicit_convert_seek_plan.sqlplan
 Implicit Conversion | Critical | Implicit conversion prevented an index seek, forcing a scan instead. Fix the data type mismatch: ensure the parameter or variable type matches the column type exactly. Seek Plan: CONVERT_IMPLICIT(nvarchar(40),[TestDB].[dbo].[Users].[DisplayName],0)=[@d]
-Bare Scan | Warning | Clustered index scan reads the full table with no predicate, outputting 1 column(s): Users.Id. Consider a nonclustered index on the output columns (as key or INCLUDE) so SQL Server can read a narrower structure. For analytical workloads, a columnstore index may be a better fit.
+Bare Scan | Warning | Clustered index scan reads the full table with no predicate, outputting 1 column: Users.Id. Consider a nonclustered index on the output columns (as key or INCLUDE) so SQL Server can read a narrower structure. For analytical workloads, a columnstore index may be a better fit.
 
 ### in_list_dynamic_seek_plan.sqlplan
 
@@ -151,7 +151,7 @@ Wait: SOS_SCHEDULER_YIELD | Info | SOS_SCHEDULER_YIELD Observed 268 ms across 10
 Wait: MEMORY_ALLOCATION_EXT | Info | MEMORY_ALLOCATION_EXT Observed 4 ms across 6,295 waits.
 Many-to-Many Merge Join | Warning | Many-to-many Merge Join: SQL Server created a worktable in TempDB (11,174,351 logical reads) because both sides have duplicate values in the join columns.
 Expensive Operator | Critical | Sort took 22,727ms (53.6% of statement elapsed) but no specific rule identified a fix. Worth investigating: is the row volume necessary? Are upstream estimates driving this operator harder than it should be?
-Bare Scan | Warning | Clustered index scan reads the full table with no predicate, outputting 2 column(s): Votes.Id, Votes.VoteTypeId. Consider a nonclustered index on the output columns (as key or INCLUDE) so SQL Server can read a narrower structure. For analytical workloads, a columnstore index may be a better fit.
+Bare Scan | Warning | Clustered index scan reads the full table with no predicate, outputting 2 columns: Votes.Id, Votes.VoteTypeId. Consider a nonclustered index on the output columns (as key or INCLUDE) so SQL Server can read a narrower structure. For analytical workloads, a columnstore index may be a better fit.
 
 ### memory_grant_wait_plan.sqlplan
 Memory Grant Wait | Critical | Query waited 1,000,000ms for a memory grant before it could start running. Other queries were using all available workspace memory.
@@ -170,7 +170,7 @@ Wait: SOS_SCHEDULER_YIELD | Info | SOS_SCHEDULER_YIELD Observed 83 ms across 1,2
 Row Estimate Mismatch | Critical | Estimated 8,820,150 vs Actual 5,723: 1541x overestimated. The overestimate may have caused the optimizer to make poor choices.
 Filter Operator | Warning | Filter operator discarding rows late in the plan.\n• 4,184,508 logical reads below\nPredicate: [Expr1002]=(1)
 Row Estimate Mismatch | Warning | Estimated 8,820,150 vs Actual 569,368: 15x overestimated. The overestimate may have caused the optimizer to make poor choices.
-Sort Spill | Critical | Sort spill level 1, 8 thread(s). Granted: 10,815,552 KB, Used: 10,220,984 KB, Writes: 1,512,936, Reads: 1,512,936 Operator time: 24,938ms (93% of statement).
+Sort Spill | Critical | Sort spill level 1, 8 threads. Granted: 10,815,552 KB, Used: 10,220,984 KB, Writes: 1,512,936, Reads: 1,512,936 Operator time: 24,938ms (93% of statement).
 
 ### mismatched_data_type_plan.sqlplan
 Wait: SOS_SCHEDULER_YIELD | Info | SOS_SCHEDULER_YIELD Observed 2 ms across 1,168 waits.
@@ -200,7 +200,7 @@ Non-SARGable Predicate | Warning | Function call (DATEPART) on column prevents a
 
 ### optimize_for_unknown_plan.sqlplan
 Optimize For Unknown | Warning | OPTIMIZE FOR UNKNOWN uses average density estimates instead of sniffed parameter values. This can help when parameter sniffing causes plan instability, but may produce suboptimal plans for skewed data distributions.
-Bare Scan | Warning | Clustered index scan reads the full table with no predicate, outputting 1 column(s): Users.Id. Consider a nonclustered index on the output columns (as key or INCLUDE) so SQL Server can read a narrower structure. For analytical workloads, a columnstore index may be a better fit.
+Bare Scan | Warning | Clustered index scan reads the full table with no predicate, outputting 1 column: Users.Id. Consider a nonclustered index on the output columns (as key or INCLUDE) so SQL Server can read a narrower structure. For analytical workloads, a columnstore index may be a better fit.
 
 ### outer_reference_function_aliased_plan.sqlplan
 Top Above Scan | Critical | Top reads from Table Scan on ReproOuterRef.dbo.I (Node 3). This is on the inner side of Nested Loops (Node 0), so the scan repeats for every outer row. The scan has a residual predicate, so it may read many rows before the Top is satisfied. An index on the ORDER BY columns could eliminate the scan and sort entirely.
@@ -259,7 +259,7 @@ Scan With Predicate | Warning | Scan with residual predicate: SQL Server read 17
 Filter Operator | Warning | Filter operator discarding rows late in the plan.\n• 52,874,774 of 52,928,720 rows discarded (100%)\n• 243,866 logical reads below\n• 1,719ms elapsed below\nPredicate: PROBE([Opt_Bitmap1006],[StackOverflow2013].[dbo].[Votes].[PostId] as [v].[PostId])
 Row Estimate Mismatch | Warning | Estimated 5,292,870 vs Actual 53,946: 98x overestimated. The overestimate may have caused the optimizer to make poor choices.
 Parallel Skew | Warning | Thread 3 processed 100% of rows (53,946/53,946). Work is heavily skewed to one thread, so parallelism isn't helping much. Common causes: uneven data distribution across partitions or hash buckets, or a scan/seek whose predicate sends most rows to one range. Reducing DOP or rewriting the query to avoid the skewed operation may help.
-Bare Scan | Warning | Clustered index scan reads the full table with no predicate, outputting 1 column(s): Votes.PostId. Consider a nonclustered index on the output columns (as key or INCLUDE) so SQL Server can read a narrower structure. For analytical workloads, a columnstore index may be a better fit.
+Bare Scan | Warning | Clustered index scan reads the full table with no predicate, outputting 1 column: Votes.PostId. Consider a nonclustered index on the output columns (as key or INCLUDE) so SQL Server can read a narrower structure. For analytical workloads, a columnstore index may be a better fit.
 
 ### parallel_row_over_batch_plan.sqlplan
 Standard Edition DOP Limitation | Info | DOP is limited to 2 and the plan uses batch mode operators. This may be caused by the SQL Server Standard Edition limitation, which caps parallelism at 2 when batch mode is in use. If this server runs Standard Edition, Developer or Enterprise Edition would allow higher DOP.
@@ -268,7 +268,7 @@ Expensive Operator | Critical | Hash Match took 900ms (90.0% of statement elapse
 ### param-sniffing-posttypeid2.sqlplan
 Wait: RESERVED_MEMORY_ALLOCATION_EXT | Info | RESERVED_MEMORY_ALLOCATION_EXT Observed 1,051 ms across 2,052,049 waits.
 Wait: SOS_SCHEDULER_YIELD | Info | SOS_SCHEDULER_YIELD Observed 6 ms across 4,481 waits.
-Sort Spill | Critical | Sort spill level 8, 1 thread(s). Granted: 17,384 KB, Used: 17,408 KB, Writes: 145,296, Reads: 145,296 Operator time: 94,518ms (86% of statement).
+Sort Spill | Critical | Sort spill level 8, 1 thread. Granted: 17,384 KB, Used: 17,408 KB, Writes: 145,296, Reads: 145,296 Operator time: 94,518ms (86% of statement).
 Row Estimate Mismatch | Critical | Estimated 681 vs Actual 37,332,131: 54821x underestimated. The underestimate likely caused an insufficient memory grant, leading to a spill to TempDB.
 Row Estimate Mismatch | Critical | Estimated 681 vs Actual 37,332,131: 54821x underestimated. The underestimate may have caused the optimizer to make poor choices.
 Nested Loops High Executions | Critical | Nested Loops inner side executed 37,332,131 times (DOP 1). Outer side: estimated 733 rows, actual 37,332,131 (50931x underestimate). The optimizer chose Nested Loops expecting far fewer iterations. Inner side time: 1,081ms (1% of statement). This may be caused by parameter sniffing: the optimizer chose Nested Loops based on a sniffed value that produced far fewer outer rows.
@@ -294,7 +294,7 @@ Wait: RESERVED_MEMORY_ALLOCATION_EXT | Info | RESERVED_MEMORY_ALLOCATION_EXT Obs
 Wait: PAGELATCH_SH | Info | PAGELATCH_SH Observed 412 ms across 12,480 waits.
 Wait: SOS_SCHEDULER_YIELD | Info | SOS_SCHEDULER_YIELD Observed 9,529 ms across 2,337,712 waits.
 Wait: CXPACKET | Info | CXPACKET Observed 1,573,612 ms across 3,824 waits.
-Hash Spill | Warning | Hash spill level 1, 6 thread(s). Granted: 41,879,040 KB, Used: 9,923,968 KB, Writes: 188,928, Reads: 188,928 Operator time: 824ms (0% of statement).
+Hash Spill | Warning | Hash spill level 1, 6 threads. Granted: 41,879,040 KB, Used: 9,923,968 KB, Writes: 188,928, Reads: 188,928 Operator time: 824ms (0% of statement).
 Nested Loops High Executions | Critical | Nested Loops inner side executed 24,198,656 times (DOP 6). Inner side total: 165,360 logical reads. Inner side time: 949ms (0% of statement). Consider whether a hash or merge join would be more appropriate for this row count.
 Nested Loops High Executions | Critical | Nested Loops inner side executed 24,534,730 times (DOP 6). Inner side total: 24,534,730 logical reads. Inner side time: 1,563,621ms (100% of statement). Consider whether a hash or merge join would be more appropriate for this row count.
 Top Above Scan | Critical | Top reads from Table Scan on tempdb.dbo.#OldUsers (Node 14). This is on the inner side of Nested Loops (Node 11), so the scan repeats for every outer row. An index on the ORDER BY columns could eliminate the scan and sort entirely.
@@ -344,7 +344,7 @@ Wait: SOS_SCHEDULER_YIELD | Info | SOS_SCHEDULER_YIELD Observed 83 ms across 1,2
 Row Estimate Mismatch | Critical | Estimated 8,820,150 vs Actual 5,723: 1541x overestimated. The overestimate may have caused the optimizer to make poor choices.
 Filter Operator | Warning | Filter operator discarding rows late in the plan.\n• 4,184,508 logical reads below\nPredicate: [Expr1002]=(1)
 Row Estimate Mismatch | Warning | Estimated 8,820,150 vs Actual 569,368: 15x overestimated. The overestimate may have caused the optimizer to make poor choices.
-Sort Spill | Critical | Sort spill level 1, 8 thread(s). Granted: 10,815,552 KB, Used: 10,220,984 KB, Writes: 1,512,936, Reads: 1,512,936 Operator time: 24,938ms (93% of statement).
+Sort Spill | Critical | Sort spill level 1, 8 threads. Granted: 10,815,552 KB, Used: 10,220,984 KB, Writes: 1,512,936, Reads: 1,512,936 Operator time: 24,938ms (93% of statement).
 
 ### stats_usage_plan.sqlplan
 

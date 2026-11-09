@@ -162,7 +162,7 @@ public static partial class ShowPlanParser
             var used = ParseLong(sortSpillEl.Attribute("UsedMemoryKb")?.Value);
             var writes = ParseLong(sortSpillEl.Attribute("WritesToTempDb")?.Value);
             var reads = ParseLong(sortSpillEl.Attribute("ReadsFromTempDb")?.Value);
-            var prefix = spillLevel != "" ? $"Sort spill level {spillLevel}, {spillThreads} thread(s)" : "Sort spill";
+            var prefix = spillLevel != "" ? $"Sort spill level {spillLevel}, {spillThreads} {(spillThreads == "1" ? "thread" : "threads")}" : "Sort spill";
             result.Add(new PlanWarning
             {
                 WarningType = "Sort Spill",
@@ -186,7 +186,7 @@ public static partial class ShowPlanParser
             var used = ParseLong(hashSpillEl.Attribute("UsedMemoryKb")?.Value);
             var writes = ParseLong(hashSpillEl.Attribute("WritesToTempDb")?.Value);
             var reads = ParseLong(hashSpillEl.Attribute("ReadsFromTempDb")?.Value);
-            var prefix = spillLevel != "" ? $"Hash spill level {spillLevel}, {spillThreads} thread(s)" : "Hash spill";
+            var prefix = spillLevel != "" ? $"Hash spill level {spillLevel}, {spillThreads} {(spillThreads == "1" ? "thread" : "threads")}" : "Hash spill";
             result.Add(new PlanWarning
             {
                 WarningType = "Hash Spill",
@@ -208,7 +208,7 @@ public static partial class ShowPlanParser
             !warningsEl.Elements(Ns + "SortSpillDetails").Any() &&
             !warningsEl.Elements(Ns + "HashSpillDetails").Any())
         {
-            var msg = $"Spill level {spillLevel}, {spillThreads} thread(s)";
+            var msg = $"Spill level {spillLevel}, {spillThreads} {(spillThreads == "1" ? "thread" : "threads")}";
             var grantedKB = ParseLong(spillToTempDbEl.Attribute("GrantedMemoryKB")?.Value);
             var usedKB = ParseLong(spillToTempDbEl.Attribute("UsedMemoryKB")?.Value);
             var writes = ParseLong(spillToTempDbEl.Attribute("WritesToTempDb")?.Value);
@@ -231,15 +231,16 @@ public static partial class ShowPlanParser
         // Exchange spill details
         foreach (var exchSpillEl in warningsEl.Elements(Ns + "ExchangeSpillDetails"))
         {
+            var writes = ParseLong(exchSpillEl.Attribute("WritesToTempDb")?.Value);
             result.Add(new PlanWarning
             {
                 WarningType = "Exchange Spill",
-                Message = $"Exchange spill: {ParseLong(exchSpillEl.Attribute("WritesToTempDb")?.Value):N0} writes to TempDB. The parallel exchange operator ran out of memory buffers and spilled rows to disk. This typically means the memory grant was too small for the data volume flowing through this exchange.",
+                Message = $"Exchange spill: {writes:N0} {(writes == 1 ? "write" : "writes")} to TempDB. The parallel exchange operator ran out of memory buffers and spilled rows to disk. This typically means the memory grant was too small for the data volume flowing through this exchange.",
                 Severity = PlanWarningSeverity.Warning,
                 SpillDetails = new SpillDetail
                 {
                     SpillType = "Exchange",
-                    WritesToTempDb = ParseLong(exchSpillEl.Attribute("WritesToTempDb")?.Value)
+                    WritesToTempDb = writes
                 }
             });
         }

@@ -1432,6 +1432,21 @@ public class PlanAnalyzerTests
         Assert.DoesNotContain(PlanTestHelper.AllNodeWarnings(stmt), w => w.WarningType == "Bare Scan");
     }
 
+    [Theory]
+    [InlineData("implicit_convert_seek_plan.sqlplan", "outputting 1 column: Users.Id.")]
+    [InlineData("cte_multi_ref_plan.sqlplan", "outputting 3 columns: Users.Id, Users.DisplayName, Users.Reputation.")]
+    public void Rule34_BareScan_CountsItsColumnsAsAPersonSays(string fixture, string expected)
+    {
+        // The narrow-output message names its column count: one column reads "1 column" and
+        // three read "3 columns", with no "(s)" left for the reader to resolve.
+        var plan = PlanTestHelper.LoadAndAnalyze(fixture);
+        var warnings = PlanTestHelper.WarningsOfType(plan, "Bare Scan");
+
+        Assert.NotEmpty(warnings);
+        Assert.Contains(warnings, w => w.Message.Contains(expected, StringComparison.Ordinal));
+        Assert.All(warnings, w => Assert.DoesNotContain("(s)", w.Message, StringComparison.Ordinal));
+    }
+
     [Fact]
     public void Rule11_ScanWithPredicate_ReadThousandReturnedNineHundred_DoesNotWarn()
     {
