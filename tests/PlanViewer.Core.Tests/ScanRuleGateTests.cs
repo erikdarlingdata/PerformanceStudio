@@ -201,6 +201,26 @@ public class ScanRuleGateTests
     }
 
     [Fact]
+    public void ScanWithPredicate_NoActualRowsRead_SmallTableScannedManyTimes_Warns()
+    {
+        // The TableCardinality stand-in is a per-execution figure, and ActualRowsRead is a total
+        // across executions. A 5,000 row table scanned 100,000 times on a Nested Loops inner side
+        // read 500,000,000 rows, so the floor must multiply the table by the executions.
+        var xml = ActualScanTemplate
+            .Replace("{WHERE}", " WHERE b = 1").Replace("{COST}", "10").Replace("{ROWS}", "1")
+            .Replace("{TABLE}", "5000").Replace("{TIME}", "")
+            .Replace("{RUNTIME}", "<RunTimeInformation><RunTimeCountersPerThread Thread=\"0\" ActualRows=\"100000\" Batches=\"0\" ActualEndOfScans=\"100000\" ActualExecutions=\"100000\" ActualExecutionMode=\"Row\" ActualElapsedms=\"900\" ActualCPUms=\"900\" ActualScans=\"100000\" ActualLogicalReads=\"2000000\" ActualPhysicalReads=\"0\" ActualReadAheads=\"0\" ActualLobLogicalReads=\"0\" ActualLobPhysicalReads=\"0\" ActualLobReadAheads=\"0\" /></RunTimeInformation>")
+            .Replace("{PREDICATE}", "<Predicate><ScalarOperator ScalarString=\"[g].[dbo].[t].[b]=(1)\" /></Predicate>");
+        var plan = ShowPlanParser.Parse(xml);
+        var scan = ScanNode(plan);
+        Assert.Equal(100_000, scan.ActualExecutions);
+        Assert.Equal(0, scan.ActualRowsRead);
+        PlanAnalyzer.Analyze(plan);
+
+        Assert.NotNull(Finding(plan, "Scan With Predicate"));
+    }
+
+    [Fact]
     public void ScanWithPredicate_Estimated_NinetyFivePercentOfCost_IsCritical()
     {
         // An estimated plan has only the cost share, and is reported as before.
