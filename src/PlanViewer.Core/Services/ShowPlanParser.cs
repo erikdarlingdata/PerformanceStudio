@@ -620,7 +620,8 @@ public static partial class ShowPlanParser
                 MaxUsedMemoryKB = ParseLong(memEl.Attribute("MaxUsedMemory")?.Value),
                 HasMaxUsedMemory = long.TryParse(memEl.Attribute("MaxUsedMemory")?.Value,
                     System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out _),
-                GrantWaitTimeMs = ParseLong(memEl.Attribute("GrantWaitTime")?.Value),
+                // The showplan records GrantWaitTime in seconds; every consumer reads milliseconds.
+                GrantWaitTimeMs = ParseLong(memEl.Attribute("GrantWaitTime")?.Value) * 1000,
                 LastRequestedMemoryKB = ParseLong(memEl.Attribute("LastRequestedMemory")?.Value),
                 IsMemoryGrantFeedbackAdjusted = memEl.Attribute("IsMemoryGrantFeedbackAdjusted")?.Value
             };
