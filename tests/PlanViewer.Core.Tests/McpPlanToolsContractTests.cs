@@ -330,7 +330,49 @@ public sealed class McpPlanToolsContractTests
             McpPlanTools.GetReproScript(capturedManager, sessionId));
     }
 
+    /// <summary>
+    /// #681: analyze_plan lists, for each statement, the statistics the optimizer loaded while
+    /// compiling it, with the status that tells a plan that recorded none apart from a statement with
+    /// no plan. The fixture's statements are a DECLARE, a SELECT that loaded three statistics, and a
+    /// SELECT whose plan has no OptimizerStatsUsage.
+    /// </summary>
+    [Fact]
+    public async Task AnalyzePlan_ReportsTheStatisticsEachStatementLoaded()
+    {
+        var manager = new PlanSessionManager();
+        var plan = PlanTestHelper.LoadAndAnalyze("stats_usage_plan.sqlplan");
+        var sessionId = $"stats-{Guid.NewGuid():N}";
+        manager.Register(new CorePlanSession
+        {
+            SessionId = sessionId,
+            Label = "stats_usage_plan.sqlplan",
+            Source = "file",
+            Plan = plan
+        });
+        var operations = new PlanOperations(manager, AnalyzerConfig.Default, enforceQueryAdmission: false);
 
+        var json = await McpPlanTools.AnalyzePlan(
+            manager,
+            operations,
+            sessionId,
+            TestContext.Current.CancellationToken);
+
+        using var document = JsonDocument.Parse(json);
+        var statements = document.RootElement.GetProperty("statements").EnumerateArray().ToList();
+        Assert.Equal(
+            new[] { "no_query_plan", "recorded", "not_in_plan" },
+            statements.Select(s => s.GetProperty("statistics_status").GetString()));
+
+        var rows = statements[1].GetProperty("statistics_loaded").EnumerateArray().ToList();
+        Assert.Equal(3, rows.Count);
+        Assert.Equal(10, statements[1].GetProperty("statistics_cap").GetInt32());
+        Assert.Equal(900000, rows[0].GetProperty("modification_count").GetInt64());
+        Assert.Equal("Customers", rows[0].GetProperty("table").GetString());
+        Assert.Equal("Orders", rows[1].GetProperty("table").GetString());
+        Assert.Equal("#orders", rows[2].GetProperty("table").GetString());
+        Assert.Equal(JsonValueKind.Null, statements[1].GetProperty("statistics_note").ValueKind);
+        Assert.Equal(JsonValueKind.String, statements[2].GetProperty("statistics_note").ValueKind);
+    }
 
     private static CorePlanSession CreateEstimatedSession() => CreateSession("row_goal_plan.sqlplan");
 

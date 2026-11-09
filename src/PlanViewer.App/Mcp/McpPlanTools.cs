@@ -54,6 +54,15 @@ public sealed class McpPlanTools
     [McpServerTool(Name = "analyze_plan")]
     [Description("Returns the full JSON analysis result for a loaded plan. Includes all statements, warnings, " +
         "missing indexes, parameters, operator tree, memory grants, and wait stats. " +
+        "Each statement also lists statistics_loaded: the statistics the optimizer loaded while compiling the statement " +
+        "(OptimizerStatsUsage; the plan does not say which drove the estimates), most-modified first, capped at statistics_cap, " +
+        "with modification_count, table_rows, modified_percent, stale_at_compile (true when modification_count passed the " +
+        "SQL Server 2016+ automatic update threshold at compatibility level 130 or higher, using the plan's table cardinality n: " +
+        "500 when n is 500 or less, otherwise the smaller of 500 + 0.2 x n and sqrt(1000 x n): a lead about the statistic's " +
+        "state at compile, not a cause of the estimate or plan shape; approximate, since SQL Server measures rows at the " +
+        "statistic's last update and temp tables use other thresholds, and compatibility levels below 130 use 500 + 20% of " +
+        "the rows; null when table_rows is null), last_update (server local time) and sampling_percent as of compile; " +
+        "statistics_status says recorded, not_in_plan or no_query_plan. " +
         "This is the primary tool for understanding plan quality. Use list_plans first to get session_id values.")]
     public static async Task<string> AnalyzePlan(
         PlanSessionManager sessionManager,

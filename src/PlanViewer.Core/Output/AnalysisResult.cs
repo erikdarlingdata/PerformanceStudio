@@ -175,6 +175,85 @@ public class StatementResult
     // Cursor metadata
     [JsonPropertyName("cursor")]
     public CursorResult? Cursor { get; set; }
+
+    /// <summary>
+    /// Whether the plan recorded the statistics the optimizer loaded: <c>recorded</c> when the QueryPlan
+    /// carries OptimizerStatsUsage (even an empty one), <c>not_in_plan</c> when it has a QueryPlan and no
+    /// such element (SQL Server before 2017 / 2016 SP2, or a plan that loaded none), <c>no_query_plan</c>
+    /// when the statement has no QueryPlan of its own (DECLARE, SET, the EXEC shell of a procedure call).
+    /// </summary>
+    [JsonPropertyName("statistics_status")]
+    public string StatisticsStatus { get; set; } = "";
+
+    /// <summary>Set for <c>not_in_plan</c> only: says the state of the statistics at compile is unknown.</summary>
+    [JsonPropertyName("statistics_note")]
+    public string? StatisticsNote { get; set; }
+
+    [JsonPropertyName("statistics_cap")]
+    public int StatisticsCap { get; set; }
+
+    [JsonPropertyName("statistics_returned")]
+    public int StatisticsReturned { get; set; }
+
+    [JsonPropertyName("total_statistics")]
+    public int TotalStatistics { get; set; }
+
+    [JsonPropertyName("statistics_truncated")]
+    public bool StatisticsTruncated { get; set; }
+
+    /// <summary>
+    /// The statistics the optimizer loaded while compiling the statement, as of compile, most-modified
+    /// first and cut at <see cref="StatisticsCap"/>. The plan does not say which of them drove the estimates.
+    /// </summary>
+    [JsonPropertyName("statistics_loaded")]
+    public List<StatisticLoadedResult> StatisticsLoaded { get; set; } = new();
+}
+
+public class StatisticLoadedResult
+{
+    [JsonPropertyName("database")]
+    public string? Database { get; set; }
+
+    [JsonPropertyName("schema")]
+    public string? Schema { get; set; }
+
+    [JsonPropertyName("table")]
+    public string Table { get; set; } = "";
+
+    [JsonPropertyName("statistic")]
+    public string Statistic { get; set; } = "";
+
+    [JsonPropertyName("modification_count")]
+    public long ModificationCount { get; set; }
+
+    /// <summary>
+    /// The plan's own TableCardinality for the statistic's table: the largest among the operators that
+    /// read it and recorded one. Null when no operator in the statement records one; an unknown value is
+    /// never shown as 0.
+    /// </summary>
+    [JsonPropertyName("table_rows")]
+    public double? TableRows { get; set; }
+
+    /// <summary>Modifications as a share of <see cref="TableRows"/>; null when the rows are unknown or 0.</summary>
+    [JsonPropertyName("modified_percent")]
+    public double? ModifiedPercent { get; set; }
+
+    /// <summary>
+    /// True when the modification count at compile passed the SQL Server 2016+ automatic update threshold
+    /// at compatibility level 130 or higher, using <see cref="TableRows"/>; null when the rows are unknown.
+    /// A lead about the statistic's state at compile, not a cause of the estimate or the plan shape, and
+    /// approximate: SQL Server measures the rows at the statistic's last update, temp tables use other
+    /// thresholds, and compatibility levels below 130 use 500 + 20% of the rows.
+    /// </summary>
+    [JsonPropertyName("stale_at_compile")]
+    public bool? StaleAtCompile { get; set; }
+
+    /// <summary>Verbatim from the plan: the server's local time.</summary>
+    [JsonPropertyName("last_update")]
+    public string? LastUpdate { get; set; }
+
+    [JsonPropertyName("sampling_percent")]
+    public double SamplingPercent { get; set; }
 }
 
 public class MemoryGrantResult
