@@ -213,11 +213,12 @@ internal static class HeadlessUi
     /// does, a TextBlock does not — leaves it on the dispatcher's queue when the body returns.
     /// Avalonia's shared session runs that queue itself once the delegate is done, and reports
     /// anything it throws through the dispatch's task, where the catch below takes it behind the
-    /// body's own failure. Draining inside the delegate runs the same jobs one step earlier, under
-    /// the same precedence, and leaves nothing for the session's drain to find, so a job that would
-    /// otherwise run under the next test's name runs under the name of the test that queued it. It
-    /// is done even when the body failed, because a failing test is no less capable of leaving work
-    /// behind than a passing one.</para>
+    /// body's own failure, under the name of the test that queued it. Draining inside the delegate
+    /// runs the same jobs one step earlier with the same attribution and precedence. It duplicates
+    /// the session's own teardown drain on purpose, so that a #474-class failure is reported from
+    /// this class's catch whatever the session's teardown does with it. It is done even when the
+    /// body failed, because a failing test is no less capable of leaving work behind than a passing
+    /// one.</para>
     /// </summary>
     private static Exception? Dispatch(Action body)
     {
