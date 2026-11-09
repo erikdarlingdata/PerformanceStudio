@@ -136,8 +136,10 @@ public static class BenefitScorer
                     }
                     break;
 
-                case "Memory Grant": // Rule 9
-                    // Grant wait is the only part that affects this query's elapsed time
+                case "Memory Grant Wait": // Rule 9
+                    // Grant wait is the only part that affects this query's elapsed time. The
+                    // parser's separate "Memory Grant" warning is the engine's own grant note and
+                    // says nothing about time waited, so it gets no benefit.
                     if (elapsedMs > 0 && stmt.MemoryGrant?.GrantWaitTimeMs > 0)
                     {
                         var benefit = (double)stmt.MemoryGrant.GrantWaitTimeMs / elapsedMs * 100;
