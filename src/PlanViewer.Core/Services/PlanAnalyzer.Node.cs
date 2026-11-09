@@ -41,7 +41,8 @@ public static partial class PlanAnalyzer
         Rule15_JoinOrClause(node, stmt, cfg);
         Rule16_NestedLoopsHighExec(node, stmt, cfg);
         Rule17_ManyToManyMerge(node, stmt, cfg);
-        Rule22_TableVariables(node, stmt, cfg);
+        // Rule 22 (table variables) is a statement rule, Rule22Stmt_TableVariable: one warning per
+        // statement, with the operators that touch the table variable in OriginNodeIds.
         Rule23_TableValuedFunctions(node, stmt, cfg);
         Rule24_TopAboveScan(node, stmt, cfg);
         Rule26_RowGoal(node, stmt, cfg);
@@ -841,29 +842,6 @@ public static partial class PlanAnalyzer
                     ? $"Many-to-many Merge Join — SQL Server created a worktable in TempDB ({node.ActualLogicalReads:N0} logical reads) because both sides have duplicate values in the join columns."
                     : "Many-to-many Merge Join — SQL Server will create a worktable in TempDB because both sides have duplicate values in the join columns.",
                 Severity = PlanWarningSeverity.Warning
-            });
-        }
-
-    }
-
-    private static void Rule22_TableVariables(PlanNode node, PlanStatement stmt, AnalyzerConfig cfg)
-    {
-        // Rule 22: Table variables (Object name starts with @)
-        if (!cfg.IsRuleDisabled(22) && !string.IsNullOrEmpty(node.ObjectName) &&
-            node.ObjectName.StartsWith("@"))
-        {
-            var isModificationOp = node.PhysicalOp.Contains("Insert", StringComparison.OrdinalIgnoreCase)
-                || node.PhysicalOp.Contains("Update", StringComparison.OrdinalIgnoreCase)
-                || node.PhysicalOp.Contains("Delete", StringComparison.OrdinalIgnoreCase);
-
-            node.Warnings.Add(new PlanWarning
-            {
-                RuleNumber = 22,
-                WarningType = "Table Variable",
-                Message = isModificationOp
-                    ? "Modifying a table variable forces the entire plan to run single-threaded. Replace with a #temp table to allow parallel execution."
-                    : "Table variable detected. Table variables lack column-level statistics, which causes bad row estimates, join choices, and memory grant decisions. Replace with a #temp table.",
-                Severity = isModificationOp ? PlanWarningSeverity.Critical : PlanWarningSeverity.Warning
             });
         }
 

@@ -68,4 +68,20 @@ public static class RowEstimateHelper
             ? node.ActualRows / expectedRows
             : (node.ActualRows > 0 ? double.MaxValue : 1.0);
     }
+
+    /// <summary>
+    /// How often the optimizer expects <paramref name="node"/> to run: once, plus once per rebind
+    /// and once per rewind. The Properties panel's Est. Executions (App and Web), the arrow
+    /// tooltip's Estimated Number of Rows for All Executions and the HTML export all count it
+    /// here, so an inner-side spool with 10 rebinds and 990 rewinds reads 1,001 runs on every
+    /// surface (#677). The estimates are fractional, so the count is too.
+    /// </summary>
+    public static double GetEstimatedExecutions(PlanNode node) => 1 + node.EstimateRebinds + node.EstimateRewinds;
+
+    /// <summary>
+    /// The rows the optimizer expects <paramref name="node"/> to return across every run:
+    /// <see cref="PlanNode.EstimateRows"/>, which is per execution, times
+    /// <see cref="GetEstimatedExecutions"/>.
+    /// </summary>
+    public static double GetEstimatedRowsAllExecutions(PlanNode node) => node.EstimateRows * GetEstimatedExecutions(node);
 }

@@ -220,6 +220,70 @@ public class PlanAnalyzerTests
         Assert.Contains(warnings, w => w.Message.Contains("waited"));
     }
 
+    /// <summary>
+    /// The showplan records MemoryGrantInfo's GrantWaitTime in seconds. The parser stores
+    /// milliseconds, so a 7 second wait reads 7,000ms in the warning and clears the 5,000ms
+    /// Critical cut.
+    /// </summary>
+    [Fact]
+    public void Rule09b_MemoryGrantWait_ReadsShowplanSecondsAsMilliseconds()
+    {
+        var plan = PlanTestHelper.LoadAndAnalyzeWithGrantWaitSeconds("memory_grant_wait_plan.sqlplan", 7);
+        var stmt = PlanTestHelper.FirstStatement(plan);
+        var warning = Assert.Single(stmt.PlanWarnings, w => w.WarningType == "Memory Grant Wait");
+
+        Assert.Equal(7_000, stmt.MemoryGrant!.GrantWaitTimeMs);
+        Assert.Contains("7,000ms", warning.Message);
+        Assert.Equal(PlanWarningSeverity.Critical, warning.Severity);
+    }
+
+    [Theory]
+    [InlineData(5, PlanWarningSeverity.Critical)]
+    [InlineData(4, PlanWarningSeverity.Warning)]
+    public void Rule09b_MemoryGrantWait_FiveSecondsIsTheCriticalCut(int seconds, PlanWarningSeverity expected)
+    {
+        var plan = PlanTestHelper.LoadAndAnalyzeWithGrantWaitSeconds("memory_grant_wait_plan.sqlplan", seconds);
+        var warning = Assert.Single(PlanTestHelper.FirstStatement(plan).PlanWarnings,
+            w => w.WarningType == "Memory Grant Wait");
+
+        Assert.Equal(expected, warning.Severity);
+    }
+
+    /// <summary>
+    /// The benefit is the wait's share of the statement's elapsed time: the wait is the only part
+    /// of a memory grant that costs this query time.
+    /// </summary>
+    [Fact]
+    public void Rule09b_MemoryGrantWait_CarriesBenefitOfWaitOverElapsed()
+    {
+        var plan = PlanTestHelper.LoadAndAnalyzeWithGrantWaitSeconds("memory_grant_wait_plan.sqlplan", 7);
+        var stmt = PlanTestHelper.FirstStatement(plan);
+        var warning = Assert.Single(stmt.PlanWarnings, w => w.WarningType == "Memory Grant Wait");
+
+        var expected = Math.Round(7_000.0 / stmt.QueryTimeStats!.ElapsedTimeMs * 100, 1);
+        Assert.Equal(expected, warning.MaxBenefitPercent);
+    }
+
+    /// <summary>
+    /// The parser's "Memory Grant" warning is the engine's own grant note. It says nothing about
+    /// time waited, so it earns no benefit, whatever the statement's grant wait was.
+    /// </summary>
+    [Fact]
+    public void Rule09_ParserMemoryGrantWarning_GetsNoWaitBenefit()
+    {
+        var stmt = new PlanStatement
+        {
+            QueryTimeStats = new QueryTimeInfo { ElapsedTimeMs = 1000, CpuTimeMs = 1000 },
+            MemoryGrant = new MemoryGrantInfo { GrantWaitTimeMs = 500 },
+            PlanWarnings = { new PlanWarning { WarningType = "Memory Grant", Severity = PlanWarningSeverity.Warning } }
+        };
+        var plan = BuildSyntheticPlan(stmt);
+
+        BenefitScorer.Score(plan);
+
+        Assert.Null(Assert.Single(stmt.PlanWarnings).MaxBenefitPercent);
+    }
+
     // ---------------------------------------------------------------
     // Rule 10: Key Lookup with Predicate
     // ---------------------------------------------------------------
@@ -1197,19 +1261,38 @@ public class PlanAnalyzerTests
     // Rule 22: Table Variable
     // ---------------------------------------------------------------
 
+    /// <summary>
+    /// Rule 22 is one statement warning per statement, naming the operators that touch the table
+    /// variable in OriginNodeIds. No operator carries a copy of its own, so a table variable
+    /// counts once in the warning totals.
+    /// </summary>
     [Fact]
-    public void Rule22_TableVariable_DetectsAtSignInObjectName()
+    public void Rule22_TableVariable_IsOneStatementWarningNamingItsOperators()
     {
         var plan = PlanTestHelper.LoadAndAnalyze("table_variable_plan.sqlplan");
-        var warnings = PlanTestHelper.WarningsOfType(plan, "Table Variable");
+        var stmt = PlanTestHelper.FirstStatement(plan);
 
-        // Node-level + statement-level warnings
-        Assert.True(warnings.Count >= 2);
-        Assert.Contains(warnings, w => w.Message.Contains("lack column-level statistics"));
-        // Statement-level stats warning
-        var stmtWarnings = PlanTestHelper.FirstStatement(plan).PlanWarnings
-            .Where(w => w.WarningType == "Table Variable").ToList();
-        Assert.Contains(stmtWarnings, w => w.Message.Contains("lack column-level statistics"));
+        var warning = Assert.Single(PlanTestHelper.WarningsOfType(plan, "Table Variable"));
+        Assert.Contains("lack column-level statistics", warning.Message);
+        Assert.Equal(PlanWarningSeverity.Warning, warning.Severity);
+        Assert.Contains(warning, stmt.PlanWarnings);
+        Assert.Equal([0], warning.OriginNodeIds);
+        Assert.DoesNotContain(PlanTestHelper.AllNodeWarnings(stmt), w => w.WarningType == "Table Variable");
+    }
+
+    /// <summary>
+    /// A statement that modifies a table variable gets the one Critical warning. The Table Insert
+    /// operator does not carry a second one, so a critical count over the plan reads 1.
+    /// </summary>
+    [Fact]
+    public void Rule22_ModifiedTableVariable_IsOneCriticalWarning()
+    {
+        var plan = PlanTestHelper.LoadAndAnalyze("exec_stored_procedure_plan.sqlplan");
+
+        var critical = Assert.Single(PlanTestHelper.WarningsOfType(plan, "Table Variable"),
+            w => w.Severity == PlanWarningSeverity.Critical);
+        Assert.Contains("modifies a table variable", critical.Message);
+        Assert.NotEmpty(critical.OriginNodeIds);
     }
 
     // ---------------------------------------------------------------
@@ -1737,6 +1820,23 @@ public class PlanAnalyzerTests
         var warnings = PlanTestHelper.WarningsOfType(plan, "Expensive Operator");
 
         Assert.Single(warnings);
+    }
+
+    [Fact]
+    public void Rule35_ExpensiveOperator_OperatorAboveASkewedExchange_IsNotNamed()
+    {
+        // serially-parallel: the Sort (node 2) is 17,111 ms on every worker thread, but the branch
+        // below its Repartition Streams ran on thread 1 alone. Across an exchange the slowest producer
+        // thread comes off every thread above it (#680), so the Sort owns 1 ms of a 17,112 ms
+        // statement and Rule 35 has nothing to say about it. Pairing threads by number gave it all
+        // 17,111 ms and named it the plan's most expensive operator.
+        var plan = PlanTestHelper.LoadAndAnalyze("serially-parallel.sqlplan");
+        var sort = PlanTestHelper.FindNode(PlanTestHelper.FirstStatement(plan).RootNode!, 2)!;
+
+        Assert.Equal("Sort", sort.PhysicalOp);
+        Assert.Equal(1, PlanAnalyzer.GetOperatorOwnElapsedMs(sort));
+        Assert.DoesNotContain(PlanTestHelper.WarningsOfType(plan, "Expensive Operator"),
+            w => w.Message.StartsWith("Sort took"));
     }
 
     #region Rule 38 — Standard Edition DOP Limitation

@@ -246,4 +246,59 @@ public class RowEstimateHelperTests
         Assert.Contains("609 of 613 rows (99%)", html);
         Assert.DoesNotContain("609 of 1 rows", html);
     }
+
+    // ---------------------------------------------------------------
+    // GetEstimatedExecutions / GetEstimatedRowsAllExecutions (#677)
+    // ---------------------------------------------------------------
+
+    /// <summary>
+    /// The optimizer expects an operator to run once, plus once per rebind and once per rewind. An
+    /// inner-side spool with 10 rebinds and 990 rewinds runs 1,001 times, and at 10 rows a run
+    /// returns 10,010 rows in all; counting only the rebinds (the old Properties-panel math) would
+    /// have said 11 runs and 110 rows.
+    /// </summary>
+    [Fact]
+    public void GetEstimatedExecutions_CountsOnePlusRebindsPlusRewinds()
+    {
+        var spool = new PlanNode { PhysicalOp = "Table Spool", EstimateRows = 10, EstimateRebinds = 10, EstimateRewinds = 990 };
+
+        Assert.Equal(1001, RowEstimateHelper.GetEstimatedExecutions(spool), 6);
+        Assert.Equal(10_010, RowEstimateHelper.GetEstimatedRowsAllExecutions(spool), 6);
+    }
+
+    [Fact]
+    public void GetEstimatedExecutions_NoRebindsOrRewinds_IsOne()
+    {
+        var scan = new PlanNode { PhysicalOp = "Clustered Index Scan", EstimateRows = 2983.02 };
+
+        Assert.Equal(1, RowEstimateHelper.GetEstimatedExecutions(scan), 6);
+        Assert.Equal(2983.02, RowEstimateHelper.GetEstimatedRowsAllExecutions(scan), 6);
+    }
+
+    /// <summary>
+    /// cte_multi_ref_plan's Node 3, a lazy Table Spool with no rebinds and 99 rewinds: 100 runs of
+    /// 100 rows, 10,000 rows in all — not the single run the rebinds alone would count.
+    /// </summary>
+    [Fact]
+    public void CteMultiRefPlan_Node3_LazySpool_RunsOncePerRewind()
+    {
+        var spool = Node("cte_multi_ref_plan.sqlplan", 3);
+
+        Assert.Equal(0, spool.EstimateRebinds);
+        Assert.Equal(99, spool.EstimateRewinds);
+        Assert.Equal(100, RowEstimateHelper.GetEstimatedExecutions(spool), 6);
+        Assert.Equal(10_000, RowEstimateHelper.GetEstimatedRowsAllExecutions(spool), 6);
+    }
+
+    /// <summary>
+    /// lazy_spool_plan's Node 2, an Index Spool with fractional rebinds (6,021,690) and rewinds
+    /// (1,133.87): the count keeps the fraction, since the estimates are fractional too.
+    /// </summary>
+    [Fact]
+    public void LazySpoolPlan_Node2_IndexSpool_KeepsTheFractionalCount()
+    {
+        var spool = Node("lazy_spool_plan.sqlplan", 2);
+
+        Assert.Equal(6_022_824.87, RowEstimateHelper.GetEstimatedExecutions(spool), 2);
+    }
 }

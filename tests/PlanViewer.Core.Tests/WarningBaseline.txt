@@ -35,7 +35,7 @@ Bare Scan | Warning | Clustered index scan reads the full table with no predicat
 Low Impact Index | Info | Missing index suggestion for Users has only 11% estimated impact. Low-impact indexes add maintenance overhead (insert/update/delete cost) that may not justify the modest query improvement.
 Wait: EXECSYNC | Critical | EXECSYNC Observed 123,292 ms across 7 waits.
 Wait: SOS_SCHEDULER_YIELD | Info | SOS_SCHEDULER_YIELD Observed 777 ms across 4,263 waits.
-Wait: CXSYNC_PORT | Critical | CXSYNC_PORT Observed 41 ms across 9 waits.
+Wait: CXSYNC_PORT | Info | CXSYNC_PORT Observed 41 ms across 9 waits.
 Wait: MEMORY_ALLOCATION_EXT | Info | MEMORY_ALLOCATION_EXT Observed 9 ms across 24,330 waits.
 Scan With Predicate | Warning | Scan with residual predicate — SQL Server is reading every row and filtering after the fact. Only 0.025% of rows survived filtering (613 of 2,465,713). Check that you have appropriate indexes.\nPredicate: [StackOverflow2013].[dbo].[Users].[Reputation] as [u].[Reputation]>(100000)
 Eager Index Spool | Critical | SQL Server is building a temporary index in TempDB at runtime because no suitable permanent index exists. This is expensive — it builds the index from scratch on every execution. Create a permanent index on the underlying table to eliminate this operator entirely.\n\nCreate this index:\nCREATE INDEX [UserId] ON dbo.Badges (UserId) INCLUDE (Name);
@@ -58,12 +58,12 @@ Wait: PAGEIOLATCH_EX | Warning | PAGEIOLATCH_EX Observed 40,801 ms across 347,91
 Wait: CXPACKET | Critical | CXPACKET Observed 2,238,553 ms across 14,203 waits.
 Spill to TempDb | Warning | Spill level 0, 1 thread(s)
 Exchange Spill | Warning | Exchange spill — 4 writes to TempDB. The parallel exchange operator ran out of memory buffers and spilled rows to disk. This typically means the memory grant was too small for the data volume flowing through this exchange. Operator time: 95,717ms (42% of statement).
-Expensive Operator | Critical | Merge Join took 129,365ms (57.3% of statement elapsed) but no specific rule identified a fix. Worth investigating: is the row volume necessary? Are upstream estimates driving this operator harder than it should be?
+Expensive Operator | Critical | Merge Join took 127,479ms (56.4% of statement elapsed) but no specific rule identified a fix. Worth investigating: is the row volume necessary? Are upstream estimates driving this operator harder than it should be?
 Spill to TempDb | Warning | Spill level 0, 4 thread(s)
-Exchange Spill | Critical | Exchange spill — 5,786,565 writes to TempDB. The parallel exchange operator ran out of memory buffers and spilled rows to disk. This typically means the memory grant was too small for the data volume flowing through this exchange. Operator time: 114,401ms (51% of statement).
+Exchange Spill | Critical | Exchange spill — 5,786,565 writes to TempDB. The parallel exchange operator ran out of memory buffers and spilled rows to disk. This typically means the memory grant was too small for the data volume flowing through this exchange. Operator time: 114,331ms (51% of statement).
 Bare Scan | Warning | Clustered index scan reads the full table with no predicate, outputting 14 columns. A nonclustered rowstore index isn't a great fit for wide outputs, but if this is an analytical or aggregate-style query, a columnstore index (CCI or NCCI) can scan the same data far more cheaply — column count doesn't penalize columnstore the way it does rowstore indexes.
 Spill to TempDb | Warning | Spill level 0, 1 thread(s)
-Exchange Spill | Warning | Exchange spill — 8,890 writes to TempDB. The parallel exchange operator ran out of memory buffers and spilled rows to disk. This typically means the memory grant was too small for the data volume flowing through this exchange. Operator time: 14,755ms (7% of statement).
+Exchange Spill | Warning | Exchange spill — 8,890 writes to TempDB. The parallel exchange operator ran out of memory buffers and spilled rows to disk. This typically means the memory grant was too small for the data volume flowing through this exchange. Operator time: 12,939ms (6% of statement).
 Parallel Skew | Warning | Thread 1 processed 100% of rows (1,531,307/1,531,307). Work is heavily skewed to one thread, so parallelism isn't helping much. Common causes: uneven data distribution across partitions or hash buckets, or a scan/seek whose predicate sends most rows to one range. Reducing DOP or rewriting the query to avoid the skewed operation may help.
 Parallel Skew | Warning | Thread 1 processed 100% of rows (1,531,307/1,531,307). Work is heavily skewed to one thread, so parallelism isn't helping much. Common causes: uneven data distribution across partitions or hash buckets, or a scan/seek whose predicate sends most rows to one range. Reducing DOP or rewriting the query to avoid the skewed operation may help.
 Scan With Predicate | Warning | Scan with residual predicate — SQL Server is reading every row and filtering after the fact. Check that you have appropriate indexes.\nPredicate: [StackOverflow2013].[dbo].[Users].[CreationDate] as [u].[CreationDate]>'2011-09-01 00:00:00.000' AND [StackOverflow2013].[dbo].[Users].[Reputation] as [u].[Reputation]>(100)
@@ -78,12 +78,10 @@ Bare Scan | Warning | Clustered index scan reads the full table with no predicat
 Non-SARGable Predicate | Warning | Implicit conversion (CONVERT_IMPLICIT) prevents an index seek. Match the parameter or variable data type to the column data type.\nPredicate: CONVERT_IMPLICIT(nvarchar(20),[ps455].[dbo].[Orders].[Code],0)=[@code]
 Filter Operator | Warning | Filter operator discarding rows late in the plan.\nPredicate: [ps455].[dbo].[Orders].[Amount]>(0.5)
 Table Variable | Critical | This query modifies a table variable, which forces the entire plan to run single-threaded. SQL Server cannot use parallelism for modifications to table variables. Replace with a #temp table to allow parallel execution.
-Table Variable | Critical | Modifying a table variable forces the entire plan to run single-threaded. Replace with a #temp table to allow parallel execution.
 Top Above Scan | Warning | Top reads from Clustered Index Scan on ps455.dbo.Orders (Node 2). An index on the ORDER BY columns could eliminate the scan and sort entirely.
 Row Goal | Info | Row goal active: estimate reduced from 20,000 to 100 (200x reduction) due to TOP. The optimizer chose this plan shape expecting to stop reading early. If the query reads all rows anyway, the plan choice may be suboptimal.
 Table Variable | Warning | Table variable detected. Table variables lack column-level statistics, which causes bad row estimates, join choices, and memory grant decisions. Replace with a #temp table.
 Scan With Predicate | Warning | Scan with residual predicate — SQL Server is reading every row and filtering after the fact. Check that you have appropriate indexes.\nPredicate: @t.[Id] as [t].[Id] IS NOT NULL
-Table Variable | Warning | Table variable detected. Table variables lack column-level statistics, which causes bad row estimates, join choices, and memory grant decisions. Replace with a #temp table.
 
 ### forced_parameterization_plan.sqlplan
 
@@ -165,7 +163,7 @@ Expensive Operator | Critical | Sort took 22,727ms (53.6% of statement elapsed) 
 Bare Scan | Warning | Clustered index scan reads the full table with no predicate, outputting 2 column(s): Votes.Id, Votes.VoteTypeId. Consider a nonclustered index on the output columns (as key or INCLUDE) so SQL Server can read a narrower structure. For analytical workloads, a columnstore index may be a better fit.
 
 ### memory_grant_wait_plan.sqlplan
-Memory Grant Wait | Warning | Query waited 1,000ms for a memory grant before it could start running. Other queries were using all available workspace memory.
+Memory Grant Wait | Critical | Query waited 1,000,000ms for a memory grant before it could start running. Other queries were using all available workspace memory.
 Large Memory Grant | Critical | Query granted 10597 MB of memory. Largest consumers: Sort (Node 11, 7,385,957 actual rows), Sort (Node 1, 5,829 actual rows), Hash Match (Node 2, 5,829 actual rows).
 Low Impact Index | Info | Missing index suggestion for Posts has only 10% estimated impact. Low-impact indexes add maintenance overhead (insert/update/delete cost) that may not justify the modest query improvement.
 Wait: CXSYNC_PORT | Critical | CXSYNC_PORT Observed 202,414 ms across 57 waits.
@@ -182,7 +180,7 @@ Scan With Predicate | Warning | Scan with residual predicate — SQL Server is r
 Row Estimate Mismatch | Critical | Estimated 8,820,150 vs Actual 5,723 — 1541x overestimated. The overestimate may have caused the optimizer to make poor choices.
 Filter Operator | Warning | Filter operator discarding rows late in the plan.\n• 4,184,508 logical reads below\nPredicate: [Expr1002]=(1)
 Row Estimate Mismatch | Warning | Estimated 8,820,150 vs Actual 569,368 — 15x overestimated. The overestimate may have caused the optimizer to make poor choices.
-Sort Spill | Critical | Sort spill level 1, 8 thread(s) — Granted: 10,815,552 KB, Used: 10,220,984 KB, Writes: 1,512,936, Reads: 1,512,936 Operator time: 25,148ms (94% of statement).
+Sort Spill | Critical | Sort spill level 1, 8 thread(s) — Granted: 10,815,552 KB, Used: 10,220,984 KB, Writes: 1,512,936, Reads: 1,512,936 Operator time: 24,938ms (93% of statement).
 Scan With Predicate | Warning | Scan with residual predicate — SQL Server is reading every row and filtering after the fact. Check that you have appropriate indexes.\nPredicate: [StackOverflow2013].[dbo].[Posts].[PostTypeId] as [p].[PostTypeId]=(2) AND [StackOverflow2013].[dbo].[Posts].[Score] as [p].[Score]>(0)
 
 ### mismatched_data_type_plan.sqlplan
@@ -243,10 +241,8 @@ Scan With Predicate | Warning | Scan with residual predicate — SQL Server is r
 ### outer_reference_outer_side_scan_plan.sqlplan
 Table Variable | Warning | Table variable detected. Table variables lack column-level statistics, which causes bad row estimates, join choices, and memory grant decisions. Replace with a #temp table.
 Non-SARGable Predicate | Warning | Function call (ABS) on column prevents an index seek. Remove the function from the column side — apply it to the parameter instead, or create a computed column with the expression and index that.\nPredicate: abs([A])=(1)
-Table Variable | Warning | Table variable detected. Table variables lack column-level statistics, which causes bad row estimates, join choices, and memory grant decisions. Replace with a #temp table.
 Top Above Scan | Critical | Top reads from Table Scan on @b (Node 4). This is on the inner side of Nested Loops (Node 0), so the scan repeats for every outer row. The scan has a residual predicate, so it may read many rows before the Top is satisfied. An index on the ORDER BY columns could eliminate the scan and sort entirely.
 Scan With Predicate | Warning | Scan with residual predicate — SQL Server is reading every row and filtering after the fact. This scan is 50% of the plan cost. Only 0.000% of rows survived filtering (0 of 2). Check that you have appropriate indexes.\nPredicate: [Y]=[A]
-Table Variable | Warning | Table variable detected. Table variables lack column-level statistics, which causes bad row estimates, join choices, and memory grant decisions. Replace with a #temp table.
 
 ### outer_reference_self_join_unaliased_inner_plan.sqlplan
 Top Above Scan | Critical | Top reads from Table Scan on ReproOuterRef.dbo.I (Node 3). This is on the inner side of Nested Loops (Node 0), so the scan repeats for every outer row. The scan has a residual predicate, so it may read many rows before the Top is satisfied. An index on the ORDER BY columns could eliminate the scan and sort entirely.
@@ -254,17 +250,13 @@ Scan With Predicate | Warning | Scan with residual predicate — SQL Server is r
 
 ### outer_reference_table_variable_aliased_plan.sqlplan
 Table Variable | Warning | Table variable detected. Table variables lack column-level statistics, which causes bad row estimates, join choices, and memory grant decisions. Replace with a #temp table.
-Table Variable | Warning | Table variable detected. Table variables lack column-level statistics, which causes bad row estimates, join choices, and memory grant decisions. Replace with a #temp table.
 Top Above Scan | Critical | Top reads from Table Scan on @b (Node 3). This is on the inner side of Nested Loops (Node 0), so the scan repeats for every outer row. The scan has a residual predicate, so it may read many rows before the Top is satisfied. An index on the ORDER BY columns could eliminate the scan and sort entirely.
 Scan With Predicate | Warning | Scan with residual predicate — SQL Server is reading every row and filtering after the fact. This scan is 51% of the plan cost. Check that you have appropriate indexes.\nPredicate: @b.[Y] as [b].[Y]=abs(@a.[A] as [a].[A])
-Table Variable | Warning | Table variable detected. Table variables lack column-level statistics, which causes bad row estimates, join choices, and memory grant decisions. Replace with a #temp table.
 
 ### outer_reference_table_variable_unaliased_plan.sqlplan
 Table Variable | Warning | Table variable detected. Table variables lack column-level statistics, which causes bad row estimates, join choices, and memory grant decisions. Replace with a #temp table.
-Table Variable | Warning | Table variable detected. Table variables lack column-level statistics, which causes bad row estimates, join choices, and memory grant decisions. Replace with a #temp table.
 Top Above Scan | Critical | Top reads from Table Scan on @b (Node 3). This is on the inner side of Nested Loops (Node 0), so the scan repeats for every outer row. The scan has a residual predicate, so it may read many rows before the Top is satisfied. An index on the ORDER BY columns could eliminate the scan and sort entirely.
 Scan With Predicate | Warning | Scan with residual predicate — SQL Server is reading every row and filtering after the fact. This scan is 51% of the plan cost. Check that you have appropriate indexes.\nPredicate: [Y]=abs([A])
-Table Variable | Warning | Table variable detected. Table variables lack column-level statistics, which causes bad row estimates, join choices, and memory grant decisions. Replace with a #temp table.
 
 ### outer_reference_temp_table_plan.sqlplan
 Top Above Scan | Critical | Top reads from Table Scan on tempdb.dbo.#u (Node 3). This is on the inner side of Nested Loops (Node 0), so the scan repeats for every outer row. The scan has a residual predicate, so it may read many rows before the Top is satisfied. An index on the ORDER BY columns could eliminate the scan and sort entirely.
@@ -324,7 +316,7 @@ Wait: RESERVED_MEMORY_ALLOCATION_EXT | Info | RESERVED_MEMORY_ALLOCATION_EXT Obs
 Wait: PAGELATCH_SH | Info | PAGELATCH_SH Observed 412 ms across 12,480 waits.
 Wait: SOS_SCHEDULER_YIELD | Info | SOS_SCHEDULER_YIELD Observed 9,529 ms across 2,337,712 waits.
 Wait: CXPACKET | Info | CXPACKET Observed 1,573,612 ms across 3,824 waits.
-Hash Spill | Warning | Hash spill level 1, 6 thread(s) — Granted: 41,879,040 KB, Used: 9,923,968 KB, Writes: 188,928, Reads: 188,928 Operator time: 838ms (0% of statement).
+Hash Spill | Warning | Hash spill level 1, 6 thread(s) — Granted: 41,879,040 KB, Used: 9,923,968 KB, Writes: 188,928, Reads: 188,928 Operator time: 824ms (0% of statement).
 Bare Scan | Warning | Heap table scan reads the full table with no predicate, outputting 1 column(s): #OldUsers.UserId. Consider a clustered or nonclustered index on the output columns so SQL Server can read a narrower structure. For analytical workloads, a columnstore index may be a better fit.
 Nested Loops High Executions | Critical | Nested Loops inner side executed 24,198,656 times (DOP 6). Inner side total: 165,360 logical reads. Inner side time: 949ms (0% of statement). Consider whether a hash or merge join would be more appropriate for this row count.
 Nested Loops High Executions | Critical | Nested Loops inner side executed 24,534,730 times (DOP 6). Inner side total: 24,534,730 logical reads. Inner side time: 1,563,621ms (100% of statement). Consider whether a hash or merge join would be more appropriate for this row count.
@@ -342,8 +334,7 @@ Row Goal | Info | Row goal active: estimate reduced from 2,500,000 to 1 (2,500,0
 Wait: CXSYNC_PORT | Critical | CXSYNC_PORT Observed 17,121 ms across 35 waits.
 Wait: RESERVED_MEMORY_ALLOCATION_EXT | Info | RESERVED_MEMORY_ALLOCATION_EXT Observed 65 ms across 82,739 waits.
 Wait: SOS_SCHEDULER_YIELD | Info | SOS_SCHEDULER_YIELD Observed 13 ms across 4,265 waits.
-Wait: CXSYNC_CONSUMER | Critical | CXSYNC_CONSUMER Observed 2 ms across 14 waits.
-Expensive Operator | Critical | Sort took 17,111ms (100.0% of statement elapsed) but no specific rule identified a fix. Worth investigating: is the row volume necessary? Are upstream estimates driving this operator harder than it should be?
+Wait: CXSYNC_CONSUMER | Info | CXSYNC_CONSUMER Observed 2 ms across 14 waits.
 Row Estimate Mismatch | Critical | Estimated 3,279 vs Actual 21 — 156x overestimated. The overestimate may have caused the optimizer to make poor choices.
 Parallel Skew | Warning | Thread 1 processed 100% of rows (27,026/27,026). Work is heavily skewed to one thread, so parallelism isn't helping much. Common causes: uneven data distribution across partitions or hash buckets, or a scan/seek whose predicate sends most rows to one range. Reducing DOP or rewriting the query to avoid the skewed operation may help.
 Nested Loops High Executions | Critical | Nested Loops inner side executed 10,810,787 times (DOP 8). Inner side total: 41,216,099 logical reads. Inner side time: 10,156ms (59% of statement). Consider whether a hash or merge join would be more appropriate for this row count.
@@ -378,27 +369,26 @@ Scan With Predicate | Warning | Scan with residual predicate — SQL Server is r
 Row Estimate Mismatch | Critical | Estimated 8,820,150 vs Actual 5,723 — 1541x overestimated. The overestimate may have caused the optimizer to make poor choices.
 Filter Operator | Warning | Filter operator discarding rows late in the plan.\n• 4,184,508 logical reads below\nPredicate: [Expr1002]=(1)
 Row Estimate Mismatch | Warning | Estimated 8,820,150 vs Actual 569,368 — 15x overestimated. The overestimate may have caused the optimizer to make poor choices.
-Sort Spill | Critical | Sort spill level 1, 8 thread(s) — Granted: 10,815,552 KB, Used: 10,220,984 KB, Writes: 1,512,936, Reads: 1,512,936 Operator time: 25,148ms (94% of statement).
+Sort Spill | Critical | Sort spill level 1, 8 thread(s) — Granted: 10,815,552 KB, Used: 10,220,984 KB, Writes: 1,512,936, Reads: 1,512,936 Operator time: 24,938ms (93% of statement).
 Scan With Predicate | Warning | Scan with residual predicate — SQL Server is reading every row and filtering after the fact. Check that you have appropriate indexes.\nPredicate: [StackOverflow2013].[dbo].[Posts].[PostTypeId] as [p].[PostTypeId]=(2) AND [StackOverflow2013].[dbo].[Posts].[Score] as [p].[Score]>(0)
+
+### stats_usage_plan.sqlplan
+Bare Scan | Warning | Heap table scan reads the full table with no predicate, outputting 1 column(s): Orders.OrderId. Consider a clustered or nonclustered index on the output columns so SQL Server can read a narrower structure. For analytical workloads, a columnstore index may be a better fit.
 
 ### table_variable_aliased_function_plan.sqlplan
 Table Variable | Warning | Table variable detected. Table variables lack column-level statistics, which causes bad row estimates, join choices, and memory grant decisions. Replace with a #temp table.
 Non-SARGable Predicate | Warning | Function call (ABS) on column prevents an index seek. Remove the function from the column side — apply it to the parameter instead, or create a computed column with the expression and index that.\nPredicate: abs(@tv.[X] as [v].[X])=(1)
-Table Variable | Warning | Table variable detected. Table variables lack column-level statistics, which causes bad row estimates, join choices, and memory grant decisions. Replace with a #temp table.
 
 ### table_variable_implicit_conversion_plan.sqlplan
 Table Variable | Warning | Table variable detected. Table variables lack column-level statistics, which causes bad row estimates, join choices, and memory grant decisions. Replace with a #temp table.
 Non-SARGable Predicate | Warning | Implicit conversion (CONVERT_IMPLICIT) prevents an index seek. Match the parameter or variable data type to the column data type.\nPredicate: CONVERT_IMPLICIT(nvarchar(20),[S],0)=[@n]
-Table Variable | Warning | Table variable detected. Table variables lack column-level statistics, which causes bad row estimates, join choices, and memory grant decisions. Replace with a #temp table.
 
 ### table_variable_plan.sqlplan
-Table Variable | Warning | Table variable detected. Table variables lack column-level statistics, which causes bad row estimates, join choices, and memory grant decisions. Replace with a #temp table.
 Table Variable | Warning | Table variable detected. Table variables lack column-level statistics, which causes bad row estimates, join choices, and memory grant decisions. Replace with a #temp table.
 
 ### table_variable_unaliased_function_plan.sqlplan
 Table Variable | Warning | Table variable detected. Table variables lack column-level statistics, which causes bad row estimates, join choices, and memory grant decisions. Replace with a #temp table.
 Non-SARGable Predicate | Warning | Function call (ABS) on column prevents an index seek. Remove the function from the column side — apply it to the parameter instead, or create a computed column with the expression and index that.\nPredicate: abs([X])=(1)
-Table Variable | Warning | Table variable detected. Table variables lack column-level statistics, which causes bad row estimates, join choices, and memory grant decisions. Replace with a #temp table.
 
 ### top_above_scan_plan.sqlplan
 Wait: SOS_SCHEDULER_YIELD | Info | SOS_SCHEDULER_YIELD Observed 3 ms across 1,269 waits.

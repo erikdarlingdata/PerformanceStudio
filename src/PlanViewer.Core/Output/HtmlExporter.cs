@@ -587,7 +587,23 @@ pre.query-text, pre.text-output {
         }
         else
         {
-            sb.Append($" <span class=\"op-rows\">{node.EstimatedRows:N0} est. rows</span>");
+            // #677: the same count the viewer's Properties panel and arrow tooltip show, so an
+            // inner-side spool's rows for all executions read the same in the download. The count
+            // is routinely fractional and every figure here is rounded for print, so the line
+            // states the total over the count rather than an equation the rounding could break,
+            // and it branches on the printed count: 1.0183 runs prints as "1" and takes the
+            // single-run line rather than "10.2 est. rows over 1 est. execs".
+            var perExecution = MetricFormatter.FormatEstimatedRows(node.EstimatedRows);
+            var executions = MetricFormatter.FormatEstimatedExecutions(node.EstimatedExecutions);
+            if (executions == MetricFormatter.FormatEstimatedExecutions(1))
+            {
+                sb.Append($" <span class=\"op-rows\">{perExecution} est. rows</span>");
+            }
+            else
+            {
+                var allExecutions = MetricFormatter.FormatEstimatedRows(node.EstimatedRows * node.EstimatedExecutions);
+                sb.Append($" <span class=\"op-rows\">{allExecutions} est. rows over {executions} est. execs ({perExecution} per exec)</span>");
+            }
         }
 
         // Timing (actual plans)

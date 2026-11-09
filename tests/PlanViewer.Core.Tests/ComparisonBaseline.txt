@@ -1196,6 +1196,28 @@ SELECT      u.DisplayName,      p.Score      , p.Title      , p.Tags      , p.Bo
       - SOS_SCHEDULER_YIELD 83ms
 
 
+##### stats_usage_plan.sqlplan vs stats_usage_plan.sqlplan
+=== Plan Comparison ===
+Plan A: stats_usage_plan.sqlplan
+Plan B: stats_usage_plan.sqlplan
+
+--- Statement 1 ---
+SELECT o.OrderId FROM dbo.Orders AS o JOIN #orders AS t ON t.OrderId = o.OrderId
+
+  Estimated cost:     0.5 -> 0.5  (0.0% costlier)
+  Estimated rows:     10 -> 10  (0.0% more)
+
+--- Statement 2 ---
+SELECT COUNT(*) FROM dbo.Orders
+
+  Estimated cost:     0.0032 -> 0.0032  (0.0% costlier)
+  Estimated rows:     1 -> 1  (0.0% more)
+
+--- Statement 3 ---
+DECLARE @i int
+
+
+
 ##### table_variable_aliased_function_plan.sqlplan vs table_variable_aliased_function_plan.sqlplan
 === Plan Comparison ===
 Plan A: table_variable_aliased_function_plan.sqlplan
@@ -2624,22 +2646,24 @@ SELECT       p.Id,      p.Score,      v.VoteTypeId  FROM dbo.Posts AS p  CROSS A
       - SOS_SCHEDULER_YIELD 83ms
 
 
-##### spill_plan.sqlplan vs table_variable_aliased_function_plan.sqlplan
+##### spill_plan.sqlplan vs stats_usage_plan.sqlplan
 === Plan Comparison ===
 Plan A: spill_plan.sqlplan
-Plan B: table_variable_aliased_function_plan.sqlplan
+Plan B: stats_usage_plan.sqlplan
+
+Note: Plan B is an estimated plan. Runtime metrics only available for the actual plan.
 
 --- Statement 1 ---
 SELECT      u.DisplayName,      p.Score      , p.Title      , p.Tags      , p.Body  FROM dbo.Users AS u  LEFT JOIN  (      SELECT          p.*,          n = ROW_NUMBER() OVER              (                  PARTITION BY                      p.OwnerUserId                  ORDER BY                      p.Score DESC              )      FROM dbo.Posts AS p      WHERE p.PostTypeId = 2      AND   p.Score > 0  ) AS p    ON  p.OwnerUserId = u.Id    AND p.n = 1  WHERE u.Reputation >= 20000  ORDER BY     ...
 
-  Estimated cost:     16,976.5 -> 0.0033  (99.9% cheaper)
-  Estimated rows:     482,677 -> 1  (99.9% fewer)
-  Runtime:            26.8s -> 0ms  (eliminated)
-  CPU time:           1m 16s -> 0ms  (eliminated)
-  Logical reads:      4,229,245 -> 1  (99.9% fewer)
+  Estimated cost:     16,976.5 -> 0  (eliminated)
+  Estimated rows:     482,677 -> 0  (eliminated)
+  Runtime:            26.8s -> N/A
+  CPU time:           1m 16s -> N/A
+  Logical reads:      4,229,245 -> 0  (eliminated)
   Memory grant:       10,597.0 MB -> 0.0 MB  (eliminated)
-  DOP:                8 -> 1
-  Warnings:           12 -> 1  (11 resolved)
+  DOP:                8 -> 0
+  Warnings:           12 -> 0  (12 resolved)
   Missing indexes:    1 -> 0  (1 resolved)
 
   Wait stats:
@@ -2654,6 +2678,41 @@ SELECT      u.DisplayName,      p.Score      , p.Title      , p.Tags      , p.Bo
       - MEMORY_ALLOCATION_EXT 256ms
       - PAGEIOLATCH_SH 225ms
       - SOS_SCHEDULER_YIELD 83ms
+
+--- Statement 2 (only in Plan B) ---
+SELECT o.OrderId FROM dbo.Orders AS o JOIN #orders AS t ON t.OrderId = o.OrderId
+  (no comparison available)
+
+--- Statement 3 (only in Plan B) ---
+SELECT COUNT(*) FROM dbo.Orders
+  (no comparison available)
+
+
+##### stats_usage_plan.sqlplan vs table_variable_aliased_function_plan.sqlplan
+=== Plan Comparison ===
+Plan A: stats_usage_plan.sqlplan
+Plan B: table_variable_aliased_function_plan.sqlplan
+
+Note: Plan A is an estimated plan. Runtime metrics only available for the actual plan.
+
+--- Statement 1 ---
+DECLARE @i int
+
+  Estimated cost:     0 -> 0.0033  (new)
+  Estimated rows:     0 -> 1  (new)
+  Runtime:            N/A -> 0ms
+  CPU time:           N/A -> 0ms
+  Logical reads:      0 -> 1  (new)
+  DOP:                0 -> 1
+  Warnings:           0 -> 1  (1 new)
+
+--- Statement 2 (only in Plan A) ---
+SELECT o.OrderId FROM dbo.Orders AS o JOIN #orders AS t ON t.OrderId = o.OrderId
+  (no comparison available)
+
+--- Statement 3 (only in Plan A) ---
+SELECT COUNT(*) FROM dbo.Orders
+  (no comparison available)
 
 
 ##### table_variable_aliased_function_plan.sqlplan vs table_variable_implicit_conversion_plan.sqlplan
