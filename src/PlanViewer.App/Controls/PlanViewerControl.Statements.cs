@@ -341,7 +341,7 @@ public partial class PlanViewerControl : UserControl
         StatementsSplitter.IsVisible = true;
         StatementsPanel.IsVisible = true;
         // In a viewer too narrow for this width and the canvas, the panel is given less (FitSidePanels).
-        FitSidePanels();
+        FitSidePanels(keepStatements: true);
         /* Neither the button's IsVisible nor its divider is set here. Both belong to
            ToolbarOverflow, which owns the other half of that decision — whether the toolbar has
            room for the button at all — and which cannot see a write that lands on a control it has

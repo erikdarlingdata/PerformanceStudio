@@ -9,7 +9,8 @@ namespace PlanViewer.App.Controls;
 /// 900 px viewer and pushes the Properties panel past the viewer's edge. When the widths asked for leave the canvas less
 /// than <see cref="MinCanvasWidth"/> px, the Statements panel narrows first, no further than
 /// <see cref="MinStatementsWidth"/> px, and then the Properties panel, no further than its own minimum. A viewer narrower
-/// than the three minimums gives the canvas what the two panels leave at theirs.
+/// than the three minimums does not hold both panels (<see cref="HoldsBoth"/>): the viewer shows one of them at a time
+/// there, so the canvas keeps its minimum.
 /// Ported from erikdarlingdata/PerformanceMonitor#8538.
 /// </summary>
 internal static class PlanPanelLayout
@@ -25,6 +26,15 @@ internal static class PlanPanelLayout
 
     /// <summary>The width, in px, of the splitter beside the open Statements panel.</summary>
     public const double StatementsSplitterWidth = 5;
+
+    /// <summary>
+    /// Whether a viewer <paramref name="viewerWidth"/> px wide holds both panels, each at its minimum or at the narrower
+    /// width asked for, with their splitters and the canvas at its minimum.
+    /// </summary>
+    public static bool HoldsBoth(
+        double viewerWidth, double statementsWidth, double propertiesWidth, double minPropertiesWidth, double propertiesSplitterWidth) =>
+        Math.Min(statementsWidth, MinStatementsWidth) + Math.Min(propertiesWidth, minPropertiesWidth)
+        + StatementsSplitterWidth + propertiesSplitterWidth + MinCanvasWidth <= viewerWidth;
 
     /// <summary>
     /// The widths the two panels take in a viewer <paramref name="viewerWidth"/> px wide, and the minimum the canvas column
