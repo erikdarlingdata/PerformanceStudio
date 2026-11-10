@@ -164,6 +164,154 @@ public class PlanViewerPanelsAndToolbarTests
         });
     }
 
+    [Fact]
+    public void NarrowingAWideViewerTo900_WithBothPanelsOpen_FitsThePanelsAgain()
+    {
+        HeadlessUi.Run(() =>
+        {
+            var problems = new List<string>();
+
+            var viewer = LoadPlan(Plan(Statement(1, Scan(0))));
+            var host = new Border { Width = 1700, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left, Child = viewer };
+            var window = new Window { Content = host, Width = 1700, Height = 900 };
+            window.Show();
+            SettleLayout(window);
+            OpenProperties(viewer);
+            SettleLayout(window);
+
+            var statements = Named<Control>(viewer, "StatementsPanel");
+            var properties = Named<Control>(viewer, "PropertiesPanel");
+            var scroller = Named<ScrollViewer>(viewer, "PlanScrollViewer");
+            Assert.True(Math.Abs(statements.Bounds.Width - 640) < 0.5, $"the Statements panel is {statements.Bounds.Width:F0} px wide in a 1700 px viewer");
+
+            host.Width = 900;
+            SettleLayout(window);
+
+            Assert.True(Math.Abs(viewer.Bounds.Width - 900) < 0.5, $"the viewer is {viewer.Bounds.Width:F0} px wide in a 900 px host");
+            var propertiesRight = properties.TranslatePoint(new Point(properties.Bounds.Width, 0), viewer)?.X ?? double.NaN;
+            if (!(propertiesRight <= 900 + 0.5))
+                problems.Add($"the Properties panel ends at {propertiesRight:F0} px in a viewer narrowed from 1700 px to 900 px");
+            if (statements.Bounds.Width > 640 - 0.5)
+                problems.Add($"the Statements panel is still {statements.Bounds.Width:F0} px wide in a viewer narrowed from 1700 px to 900 px");
+            if (scroller.Bounds.Width < CanvasMinimum - 0.5)
+                problems.Add($"the plan canvas is {scroller.Bounds.Width:F0} px wide in a viewer narrowed from 1700 px to 900 px: it keeps {CanvasMinimum} px");
+            window.Close();
+
+            Assert.True(problems.Count == 0, string.Join(Environment.NewLine, problems));
+        });
+    }
+
+    /// <summary>A 600 px viewer cannot hold both panels at their minimums and a 240 px canvas, so one panel shows at a time,
+    /// the one opened last.</summary>
+    [Fact]
+    public void InAViewerTooNarrowForBothPanels_ThePanelOpenedLastShows_AndTheCanvasKeepsItsRoom()
+    {
+        HeadlessUi.Run(() =>
+        {
+            var problems = new List<string>();
+
+            var viewer = LoadPlan(Plan(Statement(1, Scan(0))));
+            var window = new Window { Content = viewer, Width = 600, Height = 600 };
+            window.Show();
+            SettleLayout(window);
+            var statements = Named<Control>(viewer, "StatementsPanel");
+            var properties = Named<Control>(viewer, "PropertiesPanel");
+            var scroller = Named<ScrollViewer>(viewer, "PlanScrollViewer");
+            Assert.True(Math.Abs(viewer.Bounds.Width - 600) < 0.5, $"the viewer is {viewer.Bounds.Width:F0} px wide in a 600 px window");
+            Assert.True(statements.IsVisible, "the Statements panel is closed for a plan with a statement");
+
+            OpenProperties(viewer);
+            SettleLayout(window);
+            Assert.True(properties.IsVisible, "the Properties panel did not open");
+            if (statements.IsVisible)
+                problems.Add($"the Statements panel ({statements.Bounds.Width:F0} px) stays open beside the Properties panel ({properties.Bounds.Width:F0} px) in a 600 px viewer, which cannot hold both and the canvas");
+            if (scroller.Bounds.Width < CanvasMinimum - 0.5)
+                problems.Add($"the plan canvas is {scroller.Bounds.Width:F0} px wide in a 600 px viewer with the Properties panel open: it keeps {CanvasMinimum} px");
+            var propertiesRight = properties.TranslatePoint(new Point(properties.Bounds.Width, 0), viewer)?.X ?? double.NaN;
+            if (!(propertiesRight <= 600 + 0.5))
+                problems.Add($"the Properties panel ends at {propertiesRight:F0} px in a 600 px viewer");
+
+            Named<Button>(viewer, "StatementsButton").RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+            SettleLayout(window);
+            if (!statements.IsVisible)
+                problems.Add("the Statements button did not reopen the statement list");
+            if (statements.IsVisible && properties.IsVisible)
+                problems.Add($"the Properties panel ({properties.Bounds.Width:F0} px) stays open beside the reopened Statements panel ({statements.Bounds.Width:F0} px) in a 600 px viewer");
+            if (scroller.Bounds.Width < CanvasMinimum - 0.5)
+                problems.Add($"the plan canvas is {scroller.Bounds.Width:F0} px wide in a 600 px viewer with the statement list reopened: it keeps {CanvasMinimum} px");
+            window.Close();
+
+            Assert.True(problems.Count == 0, string.Join(Environment.NewLine, problems));
+        });
+    }
+
+    [Fact]
+    public void AClickOnTheStatementsSplitter_IsNotADraggedWidth()
+    {
+        HeadlessUi.Run(() =>
+        {
+            var viewer = LoadPlan(Plan(Statement(1, Scan(0))));
+            var host = new Border { Width = 900, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left, Child = viewer };
+            var window = new Window { Content = host, Width = 1700, Height = 900 };
+            window.Show();
+            SettleLayout(window);
+            OpenProperties(viewer);
+            SettleLayout(window);
+            var statements = Named<Control>(viewer, "StatementsPanel");
+            Assert.True(statements.Bounds.Width < 640 - 0.5, $"the Statements panel is {statements.Bounds.Width:F0} px wide beside the Properties panel in a 900 px viewer; this test starts from a narrowed panel");
+
+            // A pointer press and release on the splitter with no movement.
+            Named<GridSplitter>(viewer, "StatementsSplitter").RaiseEvent(
+                new Avalonia.Input.VectorEventArgs { RoutedEvent = Avalonia.Controls.Primitives.Thumb.DragCompletedEvent, Vector = default });
+            host.Width = 1700;
+            SettleLayout(window);
+
+            Assert.True(Math.Abs(statements.Bounds.Width - 640) < 0.5,
+                $"the Statements panel is {statements.Bounds.Width:F0} px wide in a 1700 px viewer after a click on its splitter at 900 px: a click that moves nothing is not a dragged width, so the panel takes its 640 px");
+            window.Close();
+        });
+    }
+
+    /// <summary>A plan over the parser's size limit and a plan with no statement to draw are plans all the same: the viewer
+    /// cannot draw them, and Save .sqlplan is what takes them to a tool that can.</summary>
+    [Fact]
+    public void SaveStaysEnabled_ForAPlanTheViewerDoesNotDraw()
+    {
+        HeadlessUi.Run(() =>
+        {
+            var problems = new List<string>();
+
+            var oversize = new PlanViewerControl();
+            Assert.False(oversize.LoadPlan(Plan(Statement(1, Scan(0))) + new string(' ', (16 * 1024 * 1024) + 1), "big.sqlplan"), "a plan over the size limit loaded");
+            Assert.Contains("size limit", oversize.LastLoadError ?? "", StringComparison.Ordinal);
+            problems.AddRange(SaveAloneIsEnabled(oversize, "for a plan over the parser's size limit"));
+
+            var empty = new PlanViewerControl();
+            Assert.False(empty.LoadPlan(Plan(), "empty.sqlplan"), "a plan with no statement loaded as drawn");
+            problems.AddRange(SaveAloneIsEnabled(empty, "for a plan with no statement to draw"));
+
+            var text = new PlanViewerControl();
+            Assert.False(text.LoadPlan("not a plan", "Pasted Plan"), "text that is not a plan loaded as one");
+            problems.AddRange(ButtonsNotIn(text, enabled: false, "after text that does not parse"));
+
+            Assert.True(problems.Count == 0, string.Join(Environment.NewLine, problems));
+        });
+    }
+
+    /// <summary>What is wrong when Save .sqlplan is not the one enabled button of the five.</summary>
+    private static IEnumerable<string> SaveAloneIsEnabled(PlanViewerControl viewer, string when)
+    {
+        var buttons = viewer.GetLogicalDescendants().OfType<Button>().ToList();
+        foreach (var tip in new[] { "Zoom In", "Zoom Out", "Zoom to Fit", "Save plan as .sqlplan file", "Show/hide minimap" })
+        {
+            var button = buttons.FirstOrDefault(b => ToolTip.GetTip(b) as string == tip);
+            Assert.True(button is not null, $"the plan viewer has no \"{tip}\" button");
+            var expected = tip == "Save plan as .sqlplan file";
+            if (button!.IsEnabled != expected)
+                yield return $"{when}, the \"{tip}\" button is {(expected ? "disabled" : "enabled")}";
+        }
+    }
+
     /// <summary>The toolbar and canvas buttons that act on a drawn plan and are not in the <paramref name="enabled"/> state.</summary>
     private static IEnumerable<string> ButtonsNotIn(PlanViewerControl viewer, bool enabled, string when)
     {
