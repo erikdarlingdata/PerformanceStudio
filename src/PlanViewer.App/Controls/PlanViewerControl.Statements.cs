@@ -335,29 +335,52 @@ public partial class PlanViewerControl : UserControl
            visible vertical scrollbar and the panel's right border. Anything narrower and the grid
            scrolls sideways on first open, which is the thing the column widths were widened to
            avoid. The splitter is still there for anyone who wants the space back. */
-        _statementsColumn.Width = new GridLength(640);
-        _statementsSplitterColumn.Width = new GridLength(5);
-        StatementsSplitter.IsVisible = true;
-        StatementsPanel.IsVisible = true;
+        _statementsWidth = PlanPanelLayout.DefaultStatementsWidth;
+        _statementsOpenedLast = true;
+        if (_closedByFit == SidePanel.Statements)
+            _closedByFit = SidePanel.None;
+        RevealStatementsPanel();
+        // In a viewer too narrow for this width and the canvas, the panel is given less (FitSidePanels).
+        FitSidePanels();
         /* Neither the button's IsVisible nor its divider is set here. Both belong to
            ToolbarOverflow, which owns the other half of that decision — whether the toolbar has
            room for the button at all — and which cannot see a write that lands on a control it has
            already hidden. Saying it this way is what keeps "Statements" out of the chevron menu for
            a plan that has none, and keeps the divider from being stranded on the row alone. */
         Overflow.SetAvailable(StatementsButton, true);
+    }
+
+    /// <summary>Shows the Statements panel at the width it asks for. The fit that follows gives it the width the viewer has room for.</summary>
+    private void RevealStatementsPanel()
+    {
+        _statementsColumn.Width = new GridLength(_statementsWidth);
+        _statementsFittedWidth = _statementsWidth;
+        _statementsSplitterColumn.Width = new GridLength(PlanPanelLayout.StatementsSplitterWidth);
+        StatementsSplitter.IsVisible = true;
+        StatementsPanel.IsVisible = true;
         StatementsButton.Classes.Set("on", true);
     }
 
     private void CloseStatementsPanel()
+    {
+        // A list the person closes, or the list of a plan that is going, is not one for a later fit to bring back.
+        if (_closedByFit == SidePanel.Statements)
+            _closedByFit = SidePanel.None;
+        HideStatementsPanel();
+        FitSidePanels();
+    }
+
+    private void HideStatementsPanel()
     {
         StatementsPanel.IsVisible = false;
         StatementsSplitter.IsVisible = false;
         _statementsColumn.Width = new GridLength(0);
         _statementsSplitterColumn.Width = new GridLength(0);
         /* Marked here rather than in the click handler, because the click is not the only way this
-           panel closes — the panel's own close button goes straight to CloseStatementsPanel, and
-           so does clearing the plan. Following the panel's visibility is what stops the button and
-           the panel disagreeing about whether it is open. */
+           panel closes — the panel's own close button goes straight to CloseStatementsPanel, a fit
+           closes it in a viewer too narrow for both panels, and so does clearing the plan. Following
+           the panel's visibility is what stops the button and the panel disagreeing about whether it
+           is open. */
         StatementsButton.Classes.Set("on", false);
     }
 }

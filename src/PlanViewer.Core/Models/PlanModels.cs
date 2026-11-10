@@ -7,6 +7,14 @@ public class ParsedPlan
 {
     public string RawXml { get; set; } = "";
     public string? ParseError { get; set; }
+
+    /// <summary>
+    /// True when the text is a ShowPlan document: XML whose root element is <c>ShowPlanXML</c> in the showplan
+    /// namespace. Set before the tree walk, so a plan the walk refuses for its depth, or fails on, is still known to
+    /// be a plan. False for text that is not XML, for XML that is something else, and for XML the reader refused
+    /// before the document was built.
+    /// </summary>
+    public bool IsShowPlanXml { get; set; }
     public string? BuildVersion { get; set; }
     public string? Build { get; set; }
     public bool ClusteredMode { get; set; }
