@@ -70,6 +70,15 @@ public class CountOfOneTextTests
     }
 
     [Fact]
+    public void ExchangeSpill_OnAGermanDesktop_WritesEveryNumberInOneConvention()
+    {
+        var warnings = OnAGermanDesktop(() => PlanTestHelper.WarningsOfType(ShowPlanParser.Parse(ExchangeSpillPlanXml()), "Exchange Spill"));
+
+        Assert.NotEmpty(warnings);
+        Assert.Contains(warnings, w => w.Message.StartsWith("Exchange spill: 5,000,000 writes to TempDB.", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void HistoryStatus_OneOfEach_ReadsSingular()
     {
         var at = new DateTime(2026, 11, 9, 9, 0, 0);

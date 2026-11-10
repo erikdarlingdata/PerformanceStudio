@@ -235,7 +235,9 @@ public static partial class ShowPlanParser
             result.Add(new PlanWarning
             {
                 WarningType = "Exchange Spill",
-                Message = $"Exchange spill: {writes:N0} {(writes == 1 ? "write" : "writes")} to TempDB. The parallel exchange operator ran out of memory buffers and spilled rows to disk. This typically means the memory grant was too small for the data volume flowing through this exchange.",
+                // The count is written in the invariant culture, as every plan-analysis sentence that carries one is,
+                // so the text reads the same on every desktop, in the CLI's output and in the MCP tools' output.
+                Message = string.Create(CultureInfo.InvariantCulture, $"Exchange spill: {writes:N0} {(writes == 1 ? "write" : "writes")} to TempDB. The parallel exchange operator ran out of memory buffers and spilled rows to disk. This typically means the memory grant was too small for the data volume flowing through this exchange."),
                 Severity = PlanWarningSeverity.Warning,
                 SpillDetails = new SpillDetail
                 {
