@@ -166,7 +166,7 @@ public static partial class ShowPlanParser
             result.Add(new PlanWarning
             {
                 WarningType = "Sort Spill",
-                Message = $"{prefix}. Granted: {granted:N0} KB, Used: {used:N0} KB, Writes: {writes:N0}, Reads: {reads:N0}",
+                Message = string.Create(CultureInfo.InvariantCulture, $"{prefix}. Granted: {granted:N0} KB, Used: {used:N0} KB, Writes: {writes:N0}, Reads: {reads:N0}"),
                 Severity = PlanWarningSeverity.Warning,
                 SpillDetails = new SpillDetail
                 {
@@ -190,7 +190,7 @@ public static partial class ShowPlanParser
             result.Add(new PlanWarning
             {
                 WarningType = "Hash Spill",
-                Message = $"{prefix}. Granted: {granted:N0} KB, Used: {used:N0} KB, Writes: {writes:N0}, Reads: {reads:N0}",
+                Message = string.Create(CultureInfo.InvariantCulture, $"{prefix}. Granted: {granted:N0} KB, Used: {used:N0} KB, Writes: {writes:N0}, Reads: {reads:N0}"),
                 Severity = PlanWarningSeverity.Warning,
                 SpillDetails = new SpillDetail
                 {
@@ -215,9 +215,9 @@ public static partial class ShowPlanParser
             var reads = ParseLong(spillToTempDbEl.Attribute("ReadsFromTempDb")?.Value);
             if (grantedKB > 0 || writes > 0)
             {
-                msg += $". Granted: {grantedKB:N0} KB, Used: {usedKB:N0} KB";
-                if (writes > 0) msg += $", Writes: {writes:N0}";
-                if (reads > 0) msg += $", Reads: {reads:N0}";
+                msg += string.Create(CultureInfo.InvariantCulture, $". Granted: {grantedKB:N0} KB, Used: {usedKB:N0} KB");
+                if (writes > 0) msg += string.Create(CultureInfo.InvariantCulture, $", Writes: {writes:N0}");
+                if (reads > 0) msg += string.Create(CultureInfo.InvariantCulture, $", Reads: {reads:N0}");
             }
 
             result.Add(new PlanWarning
@@ -275,7 +275,7 @@ public static partial class ShowPlanParser
                 result.Add(new PlanWarning
                 {
                     WarningType = "Memory Grant",
-                    Message = $"{kind}: Granted {grantedMB:N0} MB, Used {usedMB:N0} MB",
+                    Message = string.Create(CultureInfo.InvariantCulture, $"{kind}: Granted {grantedMB:N0} MB, Used {usedMB:N0} MB"),
                     Severity = PlanWarningSeverity.Warning
                 });
             }

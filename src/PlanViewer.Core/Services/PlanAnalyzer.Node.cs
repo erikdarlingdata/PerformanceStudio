@@ -141,7 +141,7 @@ public static partial class PlanAnalyzer
             {
                 RuleNumber = 4,
                 WarningType = "UDF Execution",
-                Message = $"Scalar UDF executing on this operator ({node.UdfElapsedTimeMs:N0}ms elapsed, {node.UdfCpuTimeMs:N0}ms CPU). Scalar UDFs run once per row and prevent parallelism. Options: rewrite as an inline table-valued function, assign the result to a variable if only one row is needed, dump results to a #temp table and apply the UDF to the final result set, or on SQL Server 2019+ check if the UDF is eligible for automatic scalar UDF inlining.",
+                Message = string.Create(CultureInfo.InvariantCulture, $"Scalar UDF executing on this operator ({node.UdfElapsedTimeMs:N0}ms elapsed, {node.UdfCpuTimeMs:N0}ms CPU). Scalar UDFs run once per row and prevent parallelism. Options: rewrite as an inline table-valued function, assign the result to a variable if only one row is needed, dump results to a #temp table and apply the UDF to the final result set, or on SQL Server 2019+ check if the UDF is eligible for automatic scalar UDF inlining."),
                 Severity = node.UdfElapsedTimeMs >= 1000 ? PlanWarningSeverity.Critical : PlanWarningSeverity.Warning
             });
         }
@@ -175,7 +175,7 @@ public static partial class PlanAnalyzer
                     {
                         RuleNumber = 5,
                         WarningType = "Row Estimate Mismatch",
-                        Message = $"Estimated {node.EstimateRows:N0} rows but actual 0 rows returned. SQL Server allocated resources for rows that never materialized.",
+                        Message = string.Create(CultureInfo.InvariantCulture, $"Estimated {node.EstimateRows:N0} rows but actual 0 rows returned. SQL Server allocated resources for rows that never materialized."),
                         Severity = PlanWarningSeverity.Warning
                     });
                 }
@@ -196,14 +196,19 @@ public static partial class PlanAnalyzer
                     {
                         var direction = ratio >= 10.0 ? "underestimated" : "overestimated";
                         var factor = ratio >= 10.0 ? ratio : 1.0 / ratio;
+                        // The per-execution count is rounded once, the way N0 rounds, and the noun follows the number
+                        // shown: a seek that returned one row on each of 500 executions reads "1 row x 500 executions".
+                        var rowsPerExecution = node.ActualExecutions > 0
+                            ? (long)Math.Round((double)node.ActualRows / node.ActualExecutions, MidpointRounding.ToEven)
+                            : 0;
                         var actualDisplay = isInnerSide && node.ActualExecutions > 1
-                            ? $"Actual {node.ActualRows:N0} ({(double)node.ActualRows / node.ActualExecutions:N0} rows x {node.ActualExecutions:N0} executions)"
-                            : $"Actual {node.ActualRows:N0}";
+                            ? string.Create(CultureInfo.InvariantCulture, $"Actual {node.ActualRows:N0} ({rowsPerExecution:N0} {(rowsPerExecution == 1 ? "row" : "rows")} x {node.ActualExecutions:N0} executions)")
+                            : string.Create(CultureInfo.InvariantCulture, $"Actual {node.ActualRows:N0}");
                         node.Warnings.Add(new PlanWarning
                         {
                             RuleNumber = 5,
                             WarningType = "Row Estimate Mismatch",
-                            Message = $"Estimated {node.EstimateRows:N0} vs {actualDisplay}: {factor:F0}x {direction}. {harm}",
+                            Message = string.Create(CultureInfo.InvariantCulture, $"Estimated {node.EstimateRows:N0} vs {actualDisplay}: {factor:F0}x {direction}. {harm}"),
                             Severity = factor >= 100 ? PlanWarningSeverity.Critical : PlanWarningSeverity.Warning
                         });
                     }
@@ -273,7 +278,7 @@ public static partial class PlanAnalyzer
                         if (stmtMs > 0 && operatorMs > 0)
                         {
                             var pct = (double)operatorMs / stmtMs;
-                            w.Message += $" Operator time: {operatorMs:N0}ms ({pct * 100:N0}% of statement).";
+                            w.Message += string.Create(CultureInfo.InvariantCulture, $" Operator time: {operatorMs:N0}ms ({pct * 100:N0}% of statement).");
                         }
                     }
                 }
@@ -286,7 +291,7 @@ public static partial class PlanAnalyzer
                     if (stmtMs > 0)
                     {
                         var pct = (double)operatorMs / stmtMs;
-                        w.Message += $" Operator time: {operatorMs:N0}ms ({pct * 100:N0}% of statement).";
+                        w.Message += string.Create(CultureInfo.InvariantCulture, $" Operator time: {operatorMs:N0}ms ({pct * 100:N0}% of statement).");
 
                         if (pct >= 0.5)
                             w.Severity = PlanWarningSeverity.Critical;
@@ -317,7 +322,7 @@ public static partial class PlanAnalyzer
                 var skewThreshold = workerThreads.Count <= 2 ? 0.80 : 0.50;
                 if (skewRatio >= skewThreshold)
                 {
-                    var message = $"Thread {maxThread.ThreadId} processed {skewRatio * 100:N0}% of rows ({maxThread.ActualRows:N0}/{totalRows:N0}). Work is heavily skewed to one thread, so parallelism isn't helping much.";
+                    var message = string.Create(CultureInfo.InvariantCulture, $"Thread {maxThread.ThreadId} processed {skewRatio * 100:N0}% of rows ({maxThread.ActualRows:N0}/{totalRows:N0}). Work is heavily skewed to one thread, so parallelism isn't helping much.");
                     var severity = PlanWarningSeverity.Warning;
 
                     // Batch mode sorts produce all output on a single thread by design
@@ -380,7 +385,10 @@ public static partial class PlanAnalyzer
                 var predicateFilters = node.HasActualStats && node.ActualExecutions > 0
                     && node.ActualRows < node.ActualExecutions;
                 if (predicateFilters)
-                    lookupMsg += $"\nResidual predicate (filtered {node.ActualExecutions - node.ActualRows:N0} rows): {Truncate(node.Predicate, 200)}";
+                {
+                    var filtered = node.ActualExecutions - node.ActualRows;
+                    lookupMsg += string.Create(CultureInfo.InvariantCulture, $"\nResidual predicate (filtered {filtered:N0} {(filtered == 1 ? "row" : "rows")}): {Truncate(node.Predicate, 200)}");
+                }
             }
 
             /* #678: the grade follows what the lookup cost (GradeKeyLookup), and the message states the figure it was graded on. */
@@ -435,7 +443,7 @@ public static partial class PlanAnalyzer
         }
 
         return (node.ActualExecutions >= KeyLookupWarningExecutions ? PlanWarningSeverity.Warning : PlanWarningSeverity.Info,
-            $"Lookups performed: {node.ActualExecutions:N0}. The plan recorded no statement time to grade them against.");
+            string.Create(CultureInfo.InvariantCulture, $"Lookups performed: {node.ActualExecutions:N0}. The plan recorded no statement time to grade them against."));
     }
 
     /// <summary>
@@ -511,7 +519,7 @@ public static partial class PlanAnalyzer
                 severity = PlanWarningSeverity.Critical;
 
             var message = node.HasActualStats && node.ActualRowsRead > 0
-                ? $"Scan with residual predicate: SQL Server read {node.ActualRowsRead:N0} rows to return {node.ActualRows:N0}, filtering after the fact."
+                ? string.Create(CultureInfo.InvariantCulture, $"Scan with residual predicate: SQL Server read {node.ActualRowsRead:N0} rows to return {node.ActualRows:N0}, filtering after the fact.")
                 : "Scan with residual predicate: SQL Server is reading every row and filtering after the fact.";
             if (!string.IsNullOrEmpty(details.Summary))
                 message += $" {details.Summary}";
@@ -566,8 +574,8 @@ public static partial class PlanAnalyzer
                 {
                     RuleNumber = 32,
                     WarningType = "Scan Cardinality Misestimate",
-                    Message = $"Estimated {node.EstimateRows:N0} rows but only {node.ActualRows:N0} returned ({selectivity * 100:N3}% of {node.ActualRowsRead:N0} rows read). " +
-                              $"The {overestimateRatio:N0}x overestimate likely caused the optimizer to choose a scan instead of a seek. " +
+                    Message = string.Create(CultureInfo.InvariantCulture, $"Estimated {node.EstimateRows:N0} rows but only {node.ActualRows:N0} returned ({selectivity * 100:N3}% of {node.ActualRowsRead:N0} rows read). ") +
+                              string.Create(CultureInfo.InvariantCulture, $"The {overestimateRatio:N0}x overestimate likely caused the optimizer to choose a scan instead of a seek. ") +
                               $"An index on the predicate columns could dramatically reduce I/O.",
                     Severity = PlanWarningSeverity.Critical
                 });
@@ -599,7 +607,7 @@ public static partial class PlanAnalyzer
                     {
                         RuleNumber = 33,
                         WarningType = "Estimated Plan CE Guess",
-                        Message = $"Estimated {node.EstimateRows:N0} rows from {node.TableCardinality:N0} row table: {guessDesc}. " +
+                        Message = string.Create(CultureInfo.InvariantCulture, $"Estimated {node.EstimateRows:N0} rows from {node.TableCardinality:N0} row table: {guessDesc}. ") +
                                   $"The optimizer may be using a default guess instead of accurate statistics. " +
                                   $"If actual selectivity is much lower, an index on the predicate columns could help significantly.",
                         Severity = PlanWarningSeverity.Warning
@@ -799,7 +807,7 @@ public static partial class PlanAnalyzer
                 var details = new List<string>();
 
                 // Core fact
-                details.Add($"Nested Loops inner side executed {innerChild.ActualExecutions:N0} times (DOP {dop}).");
+                details.Add(string.Create(CultureInfo.InvariantCulture, $"Nested Loops inner side executed {innerChild.ActualExecutions:N0} times (DOP {dop})."));
 
                 // Outer side estimate mismatch — explains WHY the optimizer chose NL.
                 // #594: outerChild is this join's OUTER input, but if this Nested Loops is itself
@@ -814,14 +822,17 @@ public static partial class PlanAnalyzer
                         var outerActualDisplay = outerIsInnerSide && outerChild.ActualExecutions > 0
                             ? (double)outerChild.ActualRows / outerChild.ActualExecutions
                             : outerChild.ActualRows;
-                        details.Add($"Outer side: estimated {outerChild.EstimateRows:N0} rows, actual {outerActualDisplay:N0} ({outerRatio:F0}x underestimate). The optimizer chose Nested Loops expecting far fewer iterations.");
+                        // The estimate is rounded once, the way N0 rounds, and the noun follows the number shown: a
+                        // one-row estimate that fed a loop reads "estimated 1 row".
+                        var outerEstimateShown = (long)Math.Round(outerChild.EstimateRows, MidpointRounding.ToEven);
+                        details.Add(string.Create(CultureInfo.InvariantCulture, $"Outer side: estimated {outerEstimateShown:N0} {(outerEstimateShown == 1 ? "row" : "rows")}, actual {outerActualDisplay:N0} ({outerRatio:F0}x underestimate). The optimizer chose Nested Loops expecting far fewer iterations."));
                     }
                 }
 
                 // Inner side cost — reads and time spent doing the repeated work
                 long innerReads = SumSubtreeReads(innerChild);
                 if (innerReads > 0)
-                    details.Add($"Inner side total: {innerReads:N0} logical reads.");
+                    details.Add(string.Create(CultureInfo.InvariantCulture, $"Inner side total: {innerReads:N0} logical reads."));
 
                 if (innerChild.ActualElapsedMs > 0)
                 {
@@ -829,11 +840,11 @@ public static partial class PlanAnalyzer
                     if (stmtMs > 0)
                     {
                         var pct = (double)innerChild.ActualElapsedMs / stmtMs * 100;
-                        details.Add($"Inner side time: {innerChild.ActualElapsedMs:N0}ms ({pct:N0}% of statement).");
+                        details.Add(string.Create(CultureInfo.InvariantCulture, $"Inner side time: {innerChild.ActualElapsedMs:N0}ms ({pct:N0}% of statement)."));
                     }
                     else
                     {
-                        details.Add($"Inner side time: {innerChild.ActualElapsedMs:N0}ms.");
+                        details.Add(string.Create(CultureInfo.InvariantCulture, $"Inner side time: {innerChild.ActualElapsedMs:N0}ms."));
                     }
                 }
 
@@ -873,7 +884,7 @@ public static partial class PlanAnalyzer
                 RuleNumber = 17,
                 WarningType = "Many-to-Many Merge Join",
                 Message = node.HasActualStats
-                    ? $"Many-to-many Merge Join: SQL Server created a worktable in TempDB ({node.ActualLogicalReads:N0} logical reads) because both sides have duplicate values in the join columns."
+                    ? string.Create(CultureInfo.InvariantCulture, $"Many-to-many Merge Join: SQL Server created a worktable in TempDB ({node.ActualLogicalReads:N0} {(node.ActualLogicalReads == 1 ? "logical read" : "logical reads")}) because both sides have duplicate values in the join columns.")
                     : "Many-to-many Merge Join: SQL Server will create a worktable in TempDB because both sides have duplicate values in the join columns.",
                 Severity = PlanWarningSeverity.Warning
             });
@@ -990,7 +1001,7 @@ public static partial class PlanAnalyzer
                     {
                         RuleNumber = 26,
                         WarningType = "Row Goal",
-                        Message = $"Row goal active: estimate reduced from {node.EstimateRowsWithoutRowGoal:N0} to {node.EstimateRows:N0} ({reduction:N0}x reduction) due to {cause}. The optimizer chose this plan shape expecting to stop reading early. If the query reads all rows anyway, the plan choice may be suboptimal.",
+                        Message = string.Create(CultureInfo.InvariantCulture, $"Row goal active: estimate reduced from {node.EstimateRowsWithoutRowGoal:N0} to {node.EstimateRows:N0} ({reduction:N0}x reduction) due to {cause}. The optimizer chose this plan shape expecting to stop reading early. If the query reads all rows anyway, the plan choice may be suboptimal."),
                         Severity = PlanWarningSeverity.Info
                     });
                 }
@@ -1013,7 +1024,7 @@ public static partial class PlanAnalyzer
                 {
                     RuleNumber = 28,
                     WarningType = "NOT IN with Nullable Column",
-                    Message = $"Row Count Spool with {rewinds:N0} rewinds. This pattern occurs when NOT IN is used with a nullable column: SQL Server cannot use an efficient Anti Semi Join because it must check for NULL values on every outer row. Rewrite as NOT EXISTS, or add WHERE column IS NOT NULL to the subquery.",
+                    Message = string.Create(CultureInfo.InvariantCulture, $"Row Count Spool with {rewinds:N0} rewinds. This pattern occurs when NOT IN is used with a nullable column: SQL Server cannot use an efficient Anti Semi Join because it must check for NULL values on every outer row. Rewrite as NOT EXISTS, or add WHERE column IS NOT NULL to the subquery."),
                     Severity = rewinds > 1_000_000 ? PlanWarningSeverity.Critical : PlanWarningSeverity.Warning
                 });
             }
@@ -1069,7 +1080,7 @@ public static partial class PlanAnalyzer
                 {
                     RuleNumber = 35,
                     WarningType = "Expensive Operator",
-                    Message = $"{node.PhysicalOp} took {selfMs:N0}ms ({pct:N1}% of statement elapsed) but no specific rule identified a fix. Worth investigating: is the row volume necessary? Are upstream estimates driving this operator harder than it should be?",
+                    Message = string.Create(CultureInfo.InvariantCulture, $"{node.PhysicalOp} took {selfMs:N0}ms ({pct:N1}% of statement elapsed) but no specific rule identified a fix. Worth investigating: is the row volume necessary? Are upstream estimates driving this operator harder than it should be?"),
                     Severity = pct >= 50 ? PlanWarningSeverity.Critical : PlanWarningSeverity.Warning,
                     MaxBenefitPercent = Math.Round(Math.Min(100.0, pct), 1)
                 });

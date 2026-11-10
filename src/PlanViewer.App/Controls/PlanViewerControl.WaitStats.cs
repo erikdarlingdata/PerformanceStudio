@@ -50,7 +50,7 @@ public partial class PlanViewerControl : UserControl
         // The header ellipsizes in a narrow card, so the total it carries goes on a tooltip too. A count
         // agrees with its noun ("1 wait type", "3 wait types"), and every number in a sentence that carries
         // a count is written in the invariant culture, so the sentence reads the same on every desktop.
-        WaitStatsHeader.Text = $"Wait Stats \u2014 {totalWait:N0}ms total";
+        WaitStatsHeader.Text = string.Create(CultureInfo.InvariantCulture, $"Wait Stats \u2014 {totalWait:N0}ms total");
         ToolTip.SetTip(WaitStatsHeader, string.Create(CultureInfo.InvariantCulture, $"{totalWait:N0} ms of waits across {sorted.Count} {(sorted.Count == 1 ? "wait type" : "wait types")}"));
 
         /* One Grid for all rows so the columns align (round-1 finding V4: rows clipped mid-word and
@@ -137,7 +137,7 @@ public partial class PlanViewerControl : UserControl
             {
                 var benefitText = new TextBlock
                 {
-                    Text = $"up to {benefitPct:N0}%",
+                    Text = string.Create(CultureInfo.InvariantCulture, $"up to {benefitPct:N0}%"),
                     FontSize = 11,
                     Foreground = benefitBrush,
                     VerticalAlignment = VerticalAlignment.Center,
@@ -145,7 +145,7 @@ public partial class PlanViewerControl : UserControl
                     Background = Brushes.Transparent
                 };
                 ToolTip.SetTip(benefitText,
-                    $"Up to {benefitPct:N0}% of this statement's runtime could be recovered by removing {w.WaitType} waits");
+                    string.Create(CultureInfo.InvariantCulture, $"Up to {benefitPct:N0}% of this statement's runtime could be recovered by removing {w.WaitType} waits"));
                 Grid.SetRow(benefitText, i);
                 Grid.SetColumn(benefitText, 3);
                 grid.Children.Add(benefitText);

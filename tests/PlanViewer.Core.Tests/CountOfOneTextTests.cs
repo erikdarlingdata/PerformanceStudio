@@ -202,6 +202,7 @@ public class CountOfOneTextTests
         {
             var card = WaitStatsCard(FixtureXml("isnull_plan.sqlplan"));
 
+            Assert.Equal("Wait Stats — 1,022ms total", card.HeaderText);
             Assert.Equal("1,022 ms of waits across 3 wait types", card.HeaderTip);
             Assert.Contains(card.Rows, r => r.Text == "426ms (1,409 waits)" && r.Tip == "426 ms across 1,409 waits");
         });
@@ -218,9 +219,115 @@ public class CountOfOneTextTests
     [Fact]
     public void KeyLookup_OnAGermanDesktop_WritesEveryNumberInOneConvention()
     {
-        var warning = OnAGermanDesktop(() => AnalyzeSingle(Lookup(5_000, ownMs: 1_200), statementMs: 10_000, "Key Lookup"));
+        // The lookup also filters 1,234 of its 5,000 rows, so the message carries a residual-predicate line too.
+        var node = Lookup(5_000, ownMs: 1_200);
+        node.Predicate = "[x]=(1)";
+        node.ActualRows = 3_766;
 
+        var warning = OnAGermanDesktop(() => AnalyzeSingle(node, statementMs: 10_000, "Key Lookup"));
+
+        Assert.Contains("Residual predicate (filtered 1,234 rows): [x]=(1)", warning.Message, StringComparison.Ordinal);
         Assert.Contains("Operator time: 1,200ms (12% of statement) over 5,000 lookups.", warning.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void KeyLookup_NoStatementTime_OnAGermanDesktop_WritesItsCountInOneConvention()
+    {
+        // An actual plan older than SQL Server 2016 carries runtime counts but no statement time.
+        var warning = OnAGermanDesktop(() => AnalyzeSingle(Lookup(5_000, ownMs: 0), statementMs: 0, "Key Lookup"));
+
+        Assert.Contains("Lookups performed: 5,000. The plan recorded no statement time to grade them against.", warning.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(12, 11, "Residual predicate (filtered 1 row): [x]=(1)")]
+    [InlineData(5_000, 3_766, "Residual predicate (filtered 1,234 rows): [x]=(1)")]
+    public void KeyLookup_ResidualPredicate_CountsItsFilteredRows(long executions, long rows, string expected)
+    {
+        var node = Lookup(executions, ownMs: 100);
+        node.Predicate = "[x]=(1)";
+        node.ActualRows = rows;
+
+        var warning = AnalyzeSingle(node, statementMs: 1_000, "Key Lookup");
+
+        Assert.Contains(expected, warning.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RowEstimateMismatch_OneRowPerExecution_ReadsSingular()
+    {
+        // An inner-side join estimated at 10 rows per execution that returned one row on each of 500 executions.
+        var inner = new PlanNode
+        {
+            NodeId = 2,
+            PhysicalOp = "Nested Loops",
+            LogicalOp = "Inner Join",
+            HasActualStats = true,
+            EstimateRows = 10,
+            ActualRows = 500,
+            ActualExecutions = 500
+        };
+        var join = NestedLoops(Scan(nodeId: 1, estimateRows: 500, actualRows: 500), inner);
+
+        var stmt = new PlanStatement { RootNode = join, QueryTimeStats = new QueryTimeInfo { ElapsedTimeMs = 1_000 } };
+        PlanAnalyzer.Analyze(new ParsedPlan { Batches = [new PlanBatch { Statements = [stmt] }] });
+        var warning = Assert.Single(inner.Warnings, w => w.WarningType == "Row Estimate Mismatch");
+
+        Assert.StartsWith("Estimated 10 vs Actual 500 (1 row x 500 executions): 10x overestimated.", warning.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void NestedLoops_OneRowOuterEstimate_ReadsSingular()
+    {
+        // An outer side estimated at one row that produced 100,001, driving the inner side that many times.
+        var inner = new PlanNode { NodeId = 2, PhysicalOp = "Index Seek", LogicalOp = "Index Seek", HasActualStats = true, EstimateRows = 1, ActualRows = 100_001, ActualExecutions = 100_001 };
+        var join = NestedLoops(Scan(nodeId: 1, estimateRows: 1, actualRows: 100_001), inner);
+
+        var stmt = new PlanStatement { RootNode = join, QueryTimeStats = new QueryTimeInfo { ElapsedTimeMs = 1_000 } };
+        PlanAnalyzer.Analyze(new ParsedPlan { Batches = [new PlanBatch { Statements = [stmt] }] });
+        var warning = Assert.Single(join.Warnings, w => w.WarningType == "Nested Loops High Executions");
+
+        Assert.Contains("Outer side: estimated 1 row, actual 100,001 (100001x underestimate).", warning.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ManyToManyMerge_OneLogicalRead_ReadsSingular()
+    {
+        var merge = new PlanNode
+        {
+            NodeId = 0,
+            PhysicalOp = "Merge Join",
+            LogicalOp = "Inner Join",
+            ManyToMany = true,
+            HasActualStats = true,
+            ActualLogicalReads = 1
+        };
+
+        var warning = AnalyzeSingle(merge, statementMs: 1_000, "Many-to-Many Merge Join");
+
+        Assert.Contains("worktable in TempDB (1 logical read)", warning.Message, StringComparison.Ordinal);
+    }
+
+    private static PlanNode Scan(int nodeId, double estimateRows, long actualRows) => new()
+    {
+        NodeId = nodeId,
+        PhysicalOp = "Index Scan",
+        LogicalOp = "Index Scan",
+        HasActualStats = true,
+        EstimateRows = estimateRows,
+        ActualRows = actualRows,
+        ActualExecutions = 1
+    };
+
+    /// <summary>A Nested Loops join over the two children, with the parent links the row-estimate helpers walk.</summary>
+    private static PlanNode NestedLoops(PlanNode outer, PlanNode inner)
+    {
+        var join = new PlanNode { NodeId = 0, PhysicalOp = "Nested Loops", LogicalOp = "Inner Join", HasActualStats = true, EstimateRows = outer.EstimateRows, ActualRows = inner.ActualRows, ActualExecutions = 1 };
+        join.Children.Add(outer);
+        join.Children.Add(inner);
+        outer.Parent = join;
+        inner.Parent = join;
+        return join;
     }
 
     [Fact]
@@ -230,6 +337,7 @@ public class CountOfOneTextTests
         {
             var card = OnAGermanDesktop(() => WaitStatsCard(FixtureXml("isnull_plan.sqlplan")));
 
+            Assert.Equal("Wait Stats — 1,022ms total", card.HeaderText);
             Assert.Equal("1,022 ms of waits across 3 wait types", card.HeaderTip);
             Assert.Contains(card.Rows, r => r.Text == "426ms (1,409 waits)" && r.Tip == "426 ms across 1,409 waits");
         });
@@ -274,7 +382,7 @@ public class CountOfOneTextTests
     /// Loads a plan into a shown viewer and reads the Wait Stats card: the header's tooltip and each
     /// row's duration text with its tooltip.
     /// </summary>
-    private static (string? HeaderTip, List<(string Text, string? Tip)> Rows) WaitStatsCard(string xml)
+    private static (string? HeaderTip, string HeaderText, List<(string Text, string? Tip)> Rows) WaitStatsCard(string xml)
     {
         var viewer = new PlanViewerControl();
         Assert.True(viewer.LoadPlan(xml, "waits.sqlplan"), viewer.LastLoadError);
@@ -288,7 +396,7 @@ public class CountOfOneTextTests
             .Where(t => ToolTip.GetTip(t) is string tip && tip.Contains(" ms across ", StringComparison.Ordinal))
             .Select(t => (t.Text ?? string.Empty, ToolTip.GetTip(t) as string))
             .ToList();
-        return (ToolTip.GetTip(header) as string, rows);
+        return (ToolTip.GetTip(header) as string, header.Text ?? string.Empty, rows);
     }
 
     /// <summary>
