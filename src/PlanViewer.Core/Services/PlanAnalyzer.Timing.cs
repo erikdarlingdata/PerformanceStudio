@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text.RegularExpressions;
 using PlanViewer.Core.Models;
@@ -25,16 +26,16 @@ public static partial class PlanAnalyzer
         {
             var rowCount = node.HasActualStats ? node.ActualRows : node.EstimateRows;
             var rows = node.HasActualStats
-                ? $"{node.ActualRows:N0} actual rows"
-                : $"{node.EstimateRows:N0} estimated rows";
+                ? string.Create(CultureInfo.InvariantCulture, $"{node.ActualRows:N0} actual rows")
+                : string.Create(CultureInfo.InvariantCulture, $"{node.EstimateRows:N0} estimated rows");
             consumers.Add(($"Sort (Node {node.NodeId}, {rows})", rowCount));
         }
         else if (node.PhysicalOp.Contains("Hash", StringComparison.OrdinalIgnoreCase))
         {
             var rowCount = node.HasActualStats ? node.ActualRows : node.EstimateRows;
             var rows = node.HasActualStats
-                ? $"{node.ActualRows:N0} actual rows"
-                : $"{node.EstimateRows:N0} estimated rows";
+                ? string.Create(CultureInfo.InvariantCulture, $"{node.ActualRows:N0} actual rows")
+                : string.Create(CultureInfo.InvariantCulture, $"{node.EstimateRows:N0} estimated rows");
             consumers.Add(($"Hash Match (Node {node.NodeId}, {rows})", rowCount));
         }
 
@@ -450,7 +451,7 @@ public static partial class PlanAnalyzer
         {
             var discarded = inputRows - filterNode.ActualRows;
             var pct = (double)discarded / inputRows * 100;
-            parts.Add($"{discarded:N0} of {inputRows:N0} rows discarded ({pct:N0}%)");
+            parts.Add(string.Create(CultureInfo.InvariantCulture, $"{discarded:N0} of {inputRows:N0} rows discarded ({pct:N0}%)"));
         }
 
         // Logical reads across the entire child subtree
@@ -458,12 +459,12 @@ public static partial class PlanAnalyzer
         foreach (var child in filterNode.Children)
             totalReads += SumSubtreeReads(child);
         if (totalReads > 0)
-            parts.Add($"{totalReads:N0} logical reads below");
+            parts.Add(string.Create(CultureInfo.InvariantCulture, $"{totalReads:N0} logical reads below"));
 
         // Elapsed time: use the direct child's time (cumulative in row mode, includes its children)
         var childElapsed = filterNode.Children.Max(c => c.ActualElapsedMs);
         if (childElapsed > 0)
-            parts.Add($"{childElapsed:N0}ms elapsed below");
+            parts.Add(string.Create(CultureInfo.InvariantCulture, $"{childElapsed:N0}ms elapsed below"));
 
         if (parts.Count == 0)
             return "";
@@ -577,7 +578,7 @@ public static partial class PlanAnalyzer
     {
         if (tableCardinality <= 0) return null;
         var selectivity = estimateRows / tableCardinality;
-        var pct = $"{selectivity * 100:N1}%";
+        var pct = string.Create(CultureInfo.InvariantCulture, $"{selectivity * 100:N1}%");
         var legacy = ceModelVersion == 70;
         var current = ceModelVersion >= 120;
 
@@ -634,7 +635,7 @@ public static partial class PlanAnalyzer
         {
             costPct = node.EstimatedTotalSubtreeCost / stmt.StatementSubTreeCost * 100;
             if (costPct >= 50)
-                parts.Add($"This scan is {costPct:N0}% of the plan cost.");
+                parts.Add(string.Create(CultureInfo.InvariantCulture, $"This scan is {costPct:N0}% of the plan cost."));
         }
 
         // % of elapsed time (actual plans)
@@ -644,7 +645,7 @@ public static partial class PlanAnalyzer
         {
             elapsedPct = (double)node.ActualElapsedMs / stmt.QueryTimeStats.ElapsedTimeMs * 100;
             if (elapsedPct >= 50)
-                parts.Add($"This scan took {elapsedPct:N0}% of elapsed time.");
+                parts.Add(string.Create(CultureInfo.InvariantCulture, $"This scan took {elapsedPct:N0}% of elapsed time."));
         }
 
         // Row selectivity: rows returned vs rows read (actual) or vs table cardinality (estimated)
@@ -652,13 +653,13 @@ public static partial class PlanAnalyzer
         {
             var selectivity = (double)node.ActualRows / node.ActualRowsRead * 100;
             if (selectivity < 10)
-                parts.Add($"Only {selectivity:N3}% of rows survived filtering ({node.ActualRows:N0} of {node.ActualRowsRead:N0}).");
+                parts.Add(string.Create(CultureInfo.InvariantCulture, $"Only {selectivity:N3}% of rows survived filtering ({node.ActualRows:N0} of {node.ActualRowsRead:N0})."));
         }
         else if (!node.HasActualStats && node.TableCardinality > 0 && node.EstimateRows < node.TableCardinality)
         {
             var selectivity = node.EstimateRows / node.TableCardinality * 100;
             if (selectivity < 10)
-                parts.Add($"Only {selectivity:N1}% of rows estimated to survive filtering.");
+                parts.Add(string.Create(CultureInfo.InvariantCulture, $"Only {selectivity:N1}% of rows estimated to survive filtering."));
         }
 
         return new ScanImpact(costPct, elapsedPct, parts.Count > 0 ? string.Join(" ", parts) : null);
