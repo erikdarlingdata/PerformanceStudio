@@ -207,20 +207,22 @@ public sealed class DeepPlanStackTests
     [Fact]
     public void TheParseThreadUsesTheCallersCulture()
     {
-        /* The parser writes some warning text itself, such as a spill's granted memory, in the
-           current culture. The caller's culture reaches the parse thread with the execution
-           context; this fails if the thread is ever started without it. */
-        var xml = File.ReadAllText(Path.Combine("Plans", "spill_plan.sqlplan"));
-
-        var plan = OnOneMegabyteThread(() =>
+        /* The caller's culture reaches the parse thread with the execution context; this fails if
+           the thread is ever started without it. The parser writes its own figures in the invariant
+           culture, so the walk itself reads the culture the thread was started with. */
+        var seen = OnOneMegabyteThread(() =>
         {
             CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("de-DE");
-            return ShowPlanParser.Parse(xml);
+            string? onParseThread = null;
+            ShowPlanParser.RunOnParseThread(() =>
+            {
+                onParseThread = CultureInfo.CurrentCulture.Name;
+                return new ParsedPlan();
+            });
+            return onParseThread;
         });
 
-        Assert.Null(plan.ParseError);
-        var spill = PlanTestHelper.AllWarnings(plan).First(warning => warning.Message.Contains("Granted:"));
-        Assert.Contains("Granted: 10.815.552 KB", spill.Message);
+        Assert.Equal("de-DE", seen);
     }
 
     /// <summary>

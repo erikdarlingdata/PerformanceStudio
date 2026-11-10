@@ -92,10 +92,11 @@ public static partial class ShowPlanParser
     /// and waits for it. An exception the walk throws, such as an OperationCanceledException, is
     /// rethrown here unchanged. Nothing is left unhandled on the new thread, because an unhandled
     /// exception there would end the process. The caller's culture reaches the new thread with the
-    /// execution context, so parser text such as spill warnings is formatted as before.
+    /// execution context. The parser writes its own figures in the invariant culture, so the walk
+    /// reads the caller's culture only for what it does not format itself.
     /// </summary>
     [UnsupportedOSPlatform("browser")]
-    private static ParsedPlan RunOnParseThread(Func<ParsedPlan> walk)
+    internal static ParsedPlan RunOnParseThread(Func<ParsedPlan> walk)
     {
         ParsedPlan? result = null;
         ExceptionDispatchInfo? failure = null;

@@ -166,7 +166,7 @@ public static partial class ShowPlanParser
             result.Add(new PlanWarning
             {
                 WarningType = "Sort Spill",
-                Message = $"{prefix}. Granted: {granted:N0} KB, Used: {used:N0} KB, Writes: {writes:N0}, Reads: {reads:N0}",
+                Message = string.Create(CultureInfo.InvariantCulture, $"{prefix}. Granted: {granted:N0} KB, Used: {used:N0} KB, Writes: {writes:N0}, Reads: {reads:N0}"),
                 Severity = PlanWarningSeverity.Warning,
                 SpillDetails = new SpillDetail
                 {
@@ -190,7 +190,7 @@ public static partial class ShowPlanParser
             result.Add(new PlanWarning
             {
                 WarningType = "Hash Spill",
-                Message = $"{prefix}. Granted: {granted:N0} KB, Used: {used:N0} KB, Writes: {writes:N0}, Reads: {reads:N0}",
+                Message = string.Create(CultureInfo.InvariantCulture, $"{prefix}. Granted: {granted:N0} KB, Used: {used:N0} KB, Writes: {writes:N0}, Reads: {reads:N0}"),
                 Severity = PlanWarningSeverity.Warning,
                 SpillDetails = new SpillDetail
                 {
@@ -215,9 +215,9 @@ public static partial class ShowPlanParser
             var reads = ParseLong(spillToTempDbEl.Attribute("ReadsFromTempDb")?.Value);
             if (grantedKB > 0 || writes > 0)
             {
-                msg += $". Granted: {grantedKB:N0} KB, Used: {usedKB:N0} KB";
-                if (writes > 0) msg += $", Writes: {writes:N0}";
-                if (reads > 0) msg += $", Reads: {reads:N0}";
+                msg += string.Create(CultureInfo.InvariantCulture, $". Granted: {grantedKB:N0} KB, Used: {usedKB:N0} KB");
+                if (writes > 0) msg += string.Create(CultureInfo.InvariantCulture, $", Writes: {writes:N0}");
+                if (reads > 0) msg += string.Create(CultureInfo.InvariantCulture, $", Reads: {reads:N0}");
             }
 
             result.Add(new PlanWarning
@@ -235,7 +235,9 @@ public static partial class ShowPlanParser
             result.Add(new PlanWarning
             {
                 WarningType = "Exchange Spill",
-                Message = $"Exchange spill: {writes:N0} {(writes == 1 ? "write" : "writes")} to TempDB. The parallel exchange operator ran out of memory buffers and spilled rows to disk. This typically means the memory grant was too small for the data volume flowing through this exchange.",
+                // The count is written in the invariant culture, as every plan-analysis sentence that carries one is,
+                // so the text reads the same on every desktop, in the CLI's output and in the MCP tools' output.
+                Message = string.Create(CultureInfo.InvariantCulture, $"Exchange spill: {writes:N0} {(writes == 1 ? "write" : "writes")} to TempDB. The parallel exchange operator ran out of memory buffers and spilled rows to disk. This typically means the memory grant was too small for the data volume flowing through this exchange."),
                 Severity = PlanWarningSeverity.Warning,
                 SpillDetails = new SpillDetail
                 {
@@ -273,7 +275,7 @@ public static partial class ShowPlanParser
                 result.Add(new PlanWarning
                 {
                     WarningType = "Memory Grant",
-                    Message = $"{kind}: Granted {grantedMB:N0} MB, Used {usedMB:N0} MB",
+                    Message = string.Create(CultureInfo.InvariantCulture, $"{kind}: Granted {grantedMB:N0} MB, Used {usedMB:N0} MB"),
                     Severity = PlanWarningSeverity.Warning
                 });
             }
