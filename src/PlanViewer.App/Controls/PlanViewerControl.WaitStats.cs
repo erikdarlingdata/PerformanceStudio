@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text.RegularExpressions;
 using Avalonia;
@@ -46,9 +47,11 @@ public partial class PlanViewerControl : UserControl
         var maxWait = sorted[0].WaitTimeMs;
         var totalWait = sorted.Sum(w => w.WaitTimeMs);
 
-        // The header ellipsizes in a narrow card, so the total it carries goes on a tooltip too.
+        // The header ellipsizes in a narrow card, so the total it carries goes on a tooltip too. A count
+        // agrees with its noun ("1 wait type", "3 wait types"), and every number in a sentence that carries
+        // a count is written in the invariant culture, so the sentence reads the same on every desktop.
         WaitStatsHeader.Text = $"Wait Stats \u2014 {totalWait:N0}ms total";
-        ToolTip.SetTip(WaitStatsHeader, $"{totalWait:N0} ms of waits across {sorted.Count} wait types");
+        ToolTip.SetTip(WaitStatsHeader, string.Create(CultureInfo.InvariantCulture, $"{totalWait:N0} ms of waits across {sorted.Count} {(sorted.Count == 1 ? "wait type" : "wait types")}"));
 
         /* One Grid for all rows so the columns align (round-1 finding V4: rows clipped mid-word and
            the panel grew a sideways scrollbar to show the rest).
@@ -113,9 +116,10 @@ public partial class PlanViewerControl : UserControl
             grid.Children.Add(colorBar);
 
             // Duration text: the flexible column, so this is what gives when the strip is narrow
+            var waitNoun = w.WaitCount == 1 ? "wait" : "waits";
             var durationText = new TextBlock
             {
-                Text = $"{w.WaitTimeMs:N0}ms ({w.WaitCount:N0} waits)",
+                Text = string.Create(CultureInfo.InvariantCulture, $"{w.WaitTimeMs:N0}ms ({w.WaitCount:N0} {waitNoun})"),
                 FontSize = 12,
                 Foreground = durationBrush,
                 TextTrimming = TextTrimming.CharacterEllipsis,
@@ -123,7 +127,7 @@ public partial class PlanViewerControl : UserControl
                 Margin = new Thickness(0, 2, 8, 2),
                 Background = Brushes.Transparent
             };
-            ToolTip.SetTip(durationText, $"{w.WaitTimeMs:N0} ms across {w.WaitCount:N0} waits");
+            ToolTip.SetTip(durationText, string.Create(CultureInfo.InvariantCulture, $"{w.WaitTimeMs:N0} ms across {w.WaitCount:N0} {waitNoun}"));
             Grid.SetRow(durationText, i);
             Grid.SetColumn(durationText, 2);
             grid.Children.Add(durationText);
