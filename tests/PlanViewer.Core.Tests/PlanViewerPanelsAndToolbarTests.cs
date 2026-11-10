@@ -4,10 +4,13 @@ using System.Linq;
 using System.Reflection;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Headless;
+using Avalonia.Input;
 using Avalonia.LogicalTree;
 using Avalonia.Threading;
 using PlanViewer.App.Controls;
 using PlanViewer.Core.Models;
+using PlanViewer.Core.Services;
 
 namespace PlanViewer.Core.Tests;
 
@@ -245,6 +248,8 @@ public class PlanViewerPanelsAndToolbarTests
         });
     }
 
+    /// <summary>A press and a release on the Statements splitter with no movement between them, through the window's
+    /// own pointer input, so the splitter raises the events a real click raises.</summary>
     [Fact]
     public void AClickOnTheStatementsSplitter_IsNotADraggedWidth()
     {
@@ -260,9 +265,9 @@ public class PlanViewerPanelsAndToolbarTests
             var statements = Named<Control>(viewer, "StatementsPanel");
             Assert.True(statements.Bounds.Width < 640 - 0.5, $"the Statements panel is {statements.Bounds.Width:F0} px wide beside the Properties panel in a 900 px viewer; this test starts from a narrowed panel");
 
-            // A pointer press and release on the splitter with no movement.
-            Named<GridSplitter>(viewer, "StatementsSplitter").RaiseEvent(
-                new Avalonia.Input.VectorEventArgs { RoutedEvent = Avalonia.Controls.Primitives.Thumb.DragCompletedEvent, Vector = default });
+            var at = OnStatementsSplitter(viewer, window);
+            window.MouseDown(at, MouseButton.Left);
+            window.MouseUp(at, MouseButton.Left);
             host.Width = 1700;
             SettleLayout(window);
 
@@ -272,8 +277,196 @@ public class PlanViewerPanelsAndToolbarTests
         });
     }
 
-    /// <summary>A plan over the parser's size limit and a plan with no statement to draw are plans all the same: the viewer
-    /// cannot draw them, and Save .sqlplan is what takes them to a tool that can.</summary>
+    /// <summary>In a 900 px viewer the canvas is at its minimum, so a drag of the Statements splitter to the right moves the
+    /// pointer and not the splitter. The panel's width did not change, so the width it asks for does not either.</summary>
+    [Fact]
+    public void ADragOfTheStatementsSplitterThatMovesNothing_IsNotADraggedWidth()
+    {
+        HeadlessUi.Run(() =>
+        {
+            var viewer = LoadPlan(Plan(Statement(1, Scan(0))));
+            var host = new Border { Width = 900, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left, Child = viewer };
+            var window = new Window { Content = host, Width = 1700, Height = 900 };
+            window.Show();
+            SettleLayout(window);
+            OpenProperties(viewer);
+            SettleLayout(window);
+            var statements = Named<Control>(viewer, "StatementsPanel");
+            var fitted = statements.Bounds.Width;
+            Assert.True(fitted < 640 - 0.5, $"the Statements panel is {fitted:F0} px wide beside the Properties panel in a 900 px viewer; this test starts from a narrowed panel");
+
+            var at = OnStatementsSplitter(viewer, window);
+            window.MouseDown(at, MouseButton.Left);
+            window.MouseMove(new Point(at.X + 30, at.Y));
+            window.MouseUp(new Point(at.X + 30, at.Y), MouseButton.Left);
+            SettleLayout(window);
+            Assert.True(Math.Abs(statements.Bounds.Width - fitted) < 1, $"the drag moved the Statements panel from {fitted:F0} px to {statements.Bounds.Width:F0} px; this test is a drag against the canvas minimum, which moves nothing");
+            host.Width = 1700;
+            SettleLayout(window);
+
+            Assert.True(Math.Abs(statements.Bounds.Width - 640) < 0.5,
+                $"the Statements panel is {statements.Bounds.Width:F0} px wide in a 1700 px viewer after a drag at 900 px that moved the pointer and not the splitter: the panel's width did not change, so it takes its 640 px");
+            window.Close();
+        });
+    }
+
+    /// <summary>A drag of the Statements splitter, through the window's own pointer input, leaves the panel at a width it
+    /// keeps through the fits that follow: the Properties panel opening, and the viewer's width changing.</summary>
+    [Fact]
+    public void ADragOfTheStatementsSplitter_IsKeptThroughTheNextFit()
+    {
+        HeadlessUi.Run(() =>
+        {
+            var problems = new List<string>();
+
+            var viewer = LoadPlan(Plan(Statement(1, Scan(0))));
+            var host = new Border { Width = 1700, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left, Child = viewer };
+            var window = new Window { Content = host, Width = 1700, Height = 900 };
+            window.Show();
+            SettleLayout(window);
+            var statements = Named<Control>(viewer, "StatementsPanel");
+            Assert.True(Math.Abs(statements.Bounds.Width - 640) < 0.5, $"the Statements panel is {statements.Bounds.Width:F0} px wide in a 1700 px viewer; this test starts from its 640 px");
+
+            var at = OnStatementsSplitter(viewer, window);
+            window.MouseDown(at, MouseButton.Left);
+            window.MouseMove(new Point(at.X - 140, at.Y));
+            window.MouseUp(new Point(at.X - 140, at.Y), MouseButton.Left);
+            SettleLayout(window);
+            var dragged = statements.Bounds.Width;
+            Assert.True(dragged < 640 - 100, $"a 140 px drag of the Statements splitter left the panel {dragged:F0} px wide; this test needs the drag to move it");
+
+            OpenProperties(viewer);
+            SettleLayout(window);
+            if (Math.Abs(statements.Bounds.Width - dragged) >= 1)
+                problems.Add($"the Statements panel is {statements.Bounds.Width:F0} px wide after it was dragged to {dragged:F0} px and the Properties panel opened: a dragged width is kept");
+            host.Width = 1600;
+            SettleLayout(window);
+            host.Width = 1700;
+            SettleLayout(window);
+            if (Math.Abs(statements.Bounds.Width - dragged) >= 1)
+                problems.Add($"the Statements panel is {statements.Bounds.Width:F0} px wide after it was dragged to {dragged:F0} px and the viewer's width changed: a dragged width is kept");
+            window.Close();
+
+            Assert.True(problems.Count == 0, string.Join(Environment.NewLine, problems));
+        });
+    }
+
+    /// <summary>The arrow keys on a focused splitter write the column's width and raise no drag event. The width they leave
+    /// is the one the panel asks for from then on, as a dragged width is.</summary>
+    [Fact]
+    public void AStatementsWidthSetByItsSplitter_IsKeptThroughTheNextFit()
+    {
+        HeadlessUi.Run(() =>
+        {
+            var problems = new List<string>();
+
+            var viewer = LoadPlan(Plan(Statement(1, Scan(0))));
+            var host = new Border { Width = 1700, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left, Child = viewer };
+            var window = new Window { Content = host, Width = 1700, Height = 900 };
+            window.Show();
+            SettleLayout(window);
+            var statements = Named<Control>(viewer, "StatementsPanel");
+            Assert.True(Math.Abs(statements.Bounds.Width - 640) < 0.5, $"the Statements panel is {statements.Bounds.Width:F0} px wide in a 1700 px viewer; this test starts from its 640 px");
+
+            // The splitter's arrow keys: the column is 540 px wide, with no drag event.
+            Named<Grid>(viewer, "PlanGrid").ColumnDefinitions[0].Width = new GridLength(540);
+            SettleLayout(window);
+            OpenProperties(viewer);
+            SettleLayout(window);
+            if (Math.Abs(statements.Bounds.Width - 540) > 0.5)
+                problems.Add($"the Statements panel is {statements.Bounds.Width:F0} px wide after its splitter was moved to 540 px from the keyboard and the Properties panel opened: the fit threw the width away");
+            host.Width = 1600;
+            SettleLayout(window);
+            host.Width = 1700;
+            SettleLayout(window);
+            if (Math.Abs(statements.Bounds.Width - 540) > 0.5)
+                problems.Add($"the Statements panel is {statements.Bounds.Width:F0} px wide after its splitter was moved to 540 px from the keyboard and the viewer's width changed: the fit threw the width away");
+            window.Close();
+
+            Assert.True(problems.Count == 0, string.Join(Environment.NewLine, problems));
+        });
+    }
+
+    /// <summary>A viewer that narrows until it cannot hold both panels closes one of them: the one opened earlier, so the
+    /// one opened last shows. The panel the narrowing closed comes back when the viewer is wide enough for both again. A
+    /// panel the person closed stays closed.</summary>
+    [Fact]
+    public void NarrowingAViewerPastBothPanels_ShowsTheOneOpenedLast_AndWideningBringsTheOtherBack()
+    {
+        HeadlessUi.Run(() =>
+        {
+            var problems = new List<string>();
+
+            var viewer = LoadPlan(Plan(Statement(1, Scan(0))));
+            var host = new Border { Width = 1700, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left, Child = viewer };
+            var window = new Window { Content = host, Width = 1700, Height = 900 };
+            window.Show();
+            SettleLayout(window);
+            OpenProperties(viewer);
+            SettleLayout(window);
+            var statements = Named<Control>(viewer, "StatementsPanel");
+            var properties = Named<Control>(viewer, "PropertiesPanel");
+            var scroller = Named<ScrollViewer>(viewer, "PlanScrollViewer");
+            var statementsButton = Named<Button>(viewer, "StatementsButton");
+            Assert.True(statements.IsVisible && properties.IsVisible, "both panels are not open in a 1700 px viewer");
+
+            // The Properties panel was opened last.
+            host.Width = 600;
+            SettleLayout(window);
+            if (!properties.IsVisible || statements.IsVisible)
+                problems.Add($"narrowed to 600 px with the Properties panel opened last, the Statements panel is {(statements.IsVisible ? "open" : "closed")} and the Properties panel is {(properties.IsVisible ? "open" : "closed")}: the one opened last shows, alone");
+            if (scroller.Bounds.Width < CanvasMinimum - 0.5)
+                problems.Add($"the plan canvas is {scroller.Bounds.Width:F0} px wide in a viewer narrowed from 1700 px to 600 px: it keeps {CanvasMinimum} px");
+
+            host.Width = 1700;
+            SettleLayout(window);
+            if (!statements.IsVisible)
+                problems.Add("the Statements panel stays closed in a viewer widened back to 1700 px: the narrowing closed it, not the person, so the widening brings it back");
+            else if (Math.Abs(statements.Bounds.Width - 640) > 0.5)
+                problems.Add($"the Statements panel comes back {statements.Bounds.Width:F0} px wide in a viewer widened back to 1700 px: it asks for its 640 px");
+            if (!properties.IsVisible)
+                problems.Add("the Properties panel closed when the viewer widened back to 1700 px");
+
+            // The Statements button twice, so the Statements panel is the one opened last.
+            if (statements.IsVisible)
+                statementsButton.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+            statementsButton.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+            SettleLayout(window);
+            Assert.True(statements.IsVisible && properties.IsVisible, "both panels are not open after the Statements button reopened the list at 1700 px");
+            host.Width = 600;
+            SettleLayout(window);
+            if (!statements.IsVisible || properties.IsVisible)
+                problems.Add($"narrowed to 600 px with the Statements panel opened last, the Statements panel is {(statements.IsVisible ? "open" : "closed")} and the Properties panel is {(properties.IsVisible ? "open" : "closed")}: the one opened last shows, alone");
+            if (scroller.Bounds.Width < CanvasMinimum - 0.5)
+                problems.Add($"the plan canvas is {scroller.Bounds.Width:F0} px wide in a viewer narrowed to 600 px with the statement list showing: it keeps {CanvasMinimum} px");
+
+            host.Width = 1700;
+            SettleLayout(window);
+            if (!properties.IsVisible)
+                problems.Add("the Properties panel stays closed in a viewer widened back to 1700 px: the narrowing closed it, not the person, so the widening brings it back");
+            if (!statements.IsVisible)
+                problems.Add("the Statements panel closed when the viewer widened back to 1700 px");
+
+            // The Statements button closes the list: a panel the person closed stays closed.
+            if (statements.IsVisible)
+                statementsButton.RaiseEvent(new Avalonia.Interactivity.RoutedEventArgs(Button.ClickEvent));
+            SettleLayout(window);
+            Assert.False(statements.IsVisible, "the Statements button did not close the statement list");
+            host.Width = 600;
+            SettleLayout(window);
+            host.Width = 1700;
+            SettleLayout(window);
+            if (statements.IsVisible)
+                problems.Add("the Statements panel the person closed came back when the viewer widened");
+            window.Close();
+
+            Assert.True(problems.Count == 0, string.Join(Environment.NewLine, problems));
+        });
+    }
+
+    /// <summary>A plan over the parser's size limit, a plan nested past its depth limit and a plan with no statement to
+    /// draw are plans all the same: the viewer cannot draw them, and Save .sqlplan is what takes them to a tool that can.
+    /// Text that is not XML, and XML that is not a plan, are not saved as one.</summary>
     [Fact]
     public void SaveStaysEnabled_ForAPlanTheViewerDoesNotDraw()
     {
@@ -282,9 +475,14 @@ public class PlanViewerPanelsAndToolbarTests
             var problems = new List<string>();
 
             var oversize = new PlanViewerControl();
-            Assert.False(oversize.LoadPlan(Plan(Statement(1, Scan(0))) + new string(' ', (16 * 1024 * 1024) + 1), "big.sqlplan"), "a plan over the size limit loaded");
+            Assert.False(oversize.LoadPlan(Plan(Statement(1, Scan(0))) + new string(' ', ShowPlanParser.MaxParseCharacters + 1), "big.sqlplan"), "a plan over the size limit loaded");
             Assert.Contains("size limit", oversize.LastLoadError ?? "", StringComparison.Ordinal);
             problems.AddRange(SaveAloneIsEnabled(oversize, "for a plan over the parser's size limit"));
+
+            var nested = new PlanViewerControl();
+            Assert.False(nested.LoadPlan(Plan(Statement(1, Chain(ShowPlanParser.MaxParseDepth + 1))), "deep.sqlplan"), "a plan nested past the parser's depth limit loaded as drawn");
+            Assert.False(string.IsNullOrEmpty(nested.LastLoadError), "the parser did not refuse a plan nested past its depth limit");
+            problems.AddRange(SaveAloneIsEnabled(nested, "for a plan nested past the parser's depth limit"));
 
             var empty = new PlanViewerControl();
             Assert.False(empty.LoadPlan(Plan(), "empty.sqlplan"), "a plan with no statement loaded as drawn");
@@ -293,6 +491,13 @@ public class PlanViewerPanelsAndToolbarTests
             var text = new PlanViewerControl();
             Assert.False(text.LoadPlan("not a plan", "Pasted Plan"), "text that is not a plan loaded as one");
             problems.AddRange(ButtonsNotIn(text, enabled: false, "after text that does not parse"));
+
+            foreach (var notAPlan in new[] { "<x/>", "<deadlock><victim-list><victimProcess id=\"process1\"/></victim-list></deadlock>", $"<x xmlns=\"{Ns}\"/>" })
+            {
+                var other = new PlanViewerControl();
+                Assert.False(other.LoadPlan(notAPlan, "Pasted Plan"), $"XML that is not a plan ({notAPlan}) loaded as one");
+                problems.AddRange(ButtonsNotIn(other, enabled: false, $"after XML that is not a plan ({notAPlan})"));
+            }
 
             Assert.True(problems.Count == 0, string.Join(Environment.NewLine, problems));
         });
@@ -338,6 +543,15 @@ public class PlanViewerPanelsAndToolbarTests
         show!.Invoke(viewer, new object[] { statement.RootNode! });
     }
 
+    /// <summary>The middle of the Statements splitter, in the window's coordinates.</summary>
+    private static Point OnStatementsSplitter(PlanViewerControl viewer, Window window)
+    {
+        var splitter = Named<GridSplitter>(viewer, "StatementsSplitter");
+        var at = splitter.TranslatePoint(new Point(splitter.Bounds.Width / 2, splitter.Bounds.Height / 2), window);
+        Assert.True(at is not null, "the Statements splitter is not in the window");
+        return at!.Value;
+    }
+
     /// <summary>Runs layout until it is quiet: a width set from a size-changed or layout-updated handler takes effect on
     /// the next pass, which the dispatcher runs on its own in the app.</summary>
     private static void SettleLayout(Window window)
@@ -377,4 +591,20 @@ public class PlanViewerPanelsAndToolbarTests
     private static string Scan(int nodeId) =>
         $"<RelOp NodeId=\"{nodeId}\" PhysicalOp=\"Table Scan\" LogicalOp=\"Table Scan\" EstimateRows=\"1\" EstimateIO=\"0.003\" EstimateCPU=\"0.0001\" AvgRowSize=\"9\" EstimatedTotalSubtreeCost=\"0.0032\" TableCardinality=\"100\" Parallel=\"0\" EstimateRebinds=\"0\" EstimateRewinds=\"0\" EstimatedExecutionMode=\"Row\">"
         + $"<OutputList/><TableScan Ordered=\"0\" ForcedIndex=\"0\" ForceScan=\"0\" NoExpandHint=\"0\" Storage=\"RowStore\"><DefinedValues/><Object Database=\"[db]\" Schema=\"[dbo]\" Table=\"[t{nodeId}]\" IndexKind=\"Heap\" Storage=\"RowStore\"/></TableScan></RelOp>";
+
+    /// <summary>A scan under <paramref name="tops"/> Top operators, one beneath the other.</summary>
+    private static string Chain(int tops)
+    {
+        var plan = new System.Text.StringBuilder();
+        for (var nodeId = 0; nodeId < tops; nodeId++)
+        {
+            plan.Append($"<RelOp NodeId=\"{nodeId}\" PhysicalOp=\"Top\" LogicalOp=\"Top\" EstimateRows=\"1\" EstimateIO=\"0\" EstimateCPU=\"0.0001\" AvgRowSize=\"9\" EstimatedTotalSubtreeCost=\"0.0032\" Parallel=\"0\" EstimateRebinds=\"0\" EstimateRewinds=\"0\" EstimatedExecutionMode=\"Row\">")
+                .Append("<OutputList/><Top RowCount=\"0\" IsPercent=\"0\" WithTies=\"0\">");
+        }
+
+        plan.Append(Scan(tops));
+        for (var nodeId = 0; nodeId < tops; nodeId++)
+            plan.Append("</Top></RelOp>");
+        return plan.ToString();
+    }
 }
