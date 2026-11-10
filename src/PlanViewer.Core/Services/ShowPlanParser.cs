@@ -134,6 +134,9 @@ public static partial class ShowPlanParser
             if (root is null)
                 return plan;
 
+            // Recorded before the walk, so a plan the walk refuses or throws on is still known to be a plan.
+            plan.IsShowPlanXml = root.Name == Ns + "ShowPlanXML";
+
             plan.BuildVersion = root.Attribute("Version")?.Value;
             plan.Build = root.Attribute("Build")?.Value;
             plan.ClusteredMode = root.Attribute("ClusteredMode")?.Value is "true" or "1";

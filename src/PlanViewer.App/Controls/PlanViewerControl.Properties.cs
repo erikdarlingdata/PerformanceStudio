@@ -1075,15 +1075,24 @@ public partial class PlanViewerControl : UserControl
            selection threw away whatever width the user had dragged, on every single click. */
         if (!PropertiesPanel.IsVisible)
         {
-            _propertiesColumn.MinWidth = MinPropertiesWidth;
-            _propertiesColumn.MaxWidth = MaxPropertiesWidth;
-            _propertiesColumn.Width = new GridLength(
-                Math.Clamp(_propertiesPanelWidth, MinPropertiesWidth, MaxPropertiesWidth));
-            _splitterColumn.Width = new GridLength(PropertiesSplitterWidth);
-            PropertiesSplitter.IsVisible = true;
-            PropertiesPanel.IsVisible = true;
+            _statementsOpenedLast = false;
+            if (_closedByFit == SidePanel.Properties)
+                _closedByFit = SidePanel.None;
+            RevealPropertiesPanel();
             FitSidePanels();
         }
+    }
+
+    /// <summary>Shows the Properties panel at its remembered width. The fit that follows gives it the width the viewer has room for.</summary>
+    private void RevealPropertiesPanel()
+    {
+        _propertiesColumn.MinWidth = MinPropertiesWidth;
+        _propertiesColumn.MaxWidth = MaxPropertiesWidth;
+        _propertiesColumn.Width = new GridLength(
+            Math.Clamp(_propertiesPanelWidth, MinPropertiesWidth, MaxPropertiesWidth));
+        _splitterColumn.Width = new GridLength(PropertiesSplitterWidth);
+        PropertiesSplitter.IsVisible = true;
+        PropertiesPanel.IsVisible = true;
     }
 
     private void PropertiesFilter_TextChanged(object? sender, TextChangedEventArgs e)
@@ -1620,7 +1629,8 @@ public partial class PlanViewerControl : UserControl
         ClosePropertiesPanel();
     }
 
-    private void ClosePropertiesPanel()
+    /// <summary>Hides the Properties panel and keeps the operator selected, so the panel can come back showing it.</summary>
+    private void HidePropertiesPanel()
     {
         PropertiesPanel.IsVisible = false;
         PropertiesSplitter.IsVisible = false;
@@ -1630,6 +1640,14 @@ public partial class PlanViewerControl : UserControl
         _propertiesColumn.MaxWidth = double.PositiveInfinity;
         _propertiesColumn.Width = new GridLength(0);
         _splitterColumn.Width = new GridLength(0);
+    }
+
+    private void ClosePropertiesPanel()
+    {
+        // A panel the person closes, or the panel of a plan that is going, is not one for a later fit to bring back.
+        if (_closedByFit == SidePanel.Properties)
+            _closedByFit = SidePanel.None;
+        HidePropertiesPanel();
 
         // Deselect node
         if (_selectedNodeBorder != null)
