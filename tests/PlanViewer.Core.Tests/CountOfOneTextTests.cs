@@ -190,7 +190,7 @@ public class CountOfOneTextTests
 
             Assert.Equal("2 ms of waits across 1 wait type", card.HeaderTip);
             var row = Assert.Single(card.Rows);
-            Assert.Equal("2ms (1 wait)", row.Text);
+            Assert.Equal("2 ms (1 wait)", row.Text);
             Assert.Equal("2 ms across 1 wait", row.Tip);
         });
     }
@@ -204,7 +204,7 @@ public class CountOfOneTextTests
 
             Assert.Equal("Wait Stats — 1,022ms total", card.HeaderText);
             Assert.Equal("1,022 ms of waits across 3 wait types", card.HeaderTip);
-            Assert.Contains(card.Rows, r => r.Text == "426ms (1,409 waits)" && r.Tip == "426 ms across 1,409 waits");
+            Assert.Contains(card.Rows, r => r.Text == "426 ms (1,409 waits)" && r.Tip == "426 ms across 1,409 waits");
         });
     }
 
@@ -339,7 +339,7 @@ public class CountOfOneTextTests
 
             Assert.Equal("Wait Stats — 1,022ms total", card.HeaderText);
             Assert.Equal("1,022 ms of waits across 3 wait types", card.HeaderTip);
-            Assert.Contains(card.Rows, r => r.Text == "426ms (1,409 waits)" && r.Tip == "426 ms across 1,409 waits");
+            Assert.Contains(card.Rows, r => r.Text == "426 ms (1,409 waits)" && r.Tip == "426 ms across 1,409 waits");
         });
     }
 

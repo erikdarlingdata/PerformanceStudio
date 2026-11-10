@@ -17,6 +17,14 @@ namespace PlanViewer.App.Controls;
 
 public partial class PlanViewerControl : UserControl
 {
+    /// <summary>
+    /// One wait row's text, shared by the Wait Stats card and the Operator Properties panel: the time, then how many
+    /// times the wait was recorded, with the noun agreeing with the count ("1,022 ms (1 wait)", "1,022 ms (3 waits)").
+    /// Every number is written in the invariant culture, so the row reads the same on every desktop.
+    /// </summary>
+    internal static string WaitRowText(long waitTimeMs, long waitCount) =>
+        string.Create(CultureInfo.InvariantCulture, $"{waitTimeMs:N0} ms ({waitCount:N0} {(waitCount == 1 ? "wait" : "waits")})");
+
     private void ShowWaitStats(List<WaitStatInfo> waits, List<WaitBenefit> benefits, bool isActualPlan)
     {
         WaitStatsContent.Children.Clear();
@@ -119,7 +127,7 @@ public partial class PlanViewerControl : UserControl
             var waitNoun = w.WaitCount == 1 ? "wait" : "waits";
             var durationText = new TextBlock
             {
-                Text = string.Create(CultureInfo.InvariantCulture, $"{w.WaitTimeMs:N0}ms ({w.WaitCount:N0} {waitNoun})"),
+                Text = WaitRowText(w.WaitTimeMs, w.WaitCount),
                 FontSize = 12,
                 Foreground = durationBrush,
                 TextTrimming = TextTrimming.CharacterEllipsis,
