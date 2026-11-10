@@ -335,10 +335,13 @@ public partial class PlanViewerControl : UserControl
            visible vertical scrollbar and the panel's right border. Anything narrower and the grid
            scrolls sideways on first open, which is the thing the column widths were widened to
            avoid. The splitter is still there for anyone who wants the space back. */
-        _statementsColumn.Width = new GridLength(640);
-        _statementsSplitterColumn.Width = new GridLength(5);
+        _statementsWidth = PlanPanelLayout.DefaultStatementsWidth;
+        _statementsColumn.Width = new GridLength(_statementsWidth);
+        _statementsSplitterColumn.Width = new GridLength(PlanPanelLayout.StatementsSplitterWidth);
         StatementsSplitter.IsVisible = true;
         StatementsPanel.IsVisible = true;
+        // In a viewer too narrow for this width and the canvas, the panel is given less (FitSidePanels).
+        FitSidePanels();
         /* Neither the button's IsVisible nor its divider is set here. Both belong to
            ToolbarOverflow, which owns the other half of that decision — whether the toolbar has
            room for the button at all — and which cannot see a write that lands on a control it has
@@ -354,6 +357,7 @@ public partial class PlanViewerControl : UserControl
         StatementsSplitter.IsVisible = false;
         _statementsColumn.Width = new GridLength(0);
         _statementsSplitterColumn.Width = new GridLength(0);
+        FitSidePanels();
         /* Marked here rather than in the click handler, because the click is not the only way this
            panel closes — the panel's own close button goes straight to CloseStatementsPanel, and
            so does clearing the plan. Following the panel's visibility is what stops the button and

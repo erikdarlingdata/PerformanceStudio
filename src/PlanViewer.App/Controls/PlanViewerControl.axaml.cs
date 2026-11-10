@@ -105,6 +105,12 @@ public partial class PlanViewerControl : UserControl
     // Non-control named elements that Avalonia codegen doesn't auto-generate fields for
     private readonly ColumnDefinition _statementsColumn;
     private readonly ColumnDefinition _statementsSplitterColumn;
+    private readonly ColumnDefinition _canvasColumn;
+
+    // The width the Statements panel asks for: 640 px as it opens, then the width its splitter was dragged to. The width it
+    // is given can be narrower (FitSidePanels).
+    private double _statementsWidth = PlanPanelLayout.DefaultStatementsWidth;
+    private bool _fittingSidePanels;
     private readonly ColumnDefinition _splitterColumn;
     private readonly ColumnDefinition _propertiesColumn;
     private readonly ScaleTransform _zoomTransform;
@@ -285,8 +291,18 @@ public partial class PlanViewerControl : UserControl
         //   [0]=Statements(0), [1]=StmtSplitter(0), [2]=Canvas(*), [3]=PropsSplitter(0), [4]=Props(0)
         _statementsColumn = PlanGrid.ColumnDefinitions[0];
         _statementsSplitterColumn = PlanGrid.ColumnDefinitions[1];
+        _canvasColumn = PlanGrid.ColumnDefinitions[2];
         _splitterColumn = PlanGrid.ColumnDefinitions[3];
         _propertiesColumn = PlanGrid.ColumnDefinitions[4];
+
+        /* The two side panels share the viewer's width with the canvas, so their widths are fitted again whenever that
+           width changes; a drag of the Statements splitter is the width that panel asks for from then on. */
+        PlanGrid.SizeChanged += (_, e) => { if (e.WidthChanged) FitSidePanels(); };
+        StatementsSplitter.DragCompleted += (_, _) =>
+        {
+            if (StatementsPanel.IsVisible && _statementsColumn.ActualWidth > 0)
+                _statementsWidth = _statementsColumn.ActualWidth;
+        };
 
         // ScaleTransform is the LayoutTransform of the wrapper around PlanCanvas
         var layoutTransform = this.FindControl<Avalonia.Controls.LayoutTransformControl>("PlanLayoutTransform")!;
@@ -314,6 +330,58 @@ public partial class PlanViewerControl : UserControl
         MinimapCanvas.PointerMoved += MinimapCanvas_PointerMoved;
         MinimapCanvas.PointerReleased += MinimapCanvas_PointerReleased;
         MinimapCanvas.PointerCaptureLost += (_, _) => _minimapDragging = false;
+
+        UpdatePlanButtons();
+    }
+
+    /// <summary>
+    /// The zoom, Fit and minimap buttons act on the operators on the canvas, and Save writes the plan behind them, so they
+    /// are enabled only while a statement is drawn: not before a plan loads, and not after XML that is blank or does not
+    /// parse, or a plan with no statement to draw. The overflow menu's Save entry follows the button.
+    /// </summary>
+    private void UpdatePlanButtons()
+    {
+        var drawn = PlanScrollViewer.IsVisible && _currentStatement?.RootNode != null;
+        ZoomInButton.IsEnabled = drawn;
+        ZoomOutButton.IsEnabled = drawn;
+        ZoomFitButton.IsEnabled = drawn;
+        SavePlanButton.IsEnabled = drawn;
+        MinimapToggleButton.IsEnabled = drawn;
+    }
+
+    /// <summary>
+    /// Gives the open side panels the widths <see cref="PlanPanelLayout.Fit"/> works out for the viewer's width, and the
+    /// canvas column the minimum that goes with them, so neither a panel opening nor a splitter drag leaves the canvas less
+    /// than that. Before the first layout pass there is no width to fit to; the pass that gives one fits the panels.
+    /// </summary>
+    private void FitSidePanels()
+    {
+        var viewerWidth = PlanGrid.Bounds.Width;
+        if (viewerWidth <= 0)
+            return;
+
+        var statementsOpen = StatementsPanel.IsVisible;
+        var propertiesOpen = PropertiesPanel.IsVisible;
+        var fit = PlanPanelLayout.Fit(
+            viewerWidth,
+            statementsOpen ? _statementsWidth : null,
+            propertiesOpen ? Math.Clamp(_propertiesPanelWidth, MinPropertiesWidth, MaxPropertiesWidth) : null,
+            MinPropertiesWidth,
+            PropertiesSplitterWidth);
+
+        _fittingSidePanels = true;
+        try
+        {
+            if (statementsOpen)
+                _statementsColumn.Width = new GridLength(fit.Statements);
+            if (propertiesOpen)
+                _propertiesColumn.Width = new GridLength(fit.Properties);
+            _canvasColumn.MinWidth = fit.CanvasMinimum;
+        }
+        finally
+        {
+            _fittingSidePanels = false;
+        }
     }
 
     /// <summary>
@@ -651,6 +719,7 @@ public partial class PlanViewerControl : UserControl
         }
         EmptyState.IsVisible = true;
         PlanScrollViewer.IsVisible = false;
+        UpdatePlanButtons();
     }
 
     public void Clear()

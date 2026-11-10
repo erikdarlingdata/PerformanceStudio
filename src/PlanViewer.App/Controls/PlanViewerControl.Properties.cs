@@ -1082,6 +1082,7 @@ public partial class PlanViewerControl : UserControl
             _splitterColumn.Width = new GridLength(PropertiesSplitterWidth);
             PropertiesSplitter.IsVisible = true;
             PropertiesPanel.IsVisible = true;
+            FitSidePanels();
         }
     }
 
@@ -1143,6 +1144,8 @@ public partial class PlanViewerControl : UserControl
         // remembered width comes from - no drag tracking of our own.
         _propertiesColumn.PropertyChanged += (_, args) =>
         {
+            // A width FitSidePanels gives the panel in a narrow viewer is not one the person dragged, so it is not remembered.
+            if (_fittingSidePanels) return;
             if (args.Property.Name != "Width" || !PropertiesPanel.IsVisible) return;
             var width = _propertiesColumn.Width;
             if (width.IsAbsolute && width.Value > 0)
@@ -1635,6 +1638,7 @@ public partial class PlanViewerControl : UserControl
             _selectedNodeBorder.BorderThickness = _selectedNodeOriginalThickness;
             _selectedNodeBorder = null;
         }
+        FitSidePanels();
     }
 
     private void UpdateInsightsHeader()

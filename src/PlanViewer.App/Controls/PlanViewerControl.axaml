@@ -147,13 +147,15 @@
                                   SelectionChanged="PlanDatabase_SelectionChanged"/>
                         <Border Classes="separator"/>
                     </StackPanel>
-                    <Button Content="+" Click="ZoomIn_Click" Width="28" Height="28" Padding="0" FontSize="16"
+                    <!-- The zoom, Fit, Save and minimap buttons act on a drawn plan: the code-behind enables them
+                         while one is drawn (UpdatePlanButtons). -->
+                    <Button x:Name="ZoomInButton" Content="+" Click="ZoomIn_Click" Width="28" Height="28" Padding="0" FontSize="16"
                             FontWeight="Bold" ToolTip.Tip="Zoom In"
                             Theme="{StaticResource AppButton}"/>
-                    <Button Content="&#x2212;" Click="ZoomOut_Click" Width="28" Height="28" Padding="0" FontSize="16"
+                    <Button x:Name="ZoomOutButton" Content="&#x2212;" Click="ZoomOut_Click" Width="28" Height="28" Padding="0" FontSize="16"
                             FontWeight="Bold" ToolTip.Tip="Zoom Out"
                             Theme="{StaticResource AppButton}"/>
-                    <Button Content="Fit" Click="ZoomFit_Click" Height="28" Padding="7,0"
+                    <Button x:Name="ZoomFitButton" Content="Fit" Click="ZoomFit_Click" Height="28" Padding="7,0"
                             ToolTip.Tip="Zoom to Fit"
                             Theme="{StaticResource AppButton}"/>
                     <!-- Says what it scales. The session's editor font picker renders the same bare
@@ -323,7 +325,9 @@
             </Expander>
         </Border>
 
-        <!-- Statements Panel + Plan Canvas + Properties Panel -->
+        <!-- Statements Panel + Plan Canvas + Properties Panel. The two panels open at the widths they ask for and narrow,
+             the Statements panel first, when those would leave the canvas less than its minimum; the code-behind sets the
+             widths and the canvas column's minimum (FitSidePanels), which also bounds a splitter drag. -->
         <Grid x:Name="PlanGrid" Grid.Row="2">
             <Grid.ColumnDefinitions>
                 <!-- Col 0: Statements Panel (hidden by default) -->

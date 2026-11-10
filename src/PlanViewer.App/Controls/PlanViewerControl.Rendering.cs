@@ -30,6 +30,7 @@ public partial class PlanViewerControl : UserControl
     private void RenderStatement(PlanStatement statement)
     {
         _currentStatement = statement;
+        UpdatePlanButtons();
         PlanCanvas.Children.Clear();
         _nodeBorderMap.Clear();
         _selectedNodeBorder = null;
