@@ -832,7 +832,7 @@ public static partial class PlanAnalyzer
                 // Inner side cost — reads and time spent doing the repeated work
                 long innerReads = SumSubtreeReads(innerChild);
                 if (innerReads > 0)
-                    details.Add(string.Create(CultureInfo.InvariantCulture, $"Inner side total: {innerReads:N0} logical reads."));
+                    details.Add(string.Create(CultureInfo.InvariantCulture, $"Inner side total: {innerReads:N0} {(innerReads == 1 ? "logical read" : "logical reads")}."));
 
                 if (innerChild.ActualElapsedMs > 0)
                 {

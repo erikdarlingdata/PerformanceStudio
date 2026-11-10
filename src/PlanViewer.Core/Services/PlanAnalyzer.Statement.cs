@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text.RegularExpressions;
 using PlanViewer.Core.Models;
@@ -196,8 +197,8 @@ public static partial class PlanAnalyzer
                 {
                     var grantMB = grant.GrantedMemoryKB / 1024.0;
                     var message = usedNothing
-                        ? $"Granted {grantMB:N0} MB but the query used none of it. The unused memory is reserved and unavailable to other queries."
-                        : $"Granted {grantMB:N0} MB but only used {grant.MaxUsedMemoryKB / 1024.0:N0} MB ({wasteRatio:F0}x overestimate). The unused memory is reserved and unavailable to other queries.";
+                        ? string.Create(CultureInfo.InvariantCulture, $"Granted {grantMB:N0} MB but the query used none of it. The unused memory is reserved and unavailable to other queries.")
+                        : string.Create(CultureInfo.InvariantCulture, $"Granted {grantMB:N0} MB but only used {grant.MaxUsedMemoryKB / 1024.0:N0} MB ({wasteRatio:F0}x overestimate). The unused memory is reserved and unavailable to other queries.");
 
                     // Note adaptive joins that chose Nested Loops at runtime — the grant
                     // was sized for a hash join that never happened.
@@ -221,7 +222,7 @@ public static partial class PlanAnalyzer
                 {
                     RuleNumber = 9,
                     WarningType = "Memory Grant Wait",
-                    Message = $"Query waited {grant.GrantWaitTimeMs:N0}ms for a memory grant before it could start running. Other queries were using all available workspace memory.",
+                    Message = string.Create(CultureInfo.InvariantCulture, $"Query waited {grant.GrantWaitTimeMs:N0}ms for a memory grant before it could start running. Other queries were using all available workspace memory."),
                     Severity = grant.GrantWaitTimeMs >= 5000 ? PlanWarningSeverity.Critical : PlanWarningSeverity.Warning
                 });
             }
@@ -249,7 +250,7 @@ public static partial class PlanAnalyzer
                 {
                     RuleNumber = 9,
                     WarningType = "Large Memory Grant",
-                    Message = $"Query granted {grantMB:F0} MB of memory.{guidance}",
+                    Message = string.Create(CultureInfo.InvariantCulture, $"Query granted {grantMB:F0} MB of memory.{guidance}"),
                     Severity = grantMB >= 4096 ? PlanWarningSeverity.Critical : PlanWarningSeverity.Warning
                 });
             }
@@ -282,7 +283,7 @@ public static partial class PlanAnalyzer
             {
                 RuleNumber = 19,
                 WarningType = "High Compile CPU",
-                Message = $"Query took {stmt.CompileCPUMs:N0}ms of CPU just to compile a plan (before any data was read). Simplify the query by breaking it into smaller steps using #temp tables.",
+                Message = string.Create(CultureInfo.InvariantCulture, $"Query took {stmt.CompileCPUMs:N0}ms of CPU just to compile a plan (before any data was read). Simplify the query by breaking it into smaller steps using #temp tables."),
                 Severity = stmt.CompileCPUMs >= 5000 ? PlanWarningSeverity.Critical : PlanWarningSeverity.Warning
             });
         }
@@ -299,7 +300,7 @@ public static partial class PlanAnalyzer
             {
                 RuleNumber = 4,
                 WarningType = "UDF Execution",
-                Message = $"Scalar UDF cost in this statement: {stmt.QueryUdfElapsedTimeMs:N0}ms elapsed, {stmt.QueryUdfCpuTimeMs:N0}ms CPU. Scalar UDFs run once per row and prevent parallelism. Options: rewrite as an inline table-valued function, assign the result to a variable if only one row is needed, dump results to a #temp table and apply the UDF to the final result set, or on SQL Server 2019+ check if the UDF is eligible for automatic scalar UDF inlining.",
+                Message = string.Create(CultureInfo.InvariantCulture, $"Scalar UDF cost in this statement: {stmt.QueryUdfElapsedTimeMs:N0}ms elapsed, {stmt.QueryUdfCpuTimeMs:N0}ms CPU. Scalar UDFs run once per row and prevent parallelism. Options: rewrite as an inline table-valued function, assign the result to a variable if only one row is needed, dump results to a #temp table and apply the UDF to the final result set, or on SQL Server 2019+ check if the UDF is eligible for automatic scalar UDF inlining."),
                 Severity = stmt.QueryUdfElapsedTimeMs >= 1000 ? PlanWarningSeverity.Critical : PlanWarningSeverity.Warning
             });
         }
@@ -504,7 +505,7 @@ public static partial class PlanAnalyzer
                     {
                         RuleNumber = 30,
                         WarningType = "Low Impact Index",
-                        Message = $"Missing index suggestion for {mi.Table} has only {mi.Impact:F0}% estimated impact. Low-impact indexes add maintenance overhead (insert/update/delete cost) that may not justify the modest query improvement.",
+                        Message = string.Create(CultureInfo.InvariantCulture, $"Missing index suggestion for {mi.Table} has only {mi.Impact:F0}% estimated impact. Low-impact indexes add maintenance overhead (insert/update/delete cost) that may not justify the modest query improvement."),
                         Severity = PlanWarningSeverity.Info
                     });
                 }

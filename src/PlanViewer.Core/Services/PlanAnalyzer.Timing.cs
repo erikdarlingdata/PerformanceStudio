@@ -459,7 +459,7 @@ public static partial class PlanAnalyzer
         foreach (var child in filterNode.Children)
             totalReads += SumSubtreeReads(child);
         if (totalReads > 0)
-            parts.Add(string.Create(CultureInfo.InvariantCulture, $"{totalReads:N0} logical reads below"));
+            parts.Add(string.Create(CultureInfo.InvariantCulture, $"{totalReads:N0} {(totalReads == 1 ? "logical read" : "logical reads")} below"));
 
         // Elapsed time: use the direct child's time (cumulative in row mode, includes its children)
         var childElapsed = filterNode.Children.Max(c => c.ActualElapsedMs);

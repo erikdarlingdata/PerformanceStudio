@@ -823,7 +823,7 @@ public partial class PlanViewerControl : UserControl
             {
                 AddPropertySection("Wait Stats");
                 foreach (var w in s.WaitStats.OrderByDescending(w => w.WaitTimeMs))
-                    AddPropertyRow(w.WaitType, $"{w.WaitTimeMs:N0} ms ({w.WaitCount:N0} waits)");
+                    AddPropertyRow(w.WaitType, WaitRowText(w.WaitTimeMs, w.WaitCount));
             }
 
             // === Trace Flags ===
