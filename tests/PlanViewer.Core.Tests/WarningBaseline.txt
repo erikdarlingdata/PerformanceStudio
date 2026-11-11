@@ -1,3 +1,8 @@
+### adaptive_join_nested_loops_plan.sqlplan
+Wait: CXSYNC_PORT | Info | CXSYNC_PORT Observed 114 ms across 9 waits.
+Wait: HTREPARTITION | Warning | HTREPARTITION Observed 52 ms across 14 waits.
+Scan With Predicate | Critical | Scan with residual predicate: SQL Server read 8,042,005 rows to return 3,264, filtering after the fact. This scan is 52% of the plan cost. This scan took 97% of elapsed time. Only 0.041% of rows survived filtering (3,264 of 8,042,005). Check that you have appropriate indexes.\nPredicate: [StackOverflow2013].[dbo].[Badges].[Date] as [b].[Date]>='2013-12-25 00:00:00.000' AND [StackOverflow2013].[dbo].[Badges].[Name] as [b].[Name] like N'Student'
+
 ### case_predicate_plan.sqlplan
 Wait: CXSYNC_PORT | Info | CXSYNC_PORT Observed 2 ms across 9 waits.
 Wait: SOS_SCHEDULER_YIELD | Info | SOS_SCHEDULER_YIELD Observed 1 ms across 151 waits.

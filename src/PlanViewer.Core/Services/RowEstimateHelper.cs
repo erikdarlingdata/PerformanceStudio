@@ -13,22 +13,77 @@ public static class RowEstimateHelper
 {
     /// <summary>
     /// True when <paramref name="node"/> sits anywhere inside the second (inner) input of a
-    /// Nested Loops join — walking up through every Nested Loops ancestor the same way
+    /// Nested Loops join, or the third input of an Adaptive Join (build, hash probe, nested-loops
+    /// inner side) — walking up through every ancestor the same way
     /// <c>PlanAnalyzer.Detection.CollectBareOuterReferences</c> does, so a nested-loops-within-
-    /// loops chain still counts as inner. SQL Server reports a real per-thread loop-iteration
-    /// count for a node on this side, so its ActualExecutions, summed across threads, is a true
-    /// total rather than a thread count.
+    /// loops chain still counts as inner. A node on this side runs once per outer row, so its
+    /// estimate, which is per execution, has to be scaled by how often it actually ran
+    /// (<see cref="GetActualExecutions"/>).
     /// </summary>
-    public static bool IsInnerSideOfNestedLoops(PlanNode node)
+    public static bool IsInnerSideOfNestedLoops(PlanNode node) => FindInnerSide(node, stopAtExchange: false);
+
+    /// <summary>
+    /// How many times <paramref name="node"/> ran as a whole — the unit its EstimateRows is per.
+    /// ActualExecutions is recorded per thread and summed, and what that sum means depends on
+    /// where the node sits. Inside a nested loop's inner side, with no exchange in between, each
+    /// thread runs complete executions for the outer rows it holds, so the sum is the count.
+    /// Anywhere else in a parallel zone the threads share each execution: a DOP 8 scan reports one
+    /// execution on each of eight threads and ran once, with its pages split between them. Every
+    /// thread opens the node once per execution — N times when the whole parallel branch is
+    /// re-run N times beneath a serial Nested Loops, through a Gather Streams on its inner side —
+    /// so the most any one thread recorded is the count, and the sum would be N x DOP.
+    /// </summary>
+    public static long GetActualExecutions(PlanNode node)
+    {
+        if (node.PerThreadStats.Count <= 1 || FindInnerSide(node, stopAtExchange: true))
+            return node.ActualExecutions;
+
+        return node.PerThreadStats.Max(t => t.ActualExecutions);
+    }
+
+    /// <summary>
+    /// EstimateRows is always per execution. ActualRows is the total across every execution — or,
+    /// in a parallel zone, across every thread. Scaling EstimateRows by the executions only
+    /// applies to a node that runs once per outer row (<see cref="IsInnerSideOfNestedLoops"/>),
+    /// and then by the executions of the node as a whole (<see cref="GetActualExecutions"/>), not
+    /// the per-thread sum: a parallel branch re-run under a serial loop would otherwise have its
+    /// expected total inflated by DOP. Everywhere else the estimate stays at one execution.
+    /// </summary>
+    public static double GetExpectedRows(PlanNode node)
+    {
+        if (!IsInnerSideOfNestedLoops(node))
+            return node.EstimateRows;
+
+        var executions = GetActualExecutions(node);
+        return executions > 0 ? node.EstimateRows * executions : node.EstimateRows;
+    }
+
+    /// <summary>
+    /// Walks up from <paramref name="node"/> looking for a Nested Loops it is on the inner side of
+    /// (or the third input of an Adaptive Join). With <paramref name="stopAtExchange"/>, gives up at
+    /// the first Parallelism operator: the node is then on that exchange's producer side, run by a
+    /// different set of threads than the join above it.
+    /// </summary>
+    private static bool FindInnerSide(PlanNode node, bool stopAtExchange)
     {
         var child = node;
         var ancestor = node.Parent;
 
         while (ancestor != null)
         {
+            if (stopAtExchange && ancestor.PhysicalOp == "Parallelism")
+                return false;
+
             if (ancestor.PhysicalOp == "Nested Loops" &&
                 ancestor.Children.Count > 1 &&
                 ancestor.Children[1] == child)
+            {
+                return true;
+            }
+
+            if (ancestor.PhysicalOp == "Adaptive Join" &&
+                ancestor.Children.Count > 2 &&
+                ancestor.Children[2] == child)
             {
                 return true;
             }
@@ -38,22 +93,6 @@ public static class RowEstimateHelper
         }
 
         return false;
-    }
-
-    /// <summary>
-    /// EstimateRows is always per execution. ActualRows is the total across every execution — or,
-    /// in a parallel zone, across every thread. Multiplying EstimateRows by ActualExecutions only
-    /// turns it into a fair comparison when ActualExecutions is itself a real per-execution count,
-    /// which <see cref="IsInnerSideOfNestedLoops"/> holds only for a node on the inner side of a
-    /// Nested Loops join. Everywhere else, a parallel zone reports one thread record per DOP, and
-    /// ActualExecutions summed over those threads just counts threads — multiplying by it there
-    /// would inflate the expected total by DOP instead of comparing like with like.
-    /// </summary>
-    public static double GetExpectedRows(PlanNode node)
-    {
-        return node.ActualExecutions > 0 && IsInnerSideOfNestedLoops(node)
-            ? node.EstimateRows * node.ActualExecutions
-            : node.EstimateRows;
     }
 
     /// <summary>
