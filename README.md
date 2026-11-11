@@ -650,6 +650,12 @@ Rules can be disabled, have their severity overridden, or have single findings s
   </tr>
 </table>
 
+## Author
+
+Erik Darling: [erikdarling.com](https://erikdarling.com) and Darling Data, LLC
+
+Erik teaches database teams to work with AI agents on their own databases, in a [one-day workshop](https://erikdarling.com/ai-for-database-teams-workshop/) and a [video course](https://training.erikdarling.com/work-with-your-databases-the-way-i-do). He also does [SQL Server performance consulting](https://erikdarling.com/sql-server-performance-consulting/).
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
