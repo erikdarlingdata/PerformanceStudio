@@ -182,11 +182,12 @@ public static partial class PlanAnalyzer
             }
             else
             {
-                // #594: compare like with like. EstimateRows is per execution; ActualExecutions
-                // is a real per-execution count only on the inner side of a Nested Loops join —
-                // everywhere else (including a non-inner node in a parallel zone, where it is
-                // thread-summed) RowEstimateHelper leaves the estimate at one execution instead
-                // of inflating it by DOP.
+                // #594: compare like with like. EstimateRows is per execution; it is scaled by the
+                // executions only on the inner side of a Nested Loops join (or an Adaptive Join's
+                // nested-loops input), and then by the node's executions as a whole rather than the
+                // per-thread sum — everywhere else (including a non-inner node in a parallel zone,
+                // where the sum counts threads) RowEstimateHelper leaves the estimate at one
+                // execution instead of inflating it by DOP.
                 var isInnerSide = RowEstimateHelper.IsInnerSideOfNestedLoops(node);
                 var ratio = RowEstimateHelper.GetRowAccuracyRatio(node);
                 if (ratio >= 10.0 || ratio <= 0.1)
@@ -198,11 +199,13 @@ public static partial class PlanAnalyzer
                         var factor = ratio >= 10.0 ? ratio : 1.0 / ratio;
                         // The per-execution count is rounded once, the way N0 rounds, and the noun follows the number
                         // shown: a seek that returned one row on each of 500 executions reads "1 row x 500 executions".
-                        var rowsPerExecution = node.ActualExecutions > 0
-                            ? (long)Math.Round((double)node.ActualRows / node.ActualExecutions, MidpointRounding.ToEven)
+                        // Executions of the operator as a whole, the count the ratio used, not the per-thread sum.
+                        var executions = RowEstimateHelper.GetActualExecutions(node);
+                        var rowsPerExecution = executions > 0
+                            ? (long)Math.Round((double)node.ActualRows / executions, MidpointRounding.ToEven)
                             : 0;
-                        var actualDisplay = isInnerSide && node.ActualExecutions > 1
-                            ? string.Create(CultureInfo.InvariantCulture, $"Actual {node.ActualRows:N0} ({rowsPerExecution:N0} {(rowsPerExecution == 1 ? "row" : "rows")} x {node.ActualExecutions:N0} executions)")
+                        var actualDisplay = isInnerSide && executions > 1
+                            ? string.Create(CultureInfo.InvariantCulture, $"Actual {node.ActualRows:N0} ({rowsPerExecution:N0} {(rowsPerExecution == 1 ? "row" : "rows")} x {executions:N0} executions)")
                             : string.Create(CultureInfo.InvariantCulture, $"Actual {node.ActualRows:N0}");
                         node.Warnings.Add(new PlanWarning
                         {
@@ -819,8 +822,9 @@ public static partial class PlanAnalyzer
                     var outerRatio = RowEstimateHelper.GetRowAccuracyRatio(outerChild);
                     if (outerRatio >= 10.0)
                     {
-                        var outerActualDisplay = outerIsInnerSide && outerChild.ActualExecutions > 0
-                            ? (double)outerChild.ActualRows / outerChild.ActualExecutions
+                        var outerExecutions = RowEstimateHelper.GetActualExecutions(outerChild);
+                        var outerActualDisplay = outerIsInnerSide && outerExecutions > 0
+                            ? (double)outerChild.ActualRows / outerExecutions
                             : outerChild.ActualRows;
                         // The estimate is rounded once, the way N0 rounds, and the noun follows the number shown: a
                         // one-row estimate that fed a loop reads "estimated 1 row".

@@ -1,3 +1,31 @@
+##### adaptive_join_nested_loops_plan.sqlplan vs adaptive_join_nested_loops_plan.sqlplan
+=== Plan Comparison ===
+Plan A: adaptive_join_nested_loops_plan.sqlplan
+Plan B: adaptive_join_nested_loops_plan.sqlplan
+
+--- Statement 1 ---
+SELECT c = COUNT_BIG(*), r = MAX(u.Reputation)  FROM dbo.Badges AS b  JOIN dbo.Users AS u    ON u.Id = b.UserId  LEFT JOIN #cs AS cs    ON 1 = 0  WHERE b.Date >= '20131225'  AND   b.Name LIKE N'Student'  OPTION (MAXDOP 8)
+
+  Estimated cost:     72.2737 -> 72.2737  (0.0% costlier)
+  Estimated rows:     1 -> 1  (0.0% more)
+  Runtime:            114ms -> 114ms  (0.0% slower)
+  CPU time:           859ms -> 859ms  (0.0% slower)
+  Logical reads:      60,169 -> 60,169  (0.0% more)
+  Memory grant:       12.7 MB -> 12.7 MB  (0.0% more)
+  DOP:                8 -> 8
+  Warnings:           2 -> 2  (no change)
+  Missing indexes:    1 -> 1  (no change)
+
+  Wait stats:
+    Plan A:
+      - CXSYNC_PORT 114ms
+      - HTREPARTITION 52ms
+
+    Plan B:
+      - CXSYNC_PORT 114ms
+      - HTREPARTITION 52ms
+
+
 ##### case_predicate_plan.sqlplan vs case_predicate_plan.sqlplan
 === Plan Comparison ===
 Plan A: case_predicate_plan.sqlplan
@@ -1386,6 +1414,35 @@ SELECT      u.Id,      u.DisplayName,      u.Reputation,      LastBadge =       
     Plan B:
       - SOS_SCHEDULER_YIELD 133ms
       - MEMORY_ALLOCATION_EXT 15ms
+
+
+##### adaptive_join_nested_loops_plan.sqlplan vs case_predicate_plan.sqlplan
+=== Plan Comparison ===
+Plan A: adaptive_join_nested_loops_plan.sqlplan
+Plan B: case_predicate_plan.sqlplan
+
+--- Statement 1 ---
+SELECT c = COUNT_BIG(*), r = MAX(u.Reputation)  FROM dbo.Badges AS b  JOIN dbo.Users AS u    ON u.Id = b.UserId  LEFT JOIN #cs AS cs    ON 1 = 0  WHERE b.Date >= '20131225'  AND   b.Name LIKE N'Student'  OPTION (MAXDOP 8)
+
+  Estimated cost:     72.2737 -> 66.6425  (7.8% cheaper)
+  Estimated rows:     1 -> 7  (600% more)
+  Runtime:            114ms -> 80ms  (29.8% faster)
+  CPU time:           859ms -> 629ms  (26.8% faster)
+  Logical reads:      60,169 -> 89,696  (49.1% more)
+  Memory grant:       12.7 MB -> 0.3 MB  (97.9% less)
+  DOP:                8 -> 8
+  Warnings:           2 -> 3  (1 new)
+  Missing indexes:    1 -> 1  (no change)
+
+  Wait stats:
+    Plan A:
+      - CXSYNC_PORT 114ms
+      - HTREPARTITION 52ms
+
+    Plan B:
+      - CXSYNC_PORT 2ms
+      - SOS_SCHEDULER_YIELD 1ms
+      - LATCH_EX 1ms
 
 
 ##### case_predicate_plan.sqlplan vs compile_memory_exceeded_plan.sqlplan
@@ -2910,22 +2967,22 @@ SELECT * FROM dbo.GetTopPosts(10)
       - MEMORY_ALLOCATION_EXT 15ms
 
 
-##### udf_plan.sqlplan vs case_predicate_plan.sqlplan
+##### udf_plan.sqlplan vs adaptive_join_nested_loops_plan.sqlplan
 === Plan Comparison ===
 Plan A: udf_plan.sqlplan
-Plan B: case_predicate_plan.sqlplan
+Plan B: adaptive_join_nested_loops_plan.sqlplan
 
 --- Statement 1 ---
 SELECT      u.Id,      u.DisplayName,      u.Reputation,      LastBadge =          (              SELECT                  COUNT_BIG(DISTINCT b.Name)              FROM dbo.Badges AS b              WHERE b.UserId = u.Id          ),      TotalBounties =          (              SELECT                  SUM(ISNULL(v.BountyAmount, 0))              FROM dbo.Votes AS v              WHERE v.UserId = u.Id          ),      TotalScore = dbo.TotalScore(u.Id) /* <-- UDF call */  FROM dbo.Users AS u  WHERE u.Re...
 
-  Estimated cost:     97.2957 -> 66.6425  (31.5% cheaper)
-  Estimated rows:     5,689 -> 7  (99.9% fewer)
-  Runtime:            3.0s -> 80ms  (97.4% faster)
-  CPU time:           2.9s -> 629ms  (78.3% faster)
-  Logical reads:      125,537 -> 89,696  (28.6% fewer)
-  Memory grant:       2.2 MB -> 0.3 MB  (88.2% less)
+  Estimated cost:     97.2957 -> 72.2737  (25.7% cheaper)
+  Estimated rows:     5,689 -> 1  (99.9% fewer)
+  Runtime:            3.0s -> 114ms  (96.2% faster)
+  CPU time:           2.9s -> 859ms  (70.4% faster)
+  Logical reads:      125,537 -> 60,169  (52.1% fewer)
+  Memory grant:       2.2 MB -> 12.7 MB  (464% more)
   DOP:                0 -> 8
-  Warnings:           4 -> 3  (1 resolved)
+  Warnings:           4 -> 2  (2 resolved)
   Missing indexes:    1 -> 1  (no change)
 
   Wait stats:
@@ -2934,8 +2991,7 @@ SELECT      u.Id,      u.DisplayName,      u.Reputation,      LastBadge =       
       - MEMORY_ALLOCATION_EXT 15ms
 
     Plan B:
-      - CXSYNC_PORT 2ms
-      - SOS_SCHEDULER_YIELD 1ms
-      - LATCH_EX 1ms
+      - CXSYNC_PORT 114ms
+      - HTREPARTITION 52ms
 
 

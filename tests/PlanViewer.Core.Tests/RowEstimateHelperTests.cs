@@ -301,4 +301,148 @@ public class RowEstimateHelperTests
 
         Assert.Equal(6_022_824.87, RowEstimateHelper.GetEstimatedExecutions(spool), 2);
     }
+
+    // ---------------------------------------------------------------
+    // Per-thread executions: what one thread's ActualExecutions adds up to
+    // ---------------------------------------------------------------
+
+    private static PlanNode Threaded(string physicalOp, double estimateRows, params (int Thread, long Rows, long Executions)[] threads)
+    {
+        var node = new PlanNode { PhysicalOp = physicalOp, EstimateRows = estimateRows, HasActualStats = true };
+        foreach (var (thread, rows, executions) in threads)
+        {
+            node.PerThreadStats.Add(new PerThreadRuntimeInfo { ThreadId = thread, ActualRows = rows, ActualExecutions = executions });
+            node.ActualRows += rows;
+            node.ActualExecutions += executions;
+        }
+        return node;
+    }
+
+    private static void Wire(PlanNode parent, params PlanNode[] children)
+    {
+        foreach (var child in children)
+        {
+            parent.Children.Add(child);
+            child.Parent = parent;
+        }
+    }
+
+    /// <summary>
+    /// A serial Nested Loops whose inner side is a Gather Streams over a parallel scan re-runs the
+    /// whole parallel branch per outer row. Three outer rows: each of four workers opens the scan
+    /// three times, so the threads sum to twelve, but the scan ran three times, each run split
+    /// between the threads. Multiplying the estimate by twelve made a scan that returned exactly
+    /// its estimate on every run read as a 4x (DOP) overestimate.
+    /// </summary>
+    [Fact]
+    public void GetExpectedRows_ParallelBranchReboundUnderASerialLoop_CountsEachRunOnce()
+    {
+        var outer = Threaded("Constant Scan", 3, (0, 3, 1));
+        var gather = Threaded("Parallelism", 100, (0, 300, 3));
+        var scan = Threaded("Clustered Index Scan", 100, (1, 75, 3), (2, 75, 3), (3, 75, 3), (4, 75, 3));
+        var nl = Threaded("Nested Loops", 300, (0, 300, 1));
+        Wire(nl, outer, gather);
+        Wire(gather, scan);
+
+        Assert.True(RowEstimateHelper.IsInnerSideOfNestedLoops(scan));
+        Assert.Equal(12, scan.ActualExecutions);
+        Assert.Equal(3, RowEstimateHelper.GetActualExecutions(scan));
+        Assert.Equal(300, RowEstimateHelper.GetExpectedRows(scan), 6);
+        Assert.Equal(1.0, RowEstimateHelper.GetRowAccuracyRatio(scan), 6);
+
+        // The Gather Streams itself runs on the loop's thread: three executions, as reported.
+        Assert.Equal(3, RowEstimateHelper.GetActualExecutions(gather));
+        Assert.Equal(300, RowEstimateHelper.GetExpectedRows(gather), 6);
+    }
+
+    /// <summary>
+    /// The guard on the other side: within a parallel Nested Loops' inner side every thread runs
+    /// whole executions for the outer rows it holds, so the threads' executions do add up. Taking
+    /// the busiest thread's count would invent an underestimate. The figures are the inner-side
+    /// seek of a real DOP 8 plan (5,829 executions, 5,718 rows, estimate 1 per execution).
+    /// </summary>
+    [Fact]
+    public void GetActualExecutions_ParallelInnerSide_SumsAcrossThreads()
+    {
+        long[] executions = { 587, 1017, 561, 455, 438, 672, 1348, 751 };
+        long[] rows = { 573, 1001, 546, 439, 429, 659, 1336, 735 };
+        var outer = Threaded("Clustered Index Scan", 27572.3,
+            executions.Select((e, i) => (i + 1, e, 1L)).ToArray());
+        var seek = Threaded("Index Seek", 1,
+            executions.Select((e, i) => (i + 1, rows[i], e)).ToArray());
+        var nl = Threaded("Nested Loops", 27572.3,
+            executions.Select((e, i) => (i + 1, e, 1L)).ToArray());
+        Wire(nl, outer, seek);
+
+        Assert.Equal(5829, RowEstimateHelper.GetActualExecutions(seek));
+        Assert.Equal(5829, RowEstimateHelper.GetExpectedRows(seek), 6);
+        Assert.Equal(0.981, RowEstimateHelper.GetRowAccuracyRatio(seek), 3);
+
+        // The outer scan ran once, its pages split between eight threads: 5,829 of 27,572.
+        Assert.Equal(1, RowEstimateHelper.GetActualExecutions(outer));
+        Assert.Equal(27572.3, RowEstimateHelper.GetExpectedRows(outer), 6);
+    }
+
+    /// <summary>
+    /// An Adaptive Join's inputs are the build, the hash probe and the nested-loops inner side.
+    /// When it runs as a nested loop the third input runs once per outer row exactly like a
+    /// Nested Loops inner side, and its estimate is per execution.
+    /// </summary>
+    [Fact]
+    public void IsInnerSide_ThirdInputOfAdaptiveJoin_IsTrue()
+    {
+        var build = new PlanNode { PhysicalOp = "Clustered Index Scan" };
+        var probe = new PlanNode { PhysicalOp = "Clustered Index Scan" };
+        var seek = new PlanNode { PhysicalOp = "Clustered Index Seek" };
+        var join = new PlanNode { PhysicalOp = "Adaptive Join", IsAdaptive = true };
+        Wire(join, build, probe, seek);
+
+        Assert.True(RowEstimateHelper.IsInnerSideOfNestedLoops(seek));
+        Assert.False(RowEstimateHelper.IsInnerSideOfNestedLoops(build));
+        Assert.False(RowEstimateHelper.IsInnerSideOfNestedLoops(probe));
+    }
+
+    /// <summary>
+    /// adaptive_join_nested_loops_plan.sqlplan, captured on SQL Server 2025 at DOP 8: Badges joined
+    /// to Users, threshold 11,904 rows, 3,264 arrived, so the Adaptive Join (Node 3) ran as a
+    /// nested loop. The Users seek (Node 10) ran 3,264 times, one row each, against an estimate of
+    /// one row per execution. It read as "3,264 of 1 rows" before the third input counted as an
+    /// inner side.
+    /// </summary>
+    [Fact]
+    public void AdaptiveJoinNestedLoopsPlan_Node10_InnerSeek_RatioIsOne()
+    {
+        const string plan = "adaptive_join_nested_loops_plan.sqlplan";
+        var join = Node(plan, 3);
+        var seek = Node(plan, 10);
+
+        Assert.True(join.IsAdaptive);
+        Assert.Equal(10, join.Children[2].NodeId);
+        Assert.True(RowEstimateHelper.IsInnerSideOfNestedLoops(seek));
+        Assert.Equal(3264, seek.ActualExecutions);
+        Assert.Equal(3264, seek.ActualRows);
+        Assert.Equal(3264, RowEstimateHelper.GetExpectedRows(seek), 6);
+        Assert.Equal(1.0, RowEstimateHelper.GetRowAccuracyRatio(seek), 6);
+
+        var result = PlanViewer.Core.Output.ResultMapper.Map(PlanTestHelper.LoadAndAnalyze(plan), plan);
+        var html = PlanViewer.Core.Output.HtmlExporter.Export(
+            result, PlanViewer.Core.Output.TextFormatter.Format(result));
+        Assert.DoesNotContain("3,264 of 1 rows", html);
+        Assert.Contains("3,264 of 3,264 rows (100%)", html);
+    }
+
+    /// <summary>
+    /// The same plan's Badges scan (Node 5) and the join above it are not inner-side: one
+    /// execution, its pages split between eight threads, 3,264 rows against 13,666 estimated.
+    /// </summary>
+    [Fact]
+    public void AdaptiveJoinNestedLoopsPlan_Node5_ParallelScan_IsOneExecution()
+    {
+        var scan = Node("adaptive_join_nested_loops_plan.sqlplan", 5);
+
+        Assert.False(RowEstimateHelper.IsInnerSideOfNestedLoops(scan));
+        Assert.Equal(8, scan.ActualExecutions);
+        Assert.Equal(1, RowEstimateHelper.GetActualExecutions(scan));
+        Assert.Equal(13666, RowEstimateHelper.GetExpectedRows(scan), 6);
+    }
 }
