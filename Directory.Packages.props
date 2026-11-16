@@ -51,7 +51,7 @@
          publish takes Pkcs from the ASP.NET Core runtime pack instead, which the audit never
          sees. Drop this pin and the Core reference once SqlClient depends on Pkcs 9.0.21 or
          later (10.0.13 or later on 10.x). -->
-    <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.14" />
+    <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="11.0.0" />
     <PackageVersion Include="TextMateSharp.Grammars" Version="2.0.4" />
     <PackageVersion Include="Velopack" Version="1.2.161" />
     <PackageVersion Include="xunit.v3" Version="4.0.3" />
