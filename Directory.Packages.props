@@ -34,7 +34,7 @@
          2.5.192 (GHSA-hv8m-jj95-wg3x, high, patched in 2.5.301). PlanViewer.Ssms references this
          directly so 2.5.307 wins. Drop this pin and the Ssms reference once a Microsoft.VisualStudio.SDK
          release depends on MessagePack 2.5.301 or later. -->
-    <PackageVersion Include="MessagePack" Version="2.5.307" />
+    <PackageVersion Include="MessagePack" Version="3.1.12" />
     <PackageVersion Include="ModelContextProtocol" Version="2.4.0" />
     <PackageVersion Include="ModelContextProtocol.AspNetCore" Version="2.4.0" />
     <PackageVersion Include="Repl" Version="0.12.0" />
