@@ -62,11 +62,15 @@ public class EnvFileTests : IDisposable
                 commandLine.Server ?? "srv-in-file",
                 commandLine.Database ?? "db-in-file",
                 commandLine.Login ?? "login-in-file",
-                true),
+                // A server from the command line keeps validation on, whatever the file says.
+                key != "PLANVIEW_SERVER"),
             settings);
 
+        // The file's trust flag is also not listed when it was ignored, so the line never claims validation is off.
         string[] keys = ["PLANVIEW_SERVER", "PLANVIEW_DATABASE", "PLANVIEW_LOGIN", "PLANVIEW_TRUST_CERT"];
-        Assert.Equal($"Using settings from {env.FilePath}: {string.Join(", ", keys.Where(k => k != key))}", env.Notice);
+        Assert.Equal(
+            $"Using settings from {env.FilePath}: {string.Join(", ", keys.Where(k => k != key && !(key == "PLANVIEW_SERVER" && k == "PLANVIEW_TRUST_CERT")))}",
+            env.Notice);
     }
 
     [Fact]
@@ -155,6 +159,129 @@ public class EnvFileTests : IDisposable
 
         Assert.False(env.Fill(EmptyCommandLine).TrustCert);
         Assert.Equal($"Using settings from {env.FilePath}: PLANVIEW_SERVER", env.Notice);
+    }
+
+    [Fact]
+    public void TrustCertInTheFile_IsIgnoredForAServerFromTheCommandLine()
+    {
+        var env = Load("""
+            PLANVIEW_LOGIN=login-in-file
+            PLANVIEW_TRUST_CERT=true
+            """);
+
+        var settings = env.Fill(EmptyCommandLine with { Server = "cli-server" });
+
+        Assert.False(settings.TrustCert);
+        // The notice must not claim that validation is off.
+        Assert.Equal($"Using settings from {env.FilePath}: PLANVIEW_LOGIN", env.Notice);
+        var warning = Assert.Single(env.Warnings);
+        Assert.Contains("PLANVIEW_TRUST_CERT", warning);
+        Assert.Contains("--trust-cert", warning);
+    }
+
+    [Fact]
+    public void TrustCertInTheFile_StillAppliesToAServerThatTheFileNamed()
+    {
+        var env = Load("""
+            PLANVIEW_SERVER=srv-in-file
+            PLANVIEW_TRUST_CERT=true
+            """);
+
+        var settings = env.Fill(EmptyCommandLine);
+
+        Assert.True(settings.TrustCert);
+        Assert.Equal($"Using settings from {env.FilePath}: PLANVIEW_SERVER, PLANVIEW_TRUST_CERT", env.Notice);
+        Assert.Empty(env.Warnings);
+    }
+
+    [Fact]
+    public void TrustCertOnTheCommandLine_RelaxesValidationForAServerFromTheCommandLine()
+    {
+        var env = Load("""
+            PLANVIEW_TRUST_CERT=true
+            """);
+
+        var settings = env.Fill(EmptyCommandLine with { Server = "cli-server", TrustCert = true });
+
+        Assert.True(settings.TrustCert);
+        Assert.Null(env.Notice);
+        Assert.Empty(env.Warnings);
+    }
+
+    [Fact]
+    public void TrustCertOtherThanTrueInTheFile_GivesNoWarningForAServerFromTheCommandLine()
+    {
+        var env = Load("PLANVIEW_TRUST_CERT=false");
+
+        Assert.False(env.Fill(EmptyCommandLine with { Server = "cli-server" }).TrustCert);
+        Assert.Empty(env.Warnings);
+    }
+
+    [Theory]
+    [InlineData(UnixFileMode.UserRead | UnixFileMode.UserWrite, false)]                                        // 0600
+    [InlineData(UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead, true)]                // 0640
+    [InlineData(UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.OtherRead, true)] // 0644
+    [InlineData(UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.OtherRead, true)]                // 0604
+    [InlineData(UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupWrite, true)]               // 0620
+    [InlineData(UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute, false)]             // 0700
+    public void PermissionWarning_FiresOnlyWhenGroupOrOtherCanAccessTheFile(UnixFileMode mode, bool warns)
+    {
+        var warning = EnvFile.PermissionWarning("/work/.env", mode);
+
+        if (!warns)
+        {
+            Assert.Null(warning);
+            return;
+        }
+
+        Assert.NotNull(warning);
+        Assert.Contains("/work/.env", warning);
+        Assert.Contains("chmod 600 '/work/.env'", warning);
+    }
+
+    [Fact]
+    public void PermissionWarning_QuotesThePathInTheCommand()
+    {
+        var warning = EnvFile.PermissionWarning("/home/me/my plans/it's $(x)/.env", UnixFileMode.UserRead | UnixFileMode.OtherRead);
+
+        Assert.EndsWith(@"Run: chmod 600 '/home/me/my plans/it'\''s $(x)/.env'", warning);
+    }
+
+    [Fact]
+    public void PermissionWarning_NeverShowsAPassword()
+    {
+        var warning = EnvFile.PermissionWarning("/work/.env", UnixFileMode.UserRead | UnixFileMode.OtherRead);
+
+        Assert.DoesNotContain("pw-in-file", warning);
+    }
+
+    [Fact]
+    [System.Runtime.Versioning.UnsupportedOSPlatform("windows")]
+    public void Warnings_CheckTheFileModeOnlyWhenTheFileSuppliedAPassword()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "Windows files have no Unix mode bits.");
+
+        var env = Load(AllSettings);
+        File.SetUnixFileMode(env.FilePath!, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.OtherRead);
+        var settings = env.Fill(EmptyCommandLine);
+
+        Assert.Empty(env.Warnings);
+        env.PasswordFor(settings);
+        Assert.Contains(env.Warnings, w => w.Contains("chmod 600"));
+    }
+
+    [Fact]
+    [System.Runtime.Versioning.UnsupportedOSPlatform("windows")]
+    public void Warnings_SkipTheFileModeCheckWhenTheFileIsGone()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "Windows files have no Unix mode bits.");
+
+        var env = Load(AllSettings);
+        File.SetUnixFileMode(env.FilePath!, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.OtherRead);
+        env.PasswordFor(env.Fill(EmptyCommandLine));
+        File.Delete(env.FilePath!);
+
+        Assert.DoesNotContain(env.Warnings, w => w.Contains("chmod 600"));
     }
 
     [Fact]

@@ -184,9 +184,11 @@ public static class AnalyzeCommand
                 return;
             }
 
-            // A .env file can pick the server and turn off certificate validation, so say when it did.
+            // A .env file can pick the server and turn off certificate validation (only for a server it names), so say when it did.
             if (env.Notice is { } envNotice)
                 Console.Error.WriteLine(envNotice);
+            foreach (var envWarning in env.Warnings)
+                Console.Error.WriteLine(envWarning);
 
             if (server != null)
             {
