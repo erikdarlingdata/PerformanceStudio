@@ -37,6 +37,6 @@ claude mcp add planview -- planview mcp serve
 
 ## Credentials
 
-On Windows and macOS, `planview credential add` stores a login in the OS credential store. Linux has no credential store, so the command exits with an error there. Pass `--login` and `--password-stdin`, or put `PLANVIEW_LOGIN` and `PLANVIEW_PASSWORD` in a `.env` file.
+On Windows and macOS, `planview credential add` stores a login in the OS credential store. Linux has no credential store, so the command exits with an error there. Pass `--login` and `--password-stdin`, or put `PLANVIEW_LOGIN` and `PLANVIEW_PASSWORD` in a `.env` file. Keep that file out of git, and on Linux and macOS run `chmod 600 .env` so only you can read it.
 
 The full guide, the analysis rules, and the desktop app are in the [repository README](https://github.com/erikdarlingdata/PerformanceStudio#readme).

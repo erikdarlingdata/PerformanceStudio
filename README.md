@@ -260,6 +260,9 @@ The CLI takes a setting from the file only when the setting has an effect:
 
 - With no server from either place, `analyze` reads the plan file offline and takes nothing from the `.env` file.
 - `PLANVIEW_PASSWORD` is used only with a login.
+- `PLANVIEW_TRUST_CERT` in the file turns off certificate validation only for a server that the file names. For a server that you give with `--server`, the CLI ignores it and prints a line to stderr. Pass `--trust-cert` to turn validation off for that server.
+
+A `.env` file that holds a password stays out of git. On Linux and macOS, only you can read it (`chmod 600 .env`), and the CLI prints a warning if other users can read it.
 
 If a `PLANVIEW_` value holds a control character, the CLI stops and names the setting. The CLI prints the server and database names later. A control character in them moves the cursor and erases text, such as the `Using settings` line.
 

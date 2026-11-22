@@ -253,7 +253,7 @@ public static class QueryStoreCommand
                 return;
             }
 
-            // --server and --database are required, so the file only fills the login and trust-cert.
+            // --server and --database are required, so the file only fills the login. Its trust-cert setting is ignored, because the server came from the command line.
             var settings = env.Fill(new ConnectionSettings(server, database, login, trustCert));
             login = settings.Login;
             trustCert = settings.TrustCert;
@@ -271,6 +271,8 @@ public static class QueryStoreCommand
             // A .env file can turn off certificate validation, so say when it did.
             if (env.Notice is { } envNotice)
                 Console.Error.WriteLine(envNotice);
+            foreach (var envWarning in env.Warnings)
+                Console.Error.WriteLine(envWarning);
 
             if (top < 1)
             {
