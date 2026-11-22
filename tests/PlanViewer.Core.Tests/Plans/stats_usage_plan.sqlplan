@@ -1,0 +1,70 @@
+<ShowPlanXML xmlns="http://schemas.microsoft.com/sqlserver/2004/07/showplan" Version="1.564" Build="16.0.4222.2">
+  <BatchSequence>
+    <Batch>
+      <Statements>
+        <StmtSimple StatementText="DECLARE @i int" StatementId="1" StatementCompId="1" StatementType="DECLARE" RetrievedFromCache="true" />
+        <StmtSimple StatementText="SELECT o.OrderId FROM dbo.Orders AS o JOIN #orders AS t ON t.OrderId = o.OrderId" StatementId="2" StatementCompId="2" StatementType="SELECT" StatementSubTreeCost="0.5" StatementEstRows="10" StatementOptmLevel="FULL" QueryHash="0x1111111111111111" QueryPlanHash="0x2222222222222222" RetrievedFromCache="true" CardinalityEstimationModelVersion="160">
+          <StatementSetOptions QUOTED_IDENTIFIER="true" ARITHABORT="true" CONCAT_NULL_YIELDS_NULL="true" ANSI_NULLS="true" ANSI_PADDING="true" ANSI_WARNINGS="true" NUMERIC_ROUNDABORT="false" />
+          <QueryPlan CachedPlanSize="32" CompileTime="2" CompileCPU="2" CompileMemory="256">
+            <OptimizerStatsUsage>
+              <StatisticsInfo Database="[SalesDb]" Schema="[dbo]" Table="[Orders]" Statistics="[IX_Orders_CustomerId]" ModificationCount="250" SamplingPercent="100" LastUpdate="2026-10-30T02:14:07.53" />
+              <StatisticsInfo Database="[tempdb]" Schema="[dbo]" Table="[#orders_______________________________________________________________________________________________000000000012]" Statistics="[_WA_Sys_00000001_0]" ModificationCount="40" SamplingPercent="100" LastUpdate="2026-11-01T10:00:00" />
+              <StatisticsInfo Database="[SalesDb]" Schema="[dbo]" Table="[Customers]" Statistics="[PK_Customers]" ModificationCount="900000" SamplingPercent="42.5" />
+            </OptimizerStatsUsage>
+            <RelOp NodeId="0" PhysicalOp="Nested Loops" LogicalOp="Inner Join" EstimateRows="10" EstimateIO="0" EstimateCPU="0.1" AvgRowSize="9" EstimatedTotalSubtreeCost="0.5" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+              <OutputList>
+                <ColumnReference Database="[SalesDb]" Schema="[dbo]" Table="[Orders]" Alias="[o]" Column="OrderId" />
+              </OutputList>
+              <NestedLoops Optimized="0">
+                <RelOp NodeId="1" PhysicalOp="Table Scan" LogicalOp="Table Scan" EstimateRows="1000" EstimateIO="0.003" EstimateCPU="0.0001" AvgRowSize="9" EstimatedTotalSubtreeCost="0.0032" TableCardinality="1000" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                  <OutputList>
+                    <ColumnReference Database="[SalesDb]" Schema="[dbo]" Table="[Orders]" Alias="[o]" Column="OrderId" />
+                  </OutputList>
+                  <TableScan Ordered="0" ForcedIndex="0" ForceScan="0" NoExpandHint="0" Storage="RowStore">
+                    <DefinedValues>
+                      <DefinedValue>
+                        <ColumnReference Database="[SalesDb]" Schema="[dbo]" Table="[Orders]" Alias="[o]" Column="OrderId" />
+                      </DefinedValue>
+                    </DefinedValues>
+                    <Object Database="[SalesDb]" Schema="[dbo]" Table="[Orders]" Alias="[o]" IndexKind="Heap" Storage="RowStore" />
+                  </TableScan>
+                </RelOp>
+                <RelOp NodeId="2" PhysicalOp="Table Scan" LogicalOp="Table Scan" EstimateRows="200" EstimateIO="0.003" EstimateCPU="0.0001" AvgRowSize="9" EstimatedTotalSubtreeCost="0.0032" TableCardinality="200" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+                  <OutputList>
+                    <ColumnReference Database="[tempdb]" Schema="[dbo]" Table="[#orders]" Alias="[t]" Column="OrderId" />
+                  </OutputList>
+                  <TableScan Ordered="0" ForcedIndex="0" ForceScan="0" NoExpandHint="0" Storage="RowStore">
+                    <DefinedValues>
+                      <DefinedValue>
+                        <ColumnReference Database="[tempdb]" Schema="[dbo]" Table="[#orders]" Alias="[t]" Column="OrderId" />
+                      </DefinedValue>
+                    </DefinedValues>
+                    <Object Database="[tempdb]" Schema="[dbo]" Table="[#orders_______________________________________________________________________________________________000000000012]" Alias="[t]" IndexKind="Heap" Storage="RowStore" />
+                  </TableScan>
+                </RelOp>
+              </NestedLoops>
+            </RelOp>
+          </QueryPlan>
+        </StmtSimple>
+        <StmtSimple StatementText="SELECT COUNT(*) FROM dbo.Orders" StatementId="3" StatementCompId="3" StatementType="SELECT" StatementSubTreeCost="0.0032" StatementEstRows="1" StatementOptmLevel="TRIVIAL" QueryHash="0x3333333333333333" QueryPlanHash="0x4444444444444444" RetrievedFromCache="true" CardinalityEstimationModelVersion="160">
+          <StatementSetOptions QUOTED_IDENTIFIER="true" ARITHABORT="true" CONCAT_NULL_YIELDS_NULL="true" ANSI_NULLS="true" ANSI_PADDING="true" ANSI_WARNINGS="true" NUMERIC_ROUNDABORT="false" />
+          <QueryPlan CachedPlanSize="16" CompileTime="1" CompileCPU="1" CompileMemory="128">
+            <RelOp NodeId="0" PhysicalOp="Table Scan" LogicalOp="Table Scan" EstimateRows="1000" EstimateIO="0.003" EstimateCPU="0.0001" AvgRowSize="9" EstimatedTotalSubtreeCost="0.0032" TableCardinality="1000" Parallel="0" EstimateRebinds="0" EstimateRewinds="0" EstimatedExecutionMode="Row">
+              <OutputList>
+                <ColumnReference Database="[SalesDb]" Schema="[dbo]" Table="[Orders]" Column="OrderId" />
+              </OutputList>
+              <TableScan Ordered="0" ForcedIndex="0" ForceScan="0" NoExpandHint="0" Storage="RowStore">
+                <DefinedValues>
+                  <DefinedValue>
+                    <ColumnReference Database="[SalesDb]" Schema="[dbo]" Table="[Orders]" Column="OrderId" />
+                  </DefinedValue>
+                </DefinedValues>
+                <Object Database="[SalesDb]" Schema="[dbo]" Table="[Orders]" IndexKind="Heap" Storage="RowStore" />
+              </TableScan>
+            </RelOp>
+          </QueryPlan>
+        </StmtSimple>
+      </Statements>
+    </Batch>
+  </BatchSequence>
+</ShowPlanXML>

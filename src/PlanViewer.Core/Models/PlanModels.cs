@@ -7,6 +7,14 @@ public class ParsedPlan
 {
     public string RawXml { get; set; } = "";
     public string? ParseError { get; set; }
+
+    /// <summary>
+    /// True when the text is a ShowPlan document: XML whose root element is <c>ShowPlanXML</c> in the showplan
+    /// namespace. Set before the tree walk, so a plan the walk refuses for its depth, or fails on, is still known to
+    /// be a plan. False for text that is not XML, for XML that is something else, and for XML the reader refused
+    /// before the document was built.
+    /// </summary>
+    public bool IsShowPlanXml { get; set; }
     public string? BuildVersion { get; set; }
     public string? Build { get; set; }
     public bool ClusteredMode { get; set; }
@@ -79,6 +87,18 @@ public class PlanStatement
     // QueryPlan sub-elements
     public OptimizerHardwareInfo? HardwareProperties { get; set; }
     public List<OptimizerStatsUsageItem> StatsUsage { get; set; } = new();
+    /// <summary>
+    /// The statement carried a QueryPlan element, its own or a condition's or a cursor operation's.
+    /// False for DECLARE/ASSIGN shells, the EXEC shell of a procedure call, and MULTIPLE PLAN
+    /// statements whose plan was never captured.
+    /// </summary>
+    public bool HasQueryPlan { get; set; }
+    /// <summary>
+    /// The QueryPlan carried an OptimizerStatsUsage element, even an empty one. False means the plan
+    /// does not record which statistics it loaded (SQL Server before 2017 / 2016 SP2), which is not
+    /// the same as loading none.
+    /// </summary>
+    public bool HasStatsUsage { get; set; }
     public ThreadStatInfo? ThreadStats { get; set; }
     public SetOptionsInfo? SetOptions { get; set; }
     public List<PlanParameter> Parameters { get; set; } = new();
@@ -178,6 +198,8 @@ public class PlanNode
     public long ActualRows { get; set; }
     public long ActualExecutions { get; set; }
     public long ActualRowsRead { get; set; }
+    /// <summary>True when the plan carries ActualRowsRead on at least one thread; a 0 with this false means the plan never recorded it.</summary>
+    public bool HasActualRowsRead { get; set; }
     public long ActualRebinds { get; set; }
     public long ActualRewinds { get; set; }
     public long ActualElapsedMs { get; set; }
@@ -239,6 +261,8 @@ public class PlanNode
     public string? PartitionColumns { get; set; }
     public string? DefinedValues { get; set; }
     public double TableCardinality { get; set; }
+    /// <summary>The RelOp recorded a TableCardinality, so a 0 is a measured 0 rather than an absent attribute.</summary>
+    public bool HasTableCardinality { get; set; }
     public double EstimatedRowsRead { get; set; }
     public string? TopExpression { get; set; }
     public bool IsPercent { get; set; }

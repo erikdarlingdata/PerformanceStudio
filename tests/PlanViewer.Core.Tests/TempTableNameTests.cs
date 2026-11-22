@@ -35,6 +35,22 @@ public class TempTableNameTests
         Assert.Equal(name, ShowPlanParser.CleanTempTableName(name));
     }
 
+    /// <summary>
+    /// #681: a statistic in OptimizerStatsUsage names its table the same internal way an operator's
+    /// Object does, so the statistic's table is cleaned as the operator's is and the two agree.
+    /// </summary>
+    [Fact]
+    public void StatisticsTableName_IsCleanedLikeTheOperators()
+    {
+        var plan = PlanTestHelper.LoadAndAnalyze("stats_usage_plan.sqlplan");
+        var stmt = plan.Batches.SelectMany(b => b.Statements).Single(s => s.StatsUsage.Count > 0);
+        var tempStat = Assert.Single(stmt.StatsUsage, s => s.DatabaseName == "tempdb");
+        var tempScan = Assert.Single(stmt.RootNode!.Children.Single().Children, n => n.DatabaseName == "tempdb");
+
+        Assert.Equal("#orders", tempStat.TableName);
+        Assert.Equal("dbo.#orders", tempScan.ObjectName);
+    }
+
     [Fact]
     public void InternalNameWithNothingBeforeThePadding_IsNotCollapsedToAHash()
     {

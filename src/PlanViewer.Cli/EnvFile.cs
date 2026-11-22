@@ -14,6 +14,7 @@ public sealed class EnvFile
 {
     private readonly Dictionary<string, string> _values;
     private readonly List<string> _used = [];
+    private bool _trustCertIgnored;
 
     public EnvFile(string? filePath, Dictionary<string, string> values)
     {
@@ -49,7 +50,20 @@ public sealed class EnvFile
             server,
             commandLine.Database ?? Use("PLANVIEW_DATABASE"),
             commandLine.Login ?? Use("PLANVIEW_LOGIN"),
-            commandLine.TrustCert || UseFlag("PLANVIEW_TRUST_CERT"));
+            commandLine.TrustCert || TrustCertFromFile(commandLine.Server is null));
+    }
+
+    /* The file may turn off certificate validation only for a server that the file itself named. A
+       server from the command line was chosen by the user, and a file that sits in the working
+       directory must not weaken the check for it. --trust-cert on the command line still works. */
+    private bool TrustCertFromFile(bool serverFromFile)
+    {
+        if (serverFromFile)
+            return UseFlag("PLANVIEW_TRUST_CERT");
+
+        if (IsTrue("PLANVIEW_TRUST_CERT"))
+            _trustCertIgnored = true;
+        return false;
     }
 
     /// <summary>
@@ -66,6 +80,58 @@ public sealed class EnvFile
     public string? Notice =>
         _used.Count == 0 ? null : $"Using settings from {Printable(FilePath ?? ".env")}: {string.Join(", ", _used)}";
 
+    /// <summary>
+    /// Lines for stderr that the user should see, in the order to print them. Ask after
+    /// <see cref="PasswordFor"/>, because the password warning depends on the file having supplied one.
+    /// </summary>
+    public IReadOnlyList<string> Warnings
+    {
+        get
+        {
+            var warnings = new List<string>();
+            if (_trustCertIgnored)
+                warnings.Add($"Ignored PLANVIEW_TRUST_CERT in {Printable(FilePath ?? ".env")}: the file can turn off certificate validation only for a server that the file names. Pass --trust-cert to turn it off for this server.");
+
+            if (FilePath is not null && !OperatingSystem.IsWindows() &&
+                _used.Contains("PLANVIEW_PASSWORD", StringComparer.OrdinalIgnoreCase) &&
+                UnixFileModeOrNull(FilePath) is { } mode &&
+                PermissionWarning(FilePath, mode) is { } permission)
+                warnings.Add(permission);
+            return warnings;
+        }
+    }
+
+    /* The file was read moments ago. If it is gone or unreadable now, the advisory check is skipped. */
+    [System.Runtime.Versioning.UnsupportedOSPlatform("windows")]
+    private static UnixFileMode? UnixFileModeOrNull(string filePath)
+    {
+        try
+        {
+            return File.GetUnixFileMode(filePath);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// A warning when the group or other users can read or write a file that holds a password, as ssh
+    /// does for a key file. Returns null when only the owner has access. It never includes a value.
+    /// </summary>
+    public static string? PermissionWarning(string filePath, UnixFileMode mode)
+    {
+        const UnixFileMode others = UnixFileMode.GroupRead | UnixFileMode.GroupWrite | UnixFileMode.OtherRead | UnixFileMode.OtherWrite;
+        if ((mode & others) == 0)
+            return null;
+
+        var path = Printable(filePath);
+        return $"Warning: {path} holds a password and other users can access it. Run: chmod 600 {ShellQuoted(path)}";
+    }
+
+    /* Single quotes keep spaces and shell characters in a pasted path literal; a quote inside becomes '\''. */
+    private static string ShellQuoted(string value) => "'" + value.Replace("'", "'\\''") + "'";
+
     private string? Use(string key)
     {
         if (!_values.TryGetValue(key, out var value))
@@ -75,10 +141,13 @@ public sealed class EnvFile
         return value;
     }
 
+    private bool IsTrue(string key) =>
+        _values.TryGetValue(key, out var value) && value.Equals("true", StringComparison.OrdinalIgnoreCase);
+
     /* Only "true" changes the setting, so only then is the key recorded. */
     private bool UseFlag(string key)
     {
-        if (!_values.TryGetValue(key, out var value) || !value.Equals("true", StringComparison.OrdinalIgnoreCase))
+        if (!IsTrue(key))
             return false;
 
         Record(key);

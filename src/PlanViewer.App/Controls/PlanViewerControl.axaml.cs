@@ -105,6 +105,25 @@ public partial class PlanViewerControl : UserControl
     // Non-control named elements that Avalonia codegen doesn't auto-generate fields for
     private readonly ColumnDefinition _statementsColumn;
     private readonly ColumnDefinition _statementsSplitterColumn;
+    private readonly ColumnDefinition _canvasColumn;
+
+    // The width the Statements panel asks for: 640 px as it opens, then the width its splitter left it at, from a drag or
+    // from the arrow keys. The width it is given can be narrower (FitSidePanels).
+    private double _statementsWidth = PlanPanelLayout.DefaultStatementsWidth;
+    // The width the last fit gave the Statements column. A column that is not that wide was moved by its splitter.
+    private double _statementsFittedWidth = PlanPanelLayout.DefaultStatementsWidth;
+    private bool _fittingSidePanels;
+    // Whether the Statements panel was opened after the Properties panel, and the panel a fit closed because the viewer
+    // could not hold both. That panel comes back when there is room for it again; a panel the person closed does not.
+    private bool _statementsOpenedLast;
+    private SidePanel _closedByFit = SidePanel.None;
+
+    private enum SidePanel
+    {
+        None,
+        Statements,
+        Properties,
+    }
     private readonly ColumnDefinition _splitterColumn;
     private readonly ColumnDefinition _propertiesColumn;
     private readonly ScaleTransform _zoomTransform;
@@ -164,9 +183,81 @@ public partial class PlanViewerControl : UserControl
     /// </summary>
     public ToolbarOverflow Overflow { get; }
 
+    private bool _insightsFitPending;
+    private bool _insightsSetByUser;
+    private bool _applyingInsightsFit;
+
+    /// <summary>
+    /// Opens or collapses the insights panel by the viewer's height (<see cref="PlanInsightsLayout.StartsExpanded"/>)
+    /// as a plan shows it: in a small window the plan graph keeps most of the height and the panel starts
+    /// collapsed. A panel the person has opened or closed themselves stays as they left it. Before the
+    /// first layout pass the fit waits for the first real height.
+    /// </summary>
+    private void FitInsightsToHeight()
+    {
+        if (_insightsSetByUser)
+            return;
+        if (Bounds.Height > 0)
+            ApplyInsightsFit(Bounds.Height);
+        else
+            _insightsFitPending = true;
+    }
+
+    private void ApplyInsightsFit(double height)
+    {
+        _insightsFitPending = false;
+        _applyingInsightsFit = true;
+        InsightsExpander.IsExpanded = PlanInsightsLayout.StartsExpanded(height);
+        _applyingInsightsFit = false;
+    }
+
+    /// <summary>
+    /// Bounds the insights grid's width: the strip's width, so in a wide window the star columns share it
+    /// and the Wait Stats rows ellipsize as their column allows; or, when the strip is narrower than that,
+    /// the two content-sized columns (Server Context and Runtime Summary, each capped at 360 px) plus the
+    /// star columns' minimums, so the grid keeps its minimums and the strip scrolls to the rest.
+    /// </summary>
+    private void BoundInsightsGridToStrip()
+    {
+        var stripWidth = InsightsStrip.Viewport.Width > 0 ? InsightsStrip.Viewport.Width : InsightsStrip.Bounds.Width;
+        if (stripWidth <= 0)
+            return;
+
+        var columns = InsightsGrid.ColumnDefinitions;
+        var contentColumns = columns[0].ActualWidth + columns[1].ActualWidth;
+        var starMinimums = columns.Skip(2).Sum(c => c.MinWidth);
+        var width = Math.Max(stripWidth, contentColumns + starMinimums);
+        /* Compared exactly: a grid wider than its strip by any amount, half a pixel at 200% scaling included,
+           shows a horizontal scroll bar. The bound is a function of sizes the pass has already settled, so
+           setting it once is the last pass. */
+        if (double.IsNaN(InsightsGrid.Width) || InsightsGrid.Width != width)
+            InsightsGrid.Width = width;
+    }
+
     public PlanViewerControl()
     {
         InitializeComponent();
+
+        /* A plan shown before the first layout pass fits its insights panel on the first real height. A
+           toggle of the expander that is not this fit is the person's choice, and the fit then leaves the
+           panel alone. */
+        SizeChanged += (_, e) =>
+        {
+            if (_insightsFitPending && e.NewSize.Height > 0)
+                ApplyInsightsFit(e.NewSize.Height);
+        };
+        InsightsExpander.PropertyChanged += (_, e) =>
+        {
+            if (e.Property == Expander.IsExpandedProperty && !_applyingInsightsFit)
+                _insightsSetByUser = true;
+        };
+
+        /* The insights strip scrolls sideways, so it measures its grid with no width limit, and a star
+           column measured that way sizes to its content: the Wait Stats card would take its longest row
+           and its rows would never ellipsize. The grid's width is set instead (BoundInsightsGridToStrip),
+           after each layout pass, since the content-sized columns change with the statement and the
+           server metadata, and only when the bound has moved, so the pass that applies it is the last. */
+        InsightsGrid.LayoutUpdated += (_, _) => BoundInsightsGridToStrip();
 
         /* Icon adoption for the XAML-declared toolbar buttons. Set here rather than in the
            XAML because a bare PathIcon does not inherit the button's foreground (its stock
@@ -213,8 +304,21 @@ public partial class PlanViewerControl : UserControl
         //   [0]=Statements(0), [1]=StmtSplitter(0), [2]=Canvas(*), [3]=PropsSplitter(0), [4]=Props(0)
         _statementsColumn = PlanGrid.ColumnDefinitions[0];
         _statementsSplitterColumn = PlanGrid.ColumnDefinitions[1];
+        _canvasColumn = PlanGrid.ColumnDefinitions[2];
         _splitterColumn = PlanGrid.ColumnDefinitions[3];
         _propertiesColumn = PlanGrid.ColumnDefinitions[4];
+
+        /* The two side panels share the viewer's width with the canvas, so their widths are fitted again whenever that
+           width changes, wider or narrower. The width is the control's own, which its columns cannot hold up. A splitter
+           writes the width it leaves its column at, from a drag or from the arrow keys, and the fit reads the Statements
+           column's width from there (FitSidePanels): the end of a drag carries where the pointer is inside the splitter,
+           not how far it moved, so it says nothing about a width. A fit follows the end of a drag and a key on either
+           splitter, so the other panel takes at once what the moved one gave up. */
+        SizeChanged += (_, e) => { if (e.WidthChanged) FitSidePanels(); };
+        StatementsSplitter.DragCompleted += (_, _) => FitSidePanels();
+        PropertiesSplitter.DragCompleted += (_, _) => FitSidePanels();
+        StatementsSplitter.KeyUp += (_, _) => FitSidePanels();
+        PropertiesSplitter.KeyUp += (_, _) => FitSidePanels();
 
         // ScaleTransform is the LayoutTransform of the wrapper around PlanCanvas
         var layoutTransform = this.FindControl<Avalonia.Controls.LayoutTransformControl>("PlanLayoutTransform")!;
@@ -242,6 +346,108 @@ public partial class PlanViewerControl : UserControl
         MinimapCanvas.PointerMoved += MinimapCanvas_PointerMoved;
         MinimapCanvas.PointerReleased += MinimapCanvas_PointerReleased;
         MinimapCanvas.PointerCaptureLost += (_, _) => _minimapDragging = false;
+
+        UpdatePlanButtons();
+    }
+
+    /// <summary>
+    /// The zoom, Fit and minimap buttons act on the operators on the canvas, and Save writes the plan behind them, so they
+    /// are enabled only while a statement is drawn: not before a plan loads, and not after XML that is blank or does not
+    /// parse, or a plan with no statement to draw. Save is also enabled for a plan the viewer holds but does not draw:
+    /// one over the parser's size limit, one the parser refused for its depth or failed on, or one with no statement to
+    /// draw. Saving is what takes such a plan to a tool that can open it. Text that is not XML, and XML that is not a
+    /// ShowPlan document, is not a plan, and is not saved as one. The overflow menu's Save entry follows the button.
+    /// </summary>
+    private void UpdatePlanButtons()
+    {
+        var drawn = PlanScrollViewer.IsVisible && _currentStatement?.RootNode != null;
+        ZoomInButton.IsEnabled = drawn;
+        ZoomOutButton.IsEnabled = drawn;
+        ZoomFitButton.IsEnabled = drawn;
+        var heldUndrawn = _currentPlan is { } plan && !string.IsNullOrEmpty(plan.RawXml)
+            && (plan.IsShowPlanXml || plan.RawXml.Length > PlanXml.MaxCharacters);
+        SavePlanButton.IsEnabled = drawn || heldUndrawn;
+        MinimapToggleButton.IsEnabled = drawn;
+    }
+
+    /// <summary>
+    /// Gives the open side panels the widths <see cref="PlanPanelLayout.Fit"/> works out for the viewer's width, and the
+    /// canvas column the minimum that goes with them, so neither a panel opening nor a splitter move leaves the canvas less
+    /// than that. The width the Statements panel asks for is read from its column first: a column that is not as wide as
+    /// the last fit left it was moved by its splitter, by a drag or by the arrow keys, and that width is the one asked for
+    /// from then on. A click on the splitter, a drag against the canvas minimum and a cancelled drag leave the column as
+    /// it was, so they change nothing. A viewer too narrow for both panels at their minimums shows one, the one opened
+    /// last, and closes the other; the panel closed that way comes back when the viewer is wide enough for both again, or
+    /// when the other panel closes. Before the first layout pass there is no width to fit to; the pass that gives one fits
+    /// the panels.
+    /// </summary>
+    private void FitSidePanels()
+    {
+        var viewerWidth = Bounds.Width;
+        if (viewerWidth <= 0)
+            return;
+
+        var statementsOpen = StatementsPanel.IsVisible;
+        var propertiesOpen = PropertiesPanel.IsVisible;
+
+        // Less than a pixel of difference is the layout's rounding of the fitted width, not a move of the splitter.
+        if (statementsOpen && _statementsColumn.Width.IsAbsolute && Math.Abs(_statementsColumn.Width.Value - _statementsFittedWidth) >= 1)
+            _statementsWidth = _statementsColumn.Width.Value;
+
+        var propertiesWidth = Math.Clamp(_propertiesPanelWidth, MinPropertiesWidth, MaxPropertiesWidth);
+        var holdsBoth = PlanPanelLayout.HoldsBoth(viewerWidth, _statementsWidth, propertiesWidth, MinPropertiesWidth, PropertiesSplitterWidth);
+        if (statementsOpen && propertiesOpen && !holdsBoth)
+        {
+            if (_statementsOpenedLast)
+            {
+                HidePropertiesPanel();
+                _closedByFit = SidePanel.Properties;
+                propertiesOpen = false;
+            }
+            else
+            {
+                HideStatementsPanel();
+                _closedByFit = SidePanel.Statements;
+                statementsOpen = false;
+            }
+        }
+        else if (_closedByFit == SidePanel.Statements && !statementsOpen && (!propertiesOpen || holdsBoth))
+        {
+            _closedByFit = SidePanel.None;
+            RevealStatementsPanel();
+            statementsOpen = true;
+        }
+        else if (_closedByFit == SidePanel.Properties && !propertiesOpen && (!statementsOpen || holdsBoth))
+        {
+            _closedByFit = SidePanel.None;
+            RevealPropertiesPanel();
+            propertiesOpen = true;
+        }
+
+        var fit = PlanPanelLayout.Fit(
+            viewerWidth,
+            statementsOpen ? _statementsWidth : null,
+            propertiesOpen ? propertiesWidth : null,
+            MinPropertiesWidth,
+            PropertiesSplitterWidth);
+
+        _fittingSidePanels = true;
+        try
+        {
+            if (statementsOpen)
+            {
+                _statementsColumn.Width = new GridLength(fit.Statements);
+                _statementsFittedWidth = fit.Statements;
+            }
+
+            if (propertiesOpen)
+                _propertiesColumn.Width = new GridLength(fit.Properties);
+            _canvasColumn.MinWidth = fit.CanvasMinimum;
+        }
+        finally
+        {
+            _fittingSidePanels = false;
+        }
     }
 
     /// <summary>
@@ -456,7 +662,7 @@ public partial class PlanViewerControl : UserControl
         // (or a parse failure) as a silent "No Plan Loaded".
         if (string.IsNullOrWhiteSpace(planXml))
         {
-            LastLoadError = "The plan is empty — this source has no stored query plan XML.";
+            LastLoadError = "The plan is empty: this source has no stored query plan XML.";
             ShowEmptyState("Couldn't Load Plan", LastLoadError);
             return false;
         }
@@ -579,6 +785,7 @@ public partial class PlanViewerControl : UserControl
         }
         EmptyState.IsVisible = true;
         PlanScrollViewer.IsVisible = false;
+        UpdatePlanButtons();
     }
 
     public void Clear()
@@ -596,6 +803,8 @@ public partial class PlanViewerControl : UserControl
         InsightsPanel.IsVisible = false;
         CostText.Text = "";
         ConfigNoticeText.IsVisible = false;
+        // The panel a fit closed belonged to the plan that is going, so it does not come back for the next one.
+        _closedByFit = SidePanel.None;
         CloseStatementsPanel();
         // Button and divider both belong to the overflow — see ShowStatementsPanel.
         Overflow.SetAvailable(StatementsButton, false);

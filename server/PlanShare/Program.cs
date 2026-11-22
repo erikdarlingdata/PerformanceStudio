@@ -2,6 +2,8 @@ using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Unicode;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Data.Sqlite;
 using PlanShare;
@@ -75,28 +77,39 @@ var readRateLimiter = new RateLimiter(maxRequests: 120, windowSeconds: 60);
 
 // --- Storage limit and daily upload budget ---
 // The production disk is 40 GB, so shares are refused (507) once the database uses 10 GB of pages.
-// The budget is the most plan data one client key can store per UTC day (429 after that).
-// PlanShare:MaxDatabaseBytes and PlanShare:DailyUploadBytes override the two limits, which lets
-// the endpoint tests use small values.
+// Two budgets cap the plan data stored per UTC day. The per-client one is 100 MB per client key
+// (429 after that). The global one is 1 GB across all clients (503 after that): without it, about
+// 100 keys could fill the 10 GB store in a day, and a share can live for 365 days, so new shares
+// would then fail for up to a year. With it, a flood blocks new shares until the end of one UTC day.
+// Both are in memory and start again at zero on a restart.
+// PlanShare:MaxDatabaseBytes, PlanShare:DailyUploadBytes and PlanShare:GlobalDailyUploadBytes
+// override the three limits, which lets the endpoint tests use small values.
 const long MaxDatabaseBytes = 10L * 1024 * 1024 * 1024;
 const long DailyUploadBytes = 100L * 1024 * 1024;
+const long GlobalDailyUploadBytes = 1024L * 1024 * 1024;
+const string GlobalBudgetKey = "all";
+const string ClientBudgetMessage = "Daily sharing limit reached for your network. Please try again tomorrow.";
+const string GlobalBudgetMessage = "Plan sharing has reached today's overall limit. Please try again tomorrow.";
 var storageCheck = new StorageCheck(
     connectionString,
     builder.Configuration.GetValue<long?>("PlanShare:MaxDatabaseBytes") ?? MaxDatabaseBytes);
 var uploadBudget = new UploadBudget(
     builder.Configuration.GetValue<long?>("PlanShare:DailyUploadBytes") ?? DailyUploadBytes);
+var globalUploadBudget = new UploadBudget(
+    builder.Configuration.GetValue<long?>("PlanShare:GlobalDailyUploadBytes") ?? GlobalDailyUploadBytes);
 
 // Register the cleanup background service
 builder.Services.AddSingleton(new PlanDbConfig(connectionString));
 builder.Services.AddSingleton(new RateLimiters(rateLimiter, analyticsRateLimiter, readRateLimiter));
-builder.Services.AddSingleton(uploadBudget);
+builder.Services.AddSingleton(new UploadBudgets(uploadBudget, globalUploadBudget));
 builder.Services.AddHostedService<CleanupService>();
 
 // Request size limit (10 MB). nginx on the server sets the same limit for /api/
 // (client_max_body_size 10m); without it, nginx's 1 MB default refuses larger shares
 // first. The web client's too-large message (PlanShareService) also names 10 MB.
 // Change all three together.
-builder.WebHost.ConfigureKestrel(o => o.Limits.MaxRequestBodySize = 10 * 1024 * 1024);
+const int MaxBodyBytes = 10 * 1024 * 1024;
+builder.WebHost.ConfigureKestrel(o => o.Limits.MaxRequestBodySize = MaxBodyBytes);
 
 var app = builder.Build();
 
@@ -125,7 +138,13 @@ app.UseCors();
 const int MaxTtlDays = 365;
 
 // Longest page path an analytics event may carry. Real paths are a few characters.
-const int MaxEventPathLength = 512;
+// Real paths are a few characters; the longest of 2,827 production page views was 85.
+const int MaxEventPathLength = 128;
+
+// Largest /api/event body accepted. A real event is under 1 KB. The 128-character path
+// limit allows 768 bytes even if every character is escaped as \uXXXX (6 bytes), which leaves
+// about 15 KB for the referrer and the rest of the object.
+const int MaxEventBodyBytes = 16 * 1024;
 
 // Depth ceiling for parsing an uploaded share, mirroring PlanViewer.Core's
 // AnalysisJson.MaxDepth — that class is the source of truth for how deep a serialized
@@ -150,47 +169,78 @@ app.MapPost("/api/share", async (HttpContext ctx) =>
         return Error(429, "Too many shares from your network. Please wait a minute and try again.");
     }
 
-    // Read raw body
-    using var reader = new StreamReader(ctx.Request.Body);
-    var body = await reader.ReadToEndAsync();
+    // Refuse a full store or a spent budget before reading the body: a 10 MB read costs memory
+    // whether or not the share is then accepted. ContentLength can be absent (chunked), so the
+    // charge after the read stays the authoritative one.
+    if (storageCheck.IsFull())
+    {
+        return Error(507, "Plan sharing is full right now. Please try again later.");
+    }
+
+    if (ctx.Request.ContentLength is { } declared)
+    {
+        if (!uploadBudget.CanCharge(client, declared))
+            return Error(429, ClientBudgetMessage);
+        if (!globalUploadBudget.CanCharge(GlobalBudgetKey, declared))
+            return Error(503, GlobalBudgetMessage);
+    }
+
+    // Read the body as bytes, refusing more than MaxBodyBytes
+    var raw = await ReadBodyAsync(ctx, MaxBodyBytes);
+    if (raw is null)
+    {
+        return Error(413, "Request body too large.");
+    }
+
+    // The stored text is the body decoded as UTF-8 (a leading byte order mark dropped, invalid
+    // bytes replaced), the same text StreamReader produced when this endpoint read a string.
+    var bytes = StripUtf8Bom(raw.Value);
+    var body = Encoding.UTF8.GetString(bytes.Span);
 
     if (string.IsNullOrWhiteSpace(body))
     {
         return Error(400, "Empty body");
     }
 
-    // Parse and extract ttl_days from the JSON. shareDocumentOptions, not defaults: this body
-    // wraps a full serialized analysis, and the default 64-level ceiling turned a deep plan's
-    // legitimate upload into a 400 before ttl_days was ever read.
+    // The scan below reads UTF-8 and rejects invalid bytes, so re-encode the decoded text when
+    // the body had any. That keeps a body with a bad byte inside a string valid, as it was.
+    if (!Utf8.IsValid(bytes.Span))
+    {
+        bytes = Encoding.UTF8.GetBytes(body);
+    }
+
+    // Validate the JSON and read ttl_days with a forward-only reader. JsonDocument would build a
+    // metadata table for every token, tens of MB for a 10 MB body of small values. The depth limit
+    // is shareDocumentOptions', not the default: this body wraps a full serialized analysis, and the
+    // default 64-level ceiling turned a deep plan's legitimate upload into a 400.
     int ttlDays = 7;
     try
     {
-        using var doc = JsonDocument.Parse(body, shareDocumentOptions);
-        // TryGetProperty and TryGetInt32 throw (a 500) on the wrong kind of element, so check the kind first
-        if (doc.RootElement.ValueKind != JsonValueKind.Object)
+        var scan = ScanShare(bytes.Span, shareDocumentOptions.MaxDepth);
+        if (!scan.RootIsObject)
             return Error(400, "The request body must be a JSON object.");
-        if (doc.RootElement.TryGetProperty("ttl_days", out var ttlProp) && ttlProp.ValueKind != JsonValueKind.Null)
-        {
-            if (ttlProp.ValueKind != JsonValueKind.Number)
-                return Error(400, "ttl_days must be a number.");
-            if (ttlProp.TryGetInt32(out var t))
-                ttlDays = Math.Clamp(t, 1, MaxTtlDays);
-        }
+        if (scan.TtlWrongType)
+            return Error(400, "ttl_days must be a number.");
+        if (scan.Ttl is { } t)
+            ttlDays = Math.Clamp(t, 1, MaxTtlDays);
     }
     catch (JsonException)
     {
         return Error(400, "Invalid JSON");
     }
 
-    if (storageCheck.IsFull())
+    // The stored size is the UTF-8 length of the body (the same count as the string's)
+    // A share must fit both budgets. One refused by the global budget gives the client's charge
+    // back, so a spent global limit does not also eat each client's own allowance.
+    if (!uploadBudget.TryCharge(client, bytes.Length))
     {
-        return Error(507, "Plan sharing is full right now. Please try again later.");
+        return Error(429, ClientBudgetMessage);
     }
 
-    // The stored size is the UTF-8 length of the body; ContentLength can be absent
-    if (!uploadBudget.TryCharge(client, Encoding.UTF8.GetByteCount(body)))
+    if (!globalUploadBudget.TryCharge(GlobalBudgetKey, bytes.Length))
     {
-        return Error(429, "Daily sharing limit reached for your network. Please try again tomorrow.");
+        uploadBudget.Refund(client, bytes.Length);
+        return Error(503, GlobalBudgetMessage);
     }
 
     var id = GenerateId();
@@ -244,8 +294,11 @@ app.MapPost("/api/event", async (HttpContext ctx) =>
     if (!analyticsRateLimiter.IsAllowed(ClientKey.From(ctx.Connection.RemoteIpAddress)))
         return Results.StatusCode(429);
 
-    using var reader = new StreamReader(ctx.Request.Body);
-    var body = await reader.ReadToEndAsync();
+    // A real event is under 1 KB, so refuse a large body before reading it
+    var raw = await ReadBodyAsync(ctx, MaxEventBodyBytes);
+    if (raw is null)
+        return Error(413, "Request body too large.");
+    var body = Encoding.UTF8.GetString(StripUtf8Bom(raw.Value).Span);
 
     string path = "/";
     string? referrer = null;
@@ -320,6 +373,10 @@ app.MapPost("/api/event", async (HttpContext ctx) =>
 
 app.MapGet("/api/stats", (HttpContext ctx) =>
 {
+    // Each call runs a dozen queries, several of them scans of page_views
+    if (!readRateLimiter.IsAllowed(ClientKey.From(ctx.Connection.RemoteIpAddress)))
+        return Results.StatusCode(429);
+
     // Opt-in auth. /api/stats exposes share counts, daily traffic, unique
     // visitors and top referrers — operational data, not something that needs
     // to be world-readable. Set STATS_TOKEN to require it; leaving it unset
@@ -472,6 +529,10 @@ app.MapGet("/api/stats", (HttpContext ctx) =>
 
 app.MapDelete("/api/plans/{id}", (string id, HttpContext ctx) =>
 {
+    // Every call with a token runs a write, right or wrong
+    if (!readRateLimiter.IsAllowed(ClientKey.From(ctx.Connection.RemoteIpAddress)))
+        return Results.StatusCode(429);
+
     // Header first: a ?token= query string is written to the nginx access log. The query form
     // stays for clients built before the header existed.
     var token = ctx.Request.Headers["X-Delete-Token"].FirstOrDefault();
@@ -497,6 +558,88 @@ app.Run();
 
 // --- Helpers ---
 
+// Reads the request body into memory, or returns null when it is longer than maxBytes. Kestrel's
+// per-request limit is lowered too, which covers a chunked body that declares no length; the
+// bounded loop does not depend on it. A body that declares too much is refused unread.
+static async Task<ArraySegment<byte>?> ReadBodyAsync(HttpContext ctx, int maxBytes)
+{
+    var limit = ctx.Features.Get<IHttpMaxRequestBodySizeFeature>();
+    if (limit is { IsReadOnly: false } && limit.MaxRequestBodySize > maxBytes)
+        limit.MaxRequestBodySize = maxBytes;
+
+    var declared = ctx.Request.ContentLength;
+    if (declared > maxBytes)
+        return null;
+
+    var buffer = new byte[declared is > 0 ? (int)declared.Value : 4096];
+    var length = 0;
+    while (declared is null || length < declared)
+    {
+        if (length == buffer.Length)
+            Array.Resize(ref buffer, (int)Math.Min((long)buffer.Length * 2, (long)maxBytes + 1));
+        var read = await ctx.Request.Body.ReadAsync(buffer.AsMemory(length), ctx.RequestAborted);
+        if (read == 0)
+            break;
+        length += read;
+        if (length > maxBytes)
+            return null;
+    }
+    return new ArraySegment<byte>(buffer, 0, length);
+}
+
+static ReadOnlyMemory<byte> StripUtf8Bom(ArraySegment<byte> bytes)
+{
+    ReadOnlyMemory<byte> memory = bytes;
+    return memory.Span.StartsWith(Encoding.UTF8.Preamble) ? memory[Encoding.UTF8.Preamble.Length..] : memory;
+}
+
+// Checks that json is one well-formed JSON value within maxDepth, and reads the top-level ttl_days
+// the way JsonDocument did: the last duplicate wins, null counts as absent, and a number that is not
+// an Int32 counts as absent. Throws JsonException on malformed JSON.
+static (bool RootIsObject, bool TtlWrongType, int? Ttl) ScanShare(ReadOnlySpan<byte> json, int maxDepth)
+{
+    var reader = new Utf8JsonReader(json, new JsonReaderOptions { MaxDepth = maxDepth });
+    var first = true;
+    var rootIsObject = false;
+    var wrongType = false;
+    int? ttl = null;
+
+    while (reader.Read())
+    {
+        if (first)
+        {
+            rootIsObject = reader.TokenType == JsonTokenType.StartObject;
+            first = false;
+            continue;
+        }
+
+        if (rootIsObject
+            && reader.TokenType == JsonTokenType.PropertyName
+            && reader.CurrentDepth == 1
+            && reader.ValueTextEquals("ttl_days"u8))
+        {
+            reader.Read();
+            ttl = null;
+            wrongType = false;
+            switch (reader.TokenType)
+            {
+                case JsonTokenType.Null:
+                    break;
+                case JsonTokenType.Number:
+                    if (reader.TryGetInt32(out var t))
+                        ttl = t;
+                    break;
+                default:
+                    // An object or array value is walked by this loop, one level deeper
+                    wrongType = true;
+                    break;
+            }
+        }
+    }
+
+    return (rootIsObject, wrongType, ttl);
+}
+
 static string GenerateId()
 {
     // The id is the only access control on a shared plan, so it must be
@@ -520,20 +663,22 @@ static IResult Error(int statusCode, string message)
 
 record PlanDbConfig(string ConnectionString);
 
+record UploadBudgets(UploadBudget Client, UploadBudget Global);
+
 record RateLimiters(RateLimiter Share, RateLimiter Analytics, RateLimiter Read);
 
 sealed class CleanupService : BackgroundService
 {
     private readonly PlanDbConfig _config;
     private readonly RateLimiters _rateLimiters;
-    private readonly UploadBudget _uploadBudget;
+    private readonly UploadBudgets _uploadBudgets;
     private readonly ILogger<CleanupService> _logger;
 
-    public CleanupService(PlanDbConfig config, RateLimiters rateLimiters, UploadBudget uploadBudget, ILogger<CleanupService> logger)
+    public CleanupService(PlanDbConfig config, RateLimiters rateLimiters, UploadBudgets uploadBudgets, ILogger<CleanupService> logger)
     {
         _config = config;
         _rateLimiters = rateLimiters;
-        _uploadBudget = uploadBudget;
+        _uploadBudgets = uploadBudgets;
         _logger = logger;
     }
 
@@ -583,7 +728,7 @@ sealed class CleanupService : BackgroundService
             var shareEvicted = _rateLimiters.Share.Sweep();
             var analyticsEvicted = _rateLimiters.Analytics.Sweep();
             var readEvicted = _rateLimiters.Read.Sweep();
-            var budgetEvicted = _uploadBudget.Sweep();
+            var budgetEvicted = _uploadBudgets.Client.Sweep() + _uploadBudgets.Global.Sweep();
             if (shareEvicted + analyticsEvicted + readEvicted + budgetEvicted > 0)
                 _logger.LogInformation(
                     "Evicted {Share} share + {Analytics} analytics + {Read} read rate-limit keys and {Budget} upload-budget keys",

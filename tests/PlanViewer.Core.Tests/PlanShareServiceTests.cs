@@ -60,6 +60,7 @@ public class PlanShareServiceTests
     [Theory]
     [InlineData(HttpStatusCode.InsufficientStorage, "Plan sharing is full right now. Please try again later.")]
     [InlineData(HttpStatusCode.TooManyRequests, "Daily sharing limit reached for your network. Please try again tomorrow.")]
+    [InlineData(HttpStatusCode.ServiceUnavailable, "Plan sharing has reached today's overall limit. Please try again tomorrow.")]
     [InlineData(HttpStatusCode.BadRequest, "The request body must be a JSON object.")]
     // Server text wins over the built-in 413 message below
     [InlineData(HttpStatusCode.RequestEntityTooLarge, "Plans this large can't be shared.")]

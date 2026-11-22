@@ -10,9 +10,11 @@ namespace PlanViewer.Core.Tests;
 /// process. Everything that ran afterwards died in <c>FontManager.SystemFonts</c>, the test that
 /// did it passed, and which tests went red depended on the order the runner picked that day.
 ///
-/// <para>The cause was a deferred render pass still sitting on the dispatcher queue when the
-/// dispatch ended — see <see cref="HeadlessUi"/> for the mechanism and the fix. This test exists
-/// because the fix lives in the harness, where nothing else would notice it being removed.</para>
+/// <para>The cause was a deferred render pass still sitting on the dispatcher queue when a
+/// per-test session tore down and disposed its FontManager. The session is now shared for the
+/// whole assembly, so nothing disposes the FontManager between tests. This test is a regression
+/// test for the symptom: a window shown after a <see cref="PlanViewerControl"/> must still
+/// construct, whatever the harness's session and drain look like.</para>
 /// </summary>
 public class HeadlessSessionSurvivalTests
 {

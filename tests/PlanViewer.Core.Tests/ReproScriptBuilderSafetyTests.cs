@@ -73,7 +73,7 @@ public class ReproScriptBuilderSafetyTests
         var sql = ReproScriptBuilder.BuildReproScript("SELECT 1", "db", plan, null);
 
         Assert.DoesNotContain("SHUTDOWN", sql);
-        Assert.Contains("1 parameter(s) omitted", sql);
+        Assert.Contains("1 parameter omitted", sql);
     }
 
     [Fact]
@@ -103,7 +103,7 @@ public class ReproScriptBuilderSafetyTests
         var plan = PlanWithParameter("@id", "int; DROP TABLE dbo.Orders --", "(1)");
         var sql = ReproScriptBuilder.BuildReproScript("SELECT 1", "db", plan, null);
 
-        Assert.Contains("1 parameter(s) omitted", sql);
+        Assert.Contains("1 parameter omitted", sql);
     }
 
     [Fact]
@@ -261,7 +261,7 @@ public class ReproScriptBuilderSafetyTests
         var plan = PlanWithParameter("@id&#10;", "int", "(1)");
         var sql = ReproScriptBuilder.BuildReproScript("SELECT 1", "db", plan, null);
 
-        Assert.Contains("1 parameter(s) omitted", sql);
+        Assert.Contains("1 parameter omitted", sql);
     }
 
     [Fact]
@@ -328,7 +328,7 @@ public class ReproScriptBuilderSafetyTests
         var plan = PlanWithParameter("@id", dataType, "(1)");
         var sql = ReproScriptBuilder.BuildReproScript("SELECT 1", "db", plan, null);
 
-        Assert.Contains("1 parameter(s) omitted", sql);
+        Assert.Contains("1 parameter omitted", sql);
         Assert.DoesNotContain("SELECT 2", sql);
     }
 
@@ -426,5 +426,45 @@ public class ReproScriptBuilderSafetyTests
         Assert.Single(parameters);
         Assert.Equal("@id", parameters[0].Name);
         Assert.Equal("42", parameters[0].CompiledValue);
+    }
+
+    private static string PlanWithParameters(params (string Column, string DataType, string CompiledValue)[] parameters) =>
+        $"""
+         <ShowPlanXML xmlns="http://schemas.microsoft.com/sqlserver/2004/07/showplan">
+           <BatchSequence><Batch><Statements>
+             <StmtSimple>
+               <QueryPlan>
+                 <ParameterList>
+                   {string.Join("\n", parameters.Select(p => $"""<ColumnReference Column="{p.Column}" ParameterDataType="{p.DataType}" ParameterCompiledValue="{p.CompiledValue}" />"""))}
+                 </ParameterList>
+               </QueryPlan>
+             </StmtSimple>
+           </Statements></Batch></BatchSequence>
+         </ShowPlanXML>
+         """;
+
+    [Fact]
+    public void BuildReproScript_OneDroppedParameter_ReadsSingularAndSaysDeclareIt()
+    {
+        // One omitted parameter reads "1 parameter omitted" and asks the reader to declare "it".
+        var plan = PlanWithParameter("@id", "int; DROP TABLE dbo.Orders --", "(1)");
+        var sql = ReproScriptBuilder.BuildReproScript("SELECT 1", "db", plan, null);
+
+        Assert.Contains("1 parameter omitted:", sql);
+        Assert.Contains("Declare it manually before executing.", sql);
+        Assert.DoesNotContain("(s)", sql);
+    }
+
+    [Fact]
+    public void BuildReproScript_TwoDroppedParameters_ReadPluralAndSayDeclareThem()
+    {
+        var plan = PlanWithParameters(
+            ("@id", "int; DROP TABLE dbo.Orders --", "(1)"),
+            ("@name = 1; SHUTDOWN --", "nvarchar(50)", "N'x'"));
+        var sql = ReproScriptBuilder.BuildReproScript("SELECT 1", "db", plan, null);
+
+        Assert.Contains("2 parameters omitted:", sql);
+        Assert.Contains("Declare them manually before executing.", sql);
+        Assert.DoesNotContain("(s)", sql);
     }
 }

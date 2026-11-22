@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text.RegularExpressions;
 using PlanViewer.Core.Models;
@@ -196,13 +197,13 @@ public static partial class PlanAnalyzer
                 {
                     var grantMB = grant.GrantedMemoryKB / 1024.0;
                     var message = usedNothing
-                        ? $"Granted {grantMB:N0} MB but the query used none of it. The unused memory is reserved and unavailable to other queries."
-                        : $"Granted {grantMB:N0} MB but only used {grant.MaxUsedMemoryKB / 1024.0:N0} MB ({wasteRatio:F0}x overestimate). The unused memory is reserved and unavailable to other queries.";
+                        ? string.Create(CultureInfo.InvariantCulture, $"Granted {grantMB:N0} MB but the query used none of it. The unused memory is reserved and unavailable to other queries.")
+                        : string.Create(CultureInfo.InvariantCulture, $"Granted {grantMB:N0} MB but only used {grant.MaxUsedMemoryKB / 1024.0:N0} MB ({wasteRatio:F0}x overestimate). The unused memory is reserved and unavailable to other queries.");
 
                     // Note adaptive joins that chose Nested Loops at runtime — the grant
                     // was sized for a hash join that never happened.
                     if (stmt.RootNode != null && HasAdaptiveJoinChoseNestedLoop(stmt.RootNode))
-                        message += " An adaptive join in this plan executed as a Nested Loop at runtime — the memory grant was sized for the hash join alternative that wasn't used.";
+                        message += " An adaptive join in this plan executed as a Nested Loop at runtime: the memory grant was sized for the hash join alternative that wasn't used.";
 
                     stmt.PlanWarnings.Add(new PlanWarning
                     {
@@ -221,7 +222,7 @@ public static partial class PlanAnalyzer
                 {
                     RuleNumber = 9,
                     WarningType = "Memory Grant Wait",
-                    Message = $"Query waited {grant.GrantWaitTimeMs:N0}ms for a memory grant before it could start running. Other queries were using all available workspace memory.",
+                    Message = string.Create(CultureInfo.InvariantCulture, $"Query waited {grant.GrantWaitTimeMs:N0}ms for a memory grant before it could start running. Other queries were using all available workspace memory."),
                     Severity = grant.GrantWaitTimeMs >= 5000 ? PlanWarningSeverity.Critical : PlanWarningSeverity.Warning
                 });
             }
@@ -249,7 +250,7 @@ public static partial class PlanAnalyzer
                 {
                     RuleNumber = 9,
                     WarningType = "Large Memory Grant",
-                    Message = $"Query granted {grantMB:F0} MB of memory.{guidance}",
+                    Message = string.Create(CultureInfo.InvariantCulture, $"Query granted {grantMB:F0} MB of memory.{guidance}"),
                     Severity = grantMB >= 4096 ? PlanWarningSeverity.Critical : PlanWarningSeverity.Warning
                 });
             }
@@ -282,7 +283,7 @@ public static partial class PlanAnalyzer
             {
                 RuleNumber = 19,
                 WarningType = "High Compile CPU",
-                Message = $"Query took {stmt.CompileCPUMs:N0}ms of CPU just to compile a plan (before any data was read). Simplify the query by breaking it into smaller steps using #temp tables.",
+                Message = string.Create(CultureInfo.InvariantCulture, $"Query took {stmt.CompileCPUMs:N0}ms of CPU just to compile a plan (before any data was read). Simplify the query by breaking it into smaller steps using #temp tables."),
                 Severity = stmt.CompileCPUMs >= 5000 ? PlanWarningSeverity.Critical : PlanWarningSeverity.Warning
             });
         }
@@ -299,7 +300,7 @@ public static partial class PlanAnalyzer
             {
                 RuleNumber = 4,
                 WarningType = "UDF Execution",
-                Message = $"Scalar UDF cost in this statement: {stmt.QueryUdfElapsedTimeMs:N0}ms elapsed, {stmt.QueryUdfCpuTimeMs:N0}ms CPU. Scalar UDFs run once per row and prevent parallelism. Options: rewrite as an inline table-valued function, assign the result to a variable if only one row is needed, dump results to a #temp table and apply the UDF to the final result set, or on SQL Server 2019+ check if the UDF is eligible for automatic scalar UDF inlining.",
+                Message = string.Create(CultureInfo.InvariantCulture, $"Scalar UDF cost in this statement: {stmt.QueryUdfElapsedTimeMs:N0}ms elapsed, {stmt.QueryUdfCpuTimeMs:N0}ms CPU. Scalar UDFs run once per row and prevent parallelism. Options: rewrite as an inline table-valued function, assign the result to a variable if only one row is needed, dump results to a #temp table and apply the UDF to the final result set, or on SQL Server 2019+ check if the UDF is eligible for automatic scalar UDF inlining."),
                 Severity = stmt.QueryUdfElapsedTimeMs >= 1000 ? PlanWarningSeverity.Critical : PlanWarningSeverity.Warning
             });
         }
@@ -312,7 +313,10 @@ public static partial class PlanAnalyzer
         // Parameters with no CompiledValue are likely local variables — the optimizer
         // cannot sniff their values and uses density-based ("unknown") estimates.
         // Skip statements with cost < 1 (can't go parallel, estimate quality rarely matters).
-        if (!cfg.IsRuleDisabled(20) && stmt.Parameters.Count > 0 && stmt.StatementSubTreeCost >= 1.0)
+        // OPTIMIZE FOR UNKNOWN also leaves a parameter without a compiled value, and rule 27
+        // reports the hint, so rule 20 leaves those statements to it.
+        if (!cfg.IsRuleDisabled(20) && stmt.Parameters.Count > 0 && stmt.StatementSubTreeCost >= 1.0
+            && !HasOptimizeForUnknown(stmt))
         {
             var unsnifffedParams = stmt.Parameters
                 .Where(p => string.IsNullOrEmpty(p.CompiledValue))
@@ -342,11 +346,18 @@ public static partial class PlanAnalyzer
 
     }
 
+    /// <summary>
+    /// Rule 27's test, shared with rule 20: the OPTIMIZE FOR UNKNOWN hint in the statement's code.
+    /// The masked text (#579) keeps the phrase inside a comment or a string literal from counting.
+    /// </summary>
+    private static bool HasOptimizeForUnknown(PlanStatement stmt) =>
+        !string.IsNullOrEmpty(stmt.StatementText) &&
+        Regex.IsMatch(MaskCommentsAndLiterals(stmt.StatementText), @"OPTIMIZE\s+FOR\s+UNKNOWN", RegexOptions.IgnoreCase);
+
     private static void Rule27_OptimizeForUnknown(PlanStatement stmt, AnalyzerConfig cfg, ServerMetadata? serverMetadata)
     {
         // Rule 27: OPTIMIZE FOR UNKNOWN in statement text
-        if (!cfg.IsRuleDisabled(27) && !string.IsNullOrEmpty(stmt.StatementText) &&
-            Regex.IsMatch(MaskCommentsAndLiterals(stmt.StatementText), @"OPTIMIZE\s+FOR\s+UNKNOWN", RegexOptions.IgnoreCase)) // #579
+        if (!cfg.IsRuleDisabled(27) && HasOptimizeForUnknown(stmt))
         {
             stmt.PlanWarnings.Add(new PlanWarning
             {
@@ -494,7 +505,7 @@ public static partial class PlanAnalyzer
                     {
                         RuleNumber = 30,
                         WarningType = "Low Impact Index",
-                        Message = $"Missing index suggestion for {mi.Table} has only {mi.Impact:F0}% estimated impact. Low-impact indexes add maintenance overhead (insert/update/delete cost) that may not justify the modest query improvement.",
+                        Message = string.Create(CultureInfo.InvariantCulture, $"Missing index suggestion for {mi.Table} has only {mi.Impact:F0}% estimated impact. Low-impact indexes add maintenance overhead (insert/update/delete cost) that may not justify the modest query improvement."),
                         Severity = PlanWarningSeverity.Info
                     });
                 }
@@ -506,7 +517,7 @@ public static partial class PlanAnalyzer
                     {
                         RuleNumber = 30,
                         WarningType = "Wide Index Suggestion",
-                        Message = $"Missing index suggestion for {mi.Table} has {includeCount} INCLUDE columns. This is a \"kitchen sink\" index — SQL Server suggests covering every column the query touches, but the resulting index would be very wide and expensive to maintain. Evaluate which columns are actually needed, or consider a narrower index with fewer includes.",
+                        Message = $"Missing index suggestion for {mi.Table} has {includeCount} INCLUDE columns. This is a \"kitchen sink\" index: SQL Server suggests covering every column the query touches, but the resulting index would be very wide and expensive to maintain. Evaluate which columns are actually needed, or consider a narrower index with fewer includes.",
                         Severity = PlanWarningSeverity.Warning
                     });
                 }
@@ -529,7 +540,7 @@ public static partial class PlanAnalyzer
                     {
                         RuleNumber = 30,
                         WarningType = "Duplicate Index Suggestions",
-                        Message = $"{count} missing index suggestions target {mi.Table}. Multiple suggestions for the same table often overlap — consolidate into fewer, broader indexes rather than creating all of them.",
+                        Message = $"{count} missing index suggestions target {mi.Table}. Multiple suggestions for the same table often overlap: consolidate into fewer, broader indexes rather than creating all of them.",
                         Severity = PlanWarningSeverity.Warning
                     });
                     // Only warn once per table

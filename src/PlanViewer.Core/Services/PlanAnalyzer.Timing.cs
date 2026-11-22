@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text.RegularExpressions;
 using PlanViewer.Core.Models;
@@ -25,16 +26,16 @@ public static partial class PlanAnalyzer
         {
             var rowCount = node.HasActualStats ? node.ActualRows : node.EstimateRows;
             var rows = node.HasActualStats
-                ? $"{node.ActualRows:N0} actual rows"
-                : $"{node.EstimateRows:N0} estimated rows";
+                ? string.Create(CultureInfo.InvariantCulture, $"{node.ActualRows:N0} actual rows")
+                : string.Create(CultureInfo.InvariantCulture, $"{node.EstimateRows:N0} estimated rows");
             consumers.Add(($"Sort (Node {node.NodeId}, {rows})", rowCount));
         }
         else if (node.PhysicalOp.Contains("Hash", StringComparison.OrdinalIgnoreCase))
         {
             var rowCount = node.HasActualStats ? node.ActualRows : node.EstimateRows;
             var rows = node.HasActualStats
-                ? $"{node.ActualRows:N0} actual rows"
-                : $"{node.EstimateRows:N0} estimated rows";
+                ? string.Create(CultureInfo.InvariantCulture, $"{node.ActualRows:N0} actual rows")
+                : string.Create(CultureInfo.InvariantCulture, $"{node.EstimateRows:N0} estimated rows");
             consumers.Add(($"Hash Match (Node {node.NodeId}, {rows})", rowCount));
         }
 
@@ -79,40 +80,83 @@ public static partial class PlanAnalyzer
     }
 
     /// <summary>
+    /// Which per-thread counter the own-time helpers attribute, and how a child on the
+    /// producer side of an exchange comes off the parent's threads.
+    ///
+    /// Elapsed takes the slowest producer thread below the exchange off every thread
+    /// above it. An exchange moves rows between threads, so thread t above it is not
+    /// doing thread t's work below it; every consumer thread waits on all the producers
+    /// and none finishes before the slowest does. This is the per-thread form of the
+    /// serial path's max child (#680).
+    ///
+    /// CPU keeps the same-thread pairing. A consumer thread never burns a producer
+    /// thread's CPU, so taking the slowest producer's CPU off every consumer thread would
+    /// subtract CPU the thread never held. The pairing can only run low, never high, so
+    /// it cannot crown the wrong operator the way the elapsed pairing did.
+    /// </summary>
+    private sealed record ThreadMetric(
+        Func<PerThreadRuntimeInfo, long> Pick,
+        Func<PlanNode, long> NodeTotal,
+        bool SlowestProducerOffEveryThread)
+    {
+        public static readonly ThreadMetric Elapsed =
+            new(t => t.ActualElapsedMs, n => n.ActualElapsedMs, SlowestProducerOffEveryThread: true);
+
+        public static readonly ThreadMetric Cpu =
+            new(t => t.ActualCPUMs, n => n.ActualCPUMs, SlowestProducerOffEveryThread: false);
+    }
+
+    /// <summary>
     /// Per-thread self-time calculation for parallel row mode operators.
-    /// For each worker thread: self = parent[t] - sum(effective children[t]).
-    /// Returns max across worker threads.
+    /// For each worker thread: self = parent[t] - sum(effective children[t]), less the
+    /// slowest producer thread below any exchange among the children, which comes off
+    /// every thread alike. Returns max across worker threads.
     /// </summary>
     private static long GetPerThreadOwnElapsed(PlanNode node) =>
-        GetPerThreadOwn(node, t => t.ActualElapsedMs, n => n.ActualElapsedMs);
+        GetPerThreadOwn(node, ThreadMetric.Elapsed);
 
-    private static long GetPerThreadOwn(
-        PlanNode node,
-        Func<PerThreadRuntimeInfo, long> pick,
-        Func<PlanNode, long> nodeTotal) =>
-        GetPerThreadOwnByThread(node, pick, nodeTotal).Values.DefaultIfEmpty(0).Max();
+    private static long GetPerThreadOwn(PlanNode node, ThreadMetric metric) =>
+        GetPerThreadOwnByThread(node, metric).Values.DefaultIfEmpty(0).Max();
 
     /// <summary>
     /// Self time on each worker thread: the thread's time minus the same thread's time
-    /// in the children. Elapsed takes the max of these; total CPU takes the sum.
+    /// in the children, minus the time that comes off every thread alike (the slowest
+    /// producer below an exchange). Elapsed takes the max of these; total CPU takes the sum.
     /// </summary>
-    private static Dictionary<int, long> GetPerThreadOwnByThread(
-        PlanNode node,
-        Func<PerThreadRuntimeInfo, long> pick,
-        Func<PlanNode, long> nodeTotal)
+    private static Dictionary<int, long> GetPerThreadOwnByThread(PlanNode node, ThreadMetric metric)
     {
         var childSumByThread = new Dictionary<int, long>();
+        var everyThreadMs = 0L;
         foreach (var child in node.Children)
-            AddEffectiveChildByThread(child, pick, nodeTotal, childSumByThread);
+        {
+            // An exchange's own children run on the other side of it, on other threads.
+            if (node.PhysicalOp == "Parallelism" && metric.SlowestProducerOffEveryThread)
+                everyThreadMs += SlowestThread(child, metric);
+            else
+                AddEffectiveChildByThread(child, metric, childSumByThread, ref everyThreadMs);
+        }
 
         var selfByThread = new Dictionary<int, long>();
         foreach (var ts in WorkThreads(node))
         {
             childSumByThread.TryGetValue(ts.ThreadId, out var childMs);
-            selfByThread[ts.ThreadId] = Math.Max(0, pick(ts) - childMs);
+            selfByThread[ts.ThreadId] = Math.Max(0, metric.Pick(ts) - childMs - everyThreadMs);
         }
 
         return selfByThread;
+    }
+
+    /// <summary>
+    /// The longest any one worker thread spent in a subtree that runs on the producer
+    /// side of an exchange, by the same look-through rules as
+    /// <see cref="AddEffectiveChildByThread"/>.
+    /// </summary>
+    private static long SlowestThread(PlanNode node, ThreadMetric metric)
+    {
+        var byThread = new Dictionary<int, long>();
+        var everyThreadMs = 0L;
+        AddEffectiveChildByThread(node, metric, byThread, ref everyThreadMs);
+        return (byThread.Count > 0 ? byThread.Values.Max() : 0) + everyThreadMs;
     }
 
     /// <summary>
@@ -127,41 +171,55 @@ public static partial class PlanAnalyzer
     ///
     /// Together these crowned a row-mode Nested Loops above a batch Hash Aggregate
     /// as the hottest operator in its plan, with the aggregate's time counted twice.
+    ///
+    /// An exchange child whose metric takes the slowest producer off every thread adds
+    /// to <paramref name="everyThreadMs"/> instead of <paramref name="acc"/>: what is
+    /// below it ran on other threads (#680).
     /// </summary>
     private static void AddEffectiveChildByThread(
         PlanNode child,
-        Func<PerThreadRuntimeInfo, long> pick,
-        Func<PlanNode, long> nodeTotal,
-        Dictionary<int, long> acc)
+        ThreadMetric metric,
+        Dictionary<int, long> acc,
+        ref long everyThreadMs)
     {
-        // Exchange operators have unreliable times — look through to their child.
         if (child.PhysicalOp == "Parallelism" && child.Children.Count > 0)
         {
-            var dominant = child.Children.OrderByDescending(nodeTotal).First();
-            AddEffectiveChildByThread(dominant, pick, nodeTotal, acc);
+            // The exchange's own time is not used. It soaks up time a spilling parent
+            // spends (sql.kiwi/2021/03), and subtracting it would hand that time to the
+            // exchange instead of the parent. Elapsed takes the slowest producer thread
+            // below it off every thread above; CPU pairs the dominant producer by thread.
+            if (metric.SlowestProducerOffEveryThread)
+            {
+                everyThreadMs += child.Children.Max(c => SlowestThread(c, metric));
+            }
+            else
+            {
+                var dominant = child.Children.OrderByDescending(metric.NodeTotal).First();
+                AddEffectiveChildByThread(dominant, metric, acc, ref everyThreadMs);
+            }
             return;
         }
 
         var mode = child.ActualExecutionMode ?? child.ExecutionMode;
         if (mode == "Batch" && child.HasActualStats)
         {
-            AddBatchSubtreeByThread(child, pick, nodeTotal, acc);
+            AddBatchSubtreeByThread(child, metric, acc, ref everyThreadMs);
             return;
         }
 
-        if (child.HasActualStats && nodeTotal(child) > 0)
+        if (child.HasActualStats && metric.NodeTotal(child) > 0)
         {
             foreach (var ts in WorkThreads(child))
             {
                 acc.TryGetValue(ts.ThreadId, out var existing);
-                acc[ts.ThreadId] = existing + pick(ts);
+                acc[ts.ThreadId] = existing + metric.Pick(ts);
             }
             return;
         }
 
         // No runtime stats: look through to the descendants that have them.
         foreach (var grandchild in child.Children)
-            AddEffectiveChildByThread(grandchild, pick, nodeTotal, acc);
+            AddEffectiveChildByThread(grandchild, metric, acc, ref everyThreadMs);
     }
 
     /// <summary>
@@ -170,14 +228,14 @@ public static partial class PlanAnalyzer
     /// </summary>
     private static void AddBatchSubtreeByThread(
         PlanNode node,
-        Func<PerThreadRuntimeInfo, long> pick,
-        Func<PlanNode, long> nodeTotal,
-        Dictionary<int, long> acc)
+        ThreadMetric metric,
+        Dictionary<int, long> acc,
+        ref long everyThreadMs)
     {
         foreach (var ts in WorkThreads(node))
         {
             acc.TryGetValue(ts.ThreadId, out var existing);
-            acc[ts.ThreadId] = existing + pick(ts);
+            acc[ts.ThreadId] = existing + metric.Pick(ts);
         }
 
         foreach (var child in node.Children)
@@ -186,9 +244,9 @@ public static partial class PlanAnalyzer
 
             var childMode = child.ActualExecutionMode ?? child.ExecutionMode;
             if (childMode == "Batch" && child.HasActualStats)
-                AddBatchSubtreeByThread(child, pick, nodeTotal, acc);
+                AddBatchSubtreeByThread(child, metric, acc, ref everyThreadMs);
             else
-                AddEffectiveChildByThread(child, pick, nodeTotal, acc);
+                AddEffectiveChildByThread(child, metric, acc, ref everyThreadMs);
         }
     }
 
@@ -209,7 +267,7 @@ public static partial class PlanAnalyzer
             return WorkThreads(node).Select(t => t.ActualCPUMs).DefaultIfEmpty(node.ActualCPUMs).Max();
 
         if (node.PerThreadStats.Count > 1)
-            return GetPerThreadOwn(node, t => t.ActualCPUMs, n => n.ActualCPUMs);
+            return GetPerThreadOwn(node, ThreadMetric.Cpu);
 
         // Serial: operator_cpu - Σ effective child cpu
         var totalChildCpu = 0L;
@@ -234,7 +292,7 @@ public static partial class PlanAnalyzer
             return node.ActualCPUMs;
 
         if (node.PerThreadStats.Count > 1)
-            return GetPerThreadOwnByThread(node, t => t.ActualCPUMs, n => n.ActualCPUMs).Values.Sum();
+            return GetPerThreadOwnByThread(node, ThreadMetric.Cpu).Values.Sum();
 
         var totalChildCpu = 0L;
         foreach (var child in node.Children)
@@ -393,7 +451,7 @@ public static partial class PlanAnalyzer
         {
             var discarded = inputRows - filterNode.ActualRows;
             var pct = (double)discarded / inputRows * 100;
-            parts.Add($"{discarded:N0} of {inputRows:N0} rows discarded ({pct:N0}%)");
+            parts.Add(string.Create(CultureInfo.InvariantCulture, $"{discarded:N0} of {inputRows:N0} rows discarded ({pct:N0}%)"));
         }
 
         // Logical reads across the entire child subtree
@@ -401,12 +459,12 @@ public static partial class PlanAnalyzer
         foreach (var child in filterNode.Children)
             totalReads += SumSubtreeReads(child);
         if (totalReads > 0)
-            parts.Add($"{totalReads:N0} logical reads below");
+            parts.Add(string.Create(CultureInfo.InvariantCulture, $"{totalReads:N0} {(totalReads == 1 ? "logical read" : "logical reads")} below"));
 
         // Elapsed time: use the direct child's time (cumulative in row mode, includes its children)
         var childElapsed = filterNode.Children.Max(c => c.ActualElapsedMs);
         if (childElapsed > 0)
-            parts.Add($"{childElapsed:N0}ms elapsed below");
+            parts.Add(string.Create(CultureInfo.InvariantCulture, $"{childElapsed:N0}ms elapsed below"));
 
         if (parts.Count == 0)
             return "";
@@ -419,6 +477,79 @@ public static partial class PlanAnalyzer
     // guesses below, and from this size up it stays clear of them (0.3% and 5.6% at this size,
     // falling as the table grows).
     private const double CeGuessMinTableRows = 100_000;
+
+    /* Rules 11 and 34 are about reads a scan does that an index could spare. Under this many rows a
+       table is a few hundred pages, its scan is a buffer pool read of a millisecond or two, and the
+       index either rule proposes costs more on every write than it saves on the read. */
+    private const long ScanRuleMinRows = 10_000;
+
+    /* An index that removed the scan outright saves at most the scan's own share of the statement's
+       elapsed time. Under a tenth, the saving sits inside a statement's run-to-run variance and the
+       finding points at nothing a person could measure. Rule 35 needs twice this share before it
+       calls an operator expensive with nothing else to say about it. */
+    private const double ScanRuleMinOwnTimeSharePct = 10;
+
+    /* Rule 11 reports rows a scan read and then discarded. When at least half of the rows read were
+       returned, a seek on the predicate columns would touch most of the same pages, so the predicate
+       is not the cost the rule describes. */
+    private const double ScanPredicateMaxSelectivity = 0.5;
+
+    private static bool HasStatementElapsed(PlanStatement stmt) =>
+        stmt.QueryTimeStats != null && stmt.QueryTimeStats.ElapsedTimeMs > 0;
+
+    /// <summary>
+    /// The operator's own elapsed time as a share of the statement's, or null when the plan carries
+    /// no statement time and there is no share to measure.
+    /// </summary>
+    private static double? OwnTimeSharePct(PlanNode node, PlanStatement stmt) =>
+        HasStatementElapsed(stmt)
+            ? (double)GetOperatorOwnElapsedMs(node) / stmt.QueryTimeStats!.ElapsedTimeMs * 100
+            : null;
+
+    /// <summary>
+    /// How many times the scan read its table, for the TableCardinality stand-in. The parser sums
+    /// ActualExecutions across threads, and a plain parallel scan reports one execution on each worker
+    /// thread for one pass over the table, so a node with per-thread entries takes the largest
+    /// per-thread count. That is exact for a parallel scan and undercounts a parallel Nested Loops inner
+    /// side by at most the DOP, in the direction the floor already errs.
+    /// </summary>
+    private static long ScanExecutions(PlanNode node) =>
+        node.PerThreadStats.Count > 1
+            ? node.PerThreadStats.Max(t => t.ActualExecutions)
+            : node.ActualExecutions;
+
+    /// <summary>
+    /// Rule 11's gate. An estimated plan is always reported. An actual plan must have read at least
+    /// ScanRuleMinRows rows, returned under ScanPredicateMaxSelectivity of what it read when the plan
+    /// says how many it read, and spent at least ScanRuleMinOwnTimeSharePct of the statement's time in
+    /// the scan when the plan carries statement time. The rows floor reads ActualRowsRead when the plan
+    /// carries it, the table's cardinality times the scan's executions when it carries that instead
+    /// (ActualRowsRead is a total across executions, and TableCardinality is one pass over the table),
+    /// and nothing when it carries neither: the rows returned are what the predicate kept, not what the
+    /// scan read. The impact details come out either way, so the caller does not build them twice.
+    /// </summary>
+    private static bool ScanPredicateIsWorthReporting(PlanNode node, PlanStatement stmt, out ScanImpact details)
+    {
+        details = BuildScanImpactDetails(node, stmt);
+        if (!node.HasActualStats)
+            return true;
+
+        if (node.HasActualRowsRead)
+        {
+            if (Math.Max(node.ActualRowsRead, node.ActualRows) < ScanRuleMinRows)
+                return false;
+        }
+        else if (node.HasTableCardinality && node.TableCardinality * Math.Max(1, ScanExecutions(node)) < ScanRuleMinRows)
+        {
+            return false;
+        }
+
+        if (node.ActualRowsRead > 0 && (double)node.ActualRows / node.ActualRowsRead >= ScanPredicateMaxSelectivity)
+            return false;
+
+        var ownShare = OwnTimeSharePct(node, stmt);
+        return ownShare is null || ownShare.Value >= ScanRuleMinOwnTimeSharePct;
+    }
 
     /// <summary>
     /// Detects well-known CE default selectivity guesses by comparing EstimateRows to TableCardinality.
@@ -447,7 +578,7 @@ public static partial class PlanAnalyzer
     {
         if (tableCardinality <= 0) return null;
         var selectivity = estimateRows / tableCardinality;
-        var pct = $"{selectivity * 100:N1}%";
+        var pct = string.Create(CultureInfo.InvariantCulture, $"{selectivity * 100:N1}%");
         var legacy = ceModelVersion == 70;
         var current = ceModelVersion >= 120;
 
@@ -504,7 +635,7 @@ public static partial class PlanAnalyzer
         {
             costPct = node.EstimatedTotalSubtreeCost / stmt.StatementSubTreeCost * 100;
             if (costPct >= 50)
-                parts.Add($"This scan is {costPct:N0}% of the plan cost.");
+                parts.Add(string.Create(CultureInfo.InvariantCulture, $"This scan is {costPct:N0}% of the plan cost."));
         }
 
         // % of elapsed time (actual plans)
@@ -514,7 +645,7 @@ public static partial class PlanAnalyzer
         {
             elapsedPct = (double)node.ActualElapsedMs / stmt.QueryTimeStats.ElapsedTimeMs * 100;
             if (elapsedPct >= 50)
-                parts.Add($"This scan took {elapsedPct:N0}% of elapsed time.");
+                parts.Add(string.Create(CultureInfo.InvariantCulture, $"This scan took {elapsedPct:N0}% of elapsed time."));
         }
 
         // Row selectivity: rows returned vs rows read (actual) or vs table cardinality (estimated)
@@ -522,13 +653,13 @@ public static partial class PlanAnalyzer
         {
             var selectivity = (double)node.ActualRows / node.ActualRowsRead * 100;
             if (selectivity < 10)
-                parts.Add($"Only {selectivity:N3}% of rows survived filtering ({node.ActualRows:N0} of {node.ActualRowsRead:N0}).");
+                parts.Add(string.Create(CultureInfo.InvariantCulture, $"Only {selectivity:N3}% of rows survived filtering ({node.ActualRows:N0} of {node.ActualRowsRead:N0})."));
         }
         else if (!node.HasActualStats && node.TableCardinality > 0 && node.EstimateRows < node.TableCardinality)
         {
             var selectivity = node.EstimateRows / node.TableCardinality * 100;
             if (selectivity < 10)
-                parts.Add($"Only {selectivity:N1}% of rows estimated to survive filtering.");
+                parts.Add(string.Create(CultureInfo.InvariantCulture, $"Only {selectivity:N1}% of rows estimated to survive filtering."));
         }
 
         return new ScanImpact(costPct, elapsedPct, parts.Count > 0 ? string.Join(" ", parts) : null);

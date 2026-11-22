@@ -178,7 +178,7 @@ public class McpHostServiceTests
     /// One McpHostService on a free loopback port, stopped on dispose. It never saves the
     /// connection store and keeps credentials in memory, so no test touches the user's files.
     /// </summary>
-    private sealed class RunningServer : IAsyncDisposable
+    internal sealed class RunningServer : IAsyncDisposable
     {
         private readonly McpHostService _service;
 

@@ -93,13 +93,13 @@ public static class PlanViewFormat
         if (node.HasActualStats)
         {
             parts.Add($"Actual rows: {node.ActualRows:N0}");
-            parts.Add($"Estimated rows: {node.EstimateRows:N0}");
+            parts.Add($"Estimated rows: {MetricFormatter.FormatEstimatedRows(node.EstimateRows)}");
             if (node.ActualLogicalReads > 0) parts.Add($"Logical reads: {node.ActualLogicalReads:N0}");
             if (node.ActualPhysicalReads > 0) parts.Add($"Physical reads: {node.ActualPhysicalReads:N0}");
         }
         else
         {
-            parts.Add($"Estimated rows: {node.EstimateRows:N0}");
+            parts.Add($"Estimated rows: {MetricFormatter.FormatEstimatedRows(node.EstimateRows)}");
         }
 
         parts.Add($"Estimated cost: {MetricFormatter.FormatCost(node.EstimatedOperatorCost)}");

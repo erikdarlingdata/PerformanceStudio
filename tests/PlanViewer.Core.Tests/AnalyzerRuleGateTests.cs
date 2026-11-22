@@ -213,6 +213,26 @@ public class AnalyzerRuleGateTests
     }
 
     [Theory]
+    [InlineData("SELECT a FROM dbo.t WHERE b = @b OPTION (OPTIMIZE FOR UNKNOWN)", false)]
+    [InlineData("SELECT a FROM dbo.t WHERE b = @b /* OPTION (OPTIMIZE FOR UNKNOWN) */", true)]
+    public void Rule20_YieldsToOptimizeForUnknown(string text, bool expectLocalVariables)
+    {
+        // OPTIMIZE FOR UNKNOWN also leaves a parameter without a compiled value. Rule 27 reports the
+        // hint, so rule 20 leaves the statement to it rather than calling the parameter a local
+        // variable as well. The hint inside a comment is not a hint, and rule 20 still reports.
+        var stmt = new PlanStatement
+        {
+            StatementSubTreeCost = 10,
+            StatementText = text,
+            Parameters = [new PlanParameter { Name = "@b" }]
+        };
+        Analyze(stmt);
+
+        Assert.Equal(expectLocalVariables, Has(stmt, "Local Variables"));
+        Assert.Equal(!expectLocalVariables, Has(stmt, "Optimize For Unknown"));
+    }
+
+    [Theory]
     [InlineData("-- DECLARE c CURSOR FOR SELECT a FROM dbo.t\nSELECT a FROM dbo.t", false)]
     [InlineData("DECLARE c CURSOR /* LOCAL */ FOR SELECT a FROM dbo.t", true)]
     [InlineData("DECLARE c CURSOR LOCAL FOR SELECT a FROM dbo.t", false)]
@@ -411,5 +431,111 @@ public class AnalyzerRuleGateTests
 
         var warning = Assert.Single(scan.Warnings, w => w.WarningType == "Row Goal");
         Assert.Contains("estimate reduced from 1,000 to 100", warning.Message);
+    }
+
+    // ---- #678: rule 10's Key Lookup severity follows what the lookup cost --------------------
+    //
+    // In an actual plan the lookup's own share of the statement's time grades it on the spill
+    // rule's bands (half Critical, a tenth Warning, less Info); without statement time its
+    // executions stand in and it never reaches Critical; in an estimated plan the operator's cost
+    // share grades it, never past Warning. A severity override from the analyzer config still wins.
+
+    private static PlanNode Lookup(bool actual, long executions = 0, long ownMs = 0, int costPercent = 0) => new()
+    {
+        NodeId = 0,
+        PhysicalOp = "Key Lookup (Clustered)",
+        LogicalOp = "Key Lookup",
+        Lookup = true,
+        HasActualStats = actual,
+        ActualExecutions = executions,
+        ActualRows = executions,
+        ActualElapsedMs = ownMs,
+        CostPercent = costPercent
+    };
+
+    private static PlanWarning KeyLookupWarning(PlanNode root, long? statementMs, AnalyzerConfig? config = null)
+    {
+        var stmt = new PlanStatement { RootNode = root };
+        if (statementMs is { } ms)
+            stmt.QueryTimeStats = new QueryTimeInfo { ElapsedTimeMs = ms };
+        Analyze(stmt, config);
+        return Assert.Single(root.Warnings, w => w.WarningType == "Key Lookup");
+    }
+
+    [Fact]
+    public void Rule10_ACheapRareLookup_IsInfo_NotCritical()
+    {
+        // Twelve lookups that took no measurable time in a one-second statement.
+        var warning = KeyLookupWarning(Lookup(actual: true, executions: 12, ownMs: 0), statementMs: 1_000);
+
+        Assert.Equal(PlanWarningSeverity.Info, warning.Severity);
+    }
+
+    [Fact]
+    public void Rule10_ADominantLookup_IsCritical()
+    {
+        // A quarter of a million lookups taking 60 percent of the statement.
+        var warning = KeyLookupWarning(Lookup(actual: true, executions: 250_000, ownMs: 600), statementMs: 1_000);
+
+        Assert.Equal(PlanWarningSeverity.Critical, warning.Severity);
+    }
+
+    [Theory]
+    [InlineData(0, PlanWarningSeverity.Info)]
+    [InlineData(99, PlanWarningSeverity.Info)]
+    [InlineData(100, PlanWarningSeverity.Warning)]
+    [InlineData(499, PlanWarningSeverity.Warning)]
+    [InlineData(500, PlanWarningSeverity.Critical)]
+    public void Rule10_AnActualLookup_IsGradedOnItsShareOfStatementTime(long ownMs, PlanWarningSeverity expected)
+    {
+        var warning = KeyLookupWarning(Lookup(actual: true, executions: 5_000, ownMs: ownMs), statementMs: 1_000);
+
+        Assert.Equal(expected, warning.Severity);
+    }
+
+    [Fact]
+    public void Rule10_AnActualLookup_StatesItsTimeShareInTheMessage()
+    {
+        var warning = KeyLookupWarning(Lookup(actual: true, executions: 5_000, ownMs: 100), statementMs: 1_000);
+
+        Assert.Contains("Operator time: 100ms (10% of statement) over 5,000 lookups.", warning.Message);
+    }
+
+    [Theory]
+    [InlineData(12, PlanWarningSeverity.Info)]
+    [InlineData(999, PlanWarningSeverity.Info)]
+    [InlineData(1_000, PlanWarningSeverity.Warning)]
+    [InlineData(5_000_000, PlanWarningSeverity.Warning)]
+    public void Rule10_WithoutStatementTime_ExecutionsGradeIt_NeverCritical(long executions, PlanWarningSeverity expected)
+    {
+        var warning = KeyLookupWarning(Lookup(actual: true, executions: executions, ownMs: 0), statementMs: null);
+
+        Assert.Equal(expected, warning.Severity);
+        Assert.Contains($"Lookups performed: {executions:N0}. The plan recorded no statement time to grade them against.", warning.Message);
+    }
+
+    [Theory]
+    [InlineData(5, PlanWarningSeverity.Info)]
+    [InlineData(24, PlanWarningSeverity.Info)]
+    [InlineData(25, PlanWarningSeverity.Warning)]
+    [InlineData(90, PlanWarningSeverity.Warning)]
+    public void Rule10_AnEstimatedLookup_IsGradedOnItsCostShare_NeverCritical(int costPercent, PlanWarningSeverity expected)
+    {
+        var warning = KeyLookupWarning(Lookup(actual: false, costPercent: costPercent), statementMs: null);
+
+        Assert.Equal(expected, warning.Severity);
+        // The operator already shows its cost percentage, so the message carries no cost line.
+        Assert.DoesNotContain("Operator time:", warning.Message);
+        Assert.DoesNotContain("Lookups performed:", warning.Message);
+    }
+
+    [Fact]
+    public void Rule10_ASeverityOverride_StillWins_EitherWay()
+    {
+        var up = new AnalyzerConfig { Rules = new RulesConfig { SeverityOverrides = new() { [10] = "Critical" } } };
+        var down = new AnalyzerConfig { Rules = new RulesConfig { SeverityOverrides = new() { [10] = "Info" } } };
+
+        Assert.Equal(PlanWarningSeverity.Critical, KeyLookupWarning(Lookup(actual: true, executions: 12, ownMs: 0), statementMs: 1_000, up).Severity);
+        Assert.Equal(PlanWarningSeverity.Info, KeyLookupWarning(Lookup(actual: true, executions: 250_000, ownMs: 600), statementMs: 1_000, down).Severity);
     }
 }

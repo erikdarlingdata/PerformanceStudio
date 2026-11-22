@@ -31,7 +31,7 @@ public partial class PlanViewerControl : UserControl
             {
                 // Local variables are still something to say, so this card stays lit.
                 AddParameterAnnotation(
-                    $"Local variables detected ({string.Join(", ", localVars)}) — values not captured in plan XML",
+                    $"Local variables detected ({string.Join(", ", localVars)}): values not captured in plan XML",
                     "WarningBrush");
                 SetInsightQuiet(ParametersHeader, ParametersAccent, false);
             }
@@ -50,29 +50,36 @@ public partial class PlanViewerControl : UserControl
         var hasCompiled = parameters.Any(p => p.CompiledValue != null);
         var hasRuntime = parameters.Any(p => p.RuntimeValue != null);
 
-        // Build a 4-column grid: Name | Data Type | Compiled | Runtime
-        // Only show Compiled/Runtime columns if at least one param has that value
-        var colDef = "Auto,Auto"; // Name, DataType always shown
+        /* A 4-column grid: Name | Data Type | Compiled | Runtime, with Compiled and Runtime shown only when at least one
+           parameter has that value. The grid is never wider than its card, which cuts what is past its edge with no
+           ellipsis; the card sits in a star column of the insights strip and can be as narrow as 200 px. The name column
+           shares the card with the value columns at twice a value column's weight and no wider than its longest name
+           (BoundParameterNames), so a short name takes its own width and a long one is what gives. The data type sizes to
+           its text, and its cells stop at ParameterTypeMaxWidth (AddParamCell). Each value column keeps
+           ParameterValueMinWidth however long the names are, so a cut value keeps a hover target. Two value columns at
+           their minimum and a data type at its maximum fit the narrowest card. */
+        var grid = new Grid();
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(2, GridUnitType.Star) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         int compiledCol = -1, runtimeCol = -1;
         int nextCol = 2;
         if (hasCompiled)
         {
-            colDef += ",*";
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = ParameterValueMinWidth });
             compiledCol = nextCol++;
         }
         if (hasRuntime)
         {
-            colDef += ",*";
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = ParameterValueMinWidth });
             runtimeCol = nextCol++;
         }
         // If neither compiled nor runtime, still add one value column for "?"
         if (!hasCompiled && !hasRuntime)
         {
-            colDef += ",*";
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = ParameterValueMinWidth });
             compiledCol = nextCol++;
         }
 
-        var grid = new Grid { ColumnDefinitions = new ColumnDefinitions(colDef) };
         int rowIndex = 0;
 
         var columnHeaderBrush = FindBrushResource("InsightParamsBrush");
@@ -117,7 +124,7 @@ public partial class PlanViewerControl : UserControl
                     && param.CompiledValue != null
                     && param.RuntimeValue != param.CompiledValue;
                 var tooltip = sniffed
-                    ? "Runtime value differs from compiled — possible parameter sniffing"
+                    ? "Runtime value differs from compiled: possible parameter sniffing"
                     : null;
                 AddParamCell(grid, rowIndex, runtimeCol, runtimeText,
                     sniffed ? sniffedBrush : valueBrush, tooltip: tooltip);
@@ -128,25 +135,41 @@ public partial class PlanViewerControl : UserControl
 
         ParametersContent.Children.Add(grid);
 
+        /* A plan can load before the viewer is in a window, and the cells take the window's font when it is, so the name
+           column's bound is taken now and again when the grid is attached. */
+        BoundParameterNames(grid);
+        grid.AttachedToVisualTree += (_, _) => BoundParameterNames(grid);
+
         // Annotations
         if (allCompiledNull && parameters.Count > 0)
         {
             // #579: the phrase inside a string literal or a comment is not a hint.
+            var maskedText = PlanAnalyzer.MaskCommentsAndLiterals(statement.StatementText);
             var hasOptimizeForUnknown = statement.StatementText
                 .Contains("OPTIMIZE", StringComparison.OrdinalIgnoreCase)
-                && Regex.IsMatch(PlanAnalyzer.MaskCommentsAndLiterals(statement.StatementText),
-                    @"OPTIMIZE\s+FOR\s+UNKNOWN", RegexOptions.IgnoreCase);
+                && Regex.IsMatch(maskedText, @"OPTIMIZE\s+FOR\s+UNKNOWN", RegexOptions.IgnoreCase);
+
+            // RECOMPILE is named only when the statement carries it. Compiled values are also absent
+            // when the plan was captured without them, and the card says so rather than naming a
+            // hint the statement does not have.
+            var hasRecompile = maskedText.Contains("RECOMPILE", StringComparison.OrdinalIgnoreCase);
 
             if (hasOptimizeForUnknown)
             {
                 AddParameterAnnotation(
-                    "OPTIMIZE FOR UNKNOWN — optimizer used average density estimates instead of sniffed values",
+                    "OPTIMIZE FOR UNKNOWN: optimizer used average density estimates instead of sniffed values",
                     "AccentBrush");
+            }
+            else if (hasRecompile)
+            {
+                AddParameterAnnotation(
+                    "OPTION(RECOMPILE): parameter values embedded as literals, not sniffed",
+                    "WarningBrush");
             }
             else
             {
                 AddParameterAnnotation(
-                    "OPTION(RECOMPILE) — parameter values embedded as literals, not sniffed",
+                    "Parameter values not captured in the plan: no compiled values, so the values the optimizer sniffed are not known",
                     "WarningBrush");
             }
         }
@@ -155,9 +178,27 @@ public partial class PlanViewerControl : UserControl
         if (unresolved.Count > 0)
         {
             AddParameterAnnotation(
-                $"Unresolved variables: {string.Join(", ", unresolved)} — not in parameter list",
+                $"Unresolved variables: {string.Join(", ", unresolved)}, not in parameter list",
                 "WarningBrush");
         }
+    }
+
+    /// <summary>The least a Parameters card value column keeps, in px: a hover target for a cut value's tooltip.</summary>
+    private const double ParameterValueMinWidth = 40;
+
+    /// <summary>The most a Parameters card data type cell takes, in px, its margin included.</summary>
+    private const double ParameterTypeMaxWidth = 96;
+
+    /// <summary>Bounds the name column at its widest cell on one line, so a short name takes no more than its own width.</summary>
+    private static void BoundParameterNames(Grid grid)
+    {
+        var nameWidth = 0.0;
+        foreach (var cell in grid.Children.OfType<TextBlock>().Where(cell => Grid.GetColumn(cell) == 0))
+        {
+            cell.Measure(Size.Infinity);
+            nameWidth = Math.Max(nameWidth, Math.Ceiling(cell.DesiredSize.Width));
+        }
+        grid.ColumnDefinitions[0].MaxWidth = nameWidth;
     }
 
     private static void AddParamCell(Grid grid, int row, int col, string text, IBrush brush,
@@ -176,9 +217,11 @@ public partial class PlanViewerControl : UserControl
             // only hit-tests its glyphs, so the ellipsis itself would be the only hover target.
             Background = Brushes.Transparent
         };
-        // Name and DataType columns are short — no need for max width
-        if (col <= 1)
+        // A name is as wide as its column lets it be; a data type's column sizes to its cells, so the cell carries the bound.
+        if (col == 0)
             tb.MaxWidth = double.PositiveInfinity;
+        else if (col == 1)
+            tb.MaxWidth = ParameterTypeMaxWidth - tb.Margin.Right;
         if (tooltip != null)
             ToolTip.SetTip(tb, tooltip);
         else if (text.Length > 30)

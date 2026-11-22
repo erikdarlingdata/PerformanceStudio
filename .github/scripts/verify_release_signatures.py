@@ -232,14 +232,27 @@ def zip_entries(url: str, size: int) -> list[tuple[str, int, int, int, int]]:
     i = tail.rfind(b"PK\x05\x06")
     if i < 0:
         raise ReadError("no end-of-central-directory record")
+    total = struct.unpack_from("<H", tail, i + 10)[0]
     cd_size, cd_off = struct.unpack_from("<II", tail, i + 12)
-    if cd_off == 0xFFFFFFFF or cd_size == 0xFFFFFFFF:
+    if cd_off == 0xFFFFFFFF or cd_size == 0xFFFFFFFF or total == 0xFFFF:
         raise ReadError("zip64 central directory: not supported by this reader")
     cd = fetch_range(url, cd_off, cd_size)
+    return parse_central_directory(cd, total)
+
+
+def parse_central_directory(cd: bytes, total: int) -> list[tuple[str, int, int, int, int]]:
+    """Read exactly `total` entries, the count the end-of-central-directory record declares.
+
+    A bad signature or a truncated entry raises rather than ending the list early: a partial list
+    would silently leave the unread executables unchecked, and the audit would report a clean run.
+    """
     out, p = [], 0
-    while p < len(cd) - 46:
-        if cd[p : p + 4] != b"PK\x01\x02":
-            break
+    while len(out) < total:
+        if p + 46 > len(cd) or cd[p : p + 4] != b"PK\x01\x02":
+            raise ReadError(
+                f"central directory is damaged: read {len(out)} of {total} entries, "
+                f"then found no entry header at offset {p}"
+            )
         method = struct.unpack_from("<H", cd, p + 10)[0]
         csize, usize = struct.unpack_from("<II", cd, p + 20)
         nlen, elen, clen = struct.unpack_from("<HHH", cd, p + 28)
@@ -247,6 +260,8 @@ def zip_entries(url: str, size: int) -> list[tuple[str, int, int, int, int]]:
         name = cd[p + 46 : p + 46 + nlen].decode("utf-8", "replace")
         out.append((name, method, csize, usize, lho))
         p += 46 + nlen + elen + clen
+    if p > len(cd):
+        raise ReadError("central directory is damaged: the last entry runs past the end")
     return out
 
 
@@ -645,6 +660,84 @@ def self_test() -> int:
         [f.label for f in regressed.unsigned] == [setup],
     )
 
+    # An asset that cannot be read must fail the run, and a damaged central directory must not
+    # end the entry list quietly. Both used to leave the audit green with executables unchecked.
+    import zipfile
+
+    zip_buf = io.BytesIO()
+    with zipfile.ZipFile(zip_buf, "w") as zf:
+        for member in ("a.exe", "b.exe", "c.exe"):
+            zf.writestr(member, _synth_pe(signed=True))
+    zip_bytes = zip_buf.getvalue()
+    eocd = zip_bytes.rfind(b"PK\x05\x06")
+    declared = struct.unpack_from("<H", zip_bytes, eocd + 10)[0]
+    cd_size, cd_off = struct.unpack_from("<II", zip_bytes, eocd + 12)
+    central = zip_bytes[cd_off : cd_off + cd_size]
+    expect("the central directory self-test fixture is not three entries", declared == 3)
+    expect(
+        "an intact central directory did not yield every entry",
+        [e[0] for e in parse_central_directory(central, declared)] == ["a.exe", "b.exe", "c.exe"],
+    )
+
+    def read_error(blob: bytes, count: int) -> bool:
+        try:
+            parse_central_directory(blob, count)
+        except ReadError:
+            return True
+        return False
+
+    second = central.index(b"PK\x01\x02", 4)
+    damaged = bytearray(central)
+    damaged[second : second + 4] = b"XXXX"
+    expect(
+        "a bad signature in the central directory ended the entry list without an error",
+        read_error(bytes(damaged), declared),
+    )
+    expect(
+        "an end-of-central-directory total above the entries present was accepted",
+        read_error(central, declared + 1),
+    )
+    expect(
+        "a central directory cut off inside an entry was accepted",
+        read_error(central[: len(central) - 20], declared),
+    )
+
+    # The same bytes through zip_entries, with fetch_range standing in for the HTTP read.
+    real_fetch = fetch_range
+    globals()["fetch_range"] = lambda url, start, length: zip_bytes[start : start + length]
+    try:
+        names = [e[0] for e in zip_entries("synthetic", len(zip_bytes))]
+    finally:
+        globals()["fetch_range"] = real_fetch
+    expect("zip_entries did not return every entry of an intact archive", names == ["a.exe", "b.exe", "c.exe"])
+
+    # Exit status of the published-release mode: one unreadable asset is status 2 even when the
+    # other assets produced signed findings, and an unsigned finding keeps status 1.
+    def release_exit(report: Report) -> int:
+        real_build = build_report
+        real_argv = sys.argv
+        globals()["build_report"] = lambda tag, repo, gh, include_dlls: report
+        sys.argv = ["verify_release_signatures.py", "vtest"]
+        try:
+            sink = io.StringIO()
+            with contextlib.redirect_stdout(sink), contextlib.redirect_stderr(sink):
+                return main()
+        finally:
+            globals()["build_report"] = real_build
+            sys.argv = real_argv
+
+    signed_one = Finding("Setup.exe", "", 1024, True)
+    unsigned_one = Finding("Other.exe", "", 1024, False)
+    expect(
+        "a signed finding beside a read error did not exit 2",
+        release_exit(Report("t", [signed_one], ["Portable.zip: damaged"])) == 2,
+    )
+    expect(
+        "an unsigned finding beside a read error did not exit 1",
+        release_exit(Report("t", [signed_one, unsigned_one], ["Portable.zip: damaged"])) == 1,
+    )
+    expect("a clean report did not exit 0", release_exit(Report("t", [signed_one], [])) == 0)
+
     for f in failures:
         print(f"SELF-TEST FAIL: {f}", file=sys.stderr)
     if failures:
@@ -734,6 +827,15 @@ def main() -> int:
     if report.unsigned:
         print(f"\n{len(report.unsigned)} unsigned executable(s). See PerformanceMonitor #3288.", file=sys.stderr)
         return 1
+    # Findings from the assets that could be read do not make the release clean while another
+    # asset could not be read at all: its executables were never checked.
+    if report.errors:
+        print(
+            f"\nFATAL: {len(report.errors)} asset(s) could not be read, so their executables were "
+            "not checked.",
+            file=sys.stderr,
+        )
+        return 2
     return 0
 
 

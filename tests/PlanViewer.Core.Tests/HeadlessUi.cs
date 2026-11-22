@@ -65,19 +65,21 @@ namespace PlanViewer.Core.Tests;
 /// classic desktop lifetime, which a headless session is not, so nothing is spawned behind the
 /// tests.</para>
 ///
-/// <para><b>One session for the whole assembly.</b> The session is created on first use and never
-/// disposed: the process is about to exit, and tearing an Avalonia session down while another test
-/// class may still be queued is a good way to reintroduce the kind of test-host wedge #441 was
-/// about. The session itself runs at <c>PerTest</c> isolation, which is not the same thing as one
-/// Application: each <see cref="Dispatch"/> enters a fresh <c>AvaloniaLocator</c> scope, builds a
-/// fresh <c>Application</c> in it, and tears both down afterwards. What is shared assembly-wide is
-/// the dispatcher thread and the loop feeding it — which is exactly enough to be poisoned once and
-/// stay poisoned, as #474 was.</para>
+/// <para><b>One session, one Application, for the whole assembly.</b> The session is started and
+/// its <c>Application</c> built from <see cref="EnterTestHostMode"/>, before anything else in this
+/// assembly runs, and neither is ever disposed: the process is about to exit, and tearing an
+/// Avalonia session down while another test class may still be queued is a good way to reintroduce
+/// the kind of test-host wedge #441 was about. The session runs at <c>PerAssembly</c> isolation,
+/// so every <see cref="Dispatch"/> runs against the same <c>Application</c>, the same
+/// <c>AvaloniaLocator</c> scope and the same dispatcher thread — <see cref="ClaimUiThread"/> says
+/// why that level and what it costs. What is shared is therefore enough to be poisoned once and
+/// stay poisoned, as #474 was, which is what <see cref="EnsureSessionSurvived"/> watches for.</para>
 /// </summary>
 internal static class HeadlessUi
 {
     private static readonly Lazy<HeadlessUnitTestSession> Session =
-        new(() => HeadlessUnitTestSession.StartNew(typeof(PlanViewer.App.App)),
+        new(() => HeadlessUnitTestSession.StartNew(
+                typeof(PlanViewer.App.App), AvaloniaTestIsolationLevel.PerAssembly),
             System.Threading.LazyThreadSafetyMode.ExecutionAndPublication);
 
     /// <summary>
@@ -130,6 +132,54 @@ internal static class HeadlessUi
         // any of the JSON files above, so redirecting those still left a test able to read — or
         // delete — the developer's real saved credential.
         CredentialServiceFactory.UseInMemoryForTestHost();
+
+        ClaimUiThread();
+    }
+
+    /// <summary>
+    /// Builds the run's one <c>Application</c> on the session thread, which makes that thread
+    /// Avalonia's UI thread, while this is still the only code in the process that touches Avalonia.
+    ///
+    /// <para><b>The race this closes (#544, AvaloniaUI/Avalonia#22021).</b> Avalonia hands the
+    /// UI-thread dispatcher to whichever thread constructs a <c>Dispatcher</c> first while
+    /// <c>Dispatcher.s_uiThread</c> is null, and constructing any <c>AvaloniaObject</c> on a thread
+    /// that has no dispatcher constructs one. Under <c>PerTest</c> isolation,
+    /// <c>EnsureIsolatedApplication</c> nulls that field with <c>Dispatcher.ResetBeforeUnitTests()</c>
+    /// at the start of every dispatch, and the session thread claims it back only part-way through
+    /// <c>AppBuilder.SetupUnsafe()</c>, when the headless platform's <c>Compositor</c> reads
+    /// <c>Dispatcher.UIThread</c>. An xunit worker that builds a brush or a control in a plain test
+    /// during those milliseconds, or a timer or continuation an earlier test left behind, becomes the
+    /// UI thread instead, and the session thread's <c>DefaultRenderLoop.Add</c> fails
+    /// <c>VerifyAccess</c> against it. The window reopens on every dispatch, and 12.1.5 leaves
+    /// every line of it unchanged.</para>
+    ///
+    /// <para><b>Why PerAssembly, and why from the module initializer.</b>
+    /// <c>EnsureSharedApplication</c> never resets the dispatcher, so the field is claimed exactly
+    /// once per process, by whichever thread touches Avalonia first — and never taken back, which
+    /// is why upstream reports a lost first dispatch under PerAssembly as poisoning the process: a
+    /// worker that constructed a control before the first UI test holds the UI thread for good.
+    /// Claimed here there is nothing to lose to: xunit has not started a test, no test class's type
+    /// initializer has run, and the session thread is the first thread in the process to construct
+    /// a <c>Dispatcher</c>. The claim goes through <see cref="Dispatch"/> so that a failure is
+    /// reported with its own stack rather than wrapped by the module loader.</para>
+    ///
+    /// <para><b>What changes for the tests.</b> One <c>Application</c>, one locator scope and one
+    /// <c>FontManager</c> for the run instead of a fresh set per dispatch: resources read through
+    /// <c>Application.Current</c> are the real App's and stay put, and a window a test leaves open
+    /// stays in memory until the process exits. Nothing in this suite swaps App-level state between
+    /// tests, which is what full-suite runs at this isolation level confirm.</para>
+    /// </summary>
+    private static void ClaimUiThread()
+    {
+        var failure = Dispatch(static () => { });
+
+        if (failure is not null)
+        {
+            throw new InvalidOperationException(
+                "The headless Avalonia session could not build the test Application, so no UI test " +
+                "in this assembly can run. See #544.",
+                failure);
+        }
     }
 
     /// <summary>
@@ -156,104 +206,26 @@ internal static class HeadlessUi
 
     /// <summary>
     /// Runs one body on the UI thread and hands back whatever it threw rather than throwing here,
-    /// so <see cref="Run"/> can decide which of two failures to report. Retries once, and only,
-    /// when Avalonia 12's own session setup lost a race before the body was ever reached — see
-    /// <see cref="IsHeadlessSetupRace"/>.
+    /// so <see cref="Run"/> can decide which of two failures to report.
     ///
-    /// <para><b>The retry, and why it is not a test retry.</b> Avalonia 12's headless session setup
-    /// has a race that fails one arbitrary test per run. Measured on the 12 bump: 2 of 6 full-suite
-    /// runs, 1 of 6 more with the two classes that were red for an unrelated reason excluded, and 1
-    /// of 6 with xunit parallelization disabled outright — so roughly a quarter of runs, a
-    /// different victim each time, and not caused by test concurrency. The same measurement on
-    /// 11.3.22 was 0 of 6. A quarter of CI runs failing on an upstream race nobody can act on is
-    /// not shippable, and there is no fixed Avalonia release to take instead.</para>
-    ///
-    /// <para>What makes this safe is that it does not re-run tests. It re-runs a dispatch whose
-    /// delegate was never entered, which <paramref name="body"/> cannot tell apart from the first
-    /// attempt because nothing of it ran. A test that started and then failed — for any reason,
-    /// including a thread-affinity bug of our own — is reported, never retried: that is what the
-    /// started flag in <see cref="DispatchOnce"/> and the narrow match in
-    /// <see cref="IsHeadlessSetupRace"/> are for, and why each occurrence writes a line to stderr.
-    /// One retry, no more; if the race hits twice in a row, the run goes red and says so.</para>
-    ///
-    /// <para><b>Remove this when there is an Avalonia release that fixes the race.</b> Delete the
-    /// retry, <see cref="IsHeadlessSetupRace"/> and the started flag, then run the full suite ten
-    /// times: at the rate above, ten clean runs leave about a 6% chance of having missed it.</para>
-    ///
-    /// <para><b>Why the queue is drained before returning (#474).</b> Avalonia's per-dispatch
-    /// teardown disposes the session's <c>FontManager</c> and only then calls
-    /// <c>Dispatcher.ResetForUnitTests</c>, which executes whatever is still queued. A window whose
-    /// content is involved enough to leave a deferred render pass behind — a
-    /// <c>PlanViewerControl</c> reliably does, a TextBlock does not — therefore renders text against
-    /// a font manager that has just been disposed, and throws <c>KeyNotFoundException</c> for
-    /// <c>fonts:SystemFonts</c>. That ordering is unchanged in 12.1.2 — the dispose and the reset are
-    /// still consecutive lines of <c>EnsureIsolatedApplication</c>'s teardown — so draining here,
-    /// which leaves the teardown nothing to run, is still the only thing that prevents the throw.
-    /// It is done even when the body failed, because a failing test is no less capable of poisoning
-    /// the session than a passing one.</para>
-    ///
-    /// <para><b>What 12 fixed, and why the drain is not now redundant.</b> Under 11.3.22 the
-    /// escaping exception also skipped <c>scope.Dispose()</c>, so the locator scope was never
-    /// popped: every later dispatch nested inside the leaked one, resolved the disposed font manager
-    /// through its parent chain, and died constructing any <see cref="Window"/> at all — while the
-    /// guilty test passed, because the throw happened after its result had been recorded. 12 moved
-    /// the scope disposal into a <c>finally</c> and routes the teardown failure into the dispatch's
-    /// task. So the blast radius is now one test instead of every test after it, and the failure
-    /// lands on the test that caused it. That makes #474 survivable, not absent. Deleting the drain
-    /// would trade a prevented failure for a reported one.</para>
+    /// <para><b>Why the queue is drained before returning (#474).</b> A window whose content is
+    /// involved enough to leave a deferred render pass behind — a <c>PlanViewerControl</c> reliably
+    /// does, a TextBlock does not — leaves it on the dispatcher's queue when the body returns.
+    /// Avalonia's shared session runs that queue itself once the delegate is done, and reports
+    /// anything it throws through the dispatch's task, where the catch below takes it behind the
+    /// body's own failure, under the name of the test that queued it. Draining inside the delegate
+    /// runs the same jobs one step earlier with the same attribution and precedence. It duplicates
+    /// the session's own teardown drain on purpose, so that a #474-class failure is reported from
+    /// this class's catch whatever the session's teardown does with it. It is done even when the
+    /// body failed, because a failing test is no less capable of leaving work behind than a passing
+    /// one.</para>
     /// </summary>
     private static Exception? Dispatch(Action body)
     {
-        var failure = DispatchOnce(body, out var bodyStarted);
-
-        if (failure is null || bodyStarted || !IsHeadlessSetupRace(failure))
-        {
-            return failure;
-        }
-
-        /* Loud on purpose, every single time. A retry nobody can see is how a 1-in-4 flake becomes
-           a 1-in-400 mystery that outlives everyone who remembers this comment. */
-        Console.Error.WriteLine(
-            "Avalonia 12 headless setup race — dispatch retried once; see issue #544.");
-
-        return DispatchOnce(body, out _);
-    }
-
-    /// <summary>
-    /// Whether <paramref name="failure"/> is Avalonia 12's session-setup race rather than anything
-    /// this repo wrote.
-    ///
-    /// <para>The failure is an <see cref="InvalidOperationException"/> from
-    /// <c>Dispatcher.VerifyAccess</c>, thrown while <c>EnsureIsolatedApplication</c> builds the
-    /// per-dispatch Application: <c>AvaloniaHeadlessPlatform.Initialize</c> constructs a
-    /// <c>Compositor</c>, whose <c>DefaultRenderLoop.Add</c> verifies dispatcher access and finds a
-    /// different thread owning it. No repo code appears above <see cref="Dispatch"/> in the stack.
-    /// The match is deliberately narrow — the exception type AND one of those two upstream frames —
-    /// so that a thread-affinity bug in our own code, which would name our own frames, is reported
-    /// rather than retried.</para>
-    /// </summary>
-    private static bool IsHeadlessSetupRace(Exception failure) =>
-        failure is InvalidOperationException
-        && failure.StackTrace is { } stack
-        && (stack.Contains("EnsureIsolatedApplication", StringComparison.Ordinal)
-            || stack.Contains("AvaloniaHeadlessPlatform.Initialize", StringComparison.Ordinal));
-
-    /// <summary>
-    /// One attempt. <paramref name="bodyStarted"/> reports whether the dispatched delegate was
-    /// entered at all, which is what makes the retry above safe: it is the difference between
-    /// re-running a test and starting one that never ran.
-    /// </summary>
-    private static Exception? DispatchOnce(Action body, out bool bodyStarted)
-    {
         Exception? failure = null;
-        var started = false;
 
         var dispatch = Session.Value.Dispatch(() =>
         {
-            /* First statement in the delegate, before anything that could throw, so that "the body
-               never started" is a fact rather than an inference. */
-            started = true;
-
             try
             {
                 body();
@@ -275,12 +247,11 @@ internal static class HeadlessUi
             return Task.CompletedTask;
         }, default);
 
-        /* A teardown failure arrives here rather than in either catch above: 12 reports it through
-           the dispatch's own task, which is awaited outside the delegate. Measured under 12.1.2,
-           not assumed — a queued job that throws during teardown comes out of GetResult(), and when
-           the body had failed too, the teardown exception is the one the caller sees, silently
-           replacing the assertion message. That inverts the rule Run documents, so catch it and let
-           the body's failure keep precedence. */
+        /* A failure in the session's own work around the delegate — building the Application on the
+           first dispatch, or the RunJobs its teardown performs — arrives here rather than in either
+           catch above, through the dispatch's task. When the body had failed too, the body's failure
+           is the one the caller sees: Run documents that precedence, and a teardown exception that
+           replaced an assertion message would invert it. */
         try
         {
             dispatch.GetAwaiter().GetResult();
@@ -290,7 +261,6 @@ internal static class HeadlessUi
             failure ??= ex;
         }
 
-        bodyStarted = started;
         return failure;
     }
 

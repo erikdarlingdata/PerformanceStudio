@@ -57,8 +57,8 @@ internal static class McpInstructions
         ## Recommended Workflow
 
         ### Analyzing loaded plans
-        1. `list_plans` — see what plans are loaded in the application
-        2. `analyze_plan` with the target session_id — get full analysis
+        1. `list_plans`: see what plans are loaded in the application
+        2. `analyze_plan` with the target session_id: get full analysis
         3. Focus on critical issues: `get_plan_warnings` with severity="Critical"
         4. Check for parameter sniffing: `get_plan_parameters`
         5. Review index suggestions: `get_missing_indexes`
@@ -67,9 +67,9 @@ internal static class McpInstructions
         8. For reproduction: `get_repro_script` to generate runnable T-SQL
 
         ### Fetching from Query Store
-        1. `get_connections` — see available saved connections
-        2. `check_query_store` — verify Query Store is enabled on the target database
-        3. `get_query_store_top` — fetch top queries (auto-loads plans into the app)
+        1. `get_connections`: see available saved connections
+        2. `check_query_store`: verify Query Store is enabled on the target database
+        3. `get_query_store_top`: fetch top queries (auto-loads plans into the app)
         4. Use plan analysis tools above with the returned session_ids
 
         ## Analysis Rules

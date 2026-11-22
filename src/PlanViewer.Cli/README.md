@@ -25,8 +25,18 @@ planview analyze ./queries/ --server sql2025 --database AdventureWorks --login s
 planview repl
 ```
 
+## MCP server
+
+`planview mcp serve` runs a [Model Context Protocol](https://modelcontextprotocol.io) server over stdio. An AI client can open `.sqlplan` files inside the folders it is allowed to read, then ask for a plan's summary, warnings, most expensive operators, and missing-index suggestions. The server never writes a plan file.
+
+```bash
+claude mcp add planview -- planview mcp serve
+```
+
+<!-- mcp-name: io.github.erikdarlingdata/performance-studio -->
+
 ## Credentials
 
-On Windows and macOS, `planview credential add` stores a login in the OS credential store. Linux has no credential store, so the command exits with an error there. Pass `--login` and `--password-stdin`, or put `PLANVIEW_LOGIN` and `PLANVIEW_PASSWORD` in a `.env` file.
+On Windows and macOS, `planview credential add` stores a login in the OS credential store. Linux has no credential store, so the command exits with an error there. Pass `--login` and `--password-stdin`, or put `PLANVIEW_LOGIN` and `PLANVIEW_PASSWORD` in a `.env` file. Keep that file out of git, and on Linux and macOS run `chmod 600 .env` so only you can read it.
 
 The full guide, the analysis rules, and the desktop app are in the [repository README](https://github.com/erikdarlingdata/PerformanceStudio#readme).

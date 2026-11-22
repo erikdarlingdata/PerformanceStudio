@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
@@ -13,11 +14,23 @@ namespace PlanViewer.Ssms.Installer
 {
     class Program
     {
+        // The VSIXInstaller of each supported SSMS version, newest first. SSMS 21 installs under Release\. The
+        // SSMS 21 path without Release\ is the one earlier versions of this installer checked; it stays in case
+        // an install uses it.
         static readonly (string Label, string VsixInstallerPath)[] SsmsVersions =
         {
             ("SSMS 22", @"C:\Program Files\Microsoft SQL Server Management Studio 22\Release\Common7\IDE\VSIXInstaller.exe"),
+            ("SSMS 21", @"C:\Program Files\Microsoft SQL Server Management Studio 21\Release\Common7\IDE\VSIXInstaller.exe"),
             ("SSMS 21", @"C:\Program Files\Microsoft SQL Server Management Studio 21\Common7\IDE\VSIXInstaller.exe"),
         };
+
+        // The SSMS versions found, newest first, each with the first of its VSIXInstaller paths that exists.
+        internal static (string Label, string VsixInstallerPath)[] FindSsms(Func<string, bool> exists) =>
+            SsmsVersions
+                .Where(v => exists(v.VsixInstallerPath))
+                .GroupBy(v => v.Label)
+                .Select(g => g.First())
+                .ToArray();
 
         // Relationship types and content type of the OPC package signature.
         const string SignatureRelationshipPrefix = "http://schemas.openxmlformats.org/package/2006/relationships/digital-signature/";
@@ -53,7 +66,7 @@ namespace PlanViewer.Ssms.Installer
             Console.WriteLine($"VSIX: {vsixPath}");
             Console.WriteLine();
 
-            var installed = SsmsVersions.Where(v => File.Exists(v.VsixInstallerPath)).ToArray();
+            var installed = FindSsms(File.Exists);
             if (installed.Length == 0)
             {
                 Console.WriteLine("ERROR: No supported SSMS installation found.");
@@ -64,6 +77,9 @@ namespace PlanViewer.Ssms.Installer
 
             string tempDir = null;
             bool anyFailed = false;
+            // The handle on the file that gets installed. It stays open until VSIXInstaller exits, so the
+            // file cannot be replaced or deleted, and its folder cannot be renamed, in the meantime.
+            FileStream heldVsix = null;
             try
             {
                 var installerCert = GetSigner(Assembly.GetExecutingAssembly().Location);
@@ -84,6 +100,8 @@ namespace PlanViewer.Ssms.Installer
                         var copy = Path.Combine(tempDir, Path.GetFileName(vsixPath));
                         File.Copy(vsixPath, copy);
                         vsixPath = copy;
+                        // Hold the copy before the check, so the bytes that are checked are the bytes that get installed.
+                        heldVsix = HoldFile(copy);
                         error = CheckVsix(copy, installerCert);
                     }
                     catch (Exception ex)
@@ -93,7 +111,6 @@ namespace PlanViewer.Ssms.Installer
 
                     if (error != null)
                     {
-                        DeleteFolder(tempDir);
                         Console.WriteLine($"ERROR: {Path.GetFileName(vsixPath)} failed the signature check: {error}.");
                         Console.WriteLine("Nothing was installed.");
                         Console.WriteLine("Download InstallSsmsExtension.exe and PlanViewer.Ssms.vsix again from the same release, and keep them in one folder.");
@@ -106,42 +123,67 @@ namespace PlanViewer.Ssms.Installer
                     Console.WriteLine();
                 }
 
-                foreach (var (label, installerPath) in installed)
+                if (heldVsix == null)
                 {
-                    Console.WriteLine($"Found {label} — installing...");
-
-                    var psi = new ProcessStartInfo
-                    {
-                        FileName = installerPath,
-                        Arguments = $"/admin \"{vsixPath}\"",
-                        UseShellExecute = false,
-                    };
-
                     try
                     {
-                        var proc = Process.Start(psi);
-                        proc.WaitForExit();
-
-                        if (proc.ExitCode == 0)
-                        {
-                            Console.WriteLine($"  OK — installed into {label}. Restart SSMS to activate.");
-                        }
-                        else
-                        {
-                            Console.WriteLine($"  FAILED (exit code {proc.ExitCode}).");
-                            anyFailed = true;
-                        }
+                        heldVsix = HoldFile(vsixPath);
                     }
                     catch (Exception ex)
                     {
-                        Console.WriteLine($"  FAILED: {ex.Message}");
+                        Console.WriteLine($"ERROR: Could not open {Path.GetFileName(vsixPath)} for reading ({ex.Message}).");
+                        Console.WriteLine("Nothing was installed.");
+                        WaitForKey();
+                        return 1;
+                    }
+                }
+
+                // One VSIXInstaller run installs into every SSMS version that the VSIX supports, so only the
+                // newest SSMS's VSIXInstaller runs, and Windows asks for permission once.
+                var labels = string.Join(" and ", installed.Select(v => v.Label));
+                Console.WriteLine($"Found {labels} — installing...");
+                Console.WriteLine("  Windows will ask for permission once, to run Microsoft's VSIX installer.");
+
+                // Only Microsoft's VSIXInstaller runs elevated. This installer does not.
+                var psi = new ProcessStartInfo
+                {
+                    FileName = installed[0].VsixInstallerPath,
+                    Arguments = $"/admin \"{vsixPath}\"",
+                    UseShellExecute = true,
+                    Verb = "runas",
+                };
+
+                try
+                {
+                    var proc = Process.Start(psi);
+                    proc.WaitForExit();
+
+                    if (proc.ExitCode == 0)
+                    {
+                        Console.WriteLine($"  OK — installed into {labels}. Restart SSMS to activate.");
+                    }
+                    else
+                    {
+                        Console.WriteLine($"  FAILED (exit code {proc.ExitCode}).");
                         anyFailed = true;
                     }
-                    Console.WriteLine();
                 }
+                catch (Win32Exception ex) when (ex.NativeErrorCode == ErrorCancelled)
+                {
+                    Console.WriteLine("  Cancelled at the Windows prompt. Nothing was installed.");
+                    anyFailed = true;
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"  FAILED: {ex.Message}");
+                    anyFailed = true;
+                }
+                Console.WriteLine();
             }
             finally
             {
+                // Release the file before the folder is deleted.
+                heldVsix?.Dispose();
                 DeleteFolder(tempDir);
             }
 
@@ -157,20 +199,26 @@ namespace PlanViewer.Ssms.Installer
             return 0;
         }
 
+        // Exit codes of --verify-only. The release workflow reads them: any non-zero code means the signed
+        // pair is not used.
+        internal const int VerifyBadInput = 1;
+        internal const int VerifyInstallerNotSigned = 2;
+
         // Checks the VSIX against this installer's certificate without installing anything.
-        static int VerifyOnly(string vsixPath)
+        // Returns 0 only when the installer is signed and the VSIX passes the check.
+        internal static int VerifyOnly(string vsixPath)
         {
             if (vsixPath == null || !File.Exists(vsixPath))
             {
                 Console.WriteLine("ERROR: --verify-only needs the path of a .vsix file.");
-                return 1;
+                return VerifyBadInput;
             }
 
             var installerCert = GetSigner(Assembly.GetExecutingAssembly().Location);
             if (installerCert == null)
             {
-                Console.WriteLine("This installer is not signed, so the VSIX signature is not checked.");
-                return 0;
+                Console.WriteLine("ERROR: This installer is not signed, so the VSIX signature cannot be checked.");
+                return VerifyInstallerNotSigned;
             }
 
             var error = CheckVsix(vsixPath, installerCert);
@@ -377,6 +425,15 @@ namespace PlanViewer.Ssms.Installer
             var shown = new string(entryName.Select(c => char.IsControl(c) ? '?' : c).ToArray());
             return "/" + (shown.Length > 80 ? shown.Substring(0, 80) + "..." : shown);
         }
+
+        // Windows error code for a declined UAC prompt.
+        const int ErrorCancelled = 1223;
+
+        // Opens the file for reading and refuses every other writer, deleter and renamer while the handle is open.
+        // The caller keeps the handle open until VSIXInstaller has finished with the file. Other readers, such as
+        // VSIXInstaller itself, can still open it.
+        internal static FileStream HoldFile(string path) =>
+            new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
 
         static void DeleteFolder(string path)
         {

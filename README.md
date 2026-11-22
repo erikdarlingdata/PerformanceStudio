@@ -7,7 +7,7 @@
   <a href="https://github.com/erikdarlingdata/PerformanceStudio/releases/latest"><img src="https://img.shields.io/github/v/release/erikdarlingdata/PerformanceStudio?style=for-the-badge" alt="Latest Release"></a>
   <a href="https://github.com/erikdarlingdata/PerformanceStudio/issues"><img src="https://img.shields.io/github/issues/erikdarlingdata/PerformanceStudio?style=for-the-badge" alt="Open Issues"></a>
   <a href="https://github.com/erikdarlingdata/PerformanceStudio/commits/main"><img src="https://img.shields.io/github/last-commit/erikdarlingdata/PerformanceStudio?style=for-the-badge" alt="Last Commit"></a>
-  <a href="https://github.com/erikdarlingdata/PerformanceStudio/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/erikdarlingdata/PerformanceStudio/ci.yml?style=for-the-badge&label=CI" alt="CI"></a>
+  <a href="https://github.com/erikdarlingdata/PerformanceStudio/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/erikdarlingdata/PerformanceStudio/ci.yml?style=for-the-badge&label=CI&branch=dev" alt="CI"></a>
 </p>
 <p align="center">
   <a href="https://x.com/erikdarlingdata"><img src="https://img.shields.io/badge/Follow_%40ErikDarlingData-black?style=for-the-badge&logo=x&logoColor=white" alt="Follow @ErikDarlingData on X"></a>
@@ -260,6 +260,9 @@ The CLI takes a setting from the file only when the setting has an effect:
 
 - With no server from either place, `analyze` reads the plan file offline and takes nothing from the `.env` file.
 - `PLANVIEW_PASSWORD` is used only with a login.
+- `PLANVIEW_TRUST_CERT` in the file turns off certificate validation only for a server that the file names. For a server that you give with `--server`, the CLI ignores it and prints a line to stderr. Pass `--trust-cert` to turn validation off for that server.
+
+A `.env` file that holds a password stays out of git. On Linux and macOS, only you can read it (`chmod 600 .env`), and the CLI prints a warning if other users can read it.
 
 If a `PLANVIEW_` value holds a control character, the CLI stops and names the setting. The CLI prints the server and database names later. A control character in them moves the cursor and erases text, such as the `Using settings` line.
 
@@ -411,7 +414,7 @@ A VSIX extension that adds **"Open in Performance Studio"** to the execution pla
 
 1. Download `PlanViewer.Ssms.vsix` and `InstallSsmsExtension.exe` from the [latest release](https://github.com/erikdarlingdata/PerformanceStudio/releases/latest)
 2. Place them in the same folder
-3. Double-click `InstallSsmsExtension.exe` and approve the UAC prompt
+3. Double-click `InstallSsmsExtension.exe`. Windows asks for permission once, to run Microsoft's VSIX installer
 4. The installer auto-detects SSMS 21 and/or SSMS 22 and installs into both
 5. Restart SSMS to activate the extension
 
@@ -649,6 +652,12 @@ Rules can be disabled, have their severity overridden, or have single findings s
     <td>Free code signing on Windows provided by <a href="https://signpath.io">SignPath.io</a>, certificate by <a href="https://signpath.org">SignPath Foundation</a></td>
   </tr>
 </table>
+
+## Author
+
+Erik Darling: [erikdarling.com](https://erikdarling.com) and Darling Data, LLC
+
+Erik teaches database teams to work with AI agents on their own databases, in a [one-day workshop](https://erikdarling.com/ai-for-database-teams-workshop/), a [video course](https://training.erikdarling.com/work-with-your-databases-the-way-i-do), and [one-on-one for a day](https://erikdarling.com/work-with-me-for-a-day/). He also does [SQL Server performance consulting](https://erikdarling.com/sql-server-performance-consulting/).
 
 ## License
 

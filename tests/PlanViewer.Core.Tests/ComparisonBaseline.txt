@@ -1,3 +1,31 @@
+##### adaptive_join_nested_loops_plan.sqlplan vs adaptive_join_nested_loops_plan.sqlplan
+=== Plan Comparison ===
+Plan A: adaptive_join_nested_loops_plan.sqlplan
+Plan B: adaptive_join_nested_loops_plan.sqlplan
+
+--- Statement 1 ---
+SELECT c = COUNT_BIG(*), r = MAX(u.Reputation)  FROM dbo.Badges AS b  JOIN dbo.Users AS u    ON u.Id = b.UserId  LEFT JOIN #cs AS cs    ON 1 = 0  WHERE b.Date >= '20131225'  AND   b.Name LIKE N'Student'  OPTION (MAXDOP 8)
+
+  Estimated cost:     72.2737 -> 72.2737  (0.0% costlier)
+  Estimated rows:     1 -> 1  (0.0% more)
+  Runtime:            114ms -> 114ms  (0.0% slower)
+  CPU time:           859ms -> 859ms  (0.0% slower)
+  Logical reads:      60,169 -> 60,169  (0.0% more)
+  Memory grant:       12.7 MB -> 12.7 MB  (0.0% more)
+  DOP:                8 -> 8
+  Warnings:           2 -> 2  (no change)
+  Missing indexes:    1 -> 1  (no change)
+
+  Wait stats:
+    Plan A:
+      - CXSYNC_PORT 114ms
+      - HTREPARTITION 52ms
+
+    Plan B:
+      - CXSYNC_PORT 114ms
+      - HTREPARTITION 52ms
+
+
 ##### case_predicate_plan.sqlplan vs case_predicate_plan.sqlplan
 === Plan Comparison ===
 Plan A: case_predicate_plan.sqlplan
@@ -1094,6 +1122,32 @@ SELECT TOP (1) * FROM dbo.Users u JOIN dbo.Posts p ON p.OwnerUserId = u.Id
   Estimated rows:     1 -> 1  (0.0% more)
 
 
+##### scan_gate_plan.sqlplan vs scan_gate_plan.sqlplan
+=== Plan Comparison ===
+Plan A: scan_gate_plan.sqlplan
+Plan B: scan_gate_plan.sqlplan
+
+--- Statement 1 ---
+SELECT l.Id, l.Name FROM dbo.Lookup AS l
+
+  Estimated cost:     0.0033 -> 0.0033  (0.0% costlier)
+  Estimated rows:     200 -> 200  (0.0% more)
+  Runtime:            500ms -> 500ms  (0.0% slower)
+  CPU time:           498ms -> 498ms  (0.0% slower)
+  Logical reads:      4 -> 4  (0.0% more)
+  DOP:                1 -> 1
+
+--- Statement 2 ---
+SELECT s.Id FROM dbo.Settings AS s WHERE s.IsActive = 1
+
+  Estimated cost:     0.0046 -> 0.0046  (0.0% costlier)
+  Estimated rows:     900 -> 900  (0.0% more)
+  Runtime:            500ms -> 500ms  (0.0% slower)
+  CPU time:           498ms -> 498ms  (0.0% slower)
+  Logical reads:      12 -> 12  (0.0% more)
+  DOP:                1 -> 1
+
+
 ##### serially-parallel.sqlplan vs serially-parallel.sqlplan
 === Plan Comparison ===
 Plan A: serially-parallel.sqlplan
@@ -1196,6 +1250,28 @@ SELECT      u.DisplayName,      p.Score      , p.Title      , p.Tags      , p.Bo
       - SOS_SCHEDULER_YIELD 83ms
 
 
+##### stats_usage_plan.sqlplan vs stats_usage_plan.sqlplan
+=== Plan Comparison ===
+Plan A: stats_usage_plan.sqlplan
+Plan B: stats_usage_plan.sqlplan
+
+--- Statement 1 ---
+SELECT o.OrderId FROM dbo.Orders AS o JOIN #orders AS t ON t.OrderId = o.OrderId
+
+  Estimated cost:     0.5 -> 0.5  (0.0% costlier)
+  Estimated rows:     10 -> 10  (0.0% more)
+
+--- Statement 2 ---
+SELECT COUNT(*) FROM dbo.Orders
+
+  Estimated cost:     0.0032 -> 0.0032  (0.0% costlier)
+  Estimated rows:     1 -> 1  (0.0% more)
+
+--- Statement 3 ---
+DECLARE @i int
+
+
+
 ##### table_variable_aliased_function_plan.sqlplan vs table_variable_aliased_function_plan.sqlplan
 === Plan Comparison ===
 Plan A: table_variable_aliased_function_plan.sqlplan
@@ -1283,6 +1359,20 @@ SELECT TOP (1)      p.Id  FROM dbo.Posts AS p  WHERE NOT EXISTS  (      SELECT  
       - SOS_SCHEDULER_YIELD 3ms
 
 
+##### top_ordered_scan_plan.sqlplan vs top_ordered_scan_plan.sqlplan
+=== Plan Comparison ===
+Plan A: top_ordered_scan_plan.sqlplan
+Plan B: top_ordered_scan_plan.sqlplan
+
+--- Statement 1 ---
+SELECT TOP (1) p.Id FROM dbo.Posts AS p ORDER BY p.Id DESC
+
+  Estimated cost:     0.0033 -> 0.0033  (0.0% costlier)
+  Estimated rows:     1 -> 1  (0.0% more)
+  Logical reads:      4 -> 4  (0.0% more)
+  DOP:                1 -> 1
+
+
 ##### tvf_plan.sqlplan vs tvf_plan.sqlplan
 === Plan Comparison ===
 Plan A: tvf_plan.sqlplan
@@ -1324,6 +1414,35 @@ SELECT      u.Id,      u.DisplayName,      u.Reputation,      LastBadge =       
     Plan B:
       - SOS_SCHEDULER_YIELD 133ms
       - MEMORY_ALLOCATION_EXT 15ms
+
+
+##### adaptive_join_nested_loops_plan.sqlplan vs case_predicate_plan.sqlplan
+=== Plan Comparison ===
+Plan A: adaptive_join_nested_loops_plan.sqlplan
+Plan B: case_predicate_plan.sqlplan
+
+--- Statement 1 ---
+SELECT c = COUNT_BIG(*), r = MAX(u.Reputation)  FROM dbo.Badges AS b  JOIN dbo.Users AS u    ON u.Id = b.UserId  LEFT JOIN #cs AS cs    ON 1 = 0  WHERE b.Date >= '20131225'  AND   b.Name LIKE N'Student'  OPTION (MAXDOP 8)
+
+  Estimated cost:     72.2737 -> 66.6425  (7.8% cheaper)
+  Estimated rows:     1 -> 7  (600% more)
+  Runtime:            114ms -> 80ms  (29.8% faster)
+  CPU time:           859ms -> 629ms  (26.8% faster)
+  Logical reads:      60,169 -> 89,696  (49.1% more)
+  Memory grant:       12.7 MB -> 0.3 MB  (97.9% less)
+  DOP:                8 -> 8
+  Warnings:           2 -> 3  (1 new)
+  Missing indexes:    1 -> 1  (no change)
+
+  Wait stats:
+    Plan A:
+      - CXSYNC_PORT 114ms
+      - HTREPARTITION 52ms
+
+    Plan B:
+      - CXSYNC_PORT 2ms
+      - SOS_SCHEDULER_YIELD 1ms
+      - LATCH_EX 1ms
 
 
 ##### case_predicate_plan.sqlplan vs compile_memory_exceeded_plan.sqlplan
@@ -2532,23 +2651,43 @@ SELECT COUNT(*)  FROM #NewUsers AS nu  WHERE nu.UserId NOT IN (SELECT ou.UserId 
       - MEMORY_ALLOCATION_EXT 1ms
 
 
-##### row_goal_plan.sqlplan vs serially-parallel.sqlplan
+##### row_goal_plan.sqlplan vs scan_gate_plan.sqlplan
 === Plan Comparison ===
 Plan A: row_goal_plan.sqlplan
-Plan B: serially-parallel.sqlplan
+Plan B: scan_gate_plan.sqlplan
 
 Note: Plan A is an estimated plan. Runtime metrics only available for the actual plan.
 
 --- Statement 1 ---
 SELECT TOP (1) * FROM dbo.Users u JOIN dbo.Posts p ON p.OwnerUserId = u.Id
 
-  Estimated cost:     10 -> 1,782.74  (9,999% costlier)
-  Estimated rows:     1 -> 3,278  (9,999% more)
-  Runtime:            N/A -> 17.1s
-  CPU time:           N/A -> 17.1s
-  Logical reads:      0 -> 41,340,356  (new)
+  Estimated cost:     10 -> 0.0033  (99.9% cheaper)
+  Estimated rows:     1 -> 200  (9,999% more)
+  Runtime:            N/A -> 500ms
+  CPU time:           N/A -> 498ms
+  Logical reads:      0 -> 4  (new)
+  DOP:                0 -> 1
+
+--- Statement 2 (only in Plan B) ---
+SELECT s.Id FROM dbo.Settings AS s WHERE s.IsActive = 1
+  (no comparison available)
+
+
+##### scan_gate_plan.sqlplan vs serially-parallel.sqlplan
+=== Plan Comparison ===
+Plan A: scan_gate_plan.sqlplan
+Plan B: serially-parallel.sqlplan
+
+--- Statement 1 ---
+SELECT l.Id, l.Name FROM dbo.Lookup AS l
+
+  Estimated cost:     0.0033 -> 1,782.74  (9,999% costlier)
+  Estimated rows:     200 -> 3,278  (1,539% more)
+  Runtime:            500ms -> 17.1s  (3,322% slower)
+  CPU time:           498ms -> 17.1s  (3,336% slower)
+  Logical reads:      4 -> 41,340,356  (9,999% more)
   Memory grant:       0.0 MB -> 929.4 MB  (new)
-  DOP:                0 -> 8
+  DOP:                1 -> 8
   Warnings:           0 -> 4  (4 new)
 
   Wait stats:
@@ -2557,6 +2696,10 @@ SELECT TOP (1) * FROM dbo.Users u JOIN dbo.Posts p ON p.OwnerUserId = u.Id
       - RESERVED_MEMORY_ALLOCATION_EXT 65ms
       - SOS_SCHEDULER_YIELD 13ms
       - CXSYNC_CONSUMER 2ms
+
+--- Statement 2 (only in Plan A) ---
+SELECT s.Id FROM dbo.Settings AS s WHERE s.IsActive = 1
+  (no comparison available)
 
 
 ##### serially-parallel.sqlplan vs slow-multi-seek.sqlplan
@@ -2624,22 +2767,24 @@ SELECT       p.Id,      p.Score,      v.VoteTypeId  FROM dbo.Posts AS p  CROSS A
       - SOS_SCHEDULER_YIELD 83ms
 
 
-##### spill_plan.sqlplan vs table_variable_aliased_function_plan.sqlplan
+##### spill_plan.sqlplan vs stats_usage_plan.sqlplan
 === Plan Comparison ===
 Plan A: spill_plan.sqlplan
-Plan B: table_variable_aliased_function_plan.sqlplan
+Plan B: stats_usage_plan.sqlplan
+
+Note: Plan B is an estimated plan. Runtime metrics only available for the actual plan.
 
 --- Statement 1 ---
 SELECT      u.DisplayName,      p.Score      , p.Title      , p.Tags      , p.Body  FROM dbo.Users AS u  LEFT JOIN  (      SELECT          p.*,          n = ROW_NUMBER() OVER              (                  PARTITION BY                      p.OwnerUserId                  ORDER BY                      p.Score DESC              )      FROM dbo.Posts AS p      WHERE p.PostTypeId = 2      AND   p.Score > 0  ) AS p    ON  p.OwnerUserId = u.Id    AND p.n = 1  WHERE u.Reputation >= 20000  ORDER BY     ...
 
-  Estimated cost:     16,976.5 -> 0.0033  (99.9% cheaper)
-  Estimated rows:     482,677 -> 1  (99.9% fewer)
-  Runtime:            26.8s -> 0ms  (eliminated)
-  CPU time:           1m 16s -> 0ms  (eliminated)
-  Logical reads:      4,229,245 -> 1  (99.9% fewer)
+  Estimated cost:     16,976.5 -> 0  (eliminated)
+  Estimated rows:     482,677 -> 0  (eliminated)
+  Runtime:            26.8s -> N/A
+  CPU time:           1m 16s -> N/A
+  Logical reads:      4,229,245 -> 0  (eliminated)
   Memory grant:       10,597.0 MB -> 0.0 MB  (eliminated)
-  DOP:                8 -> 1
-  Warnings:           12 -> 1  (11 resolved)
+  DOP:                8 -> 0
+  Warnings:           12 -> 0  (12 resolved)
   Missing indexes:    1 -> 0  (1 resolved)
 
   Wait stats:
@@ -2654,6 +2799,41 @@ SELECT      u.DisplayName,      p.Score      , p.Title      , p.Tags      , p.Bo
       - MEMORY_ALLOCATION_EXT 256ms
       - PAGEIOLATCH_SH 225ms
       - SOS_SCHEDULER_YIELD 83ms
+
+--- Statement 2 (only in Plan B) ---
+SELECT o.OrderId FROM dbo.Orders AS o JOIN #orders AS t ON t.OrderId = o.OrderId
+  (no comparison available)
+
+--- Statement 3 (only in Plan B) ---
+SELECT COUNT(*) FROM dbo.Orders
+  (no comparison available)
+
+
+##### stats_usage_plan.sqlplan vs table_variable_aliased_function_plan.sqlplan
+=== Plan Comparison ===
+Plan A: stats_usage_plan.sqlplan
+Plan B: table_variable_aliased_function_plan.sqlplan
+
+Note: Plan A is an estimated plan. Runtime metrics only available for the actual plan.
+
+--- Statement 1 ---
+DECLARE @i int
+
+  Estimated cost:     0 -> 0.0033  (new)
+  Estimated rows:     0 -> 1  (new)
+  Runtime:            N/A -> 0ms
+  CPU time:           N/A -> 0ms
+  Logical reads:      0 -> 1  (new)
+  DOP:                0 -> 1
+  Warnings:           0 -> 1  (1 new)
+
+--- Statement 2 (only in Plan A) ---
+SELECT o.OrderId FROM dbo.Orders AS o JOIN #orders AS t ON t.OrderId = o.OrderId
+  (no comparison available)
+
+--- Statement 3 (only in Plan A) ---
+SELECT COUNT(*) FROM dbo.Orders
+  (no comparison available)
 
 
 ##### table_variable_aliased_function_plan.sqlplan vs table_variable_implicit_conversion_plan.sqlplan
@@ -2725,19 +2905,19 @@ SELECT X FROM @tv WHERE ABS(X) = 1
       - SOS_SCHEDULER_YIELD 3ms
 
 
-##### top_above_scan_plan.sqlplan vs tvf_plan.sqlplan
+##### top_above_scan_plan.sqlplan vs top_ordered_scan_plan.sqlplan
 === Plan Comparison ===
 Plan A: top_above_scan_plan.sqlplan
-Plan B: tvf_plan.sqlplan
+Plan B: top_ordered_scan_plan.sqlplan
 
 --- Statement 1 ---
 SELECT TOP (1)      p.Id  FROM dbo.Posts AS p  WHERE NOT EXISTS  (      SELECT          1/0      FROM dbo.Votes AS v      WHERE v.PostId = p.Id  )  ORDER BY      p.Id DESC
 
   Estimated cost:     4.8408 -> 0.0033  (99.9% cheaper)
-  Estimated rows:     1 -> 10  (900% more)
-  Runtime:            5.1s -> 17.1s  (234% slower)
-  CPU time:           5.1s -> 1ms  (99.9% faster)
-  Logical reads:      88,341 -> 1  (99.9% fewer)
+  Estimated rows:     1 -> 1  (0.0% more)
+  Runtime:            5.1s -> 0ms  (eliminated)
+  CPU time:           5.1s -> 0ms  (eliminated)
+  Logical reads:      88,341 -> 4  (99.9% fewer)
   DOP:                1 -> 1
   Warnings:           1 -> 0  (1 resolved)
   Missing indexes:    1 -> 0  (1 resolved)
@@ -2745,6 +2925,22 @@ SELECT TOP (1)      p.Id  FROM dbo.Posts AS p  WHERE NOT EXISTS  (      SELECT  
   Wait stats:
     Plan A:
       - SOS_SCHEDULER_YIELD 3ms
+
+
+##### top_ordered_scan_plan.sqlplan vs tvf_plan.sqlplan
+=== Plan Comparison ===
+Plan A: top_ordered_scan_plan.sqlplan
+Plan B: tvf_plan.sqlplan
+
+--- Statement 1 ---
+SELECT TOP (1) p.Id FROM dbo.Posts AS p ORDER BY p.Id DESC
+
+  Estimated cost:     0.0033 -> 0.0033  (0.8% costlier)
+  Estimated rows:     1 -> 10  (900% more)
+  Runtime:            0ms -> 17.1s  (new)
+  CPU time:           0ms -> 1ms  (new)
+  Logical reads:      4 -> 1  (75.0% fewer)
+  DOP:                1 -> 1
 
 
 ##### tvf_plan.sqlplan vs udf_plan.sqlplan
@@ -2771,22 +2967,22 @@ SELECT * FROM dbo.GetTopPosts(10)
       - MEMORY_ALLOCATION_EXT 15ms
 
 
-##### udf_plan.sqlplan vs case_predicate_plan.sqlplan
+##### udf_plan.sqlplan vs adaptive_join_nested_loops_plan.sqlplan
 === Plan Comparison ===
 Plan A: udf_plan.sqlplan
-Plan B: case_predicate_plan.sqlplan
+Plan B: adaptive_join_nested_loops_plan.sqlplan
 
 --- Statement 1 ---
 SELECT      u.Id,      u.DisplayName,      u.Reputation,      LastBadge =          (              SELECT                  COUNT_BIG(DISTINCT b.Name)              FROM dbo.Badges AS b              WHERE b.UserId = u.Id          ),      TotalBounties =          (              SELECT                  SUM(ISNULL(v.BountyAmount, 0))              FROM dbo.Votes AS v              WHERE v.UserId = u.Id          ),      TotalScore = dbo.TotalScore(u.Id) /* <-- UDF call */  FROM dbo.Users AS u  WHERE u.Re...
 
-  Estimated cost:     97.2957 -> 66.6425  (31.5% cheaper)
-  Estimated rows:     5,689 -> 7  (99.9% fewer)
-  Runtime:            3.0s -> 80ms  (97.4% faster)
-  CPU time:           2.9s -> 629ms  (78.3% faster)
-  Logical reads:      125,537 -> 89,696  (28.6% fewer)
-  Memory grant:       2.2 MB -> 0.3 MB  (88.2% less)
+  Estimated cost:     97.2957 -> 72.2737  (25.7% cheaper)
+  Estimated rows:     5,689 -> 1  (99.9% fewer)
+  Runtime:            3.0s -> 114ms  (96.2% faster)
+  CPU time:           2.9s -> 859ms  (70.4% faster)
+  Logical reads:      125,537 -> 60,169  (52.1% fewer)
+  Memory grant:       2.2 MB -> 12.7 MB  (464% more)
   DOP:                0 -> 8
-  Warnings:           4 -> 3  (1 resolved)
+  Warnings:           4 -> 2  (2 resolved)
   Missing indexes:    1 -> 1  (no change)
 
   Wait stats:
@@ -2795,8 +2991,7 @@ SELECT      u.Id,      u.DisplayName,      u.Reputation,      LastBadge =       
       - MEMORY_ALLOCATION_EXT 15ms
 
     Plan B:
-      - CXSYNC_PORT 2ms
-      - SOS_SCHEDULER_YIELD 1ms
-      - LATCH_EX 1ms
+      - CXSYNC_PORT 114ms
+      - HTREPARTITION 52ms
 
 

@@ -373,14 +373,13 @@ public partial class PlanViewerControl : UserControl
 
         // === Estimated Rows Section ===
         AddPropertySection("Estimated Rows");
-        var estExecs = 1 + node.EstimateRebinds;
-        AddPropertyRow("Est. Executions", $"{estExecs:N0}");
-        AddPropertyRow("Est. Rows Per Exec", $"{node.EstimateRows:N1}");
-        AddPropertyRow("Est. Rows All Execs", $"{node.EstimateRows * Math.Max(1, estExecs):N1}");
+        AddPropertyRow("Est. Executions", MetricFormatter.FormatEstimatedExecutions(RowEstimateHelper.GetEstimatedExecutions(node)));
+        AddPropertyRow("Est. Rows Per Exec", MetricFormatter.FormatEstimatedRows(node.EstimateRows));
+        AddPropertyRow("Est. Rows All Execs", MetricFormatter.FormatEstimatedRows(RowEstimateHelper.GetEstimatedRowsAllExecutions(node)));
         if (node.EstimatedRowsRead > 0)
-            AddPropertyRow("Est. Rows to Read", $"{node.EstimatedRowsRead:N1}");
+            AddPropertyRow("Est. Rows to Read", MetricFormatter.FormatEstimatedRows(node.EstimatedRowsRead));
         if (node.EstimateRowsWithoutRowGoal > 0)
-            AddPropertyRow("Est. Rows (No Row Goal)", $"{node.EstimateRowsWithoutRowGoal:N1}");
+            AddPropertyRow("Est. Rows (No Row Goal)", MetricFormatter.FormatEstimatedRows(node.EstimateRowsWithoutRowGoal));
         if (node.TableCardinality > 0)
             AddPropertyRow("Table Cardinality", $"{node.TableCardinality:N0}");
         AddPropertyRow("Avg Row Size", $"{node.EstimatedRowSize} B");
@@ -824,7 +823,7 @@ public partial class PlanViewerControl : UserControl
             {
                 AddPropertySection("Wait Stats");
                 foreach (var w in s.WaitStats.OrderByDescending(w => w.WaitTimeMs))
-                    AddPropertyRow(w.WaitType, $"{w.WaitTimeMs:N0} ms ({w.WaitCount:N0} waits)");
+                    AddPropertyRow(w.WaitType, WaitRowText(w.WaitTimeMs, w.WaitCount));
             }
 
             // === Trace Flags ===
@@ -862,7 +861,7 @@ public partial class PlanViewerControl : UserControl
                     var legacyTag = (w.IsLegacy ? " [legacy]" : "") + SuppressedWarningTag(w);
                     var sourceTag = WarningSourceTag(w);
                     var planWarnHeader = w.MaxBenefitPercent.HasValue
-                        ? $"\u26A0 {w.WarningType}{sourceTag}{legacyTag} \u2014 up to {FormatBenefitPercent(w.MaxBenefitPercent.Value)}% benefit"
+                        ? $"\u26A0 {w.WarningType}{sourceTag}{legacyTag}: up to {FormatBenefitPercent(w.MaxBenefitPercent.Value)}% benefit"
                         : $"\u26A0 {w.WarningType}{sourceTag}{legacyTag}";
                     var planWarnHeaderBlock = new TextBlock
                     {
@@ -942,7 +941,7 @@ public partial class PlanViewerControl : UserControl
                 {
                     var opWarnPanel = new StackPanel { Margin = new Thickness(10, 2, 10, 2) };
                     var opBenefit = w.MaxBenefitPercent.HasValue
-                        ? $" \u2014 up to {FormatBenefitPercent(w.MaxBenefitPercent.Value)}% benefit"
+                        ? $": up to {FormatBenefitPercent(w.MaxBenefitPercent.Value)}% benefit"
                         : "";
                     var opHeaderText =
                         $"\u26A0 {w.WarningType}{WarningSourceTag(w)}{(w.IsLegacy ? " [legacy]" : "")}{SuppressedWarningTag(w)}{opBenefit}";
@@ -1024,7 +1023,7 @@ public partial class PlanViewerControl : UserControl
                 var nodeLegacyTag = (w.IsLegacy ? " [legacy]" : "") + SuppressedWarningTag(w);
                 var nodeSourceTag = WarningSourceTag(w);
                 var nodeWarnHeader = w.MaxBenefitPercent.HasValue
-                    ? $"\u26A0 {w.WarningType}{nodeSourceTag}{nodeLegacyTag} \u2014 up to {FormatBenefitPercent(w.MaxBenefitPercent.Value)}% benefit"
+                    ? $"\u26A0 {w.WarningType}{nodeSourceTag}{nodeLegacyTag}: up to {FormatBenefitPercent(w.MaxBenefitPercent.Value)}% benefit"
                     : $"\u26A0 {w.WarningType}{nodeSourceTag}{nodeLegacyTag}";
                 warnPanel.Children.Add(new TextBlock
                 {
@@ -1076,14 +1075,24 @@ public partial class PlanViewerControl : UserControl
            selection threw away whatever width the user had dragged, on every single click. */
         if (!PropertiesPanel.IsVisible)
         {
-            _propertiesColumn.MinWidth = MinPropertiesWidth;
-            _propertiesColumn.MaxWidth = MaxPropertiesWidth;
-            _propertiesColumn.Width = new GridLength(
-                Math.Clamp(_propertiesPanelWidth, MinPropertiesWidth, MaxPropertiesWidth));
-            _splitterColumn.Width = new GridLength(PropertiesSplitterWidth);
-            PropertiesSplitter.IsVisible = true;
-            PropertiesPanel.IsVisible = true;
+            _statementsOpenedLast = false;
+            if (_closedByFit == SidePanel.Properties)
+                _closedByFit = SidePanel.None;
+            RevealPropertiesPanel();
+            FitSidePanels();
         }
+    }
+
+    /// <summary>Shows the Properties panel at its remembered width. The fit that follows gives it the width the viewer has room for.</summary>
+    private void RevealPropertiesPanel()
+    {
+        _propertiesColumn.MinWidth = MinPropertiesWidth;
+        _propertiesColumn.MaxWidth = MaxPropertiesWidth;
+        _propertiesColumn.Width = new GridLength(
+            Math.Clamp(_propertiesPanelWidth, MinPropertiesWidth, MaxPropertiesWidth));
+        _splitterColumn.Width = new GridLength(PropertiesSplitterWidth);
+        PropertiesSplitter.IsVisible = true;
+        PropertiesPanel.IsVisible = true;
     }
 
     private void PropertiesFilter_TextChanged(object? sender, TextChangedEventArgs e)
@@ -1144,6 +1153,8 @@ public partial class PlanViewerControl : UserControl
         // remembered width comes from - no drag tracking of our own.
         _propertiesColumn.PropertyChanged += (_, args) =>
         {
+            // A width FitSidePanels gives the panel in a narrow viewer is not one the person dragged, so it is not remembered.
+            if (_fittingSidePanels) return;
             if (args.Property.Name != "Width" || !PropertiesPanel.IsVisible) return;
             var width = _propertiesColumn.Width;
             if (width.IsAbsolute && width.Value > 0)
@@ -1618,7 +1629,8 @@ public partial class PlanViewerControl : UserControl
         ClosePropertiesPanel();
     }
 
-    private void ClosePropertiesPanel()
+    /// <summary>Hides the Properties panel and keeps the operator selected, so the panel can come back showing it.</summary>
+    private void HidePropertiesPanel()
     {
         PropertiesPanel.IsVisible = false;
         PropertiesSplitter.IsVisible = false;
@@ -1628,6 +1640,14 @@ public partial class PlanViewerControl : UserControl
         _propertiesColumn.MaxWidth = double.PositiveInfinity;
         _propertiesColumn.Width = new GridLength(0);
         _splitterColumn.Width = new GridLength(0);
+    }
+
+    private void ClosePropertiesPanel()
+    {
+        // A panel the person closes, or the panel of a plan that is going, is not one for a later fit to bring back.
+        if (_closedByFit == SidePanel.Properties)
+            _closedByFit = SidePanel.None;
+        HidePropertiesPanel();
 
         // Deselect node
         if (_selectedNodeBorder != null)
@@ -1636,12 +1656,14 @@ public partial class PlanViewerControl : UserControl
             _selectedNodeBorder.BorderThickness = _selectedNodeOriginalThickness;
             _selectedNodeBorder = null;
         }
+        FitSidePanels();
     }
 
     private void UpdateInsightsHeader()
     {
         InsightsPanel.IsVisible = true;
         InsightsHeader.Text = "  Plan Insights";
+        FitInsightsToHeight();
     }
 
 }

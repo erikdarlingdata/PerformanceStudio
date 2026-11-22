@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Linq;
 using PlanViewer.Core.Models;
 using PlanViewer.Core.Services;
@@ -168,6 +169,26 @@ public class CeGuessDetectionTests
     /// The shape of a real estimated plan for one of the probe queries, with the estimate, the
     /// estimator version and the predicate filled in from what SQL Server 2025 produced.
     /// </summary>
+    [Fact]
+    public void Label_OnAGermanDesktop_WritesEveryNumberInOneConvention()
+    {
+        // The row counts and the percentage are one sentence, so they are written in one convention
+        // whatever the desktop's culture; German groups with a dot and uses a decimal comma.
+        var saved = CultureInfo.CurrentCulture;
+        CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("de-DE");
+        try
+        {
+            var label = Label(170, 30000);
+
+            Assert.NotNull(label);
+            Assert.Contains("Estimated 30,000 rows from 100,000 row table: matches the 30% guess for an inequality such as > or < (30.0%)", label);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = saved;
+        }
+    }
+
     private static string? LabelFromXml(string sql, string predicate, int ce, string estimateRows)
     {
         var xml = PlanTemplate

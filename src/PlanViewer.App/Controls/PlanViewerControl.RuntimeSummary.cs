@@ -37,6 +37,7 @@ public partial class PlanViewerControl : UserControl
 
             var labelText = new TextBlock
             {
+                TextWrapping = TextWrapping.Wrap,
                 Text = label,
                 FontSize = 11,
                 Foreground = labelBrush,
@@ -49,6 +50,7 @@ public partial class PlanViewerControl : UserControl
 
             var valueText = new TextBlock
             {
+                TextWrapping = TextWrapping.Wrap,
                 Text = value,
                 FontSize = 11,
                 Foreground = brushKey == null ? valueBrush : FindBrushResource(brushKey),
@@ -240,6 +242,7 @@ public partial class PlanViewerControl : UserControl
             grid.RowDefinitions.Add(new RowDefinition(GridLength.Auto));
             var lb = new TextBlock
             {
+                TextWrapping = TextWrapping.Wrap,
                 Text = label, FontSize = 11,
                 Foreground = labelBrush,
                 HorizontalAlignment = HorizontalAlignment.Left,
@@ -251,6 +254,7 @@ public partial class PlanViewerControl : UserControl
 
             var vb = new TextBlock
             {
+                TextWrapping = TextWrapping.Wrap,
                 Text = value, FontSize = 11,
                 Foreground = valueBrush,
                 Margin = new Thickness(0, 1, 0, 1)

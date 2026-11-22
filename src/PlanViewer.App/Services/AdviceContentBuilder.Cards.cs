@@ -268,8 +268,11 @@ internal static partial class AdviceContentBuilder
         bool expandedByDefault)
     {
         var findings = CollectFindings(stmt);
-        var edge = findings.Any(f => IsSeverity(f.Warning.Severity, "Critical")) ? CriticalBrush
-            : findings.Any(f => IsSeverity(f.Warning.Severity, "Warning")) ? WarningBrush
+        /* #651: a suppressed finding still shows as a card, but it is not a verdict on the
+           statement, so neither the edge nor the header's counts see it. */
+        var live = findings.Where(f => !f.Warning.IsSuppressed).ToList();
+        var edge = live.Any(f => IsSeverity(f.Warning.Severity, "Critical")) ? CriticalBrush
+            : live.Any(f => IsSeverity(f.Warning.Severity, "Warning")) ? WarningBrush
             : CardEdgeQuietBrush;
 
         var expander = new Expander
@@ -328,8 +331,8 @@ internal static partial class AdviceContentBuilder
         if (stmt.DegreeOfParallelism > 0)
             chips.Add(Chip($"DOP {stmt.DegreeOfParallelism}", QuietTextBrush));
 
-        var critical = findings.Count(f => IsSeverity(f.Warning.Severity, "Critical"));
-        var warning = findings.Count(f => IsSeverity(f.Warning.Severity, "Warning"));
+        var critical = findings.Count(f => !f.Warning.IsSuppressed && IsSeverity(f.Warning.Severity, "Critical"));
+        var warning = findings.Count(f => !f.Warning.IsSuppressed && IsSeverity(f.Warning.Severity, "Warning"));
         if (critical > 0)
             chips.Add(Chip($"{critical:N0} critical", CriticalBrush));
         if (warning > 0)

@@ -220,6 +220,70 @@ public class PlanAnalyzerTests
         Assert.Contains(warnings, w => w.Message.Contains("waited"));
     }
 
+    /// <summary>
+    /// The showplan records MemoryGrantInfo's GrantWaitTime in seconds. The parser stores
+    /// milliseconds, so a 7 second wait reads 7,000ms in the warning and clears the 5,000ms
+    /// Critical cut.
+    /// </summary>
+    [Fact]
+    public void Rule09b_MemoryGrantWait_ReadsShowplanSecondsAsMilliseconds()
+    {
+        var plan = PlanTestHelper.LoadAndAnalyzeWithGrantWaitSeconds("memory_grant_wait_plan.sqlplan", 7);
+        var stmt = PlanTestHelper.FirstStatement(plan);
+        var warning = Assert.Single(stmt.PlanWarnings, w => w.WarningType == "Memory Grant Wait");
+
+        Assert.Equal(7_000, stmt.MemoryGrant!.GrantWaitTimeMs);
+        Assert.Contains("7,000ms", warning.Message);
+        Assert.Equal(PlanWarningSeverity.Critical, warning.Severity);
+    }
+
+    [Theory]
+    [InlineData(5, PlanWarningSeverity.Critical)]
+    [InlineData(4, PlanWarningSeverity.Warning)]
+    public void Rule09b_MemoryGrantWait_FiveSecondsIsTheCriticalCut(int seconds, PlanWarningSeverity expected)
+    {
+        var plan = PlanTestHelper.LoadAndAnalyzeWithGrantWaitSeconds("memory_grant_wait_plan.sqlplan", seconds);
+        var warning = Assert.Single(PlanTestHelper.FirstStatement(plan).PlanWarnings,
+            w => w.WarningType == "Memory Grant Wait");
+
+        Assert.Equal(expected, warning.Severity);
+    }
+
+    /// <summary>
+    /// The benefit is the wait's share of the statement's elapsed time: the wait is the only part
+    /// of a memory grant that costs this query time.
+    /// </summary>
+    [Fact]
+    public void Rule09b_MemoryGrantWait_CarriesBenefitOfWaitOverElapsed()
+    {
+        var plan = PlanTestHelper.LoadAndAnalyzeWithGrantWaitSeconds("memory_grant_wait_plan.sqlplan", 7);
+        var stmt = PlanTestHelper.FirstStatement(plan);
+        var warning = Assert.Single(stmt.PlanWarnings, w => w.WarningType == "Memory Grant Wait");
+
+        var expected = Math.Round(7_000.0 / stmt.QueryTimeStats!.ElapsedTimeMs * 100, 1);
+        Assert.Equal(expected, warning.MaxBenefitPercent);
+    }
+
+    /// <summary>
+    /// The parser's "Memory Grant" warning is the engine's own grant note. It says nothing about
+    /// time waited, so it earns no benefit, whatever the statement's grant wait was.
+    /// </summary>
+    [Fact]
+    public void Rule09_ParserMemoryGrantWarning_GetsNoWaitBenefit()
+    {
+        var stmt = new PlanStatement
+        {
+            QueryTimeStats = new QueryTimeInfo { ElapsedTimeMs = 1000, CpuTimeMs = 1000 },
+            MemoryGrant = new MemoryGrantInfo { GrantWaitTimeMs = 500 },
+            PlanWarnings = { new PlanWarning { WarningType = "Memory Grant", Severity = PlanWarningSeverity.Warning } }
+        };
+        var plan = BuildSyntheticPlan(stmt);
+
+        BenefitScorer.Score(plan);
+
+        Assert.Null(Assert.Single(stmt.PlanWarnings).MaxBenefitPercent);
+    }
+
     // ---------------------------------------------------------------
     // Rule 10: Key Lookup with Predicate
     // ---------------------------------------------------------------
@@ -234,17 +298,37 @@ public class PlanAnalyzerTests
         Assert.Contains(warnings, w => w.Message.Contains("INCLUDE column"));
     }
 
+    /// <summary>
+    /// #678: the grade follows what the lookup cost. This fixture's statement recorded no elapsed
+    /// time, so the lookup is graded on its 117 executions: well under the thousand that would make
+    /// it a Warning, and never Critical on that path. The message says which figure graded it.
+    /// </summary>
+    [Fact]
+    public void Rule10_KeyLookup_IsGradedOnWhatItCost_NotAlwaysCritical()
+    {
+        var plan = PlanTestHelper.LoadAndAnalyze("key_lookup_plan.sqlplan");
+        var warning = Assert.Single(PlanTestHelper.WarningsOfType(plan, "Key Lookup"));
+
+        Assert.Equal(PlanWarningSeverity.Info, warning.Severity);
+        Assert.Contains("Lookups performed: 117. The plan recorded no statement time to grade them against.", warning.Message);
+    }
+
     // ---------------------------------------------------------------
     // Rule 11: Scan With Predicate
     // ---------------------------------------------------------------
 
     [Fact]
-    public void Rule11_ScanWithPredicate_DetectedInJoinOrClausePlan()
+    public void Rule11_ScanWithPredicate_DetectedInLocalVariablePlan()
     {
-        var plan = PlanTestHelper.LoadAndAnalyze("join_or_clause_plan.sqlplan");
+        // An actual scan that read 17 million rows to return 5.4 million in all of the statement's
+        // time. join_or_clause_plan's Index Scan (Node 5) read 17,142,169 rows but returned
+        // 17,091,572 of them (99.7%, over the 50% selectivity ceiling) in 3.2% of the statement's
+        // time (under the 10% share), so the rule leaves it out.
+        var plan = PlanTestHelper.LoadAndAnalyze("local_variable_plan.sqlplan");
         var warnings = PlanTestHelper.WarningsOfType(plan, "Scan With Predicate");
 
         Assert.NotEmpty(warnings);
+        Assert.Contains(warnings, w => w.Message.Contains("read 17,142,169 rows to return 5,413,518"));
     }
 
     [Fact]
@@ -701,7 +785,7 @@ public class PlanAnalyzerTests
     [Fact]
     public void Rule12j_NonSargable_OuterReferenceFunctionAliased_GetsScanWithPredicate()
     {
-        var plan = PlanTestHelper.LoadAndAnalyze("outer_reference_function_aliased_plan.sqlplan");
+        var plan = PlanTestHelper.LoadAndAnalyzeWithReportableScan("outer_reference_function_aliased_plan.sqlplan", 3);
         AssertScanWarnings(plan, nodeId: 3, expectNonSargable: false);
     }
 
@@ -716,7 +800,7 @@ public class PlanAnalyzerTests
     [Fact]
     public void Rule12j_NonSargable_OuterReferenceFunctionUnaliased_GetsScanWithPredicate()
     {
-        var plan = PlanTestHelper.LoadAndAnalyze("outer_reference_function_unaliased_plan.sqlplan");
+        var plan = PlanTestHelper.LoadAndAnalyzeWithReportableScan("outer_reference_function_unaliased_plan.sqlplan", 3);
         AssertScanWarnings(plan, nodeId: 3, expectNonSargable: false);
     }
 
@@ -724,7 +808,7 @@ public class PlanAnalyzerTests
     [Fact]
     public void Rule12j_NonSargable_OuterReferenceFunctionSelfJoin_GetsScanWithPredicate()
     {
-        var plan = PlanTestHelper.LoadAndAnalyze("outer_reference_function_self_join_plan.sqlplan");
+        var plan = PlanTestHelper.LoadAndAnalyzeWithReportableScan("outer_reference_function_self_join_plan.sqlplan", 3);
         AssertScanWarnings(plan, nodeId: 3, expectNonSargable: false);
     }
 
@@ -732,35 +816,35 @@ public class PlanAnalyzerTests
     [Fact]
     public void Rule12j_NonSargable_OuterReferenceSelfJoinUnaliasedInner_GetsScanWithPredicate()
     {
-        var plan = PlanTestHelper.LoadAndAnalyze("outer_reference_self_join_unaliased_inner_plan.sqlplan");
+        var plan = PlanTestHelper.LoadAndAnalyzeWithReportableScan("outer_reference_self_join_unaliased_inner_plan.sqlplan", 3);
         AssertScanWarnings(plan, nodeId: 3, expectNonSargable: false);
     }
 
     [Fact]
     public void Rule12j_NonSargable_OuterReferenceImplicitConversion_GetsScanWithPredicate()
     {
-        var plan = PlanTestHelper.LoadAndAnalyze("outer_reference_implicit_conversion_plan.sqlplan");
+        var plan = PlanTestHelper.LoadAndAnalyzeWithReportableScan("outer_reference_implicit_conversion_plan.sqlplan", 3);
         AssertScanWarnings(plan, nodeId: 3, expectNonSargable: false);
     }
 
     [Fact]
     public void Rule12j_NonSargable_OuterReferenceIsnull_GetsScanWithPredicate()
     {
-        var plan = PlanTestHelper.LoadAndAnalyze("outer_reference_isnull_plan.sqlplan");
+        var plan = PlanTestHelper.LoadAndAnalyzeWithReportableScan("outer_reference_isnull_plan.sqlplan", 3);
         AssertScanWarnings(plan, nodeId: 3, expectNonSargable: false);
     }
 
     [Fact]
     public void Rule12j_NonSargable_OuterReferenceTempTable_GetsScanWithPredicate()
     {
-        var plan = PlanTestHelper.LoadAndAnalyze("outer_reference_temp_table_plan.sqlplan");
+        var plan = PlanTestHelper.LoadAndAnalyzeWithReportableScan("outer_reference_temp_table_plan.sqlplan", 3);
         AssertScanWarnings(plan, nodeId: 3, expectNonSargable: false);
     }
 
     [Fact]
     public void Rule12j_NonSargable_OuterReferenceTableVariableAliased_GetsScanWithPredicate()
     {
-        var plan = PlanTestHelper.LoadAndAnalyze("outer_reference_table_variable_aliased_plan.sqlplan");
+        var plan = PlanTestHelper.LoadAndAnalyzeWithReportableScan("outer_reference_table_variable_aliased_plan.sqlplan", 3);
         AssertScanWarnings(plan, nodeId: 3, expectNonSargable: false);
     }
 
@@ -771,7 +855,7 @@ public class PlanAnalyzerTests
     [Fact]
     public void Rule12j_NonSargable_OuterReferenceTableVariableUnaliased_GetsScanWithPredicate()
     {
-        var plan = PlanTestHelper.LoadAndAnalyze("outer_reference_table_variable_unaliased_plan.sqlplan");
+        var plan = PlanTestHelper.LoadAndAnalyzeWithReportableScan("outer_reference_table_variable_unaliased_plan.sqlplan", 3);
         AssertScanWarnings(plan, nodeId: 3, expectNonSargable: false);
     }
 
@@ -783,7 +867,7 @@ public class PlanAnalyzerTests
     [Fact]
     public void Rule12j_NonSargable_OuterReferenceOuterSideScan_OuterScanStaysNonSargable_InnerScanUnaffected()
     {
-        var plan = PlanTestHelper.LoadAndAnalyze("outer_reference_outer_side_scan_plan.sqlplan");
+        var plan = PlanTestHelper.LoadAndAnalyzeWithReportableScan("outer_reference_outer_side_scan_plan.sqlplan", 4);
         AssertScanWarnings(plan, nodeId: 2, expectNonSargable: true, messageContains: "Function call (ABS)");
         AssertScanWarnings(plan, nodeId: 4, expectNonSargable: false);
     }
@@ -804,7 +888,7 @@ public class PlanAnalyzerTests
     [Fact]
     public void Rule12g_NonSargable_ParameterSideConvertAfterAnotherComparison_NotFlagged()
     {
-        var plan = PlanTestHelper.LoadAndAnalyze("non_sargable_compound_predicate_plan.sqlplan");
+        var plan = PlanTestHelper.LoadAndAnalyzeWithReportableScan("non_sargable_compound_predicate_plan.sqlplan", 2);
 
         Assert.Empty(PlanTestHelper.WarningsOfType(plan, "Non-SARGable Predicate"));
         Assert.NotEmpty(PlanTestHelper.WarningsOfType(plan, "Scan With Predicate"));
@@ -989,6 +1073,20 @@ public class PlanAnalyzerTests
 
         Assert.Single(warnings);
         Assert.Contains("Mismatched data types", warnings[0].Message);
+    }
+
+    [Fact]
+    public void Rule13_DataTypeMismatch_SaysTheSeekRangeWasBuilt_NotThatSeeksArePrevented()
+    {
+        // GetRangeWithMismatchedTypes exists because the optimizer built a dynamic seek range
+        // through the conversion, so the index is still sought. The message must not claim
+        // the conversion prevents seeks or converts every row.
+        var plan = PlanTestHelper.LoadAndAnalyze("mismatched_data_type_plan.sqlplan");
+        var warning = Assert.Single(PlanTestHelper.WarningsOfType(plan, "Data Type Mismatch"));
+
+        Assert.Contains("built a dynamic seek range", warning.Message);
+        Assert.DoesNotContain("preventing index seeks", warning.Message);
+        Assert.DoesNotContain("converting every row", warning.Message);
     }
 
     // ---------------------------------------------------------------
@@ -1182,19 +1280,38 @@ public class PlanAnalyzerTests
     // Rule 22: Table Variable
     // ---------------------------------------------------------------
 
+    /// <summary>
+    /// Rule 22 is one statement warning per statement, naming the operators that touch the table
+    /// variable in OriginNodeIds. No operator carries a copy of its own, so a table variable
+    /// counts once in the warning totals.
+    /// </summary>
     [Fact]
-    public void Rule22_TableVariable_DetectsAtSignInObjectName()
+    public void Rule22_TableVariable_IsOneStatementWarningNamingItsOperators()
     {
         var plan = PlanTestHelper.LoadAndAnalyze("table_variable_plan.sqlplan");
-        var warnings = PlanTestHelper.WarningsOfType(plan, "Table Variable");
+        var stmt = PlanTestHelper.FirstStatement(plan);
 
-        // Node-level + statement-level warnings
-        Assert.True(warnings.Count >= 2);
-        Assert.Contains(warnings, w => w.Message.Contains("lack column-level statistics"));
-        // Statement-level stats warning
-        var stmtWarnings = PlanTestHelper.FirstStatement(plan).PlanWarnings
-            .Where(w => w.WarningType == "Table Variable").ToList();
-        Assert.Contains(stmtWarnings, w => w.Message.Contains("lack column-level statistics"));
+        var warning = Assert.Single(PlanTestHelper.WarningsOfType(plan, "Table Variable"));
+        Assert.Contains("lack column-level statistics", warning.Message);
+        Assert.Equal(PlanWarningSeverity.Warning, warning.Severity);
+        Assert.Contains(warning, stmt.PlanWarnings);
+        Assert.Equal([0], warning.OriginNodeIds);
+        Assert.DoesNotContain(PlanTestHelper.AllNodeWarnings(stmt), w => w.WarningType == "Table Variable");
+    }
+
+    /// <summary>
+    /// A statement that modifies a table variable gets the one Critical warning. The Table Insert
+    /// operator does not carry a second one, so a critical count over the plan reads 1.
+    /// </summary>
+    [Fact]
+    public void Rule22_ModifiedTableVariable_IsOneCriticalWarning()
+    {
+        var plan = PlanTestHelper.LoadAndAnalyze("exec_stored_procedure_plan.sqlplan");
+
+        var critical = Assert.Single(PlanTestHelper.WarningsOfType(plan, "Table Variable"),
+            w => w.Severity == PlanWarningSeverity.Critical);
+        Assert.Contains("modifies a table variable", critical.Message);
+        Assert.NotEmpty(critical.OriginNodeIds);
     }
 
     // ---------------------------------------------------------------
@@ -1209,6 +1326,19 @@ public class PlanAnalyzerTests
 
         Assert.Single(warnings);
         Assert.Contains("GetTopPosts", warnings[0].Message);
+    }
+
+    [Fact]
+    public void Rule23_DatesTheHundredRowGuessToSqlServer2014()
+    {
+        // The 100 row guess is the SQL Server 2014 cardinality estimator's. SQL Server 2017 added
+        // interleaved execution, which uses the function's real row count instead.
+        var plan = PlanTestHelper.LoadAndAnalyze("tvf_plan.sqlplan");
+        var warning = Assert.Single(PlanTestHelper.WarningsOfType(plan, "Table-Valued Function"));
+
+        Assert.Contains("100 rows (SQL Server 2014 and later)", warning.Message);
+        Assert.Contains("interleaved execution (SQL Server 2017 and later)", warning.Message);
+        Assert.DoesNotContain("2017+", warning.Message);
     }
 
     [Fact]
@@ -1272,6 +1402,62 @@ public class PlanAnalyzerTests
         Assert.Contains("Clustered Index Scan", warnings[0].Message);
         Assert.Contains("inner side of Nested Loops", warnings[0].Message);
         Assert.Contains("residual predicate", warnings[0].Message);
+    }
+
+    [Fact]
+    public void Rule24_TopAboveScan_PlainTopOverOrderedScanDoesNotWarn()
+    {
+        // SELECT TOP (1) p.Id FROM dbo.Posts AS p ORDER BY p.Id DESC compiles to a Top over a
+        // backward clustered index scan with Ordered="true" and no Sort. The Top stops the scan
+        // after one row, so there is no scan and sort for an index to remove.
+        var plan = PlanTestHelper.LoadAndAnalyze("top_ordered_scan_plan.sqlplan");
+
+        Assert.Empty(PlanTestHelper.WarningsOfType(plan, "Top Above Scan"));
+    }
+
+    // ---------------------------------------------------------------
+    // Rules 11 and 34: the scan gates (rows read, own time share, selectivity)
+    // ---------------------------------------------------------------
+
+    [Fact]
+    public void Rule34_BareScan_SmallTableInOneMsOfFiveHundred_DoesNotWarn()
+    {
+        // Statement 1 of scan_gate_plan: a 200 row lookup table read in 1 ms of a 500 ms
+        // statement, two output columns. Under 10,000 rows the table is a few pages, and the
+        // index the rule proposes costs more on every write than it saves.
+        var plan = PlanTestHelper.LoadAndAnalyze("scan_gate_plan.sqlplan");
+        var stmt = PlanTestHelper.FirstStatement(plan);
+
+        Assert.Equal("SELECT l.Id, l.Name FROM dbo.Lookup AS l", stmt.StatementText);
+        Assert.DoesNotContain(PlanTestHelper.AllNodeWarnings(stmt), w => w.WarningType == "Bare Scan");
+    }
+
+    [Theory]
+    [InlineData("implicit_convert_seek_plan.sqlplan", "outputting 1 column: Users.Id.")]
+    [InlineData("cte_multi_ref_plan.sqlplan", "outputting 3 columns: Users.Id, Users.DisplayName, Users.Reputation.")]
+    public void Rule34_BareScan_CountsItsColumnsAsAPersonSays(string fixture, string expected)
+    {
+        // The narrow-output message names its column count: one column reads "1 column" and
+        // three read "3 columns", with no "(s)" left for the reader to resolve.
+        var plan = PlanTestHelper.LoadAndAnalyze(fixture);
+        var warnings = PlanTestHelper.WarningsOfType(plan, "Bare Scan");
+
+        Assert.NotEmpty(warnings);
+        Assert.Contains(warnings, w => w.Message.Contains(expected, StringComparison.Ordinal));
+        Assert.All(warnings, w => Assert.DoesNotContain("(s)", w.Message, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Rule11_ScanWithPredicate_ReadThousandReturnedNineHundred_DoesNotWarn()
+    {
+        // Statement 2 of scan_gate_plan: a scan that read 1,000 rows and returned 900 in 1 ms of
+        // a 500 ms statement. The predicate removed a tenth of the rows, so a seek on its columns
+        // would touch the same pages, and the scan is under the rows floor besides.
+        var plan = PlanTestHelper.LoadAndAnalyze("scan_gate_plan.sqlplan");
+        var stmt = plan.Batches[0].Statements[1];
+
+        Assert.Equal("SELECT s.Id FROM dbo.Settings AS s WHERE s.IsActive = 1", stmt.StatementText);
+        Assert.DoesNotContain(PlanTestHelper.AllNodeWarnings(stmt), w => w.WarningType == "Scan With Predicate");
     }
 
     // ---------------------------------------------------------------
@@ -1722,6 +1908,23 @@ public class PlanAnalyzerTests
         var warnings = PlanTestHelper.WarningsOfType(plan, "Expensive Operator");
 
         Assert.Single(warnings);
+    }
+
+    [Fact]
+    public void Rule35_ExpensiveOperator_OperatorAboveASkewedExchange_IsNotNamed()
+    {
+        // serially-parallel: the Sort (node 2) is 17,111 ms on every worker thread, but the branch
+        // below its Repartition Streams ran on thread 1 alone. Across an exchange the slowest producer
+        // thread comes off every thread above it (#680), so the Sort owns 1 ms of a 17,112 ms
+        // statement and Rule 35 has nothing to say about it. Pairing threads by number gave it all
+        // 17,111 ms and named it the plan's most expensive operator.
+        var plan = PlanTestHelper.LoadAndAnalyze("serially-parallel.sqlplan");
+        var sort = PlanTestHelper.FindNode(PlanTestHelper.FirstStatement(plan).RootNode!, 2)!;
+
+        Assert.Equal("Sort", sort.PhysicalOp);
+        Assert.Equal(1, PlanAnalyzer.GetOperatorOwnElapsedMs(sort));
+        Assert.DoesNotContain(PlanTestHelper.WarningsOfType(plan, "Expensive Operator"),
+            w => w.Message.StartsWith("Sort took"));
     }
 
     #region Rule 38 — Standard Edition DOP Limitation

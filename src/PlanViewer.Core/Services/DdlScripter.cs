@@ -21,7 +21,7 @@ public static class DdlScripter
 
         var sb = new System.Text.StringBuilder();
         sb.AppendLine($"-- Indexes on {objectName}");
-        sb.AppendLine($"-- {indexes.Count} index(es), {indexes[0].RowCount:N0} rows");
+        sb.AppendLine($"-- {indexes.Count} {(indexes.Count == 1 ? "index" : "indexes")}, {indexes[0].RowCount:N0} {(indexes[0].RowCount == 1 ? "row" : "rows")}");
         sb.AppendLine();
 
         foreach (var ix in indexes)

@@ -551,7 +551,7 @@ else
         {
             builder.OpenElement(31, "div");
             builder.AddAttribute(32, "class", "node-rows");
-            builder.AddContent(33, $"{node.EstimateRows:N0} est. rows");
+            builder.AddContent(33, $"{MetricFormatter.FormatEstimatedRows(node.EstimateRows)} est. rows");
             builder.CloseElement();
         }
 

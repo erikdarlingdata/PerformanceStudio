@@ -8,6 +8,18 @@ namespace PlanViewer.Core.Output;
 /// </summary>
 public static class ResultMapper
 {
+    /// <summary>
+    /// How many statistics <c>statistics_loaded</c> carries per statement, published beside
+    /// <c>statistics_returned</c> / <c>total_statistics</c> / <c>statistics_truncated</c> so the cut is never silent.
+    /// </summary>
+    public const int StatisticsLoadedCap = 10;
+
+    /// <summary>
+    /// The <c>statistics_note</c> of a statement whose plan carries a QueryPlan but no OptimizerStatsUsage
+    /// element (<c>statistics_status</c> = <c>not_in_plan</c>).
+    /// </summary>
+    public const string StatisticsNotInPlanNote = "This plan has no record of the statistics it loaded (SQL Server before 2017 / 2016 SP2, or a plan that loaded none), so their state at compile is unknown.";
+
     public static AnalysisResult Map(
         ParsedPlan plan,
         string source,
@@ -309,7 +321,96 @@ public static class ResultMapper
             };
         }
 
+        MapStatisticsLoaded(stmt, result);
+
         return result;
+    }
+
+    /// <summary>
+    /// The statistics the optimizer loaded while compiling the statement (the plan's OptimizerStatsUsage;
+    /// the plan does not say which of them drove the estimates), most-modified first and cut at
+    /// <see cref="StatisticsLoadedCap"/>, with the truncation observed against the statement's whole list.
+    /// </summary>
+    private static void MapStatisticsLoaded(PlanStatement stmt, StatementResult result)
+    {
+        result.StatisticsStatus = !stmt.HasQueryPlan ? "no_query_plan" : stmt.HasStatsUsage ? "recorded" : "not_in_plan";
+        result.StatisticsNote = result.StatisticsStatus == "not_in_plan" ? StatisticsNotInPlanNote : null;
+        result.StatisticsCap = StatisticsLoadedCap;
+        result.StatisticsReturned = Math.Min(stmt.StatsUsage.Count, StatisticsLoadedCap);
+        result.TotalStatistics = stmt.StatsUsage.Count;
+        result.StatisticsTruncated = stmt.StatsUsage.Count > StatisticsLoadedCap;
+
+        if (stmt.StatsUsage.Count == 0)
+            return;
+
+        var nodes = new List<PlanNode>();
+        if (stmt.RootNode != null)
+            CollectNodes(stmt.RootNode, nodes);
+
+        foreach (var item in stmt.StatsUsage
+                     .OrderByDescending(i => i.ModificationCount)
+                     .ThenBy(i => i.DatabaseName, StringComparer.Ordinal)
+                     .ThenBy(i => i.SchemaName, StringComparer.Ordinal)
+                     .ThenBy(i => i.TableName, StringComparer.Ordinal)
+                     .ThenBy(i => i.StatisticsName, StringComparer.Ordinal)
+                     .Take(StatisticsLoadedCap))
+        {
+            var tableRows = TableRowsFor(item, nodes);
+            result.StatisticsLoaded.Add(new StatisticLoadedResult
+            {
+                Database = item.DatabaseName,
+                Schema = item.SchemaName,
+                Table = item.TableName,
+                Statistic = item.StatisticsName,
+                ModificationCount = item.ModificationCount,
+                TableRows = tableRows,
+                ModifiedPercent = tableRows is > 0 ? Math.Round(item.ModificationCount * 100.0 / tableRows.Value, 1) : null,
+                StaleAtCompile = tableRows == null ? null : item.ModificationCount > AutoUpdateThreshold(tableRows.Value),
+                LastUpdate = item.LastUpdate,
+                SamplingPercent = item.SamplingPercent
+            });
+        }
+    }
+
+    /// <summary>
+    /// The SQL Server 2016+ automatic update threshold at compatibility level 130 or higher: 500 for 500
+    /// rows or fewer, otherwise the smaller of 500 + 20% of the rows and sqrt(1000 x rows).
+    /// </summary>
+    private static double AutoUpdateThreshold(double rows) =>
+        rows <= 500 ? 500 : Math.Min(500 + 0.2 * rows, Math.Sqrt(1000.0 * rows));
+
+    /// <summary>
+    /// The row count of the statistic's table as the plan saw it: the largest TableCardinality among the
+    /// operators that read that table and recorded one, or null when none does.
+    /// </summary>
+    private static double? TableRowsFor(OptimizerStatsUsageItem item, List<PlanNode> nodes)
+    {
+        var qualified = $"{item.SchemaName}.{item.TableName}";
+        double? rows = null;
+        foreach (var n in nodes)
+        {
+            if (n.HasTableCardinality
+                && string.Equals(n.DatabaseName, item.DatabaseName, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(n.ObjectName, qualified, StringComparison.OrdinalIgnoreCase))
+            {
+                rows = rows is null ? n.TableCardinality : Math.Max(rows.Value, n.TableCardinality);
+            }
+        }
+
+        return rows;
+    }
+
+    private static void CollectNodes(PlanNode node, List<PlanNode> nodes)
+    {
+        var pending = new Stack<PlanNode>();
+        pending.Push(node);
+        while (pending.Count > 0)
+        {
+            var current = pending.Pop();
+            nodes.Add(current);
+            foreach (var child in current.Children)
+                pending.Push(child);
+        }
     }
 
     private static OperatorResult MapNode(PlanNode root, CancellationToken cancellationToken)
@@ -343,6 +444,7 @@ public static class ResultMapper
             LogicalOp = node.LogicalOp,
             CostPercent = node.CostPercent,
             EstimatedRows = node.EstimateRows,
+            EstimatedExecutions = RowEstimateHelper.GetEstimatedExecutions(node),
             EstimatedCost = node.EstimatedOperatorCost,
             EstimatedIO = node.EstimateIO,
             EstimatedCPU = node.EstimateCPU,

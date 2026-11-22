@@ -92,10 +92,11 @@ public static partial class ShowPlanParser
     /// and waits for it. An exception the walk throws, such as an OperationCanceledException, is
     /// rethrown here unchanged. Nothing is left unhandled on the new thread, because an unhandled
     /// exception there would end the process. The caller's culture reaches the new thread with the
-    /// execution context, so parser text such as spill warnings is formatted as before.
+    /// execution context. The parser writes its own figures in the invariant culture, so the walk
+    /// reads the caller's culture only for what it does not format itself.
     /// </summary>
     [UnsupportedOSPlatform("browser")]
-    private static ParsedPlan RunOnParseThread(Func<ParsedPlan> walk)
+    internal static ParsedPlan RunOnParseThread(Func<ParsedPlan> walk)
     {
         ParsedPlan? result = null;
         ExceptionDispatchInfo? failure = null;
@@ -132,6 +133,9 @@ public static partial class ShowPlanParser
             var root = document.Root;
             if (root is null)
                 return plan;
+
+            // Recorded before the walk, so a plan the walk refuses or throws on is still known to be a plan.
+            plan.IsShowPlanXml = root.Name == Ns + "ShowPlanXML";
 
             plan.BuildVersion = root.Attribute("Version")?.Value;
             plan.Build = root.Attribute("Build")?.Value;
@@ -402,6 +406,7 @@ public static partial class ShowPlanParser
             return stmt;
         }
 
+        stmt.HasQueryPlan = true;
         ParseStmtAttributes(stmt, stmtEl);
         ParseQueryPlanElements(stmt, stmtEl, queryPlanEl);
 
@@ -514,6 +519,7 @@ public static partial class ShowPlanParser
             StatementSubTreeCost = ParseDouble(stmtEl.Attribute("StatementSubTreeCost")?.Value)
         };
 
+        stmt.HasQueryPlan = true;
         ParseStmtAttributes(stmt, stmtEl);
         ParseQueryPlanElements(stmt, stmtEl, queryPlanEl);
 
@@ -620,7 +626,8 @@ public static partial class ShowPlanParser
                 MaxUsedMemoryKB = ParseLong(memEl.Attribute("MaxUsedMemory")?.Value),
                 HasMaxUsedMemory = long.TryParse(memEl.Attribute("MaxUsedMemory")?.Value,
                     System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out _),
-                GrantWaitTimeMs = ParseLong(memEl.Attribute("GrantWaitTime")?.Value),
+                // The showplan records GrantWaitTime in seconds; every consumer reads milliseconds.
+                GrantWaitTimeMs = ParseLong(memEl.Attribute("GrantWaitTime")?.Value) * 1000,
                 LastRequestedMemoryKB = ParseLong(memEl.Attribute("LastRequestedMemory")?.Value),
                 IsMemoryGrantFeedbackAdjusted = memEl.Attribute("IsMemoryGrantFeedbackAdjusted")?.Value
             };
@@ -692,6 +699,7 @@ public static partial class ShowPlanParser
 
         // OptimizerStatsUsage
         var statsUsageEl = queryPlanEl.Element(Ns + "OptimizerStatsUsage");
+        stmt.HasStatsUsage = statsUsageEl != null;
         if (statsUsageEl != null)
         {
             foreach (var statEl in statsUsageEl.Elements(Ns + "StatisticsInfo"))
@@ -699,7 +707,8 @@ public static partial class ShowPlanParser
                 stmt.StatsUsage.Add(new OptimizerStatsUsageItem
                 {
                     StatisticsName = statEl.Attribute("Statistics")?.Value?.Replace("[", "").Replace("]", "") ?? "",
-                    TableName = statEl.Attribute("Table")?.Value?.Replace("[", "").Replace("]", "") ?? "",
+                    // A temp table's statistic names the table the padded internal way an operator's Object does.
+                    TableName = CleanTempTableName(statEl.Attribute("Table")?.Value?.Replace("[", "").Replace("]", "") ?? ""),
                     DatabaseName = statEl.Attribute("Database")?.Value?.Replace("[", "").Replace("]", ""),
                     SchemaName = statEl.Attribute("Schema")?.Value?.Replace("[", "").Replace("]", ""),
                     ModificationCount = ParseLong(statEl.Attribute("ModificationCount")?.Value),

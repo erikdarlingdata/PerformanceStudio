@@ -45,6 +45,10 @@
   <ItemGroup>
     <PackageReference Include="Repl" />
     <PackageReference Include="Repl.Mcp" />
+    <!-- Repl.Mcp depends on an older ModelContextProtocol, and central package management pins
+         direct references only, so without this reference `planview mcp serve` runs whichever SDK
+         Repl.Mcp was built against rather than the version in Directory.Packages.props. -->
+    <PackageReference Include="ModelContextProtocol" />
     <PackageReference Include="System.CommandLine" />
   </ItemGroup>
 

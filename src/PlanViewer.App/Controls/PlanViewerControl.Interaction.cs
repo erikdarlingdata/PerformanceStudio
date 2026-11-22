@@ -207,7 +207,7 @@ public partial class PlanViewerControl : UserControl
         _zoomLevel = Math.Max(MinZoom, Math.Min(MaxZoom, level));
         _zoomTransform.ScaleX = _zoomLevel;
         _zoomTransform.ScaleY = _zoomLevel;
-        ZoomLevelText.Text = $"{(int)(_zoomLevel * 100)}%";
+        ZoomLevelText.Text = $"{Math.Round(_zoomLevel * 100, MidpointRounding.AwayFromZero)}%";
         UpdateMinimapViewportBox();
     }
 
