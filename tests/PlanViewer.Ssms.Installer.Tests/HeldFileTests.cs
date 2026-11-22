@@ -5,7 +5,7 @@ using InstallerProgram = PlanViewer.Ssms.Installer.Program;
 namespace PlanViewer.Ssms.Installer.Tests;
 
 /// <summary>
-/// The installer holds the file that gets installed until the last VSIXInstaller has exited. While it
+/// The installer holds the file that gets installed until VSIXInstaller has exited. While it
 /// holds the file, no other process can change it, delete it, or rename it or its folder.
 /// </summary>
 public class HeldFileTests : IDisposable

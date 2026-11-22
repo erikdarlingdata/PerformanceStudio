@@ -14,11 +14,23 @@ namespace PlanViewer.Ssms.Installer
 {
     class Program
     {
+        // The VSIXInstaller of each supported SSMS version, newest first. SSMS 21 installs under Release\. The
+        // SSMS 21 path without Release\ is the one earlier versions of this installer checked; it stays in case
+        // an install uses it.
         static readonly (string Label, string VsixInstallerPath)[] SsmsVersions =
         {
             ("SSMS 22", @"C:\Program Files\Microsoft SQL Server Management Studio 22\Release\Common7\IDE\VSIXInstaller.exe"),
+            ("SSMS 21", @"C:\Program Files\Microsoft SQL Server Management Studio 21\Release\Common7\IDE\VSIXInstaller.exe"),
             ("SSMS 21", @"C:\Program Files\Microsoft SQL Server Management Studio 21\Common7\IDE\VSIXInstaller.exe"),
         };
+
+        // The SSMS versions found, newest first, each with the first of its VSIXInstaller paths that exists.
+        internal static (string Label, string VsixInstallerPath)[] FindSsms(Func<string, bool> exists) =>
+            SsmsVersions
+                .Where(v => exists(v.VsixInstallerPath))
+                .GroupBy(v => v.Label)
+                .Select(g => g.First())
+                .ToArray();
 
         // Relationship types and content type of the OPC package signature.
         const string SignatureRelationshipPrefix = "http://schemas.openxmlformats.org/package/2006/relationships/digital-signature/";
@@ -54,7 +66,7 @@ namespace PlanViewer.Ssms.Installer
             Console.WriteLine($"VSIX: {vsixPath}");
             Console.WriteLine();
 
-            var installed = SsmsVersions.Where(v => File.Exists(v.VsixInstallerPath)).ToArray();
+            var installed = FindSsms(File.Exists);
             if (installed.Length == 0)
             {
                 Console.WriteLine("ERROR: No supported SSMS installation found.");
@@ -65,7 +77,7 @@ namespace PlanViewer.Ssms.Installer
 
             string tempDir = null;
             bool anyFailed = false;
-            // The handle on the file that gets installed. It stays open until the last VSIXInstaller exits, so the
+            // The handle on the file that gets installed. It stays open until VSIXInstaller exits, so the
             // file cannot be replaced or deleted, and its folder cannot be renamed, in the meantime.
             FileStream heldVsix = null;
             try
@@ -126,47 +138,47 @@ namespace PlanViewer.Ssms.Installer
                     }
                 }
 
-                foreach (var (label, installerPath) in installed)
+                // One VSIXInstaller run installs into every SSMS version that the VSIX supports, so only the
+                // newest SSMS's VSIXInstaller runs, and Windows asks for permission once.
+                var labels = string.Join(" and ", installed.Select(v => v.Label));
+                Console.WriteLine($"Found {labels} — installing...");
+                Console.WriteLine("  Windows will ask for permission once, to run Microsoft's VSIX installer.");
+
+                // Only Microsoft's VSIXInstaller runs elevated. This installer does not.
+                var psi = new ProcessStartInfo
                 {
-                    Console.WriteLine($"Found {label} — installing...");
-                    Console.WriteLine($"  Windows will ask for permission to run Microsoft's VSIX installer for {label}.");
+                    FileName = installed[0].VsixInstallerPath,
+                    Arguments = $"/admin \"{vsixPath}\"",
+                    UseShellExecute = true,
+                    Verb = "runas",
+                };
 
-                    // Only Microsoft's VSIXInstaller runs elevated. This installer does not.
-                    var psi = new ProcessStartInfo
+                try
+                {
+                    var proc = Process.Start(psi);
+                    proc.WaitForExit();
+
+                    if (proc.ExitCode == 0)
                     {
-                        FileName = installerPath,
-                        Arguments = $"/admin \"{vsixPath}\"",
-                        UseShellExecute = true,
-                        Verb = "runas",
-                    };
-
-                    try
-                    {
-                        var proc = Process.Start(psi);
-                        proc.WaitForExit();
-
-                        if (proc.ExitCode == 0)
-                        {
-                            Console.WriteLine($"  OK — installed into {label}. Restart SSMS to activate.");
-                        }
-                        else
-                        {
-                            Console.WriteLine($"  FAILED (exit code {proc.ExitCode}).");
-                            anyFailed = true;
-                        }
+                        Console.WriteLine($"  OK — installed into {labels}. Restart SSMS to activate.");
                     }
-                    catch (Win32Exception ex) when (ex.NativeErrorCode == ErrorCancelled)
+                    else
                     {
-                        Console.WriteLine($"  Cancelled at the Windows prompt. Nothing was installed into {label}.");
+                        Console.WriteLine($"  FAILED (exit code {proc.ExitCode}).");
                         anyFailed = true;
                     }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"  FAILED: {ex.Message}");
-                        anyFailed = true;
-                    }
-                    Console.WriteLine();
                 }
+                catch (Win32Exception ex) when (ex.NativeErrorCode == ErrorCancelled)
+                {
+                    Console.WriteLine("  Cancelled at the Windows prompt. Nothing was installed.");
+                    anyFailed = true;
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"  FAILED: {ex.Message}");
+                    anyFailed = true;
+                }
+                Console.WriteLine();
             }
             finally
             {
