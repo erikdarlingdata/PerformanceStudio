@@ -64,6 +64,25 @@ updates:
         update-types:
           - version-update:semver-major
 
+      # Microsoft.AspNetCore.* and Microsoft.Data.Sqlite ship with each .NET
+      # major and track the TFM (net10.0, the LTS line). Dependabot opened
+      # 11.0.0 bumps (#712, #716) against a net10.0 build. Take their major
+      # with a TFM move, by hand.
+      - dependency-name: "Microsoft.AspNetCore.*"
+        update-types:
+          - version-update:semver-major
+      - dependency-name: "Microsoft.Data.Sqlite"
+        update-types:
+          - version-update:semver-major
+
+      # The #650 pin only lifts the audit floor inside the 2.x line that
+      # Microsoft.VisualStudio.SDK 17.x and SSMS use. PlanViewer.Ssms excludes
+      # its runtime assets, so SSMS loads its own 2.x. 3.x is a different
+      # major (#715).
+      - dependency-name: "MessagePack"
+        update-types:
+          - version-update:semver-major
+
       # The VSIX targets VS 2022. The 18.x line targets VS 18 and is not
       # restorable from nuget.org, so the 17.x line is intentional.
       - dependency-name: "Microsoft.VisualStudio.SDK"
