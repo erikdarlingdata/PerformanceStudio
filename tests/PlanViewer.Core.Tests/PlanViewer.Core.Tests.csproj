@@ -37,11 +37,6 @@
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="Microsoft.Testing.Extensions.HangDump" />
-    <!-- Floor pins: xunit.v3 4.0.3 requires Microsoft.Testing.* 2.5.2, which NuGet now marks
-         Legacy (deprecated). Drop these once xunit.v3 depends on 2.5.3 or later. -->
-    <PackageReference Include="Microsoft.Testing.Extensions.Telemetry" />
-    <PackageReference Include="Microsoft.Testing.Extensions.TrxReport.Abstractions" />
-    <PackageReference Include="Microsoft.Testing.Platform.MSBuild" />
     <PackageReference Include="Repl.Testing" />
     <PackageReference Include="xunit.v3" />
   </ItemGroup>

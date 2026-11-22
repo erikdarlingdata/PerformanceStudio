@@ -28,9 +28,6 @@
     <PackageVersion Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" Condition="'$(MSBuildProjectName)' == 'PlanViewer.Ssms'" />
     <PackageVersion Include="Microsoft.SqlServer.TransactSql.ScriptDom" Version="180.154.0" />
     <PackageVersion Include="Microsoft.Testing.Extensions.HangDump" Version="2.5.3" />
-    <PackageVersion Include="Microsoft.Testing.Extensions.Telemetry" Version="2.5.3" />
-    <PackageVersion Include="Microsoft.Testing.Extensions.TrxReport.Abstractions" Version="2.5.3" />
-    <PackageVersion Include="Microsoft.Testing.Platform.MSBuild" Version="2.5.3" />
     <PackageVersion Include="Microsoft.VisualStudio.SDK" Version="17.14.40265" />
     <PackageVersion Include="Microsoft.VSSDK.BuildTools" Version="17.14.2142" />
     <!-- Issue #650: Microsoft.VisualStudio.SDK 17.14.40265 (the newest 17.x) brings in MessagePack
@@ -46,7 +43,6 @@
     <PackageVersion Include="ScottPlot.Avalonia" Version="5.1.59" />
     <PackageVersion Include="SkiaSharp.NativeAssets.Linux" Version="3.119.4" />
     <PackageVersion Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.5" />
-    <PackageVersion Include="System.Collections.Immutable" Version="10.0.15" />
     <PackageVersion Include="System.CommandLine" Version="2.0.15" />
     <PackageVersion Include="TextMateSharp.Grammars" Version="2.0.5" />
     <PackageVersion Include="Velopack" Version="1.2.161" />

@@ -23,13 +23,6 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="Microsoft.Testing.Extensions.HangDump" />
-    <!-- Floor pins: xunit.v3 4.0.3 requires Microsoft.Testing.* 2.5.2, which NuGet now marks
-         Legacy (deprecated). Drop these once xunit.v3 depends on 2.5.3 or later. -->
-    <PackageReference Include="Microsoft.Testing.Extensions.Telemetry" />
-    <PackageReference Include="Microsoft.Testing.Extensions.TrxReport.Abstractions" />
-    <PackageReference Include="Microsoft.Testing.Platform.MSBuild" />
-    <!-- xunit.v3.assert 4.0.3 pulls System.Collections.Immutable 6.0.0 on net472, deprecated Legacy. -->
-    <PackageReference Include="System.Collections.Immutable" />
     <PackageReference Include="xunit.v3" />
   </ItemGroup>
 
