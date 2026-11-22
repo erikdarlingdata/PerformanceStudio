@@ -64,6 +64,24 @@ internal sealed class UploadBudget
     }
 
     /// <summary>
+    /// Returns whether <see cref="TryCharge"/> would accept <paramref name="bytes"/> now, without
+    /// charging. Lets the share endpoint refuse a declared size before reading the body; the real
+    /// charge still happens after the read, because the declared size can be absent or wrong.
+    /// </summary>
+    public bool CanCharge(string key, long bytes)
+    {
+        if (!_usage.TryGetValue(key, out var usage))
+            return bytes <= _dailyLimitBytes;
+
+        lock (usage)
+        {
+            // An entry from an earlier day (or one Sweep() just evicted) starts again at zero
+            var used = usage.Day == Today() && !usage.Evicted ? usage.Bytes : 0;
+            return used + bytes <= _dailyLimitBytes;
+        }
+    }
+
+    /// <summary>
     /// Evicts keys whose last charge was on an earlier UTC day. Call periodically so the
     /// dictionary doesn't grow forever across unique clients.
     /// Returns the number of keys evicted.

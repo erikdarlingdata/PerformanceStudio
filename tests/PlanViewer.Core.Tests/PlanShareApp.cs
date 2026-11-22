@@ -18,9 +18,15 @@ internal sealed class PlanShareApp : WebApplicationFactory<UploadBudget>
     private readonly string _dataDir = Path.Combine(Path.GetTempPath(), "planshare-app-" + Guid.NewGuid().ToString("N"));
     private readonly long? _maxDatabaseBytes;
     private readonly long? _dailyUploadBytes;
+    private readonly bool _dropContentLength;
 
-    public PlanShareApp(long? maxDatabaseBytes = null, long? dailyUploadBytes = null)
+    /// <param name="dropContentLength">
+    /// Hides the request's Content-Length from the server, as for a chunked upload. The test client
+    /// works out a length for every body it sends, so this is the only way to send one without.
+    /// </param>
+    public PlanShareApp(long? maxDatabaseBytes = null, long? dailyUploadBytes = null, bool dropContentLength = false)
     {
+        _dropContentLength = dropContentLength;
         _maxDatabaseBytes = maxDatabaseBytes;
         _dailyUploadBytes = dailyUploadBytes;
     }
@@ -38,7 +44,7 @@ internal sealed class PlanShareApp : WebApplicationFactory<UploadBudget>
         // The in-memory server has no remote address. Production sits behind nginx on loopback, and the
         // server only believes X-Forwarded-For from loopback, so give every request a loopback peer.
         // Tests then pick their client address the way nginx does, with X-Forwarded-For.
-        builder.ConfigureTestServices(services => services.AddSingleton<IStartupFilter, LoopbackPeer>());
+        builder.ConfigureTestServices(services => services.AddSingleton<IStartupFilter>(new LoopbackPeer(_dropContentLength)));
     }
 
     protected override void Dispose(bool disposing)
@@ -71,13 +77,15 @@ internal sealed class PlanShareApp : WebApplicationFactory<UploadBudget>
         return (long)cmd.ExecuteScalar()!;
     }
 
-    private sealed class LoopbackPeer : IStartupFilter
+    private sealed class LoopbackPeer(bool dropContentLength) : IStartupFilter
     {
         public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) => app =>
         {
             app.Use((context, nextMiddleware) =>
             {
                 context.Connection.RemoteIpAddress = System.Net.IPAddress.Loopback;
+                if (dropContentLength)
+                    context.Request.ContentLength = null;
                 return nextMiddleware(context);
             });
             next(app);

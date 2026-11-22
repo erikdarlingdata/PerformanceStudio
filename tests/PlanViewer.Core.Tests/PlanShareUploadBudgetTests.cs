@@ -36,6 +36,26 @@ public class PlanShareUploadBudgetTests
     }
 
     [Fact]
+    public void CanCharge_ReportsWhetherAChargeWouldBeAccepted_WithoutCharging()
+    {
+        var clock = new FakeClock();
+        var budget = new UploadBudget(Limit, clock);
+
+        Assert.True(budget.CanCharge("client", 100));
+        Assert.False(budget.CanCharge("client", 101));
+        Assert.True(budget.TryCharge("client", 60));
+        Assert.True(budget.CanCharge("client", 40));
+        Assert.False(budget.CanCharge("client", 41));
+        Assert.True(budget.CanCharge("other", 100));
+
+        // Asking charged nothing: the 40 left are still there
+        Assert.True(budget.TryCharge("client", 40));
+
+        clock.Now = clock.Now.AddDays(1);
+        Assert.True(budget.CanCharge("client", 100));
+    }
+
+    [Fact]
     public void SingleChargeLargerThanTheLimit_IsRefused()
     {
         var budget = new UploadBudget(Limit, new FakeClock());
