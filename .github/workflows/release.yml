@@ -224,8 +224,12 @@ jobs:
           New-Item -ItemType Directory -Force -Path releases/velopack
 
           # Download previous release for delta generation
+          # A failed download costs only the delta package: vpk pack still builds the
+          # full one, and clients fall back to it. The Windows build is already signed
+          # at this point, so stopping here would spend a SignPath attempt for that.
+          # Warn instead of failing.
           vpk download github --repoUrl https://github.com/${{ github.repository }} --channel win -o releases/velopack --token $env:GH_TOKEN
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($LASTEXITCODE -ne 0) { Write-Host "::warning title=No delta package::vpk download exited $LASTEXITCODE, so this release ships without a delta update (full package only)." }
 
           # Pack Windows release (now signed)
           vpk pack -u PerformanceStudio -v $env:VERSION -p publish/win-x64 -e PlanViewer.App.exe -o releases/velopack --channel win
