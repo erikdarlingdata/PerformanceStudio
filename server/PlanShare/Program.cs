@@ -77,21 +77,31 @@ var readRateLimiter = new RateLimiter(maxRequests: 120, windowSeconds: 60);
 
 // --- Storage limit and daily upload budget ---
 // The production disk is 40 GB, so shares are refused (507) once the database uses 10 GB of pages.
-// The budget is the most plan data one client key can store per UTC day (429 after that).
-// PlanShare:MaxDatabaseBytes and PlanShare:DailyUploadBytes override the two limits, which lets
-// the endpoint tests use small values.
+// Two budgets cap the plan data stored per UTC day. The per-client one is 100 MB per client key
+// (429 after that). The global one is 1 GB across all clients (503 after that): without it, about
+// 100 keys could fill the 10 GB store in a day, and a share can live for 365 days, so new shares
+// would then fail for up to a year. With it, a flood blocks new shares until the end of one UTC day.
+// Both are in memory and start again at zero on a restart.
+// PlanShare:MaxDatabaseBytes, PlanShare:DailyUploadBytes and PlanShare:GlobalDailyUploadBytes
+// override the three limits, which lets the endpoint tests use small values.
 const long MaxDatabaseBytes = 10L * 1024 * 1024 * 1024;
 const long DailyUploadBytes = 100L * 1024 * 1024;
+const long GlobalDailyUploadBytes = 1024L * 1024 * 1024;
+const string GlobalBudgetKey = "all";
+const string ClientBudgetMessage = "Daily sharing limit reached for your network. Please try again tomorrow.";
+const string GlobalBudgetMessage = "Plan sharing has reached today's overall limit. Please try again tomorrow.";
 var storageCheck = new StorageCheck(
     connectionString,
     builder.Configuration.GetValue<long?>("PlanShare:MaxDatabaseBytes") ?? MaxDatabaseBytes);
 var uploadBudget = new UploadBudget(
     builder.Configuration.GetValue<long?>("PlanShare:DailyUploadBytes") ?? DailyUploadBytes);
+var globalUploadBudget = new UploadBudget(
+    builder.Configuration.GetValue<long?>("PlanShare:GlobalDailyUploadBytes") ?? GlobalDailyUploadBytes);
 
 // Register the cleanup background service
 builder.Services.AddSingleton(new PlanDbConfig(connectionString));
 builder.Services.AddSingleton(new RateLimiters(rateLimiter, analyticsRateLimiter, readRateLimiter));
-builder.Services.AddSingleton(uploadBudget);
+builder.Services.AddSingleton(new UploadBudgets(uploadBudget, globalUploadBudget));
 builder.Services.AddHostedService<CleanupService>();
 
 // Request size limit (10 MB). nginx on the server sets the same limit for /api/
@@ -128,11 +138,12 @@ app.UseCors();
 const int MaxTtlDays = 365;
 
 // Longest page path an analytics event may carry. Real paths are a few characters.
-const int MaxEventPathLength = 512;
+// Real paths are a few characters; the longest of 2,827 production page views was 85.
+const int MaxEventPathLength = 128;
 
-// Largest /api/event body accepted. A real event is under 1 KB. The 512-character path
-// limit allows 3 KB even if every character is escaped as \uXXXX (6 bytes), which leaves
-// about 13 KB for the referrer and the rest of the object.
+// Largest /api/event body accepted. A real event is under 1 KB. The 128-character path
+// limit allows 768 bytes even if every character is escaped as \uXXXX (6 bytes), which leaves
+// about 15 KB for the referrer and the rest of the object.
 const int MaxEventBodyBytes = 16 * 1024;
 
 // Depth ceiling for parsing an uploaded share, mirroring PlanViewer.Core's
@@ -166,9 +177,12 @@ app.MapPost("/api/share", async (HttpContext ctx) =>
         return Error(507, "Plan sharing is full right now. Please try again later.");
     }
 
-    if (ctx.Request.ContentLength is { } declared && !uploadBudget.CanCharge(client, declared))
+    if (ctx.Request.ContentLength is { } declared)
     {
-        return Error(429, "Daily sharing limit reached for your network. Please try again tomorrow.");
+        if (!uploadBudget.CanCharge(client, declared))
+            return Error(429, ClientBudgetMessage);
+        if (!globalUploadBudget.CanCharge(GlobalBudgetKey, declared))
+            return Error(503, GlobalBudgetMessage);
     }
 
     // Read the body as bytes, refusing more than MaxBodyBytes
@@ -216,9 +230,17 @@ app.MapPost("/api/share", async (HttpContext ctx) =>
     }
 
     // The stored size is the UTF-8 length of the body (the same count as the string's)
+    // A share must fit both budgets. One refused by the global budget gives the client's charge
+    // back, so a spent global limit does not also eat each client's own allowance.
     if (!uploadBudget.TryCharge(client, bytes.Length))
     {
-        return Error(429, "Daily sharing limit reached for your network. Please try again tomorrow.");
+        return Error(429, ClientBudgetMessage);
+    }
+
+    if (!globalUploadBudget.TryCharge(GlobalBudgetKey, bytes.Length))
+    {
+        uploadBudget.Refund(client, bytes.Length);
+        return Error(503, GlobalBudgetMessage);
     }
 
     var id = GenerateId();
@@ -641,20 +663,22 @@ static IResult Error(int statusCode, string message)
 
 record PlanDbConfig(string ConnectionString);
 
+record UploadBudgets(UploadBudget Client, UploadBudget Global);
+
 record RateLimiters(RateLimiter Share, RateLimiter Analytics, RateLimiter Read);
 
 sealed class CleanupService : BackgroundService
 {
     private readonly PlanDbConfig _config;
     private readonly RateLimiters _rateLimiters;
-    private readonly UploadBudget _uploadBudget;
+    private readonly UploadBudgets _uploadBudgets;
     private readonly ILogger<CleanupService> _logger;
 
-    public CleanupService(PlanDbConfig config, RateLimiters rateLimiters, UploadBudget uploadBudget, ILogger<CleanupService> logger)
+    public CleanupService(PlanDbConfig config, RateLimiters rateLimiters, UploadBudgets uploadBudgets, ILogger<CleanupService> logger)
     {
         _config = config;
         _rateLimiters = rateLimiters;
-        _uploadBudget = uploadBudget;
+        _uploadBudgets = uploadBudgets;
         _logger = logger;
     }
 
@@ -704,7 +728,7 @@ sealed class CleanupService : BackgroundService
             var shareEvicted = _rateLimiters.Share.Sweep();
             var analyticsEvicted = _rateLimiters.Analytics.Sweep();
             var readEvicted = _rateLimiters.Read.Sweep();
-            var budgetEvicted = _uploadBudget.Sweep();
+            var budgetEvicted = _uploadBudgets.Client.Sweep() + _uploadBudgets.Global.Sweep();
             if (shareEvicted + analyticsEvicted + readEvicted + budgetEvicted > 0)
                 _logger.LogInformation(
                     "Evicted {Share} share + {Analytics} analytics + {Read} read rate-limit keys and {Budget} upload-budget keys",
