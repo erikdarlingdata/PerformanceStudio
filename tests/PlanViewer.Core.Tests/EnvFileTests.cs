@@ -236,7 +236,15 @@ public class EnvFileTests : IDisposable
 
         Assert.NotNull(warning);
         Assert.Contains("/work/.env", warning);
-        Assert.Contains("chmod 600 /work/.env", warning);
+        Assert.Contains("chmod 600 '/work/.env'", warning);
+    }
+
+    [Fact]
+    public void PermissionWarning_QuotesThePathInTheCommand()
+    {
+        var warning = EnvFile.PermissionWarning("/home/me/my plans/it's $(x)/.env", UnixFileMode.UserRead | UnixFileMode.OtherRead);
+
+        Assert.EndsWith(@"Run: chmod 600 '/home/me/my plans/it'\''s $(x)/.env'", warning);
     }
 
     [Fact]
@@ -260,6 +268,20 @@ public class EnvFileTests : IDisposable
         Assert.Empty(env.Warnings);
         env.PasswordFor(settings);
         Assert.Contains(env.Warnings, w => w.Contains("chmod 600"));
+    }
+
+    [Fact]
+    [System.Runtime.Versioning.UnsupportedOSPlatform("windows")]
+    public void Warnings_SkipTheFileModeCheckWhenTheFileIsGone()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "Windows files have no Unix mode bits.");
+
+        var env = Load(AllSettings);
+        File.SetUnixFileMode(env.FilePath!, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.OtherRead);
+        env.PasswordFor(env.Fill(EmptyCommandLine));
+        File.Delete(env.FilePath!);
+
+        Assert.DoesNotContain(env.Warnings, w => w.Contains("chmod 600"));
     }
 
     [Fact]

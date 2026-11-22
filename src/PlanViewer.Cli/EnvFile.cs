@@ -94,9 +94,24 @@ public sealed class EnvFile
 
             if (FilePath is not null && !OperatingSystem.IsWindows() &&
                 _used.Contains("PLANVIEW_PASSWORD", StringComparer.OrdinalIgnoreCase) &&
-                PermissionWarning(FilePath, File.GetUnixFileMode(FilePath)) is { } permission)
+                UnixFileModeOrNull(FilePath) is { } mode &&
+                PermissionWarning(FilePath, mode) is { } permission)
                 warnings.Add(permission);
             return warnings;
+        }
+    }
+
+    /* The file was read moments ago. If it is gone or unreadable now, the advisory check is skipped. */
+    [System.Runtime.Versioning.UnsupportedOSPlatform("windows")]
+    private static UnixFileMode? UnixFileModeOrNull(string filePath)
+    {
+        try
+        {
+            return File.GetUnixFileMode(filePath);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return null;
         }
     }
 
@@ -111,8 +126,11 @@ public sealed class EnvFile
             return null;
 
         var path = Printable(filePath);
-        return $"Warning: {path} holds a password and other users can access it. Run: chmod 600 {path}";
+        return $"Warning: {path} holds a password and other users can access it. Run: chmod 600 {ShellQuoted(path)}";
     }
+
+    /* Single quotes keep spaces and shell characters in a pasted path literal; a quote inside becomes '\''. */
+    private static string ShellQuoted(string value) => "'" + value.Replace("'", "'\\''") + "'";
 
     private string? Use(string key)
     {
