@@ -117,6 +117,7 @@ jobs:
           if (Test-Path 'README.md') { Copy-Item 'README.md' 'publish/linux-x64/' }
           if (Test-Path 'LICENSE') { Copy-Item 'LICENSE' 'publish/linux-x64/' }
           python .github/scripts/zip_with_exec.py publish/linux-x64 "releases/PerformanceStudio-linux-x64-$env:VERSION.zip" --exec PlanViewer.App --exec-optional createdump
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           # Package macOS as proper .app bundles
           foreach ($rid in @('osx-x64', 'osx-arm64')) {
@@ -148,6 +149,7 @@ jobs:
             # Zip the bundle with zip_with_exec.py so the apphost inside the .app
             # keeps its execute bit (Compress-Archive would strip it).
             python .github/scripts/zip_with_exec.py "$wrapperDir" "releases/PerformanceStudio-$rid-$env:VERSION.zip" --exec "PerformanceStudio.app/Contents/MacOS/PlanViewer.App" --exec-optional "PerformanceStudio.app/Contents/MacOS/createdump"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
 
       - name: Generate checksums
