@@ -194,7 +194,7 @@ jobs:
       # fix the cause and start a fresh run (a new dev -> main merge) instead of
       # re-running the same one.
       - name: Sign Windows build
-        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3.0
+        uses: signpath/github-action-submit-signing-request@4a84eb4ad763290f059275786f2deed97c2c672b # v3.1
         with:
           api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
           organization-id: '7969f8b6-d946-4a74-9bac-a55856d8b8e0'
@@ -276,7 +276,7 @@ jobs:
       # artifact would sign nothing and still succeed, and the collect step
       # refuses to stage an empty set for that reason.
       - name: Sign the executables Velopack generates
-        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3.0
+        uses: signpath/github-action-submit-signing-request@4a84eb4ad763290f059275786f2deed97c2c672b # v3.1
         with:
           api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
           organization-id: '7969f8b6-d946-4a74-9bac-a55856d8b8e0'
@@ -342,7 +342,7 @@ jobs:
         id: sign-ssms
         if: steps.ssms.outputs.BUILT == 'true'
         continue-on-error: true
-        uses: signpath/github-action-submit-signing-request@f6d04783b4569d051e0c80105fe66e82819d0092 # v3.0
+        uses: signpath/github-action-submit-signing-request@4a84eb4ad763290f059275786f2deed97c2c672b # v3.1
         with:
           api-token: '${{ secrets.SIGNPATH_API_TOKEN }}'
           organization-id: '7969f8b6-d946-4a74-9bac-a55856d8b8e0'
