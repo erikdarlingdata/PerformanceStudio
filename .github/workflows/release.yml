@@ -5,15 +5,37 @@ on:
     branches: [main]
     types: [closed]
 
+# Three jobs, so the token that can write to the repository and the nuget.org publishing
+# identity never sit next to build-time code (the same rule as dependency-submission.yml):
+#   build-and-sign  contents: read, actions: read. Restores, builds, tests, packs, runs vpk and
+#                   MSBuild, and sends the three SignPath requests. SignPath receives this job's
+#                   token, so it is read-only. Nothing here can publish anything. The files the
+#                   later jobs need leave as two artifacts: release-assets (releases/) and
+#                   cli-nupkg (the planview tool package).
+#   publish         contents: write. Checks out nothing and builds nothing. It downloads
+#                   release-assets, creates the release and uploads the files with gh and vpk
+#                   upload, and posts the VSIX to the SSMS Gallery.
+#   nuget           id-token: write. Runs after publish, as the push did before the split. It
+#                   downloads only cli-nupkg and pushes it to nuget.org with Trusted Publishing.
+# If publish or nuget fails for a temporary reason, re-run only that job (artifacts last 7 days).
+# Re-running build-and-sign sends new SignPath requests, and SignPath signs only a run's first 3
+# attempts.
+
 permissions:
-  contents: write
-  id-token: write
-  actions: read
+  contents: read
 
 jobs:
-  release:
+  build-and-sign:
     if: github.event.pull_request.merged == true && github.event.pull_request.head.ref == 'dev'
     runs-on: windows-latest
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      version: ${{ steps.version.outputs.VERSION }}
+      ssms_built: ${{ steps.ssms.outputs.BUILT }}
+      pack_cli: ${{ steps.pack-cli.outcome }}
+      cli_upload: ${{ steps.upload-cli.outcome }}
 
     steps:
       # persist-credentials: false keeps the write token out of .git/config. No
@@ -30,20 +52,8 @@ jobs:
           $version = ([xml](Get-Content src/Directory.Build.props)).Project.PropertyGroup.Version | Where-Object { $_ }
           echo "VERSION=$version" >> $env:GITHUB_OUTPUT
 
-      - name: Check if release already exists
-        id: check
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          if gh release view "v${{ steps.version.outputs.VERSION }}" > /dev/null 2>&1; then
-            echo "EXISTS=true" >> $GITHUB_OUTPUT
-          else
-            echo "EXISTS=false" >> $GITHUB_OUTPUT
-          fi
-
       # NOTE: the release is deliberately NOT created here. It is created after
-      # signing succeeds, further down. Creating it up front meant a signing
+      # signing succeeds, in the publish job. Creating it up front meant a signing
       # failure left a published, publicly-visible release with no app assets -
       # which is exactly what happened to v1.17.0 when the SignPath approval
       # window lapsed. Nothing before the signing step publishes anything now.
@@ -67,12 +77,12 @@ jobs:
       #    Packed here, before anything is published, so a packaging failure
       #    shows up early. continue-on-error: the tool is a convenience next
       #    to the App, and a NuGet metadata problem must never block the App
-      #    release. The push to nuget.org is the last step of the job, after
-      #    every App asset is up. The package ID, tool name and metadata live
-      #    in PlanViewer.Cli.csproj; the version comes from Directory.Build.props.
-      #    The install at the end is a smoke test: a package that does not
-      #    install and run as a tool is not pushed, and the warning step at
-      #    the end of the job says so.
+      #    release. The push to nuget.org happens in the nuget job, after the
+      #    publish job has put every App asset up. The package ID, tool name and
+      #    metadata live in PlanViewer.Cli.csproj; the version comes from
+      #    Directory.Build.props. The install at the end is a smoke test: a
+      #    package that does not install and run as a tool is not pushed, and
+      #    the warning step at the end of the nuget job says so.
       - name: Pack the planview CLI as a .NET tool
         id: pack-cli
         continue-on-error: true
@@ -347,8 +357,8 @@ jobs:
       # Copy the signed files over the ones in releases/ only when signing
       # succeeded (steps.<id>.outcome is the result before continue-on-error, so
       # it is never 'success' for a failed step). Every later step reads the
-      # files from releases/: the release upload, the SSMS Gallery upload and the
-      # checksums.
+      # files from releases/: the checksums here, and through the release-assets
+      # artifact the release upload and the SSMS Gallery upload in the publish job.
       - name: Replace unsigned SSMS files with signed
         if: steps.ssms.outputs.BUILT == 'true' && steps.sign-ssms.outcome == 'success'
         shell: pwsh
@@ -395,46 +405,12 @@ jobs:
         run: |
           Write-Host "::warning::SSMS signing did not succeed (result: $env:SIGN_OUTCOME). PlanViewer.Ssms.vsix and InstallSsmsExtension.exe shipped unsigned."
 
-      # ── Everything above this line is reversible: nothing has been published.
-      #    The release is created only now that signed binaries exist. ──
-      - name: Create release
-        if: steps.check.outputs.EXISTS == 'false'
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release create "v${{ steps.version.outputs.VERSION }}" --title "v${{ steps.version.outputs.VERSION }}" --generate-notes --target "$GITHUB_SHA"
-
-      # releases/ holds the signed copies here when the SSMS signing above succeeded.
-      # continue-on-error: the release exists by now, so a failed SSMS upload must
-      # not stop the App files from being uploaded below.
-      - name: Upload SSMS extension to release
-        if: steps.ssms.outputs.BUILT == 'true'
-        continue-on-error: true
+      # ── Package ───────────────────────────────────────────────────────
+      #    The zips and the checksums are built here, so the publish job only
+      #    uploads files. Nothing in this job publishes anything.
+      - name: Package release files
         shell: pwsh
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ steps.version.outputs.VERSION }}
-        run: gh release upload "v$env:VERSION" releases/PlanViewer.Ssms.vsix releases/InstallSsmsExtension.exe --clobber
-
-      # Publish to the SSMS Gallery (https://ssmsgallery.azurewebsites.net, issue 343).
-      # The gallery extracts version/description from the vsixmanifest, so the
-      # upload filename is irrelevant. continue-on-error: a gallery outage must
-      # never fail the release. bash so `curl` is curl.exe, not the pwsh alias.
-      - name: Publish SSMS extension to SSMS Gallery
-        if: steps.ssms.outputs.BUILT == 'true'
-        continue-on-error: true
-        shell: bash
-        run: |
-          echo "Uploading PlanViewer.Ssms.vsix to the SSMS Gallery..."
-          curl -sS -f "https://ssmsgallery.azurewebsites.net/api/upload" \
-            -F "file=@releases/PlanViewer.Ssms.vsix"
-
-      # ── Package and upload ────────────────────────────────────────────
-      - name: Package and upload
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.version.outputs.VERSION }}
           SSMS_BUILT: ${{ steps.ssms.outputs.BUILT }}
         run: |
@@ -514,27 +490,169 @@ jobs:
           Write-Host "Checksums:"
           $checksums | ForEach-Object { Write-Host $_ }
 
+      # Everything the publish job uploads: the zips, SHA256SUMS.txt, the SSMS
+      # files (when built) and the Velopack output in releases/velopack. The
+      # publish job downloads it to the same path on the same runner image, so
+      # vpk upload finds its files where vpk pack wrote them. The tool package
+      # travels on its own in cli-nupkg, so only the nuget job ever gets it.
+      - name: Upload the release files for the publish job
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-assets
+          path: |
+            releases/
+            !releases/nuget/**
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 7
+
+      # continue-on-error, like the pack step: the tool package must never block
+      # the App release. The nuget job skips the push and warns when this failed.
+      - name: Upload the planview tool package for the nuget job
+        id: upload-cli
+        if: steps.pack-cli.outcome == 'success'
+        continue-on-error: true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cli-nupkg
+          path: releases/nuget/PerformanceStudio.Cli.${{ steps.version.outputs.VERSION }}.nupkg
+          if-no-files-found: error
+          retention-days: 7
+
+  # ── Publish. Everything in build-and-sign is reversible: nothing has been
+  #    published. The release is created only now that signed binaries exist,
+  #    because this job runs only when build-and-sign succeeded. ──
+  #    No checkout and no repository code. vpk is installed here for `vpk
+  #    upload`, which needs the write token whichever job runs it; the version
+  #    is pinned, the same as in build-and-sign.
+  publish:
+    needs: build-and-sign
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download the release files
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-assets
+          path: releases
+
+      - name: Setup .NET 10.0
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          dotnet-version: 10.0.x
+
+      # Installed before the release is created, so a failed install publishes nothing.
+      - name: Install vpk
+        shell: pwsh
+        run: |
+          # Pin vpk to match the Velopack PackageReference and the vpk that packed
+          # the release in build-and-sign.
+          dotnet tool install -g vpk --version 1.2.161
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      # Checked here, right before the release is created, so a re-run of this
+      # job finds the release the first attempt created and skips creating it.
+      - name: Check if release already exists
+        id: check
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.build-and-sign.outputs.version }}
+        run: |
+          if gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "EXISTS=true" >> $GITHUB_OUTPUT
+          else
+            echo "EXISTS=false" >> $GITHUB_OUTPUT
+          fi
+
+      # --target: GITHUB_SHA is the same in every job of a run, so the tag lands
+      # on the commit build-and-sign built.
+      - name: Create release
+        if: steps.check.outputs.EXISTS == 'false'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.build-and-sign.outputs.version }}
+        run: |
+          gh release create "v$VERSION" --repo "$GITHUB_REPOSITORY" --title "v$VERSION" --generate-notes --target "$GITHUB_SHA"
+
+      # releases/ holds the signed copies here when the SSMS signing succeeded.
+      # continue-on-error: the release exists by now, so a failed SSMS upload must
+      # not stop the App files from being uploaded below.
+      - name: Upload SSMS extension to release
+        if: needs.build-and-sign.outputs.ssms_built == 'true'
+        continue-on-error: true
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.build-and-sign.outputs.version }}
+        run: gh release upload "v$env:VERSION" releases/PlanViewer.Ssms.vsix releases/InstallSsmsExtension.exe --clobber --repo "$env:GITHUB_REPOSITORY"
+
+      # Publish to the SSMS Gallery (https://ssmsgallery.azurewebsites.net, issue 343).
+      # The gallery extracts version/description from the vsixmanifest, so the
+      # upload filename is irrelevant. continue-on-error: a gallery outage must
+      # never fail the release. bash so `curl` is curl.exe, not the pwsh alias.
+      - name: Publish SSMS extension to SSMS Gallery
+        if: needs.build-and-sign.outputs.ssms_built == 'true'
+        continue-on-error: true
+        shell: bash
+        run: |
+          echo "Uploading PlanViewer.Ssms.vsix to the SSMS Gallery..."
+          curl -sS -f "https://ssmsgallery.azurewebsites.net/api/upload" \
+            -F "file=@releases/PlanViewer.Ssms.vsix"
+
+      # ── Upload ────────────────────────────────────────────────────────
+      - name: Upload zips, checksums and Velopack files
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.build-and-sign.outputs.version }}
+        run: |
           # Upload zips + checksums
-          gh release upload "v$env:VERSION" releases/*.zip releases/SHA256SUMS.txt --clobber
+          gh release upload "v$env:VERSION" releases/*.zip releases/SHA256SUMS.txt --clobber --repo "$env:GITHUB_REPOSITORY"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           # Upload Velopack artifacts
           vpk upload github --repoUrl https://github.com/${{ github.repository }} --channel win -o releases/velopack --releaseName "v$env:VERSION" --tag "v$env:VERSION" --merge --token $env:GH_TOKEN
 
-      # ── planview tool package to nuget.org (issue 645) ────────────────
-      #    Trusted Publishing: NuGet/login exchanges this job's GitHub OIDC
-      #    token (permissions: id-token: write, at the top) for a nuget.org API
-      #    key that lives one hour, so no long-lived key is stored anywhere.
-      #    The nuget.org side is a Trusted Publishing policy on the package
-      #    owner's account for repository erikdarlingdata/PerformanceStudio and
-      #    workflow file release.yml. NUGET_USER is a repository variable, not
-      #    a secret: the nuget.org username (profile name, not the email) that
-      #    owns that policy. Both steps are best-effort: the release and every
-      #    App asset exist by now, so a nuget.org outage or a missing policy
-      #    costs only this package, and the warning step below says so.
+  # ── planview tool package to nuget.org (issue 645) ────────────────
+  #    Trusted Publishing: NuGet/login exchanges this job's GitHub OIDC
+  #    token (permissions: id-token: write, below) for a nuget.org API key
+  #    that lives one hour, so no long-lived key is stored anywhere. This is
+  #    the only job that can request that token. The nuget.org side is a
+  #    Trusted Publishing policy on the package owner's account for
+  #    repository erikdarlingdata/PerformanceStudio and workflow file
+  #    release.yml. NUGET_USER is a repository variable, not a secret: the
+  #    nuget.org username (profile name, not the email) that owns that
+  #    policy. It needs publish, so the push still comes after every App
+  #    asset is up. Every step is best-effort: the release is complete by
+  #    now, so a nuget.org outage or a missing policy costs only this
+  #    package, and the warning step at the end says so. No checkout and no
+  #    repository code.
+  nuget:
+    needs: [build-and-sign, publish]
+    runs-on: windows-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Download the planview tool package
+        id: download-cli
+        if: needs.build-and-sign.outputs.cli_upload == 'success'
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: cli-nupkg
+          path: releases/nuget
+
+      # `dotnet nuget push` uses the .NET SDK that ships on the runner image, so
+      # this job installs nothing.
       - name: Log in to nuget.org
         id: nuget-login
-        if: steps.pack-cli.outcome == 'success'
+        if: needs.build-and-sign.outputs.pack_cli == 'success' && steps.download-cli.outcome == 'success'
         continue-on-error: true
         uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1.2.0
         with:
@@ -544,21 +662,23 @@ jobs:
       # nuget.org must not fail here.
       - name: Push the planview tool package to nuget.org
         id: push-cli
-        if: steps.pack-cli.outcome == 'success' && steps.nuget-login.outcome == 'success'
+        if: needs.build-and-sign.outputs.pack_cli == 'success' && steps.download-cli.outcome == 'success' && steps.nuget-login.outcome == 'success'
         continue-on-error: true
         shell: pwsh
         env:
           NUGET_API_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
-          VERSION: ${{ steps.version.outputs.VERSION }}
+          VERSION: ${{ needs.build-and-sign.outputs.version }}
         run: dotnet nuget push "releases/nuget/PerformanceStudio.Cli.$env:VERSION.nupkg" --source https://api.nuget.org/v3/index.json --api-key $env:NUGET_API_KEY --skip-duplicate
 
       - name: Warn that the planview tool package was not published
-        if: steps.pack-cli.outcome != 'success' || steps.nuget-login.outcome != 'success' || steps.push-cli.outcome != 'success'
+        if: needs.build-and-sign.outputs.pack_cli != 'success' || steps.download-cli.outcome != 'success' || steps.nuget-login.outcome != 'success' || steps.push-cli.outcome != 'success'
         shell: pwsh
         env:
-          PACK: ${{ steps.pack-cli.outcome }}
+          PACK: ${{ needs.build-and-sign.outputs.pack_cli }}
+          UPLOAD: ${{ needs.build-and-sign.outputs.cli_upload }}
+          DOWNLOAD: ${{ steps.download-cli.outcome }}
           LOGIN: ${{ steps.nuget-login.outcome }}
           PUSH: ${{ steps.push-cli.outcome }}
-          VERSION: ${{ steps.version.outputs.VERSION }}
+          VERSION: ${{ needs.build-and-sign.outputs.version }}
         run: |
-          Write-Host "::warning::The planview tool package was not published to nuget.org (pack: $env:PACK, nuget.org login: $env:LOGIN, push: $env:PUSH). The App release is complete. Fix the cause, then push releases/nuget/PerformanceStudio.Cli.$env:VERSION.nupkg by hand or re-run this workflow."
+          Write-Host "::warning::The planview tool package was not published to nuget.org (pack: $env:PACK, artifact upload: $env:UPLOAD, download: $env:DOWNLOAD, nuget.org login: $env:LOGIN, push: $env:PUSH). The App release is complete. Fix the cause, then push PerformanceStudio.Cli.$env:VERSION.nupkg (the cli-nupkg artifact of this run) by hand, or re-run only the nuget job while the artifact lasts."
