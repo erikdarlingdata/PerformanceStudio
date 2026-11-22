@@ -48,6 +48,12 @@ jobs:
               - 'tests/**'
               - 'PlanViewer.sln'
               - 'global.json'
+              - 'nuget.config'
+              - 'NuGet.config'
+              - 'NuGet.Config'
+              - '**/Directory.Build.targets'
+              - '**/.editorconfig'
+              - '**/.globalconfig'
               - '.github/workflows/ci.yml'
               - '.github/scripts/run-core-tests-parallel.sh'
 
