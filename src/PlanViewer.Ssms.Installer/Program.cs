@@ -157,20 +157,26 @@ namespace PlanViewer.Ssms.Installer
             return 0;
         }
 
+        // Exit codes of --verify-only. The release workflow reads them: any non-zero code means the signed
+        // pair is not used.
+        internal const int VerifyBadInput = 1;
+        internal const int VerifyInstallerNotSigned = 2;
+
         // Checks the VSIX against this installer's certificate without installing anything.
-        static int VerifyOnly(string vsixPath)
+        // Returns 0 only when the installer is signed and the VSIX passes the check.
+        internal static int VerifyOnly(string vsixPath)
         {
             if (vsixPath == null || !File.Exists(vsixPath))
             {
                 Console.WriteLine("ERROR: --verify-only needs the path of a .vsix file.");
-                return 1;
+                return VerifyBadInput;
             }
 
             var installerCert = GetSigner(Assembly.GetExecutingAssembly().Location);
             if (installerCert == null)
             {
-                Console.WriteLine("This installer is not signed, so the VSIX signature is not checked.");
-                return 0;
+                Console.WriteLine("ERROR: This installer is not signed, so the VSIX signature cannot be checked.");
+                return VerifyInstallerNotSigned;
             }
 
             var error = CheckVsix(vsixPath, installerCert);
