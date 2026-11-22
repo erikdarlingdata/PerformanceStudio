@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
@@ -64,6 +65,9 @@ namespace PlanViewer.Ssms.Installer
 
             string tempDir = null;
             bool anyFailed = false;
+            // The handle on the file that gets installed. It stays open until the last VSIXInstaller exits, so the
+            // file cannot be replaced or deleted, and its folder cannot be renamed, in the meantime.
+            FileStream heldVsix = null;
             try
             {
                 var installerCert = GetSigner(Assembly.GetExecutingAssembly().Location);
@@ -84,6 +88,8 @@ namespace PlanViewer.Ssms.Installer
                         var copy = Path.Combine(tempDir, Path.GetFileName(vsixPath));
                         File.Copy(vsixPath, copy);
                         vsixPath = copy;
+                        // Hold the copy before the check, so the bytes that are checked are the bytes that get installed.
+                        heldVsix = HoldFile(copy);
                         error = CheckVsix(copy, installerCert);
                     }
                     catch (Exception ex)
@@ -93,7 +99,6 @@ namespace PlanViewer.Ssms.Installer
 
                     if (error != null)
                     {
-                        DeleteFolder(tempDir);
                         Console.WriteLine($"ERROR: {Path.GetFileName(vsixPath)} failed the signature check: {error}.");
                         Console.WriteLine("Nothing was installed.");
                         Console.WriteLine("Download InstallSsmsExtension.exe and PlanViewer.Ssms.vsix again from the same release, and keep them in one folder.");
@@ -106,15 +111,33 @@ namespace PlanViewer.Ssms.Installer
                     Console.WriteLine();
                 }
 
+                if (heldVsix == null)
+                {
+                    try
+                    {
+                        heldVsix = HoldFile(vsixPath);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"ERROR: Could not open {Path.GetFileName(vsixPath)} for reading ({ex.Message}).");
+                        Console.WriteLine("Nothing was installed.");
+                        WaitForKey();
+                        return 1;
+                    }
+                }
+
                 foreach (var (label, installerPath) in installed)
                 {
                     Console.WriteLine($"Found {label} — installing...");
+                    Console.WriteLine($"  Windows will ask for permission to run Microsoft's VSIX installer for {label}.");
 
+                    // Only Microsoft's VSIXInstaller runs elevated. This installer does not.
                     var psi = new ProcessStartInfo
                     {
                         FileName = installerPath,
                         Arguments = $"/admin \"{vsixPath}\"",
-                        UseShellExecute = false,
+                        UseShellExecute = true,
+                        Verb = "runas",
                     };
 
                     try
@@ -132,6 +155,11 @@ namespace PlanViewer.Ssms.Installer
                             anyFailed = true;
                         }
                     }
+                    catch (Win32Exception ex) when (ex.NativeErrorCode == ErrorCancelled)
+                    {
+                        Console.WriteLine($"  Cancelled at the Windows prompt. Nothing was installed into {label}.");
+                        anyFailed = true;
+                    }
                     catch (Exception ex)
                     {
                         Console.WriteLine($"  FAILED: {ex.Message}");
@@ -142,6 +170,8 @@ namespace PlanViewer.Ssms.Installer
             }
             finally
             {
+                // Release the file before the folder is deleted.
+                heldVsix?.Dispose();
                 DeleteFolder(tempDir);
             }
 
@@ -383,6 +413,15 @@ namespace PlanViewer.Ssms.Installer
             var shown = new string(entryName.Select(c => char.IsControl(c) ? '?' : c).ToArray());
             return "/" + (shown.Length > 80 ? shown.Substring(0, 80) + "..." : shown);
         }
+
+        // Windows error code for a declined UAC prompt.
+        const int ErrorCancelled = 1223;
+
+        // Opens the file for reading and refuses every other writer, deleter and renamer while the handle is open.
+        // The caller keeps the handle open until VSIXInstaller has finished with the file. Other readers, such as
+        // VSIXInstaller itself, can still open it.
+        internal static FileStream HoldFile(string path) =>
+            new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
 
         static void DeleteFolder(string path)
         {

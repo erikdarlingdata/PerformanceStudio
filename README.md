@@ -411,7 +411,7 @@ A VSIX extension that adds **"Open in Performance Studio"** to the execution pla
 
 1. Download `PlanViewer.Ssms.vsix` and `InstallSsmsExtension.exe` from the [latest release](https://github.com/erikdarlingdata/PerformanceStudio/releases/latest)
 2. Place them in the same folder
-3. Double-click `InstallSsmsExtension.exe` and approve the UAC prompt
+3. Double-click `InstallSsmsExtension.exe`. Windows asks for permission once for each SSMS version it installs into
 4. The installer auto-detects SSMS 21 and/or SSMS 22 and installs into both
 5. Restart SSMS to activate the extension
 
