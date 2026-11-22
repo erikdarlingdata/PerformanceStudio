@@ -248,10 +248,10 @@ public class EnvFileTests : IDisposable
     }
 
     [Fact]
+    [System.Runtime.Versioning.UnsupportedOSPlatform("windows")]
     public void Warnings_CheckTheFileModeOnlyWhenTheFileSuppliedAPassword()
     {
-        if (OperatingSystem.IsWindows())
-            return;
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "Windows files have no Unix mode bits.");
 
         var env = Load(AllSettings);
         File.SetUnixFileMode(env.FilePath!, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.OtherRead);
