@@ -36,6 +36,33 @@ public class PlanShareUploadBudgetTests
     }
 
     [Fact]
+    public void Refund_GivesBackAChargeSoItCanBeSpentAgain()
+    {
+        var budget = new UploadBudget(Limit, new FakeClock());
+        Assert.True(budget.TryCharge("client", 100));
+        Assert.False(budget.TryCharge("client", 30));
+
+        budget.Refund("client", 30);
+
+        Assert.True(budget.TryCharge("client", 30));
+        Assert.False(budget.TryCharge("client", 1));
+    }
+
+    [Fact]
+    public void Refund_NeverTakesTheTotalBelowZero_AndIgnoresUnknownKeys()
+    {
+        var budget = new UploadBudget(Limit, new FakeClock());
+        budget.Refund("never-charged", 50);
+        Assert.True(budget.TryCharge("client", 10));
+
+        budget.Refund("client", 500);
+
+        Assert.True(budget.TryCharge("client", 100));
+        Assert.False(budget.TryCharge("client", 1));
+        Assert.True(budget.TryCharge("never-charged", 100));
+    }
+
+    [Fact]
     public void CanCharge_ReportsWhetherAChargeWouldBeAccepted_WithoutCharging()
     {
         var clock = new FakeClock();

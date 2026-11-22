@@ -18,17 +18,19 @@ internal sealed class PlanShareApp : WebApplicationFactory<UploadBudget>
     private readonly string _dataDir = Path.Combine(Path.GetTempPath(), "planshare-app-" + Guid.NewGuid().ToString("N"));
     private readonly long? _maxDatabaseBytes;
     private readonly long? _dailyUploadBytes;
+    private readonly long? _globalDailyUploadBytes;
     private readonly bool _dropContentLength;
 
     /// <param name="dropContentLength">
     /// Hides the request's Content-Length from the server, as for a chunked upload. The test client
     /// works out a length for every body it sends, so this is the only way to send one without.
     /// </param>
-    public PlanShareApp(long? maxDatabaseBytes = null, long? dailyUploadBytes = null, bool dropContentLength = false)
+    public PlanShareApp(long? maxDatabaseBytes = null, long? dailyUploadBytes = null, bool dropContentLength = false, long? globalDailyUploadBytes = null)
     {
         _dropContentLength = dropContentLength;
         _maxDatabaseBytes = maxDatabaseBytes;
         _dailyUploadBytes = dailyUploadBytes;
+        _globalDailyUploadBytes = globalDailyUploadBytes;
     }
 
     public string DbPath => Path.Combine(_dataDir, "plans.db");
@@ -40,6 +42,8 @@ internal sealed class PlanShareApp : WebApplicationFactory<UploadBudget>
             builder.UseSetting("PlanShare:MaxDatabaseBytes", max.ToString());
         if (_dailyUploadBytes is { } budget)
             builder.UseSetting("PlanShare:DailyUploadBytes", budget.ToString());
+        if (_globalDailyUploadBytes is { } global)
+            builder.UseSetting("PlanShare:GlobalDailyUploadBytes", global.ToString());
 
         // The in-memory server has no remote address. Production sits behind nginx on loopback, and the
         // server only believes X-Forwarded-For from loopback, so give every request a loopback peer.

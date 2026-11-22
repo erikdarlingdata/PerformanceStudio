@@ -3,10 +3,12 @@ using System.Collections.Concurrent;
 namespace PlanShare;
 
 /// <summary>
-/// Caps how many bytes of plan data one client key can store per UTC day. In memory like
-/// RateLimiter, so a restart forgets it. A charge is made before the insert and is not refunded
-/// if the insert then fails: refunding would need a second code path for a rare error, and the
-/// most a client can lose that way is one upload's worth of its allowance.
+/// Caps how many bytes of plan data can be stored per UTC day, for each key it is given. The
+/// share endpoint keeps two: one keyed by client, and one with a single fixed key that caps all
+/// clients together. In memory like RateLimiter, so a restart forgets it. A charge is made before
+/// the insert and is not refunded if the insert then fails: that is a rare error, and the most a
+/// client can lose is one upload's worth of its allowance. <see cref="Refund"/> exists for the
+/// one case that is not rare: a share that passed one budget and was refused by the other.
 /// </summary>
 internal sealed class UploadBudget
 {
@@ -60,6 +62,25 @@ internal sealed class UploadBudget
                 usage.Bytes += bytes;
                 return true;
             }
+        }
+    }
+
+    /// <summary>
+    /// Takes back a charge just made with <see cref="TryCharge"/>. Does nothing if the key has no
+    /// usage today (Sweep() removed it, or the day rolled over since the charge): that allowance
+    /// is already gone. The total never goes below zero.
+    /// </summary>
+    public void Refund(string key, long bytes)
+    {
+        if (!_usage.TryGetValue(key, out var usage))
+            return;
+
+        lock (usage)
+        {
+            if (usage.Evicted || usage.Day != Today())
+                return;
+
+            usage.Bytes = Math.Max(0, usage.Bytes - bytes);
         }
     }
 

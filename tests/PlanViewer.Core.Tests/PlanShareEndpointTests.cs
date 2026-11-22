@@ -145,6 +145,94 @@ public class PlanShareEndpointTests
         Assert.Equal(3, app.Count("plans"));
     }
 
+    private const string GlobalLimitMessage = "Plan sharing has reached today's overall limit. Please try again tomorrow.";
+
+    [Fact]
+    public async Task Share_OverTheGlobalBudget_Returns503WithTheOverallMessage_EvenForAFreshKey()
+    {
+        var size = Encoding.UTF8.GetByteCount(SmallShare);
+        using var app = new PlanShareApp(globalDailyUploadBytes: size * 2);
+        var http = app.CreateClient();
+        await ShareOne(http, caller: "203.0.113.1");
+        await ShareOne(http, caller: "203.0.113.2");
+
+        var (status, reply) = await Send(http, Post, "/api/share", "203.0.113.3", SmallShare);
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, status);
+        Assert.Equal(GlobalLimitMessage, ErrorText(reply));
+        Assert.Equal(2, app.Count("plans"));
+    }
+
+    [Fact]
+    public async Task Share_RefusedByThePerKeyBudget_DoesNotSpendGlobalAllowance()
+    {
+        var size = Encoding.UTF8.GetByteCount(SmallShare);
+        using var app = new PlanShareApp(dailyUploadBytes: size, globalDailyUploadBytes: size * 2);
+        var http = app.CreateClient();
+        await ShareOne(http, caller: "203.0.113.1");
+        for (var i = 0; i < 3; i++)
+        {
+            var (refused, _) = await Send(http, Post, "/api/share", "203.0.113.1", SmallShare);
+            Assert.Equal(HttpStatusCode.TooManyRequests, refused);
+        }
+
+        // One global share is left: the refusals above took none of it
+        await ShareOne(http, caller: "203.0.113.2");
+        var (status, reply) = await Send(http, Post, "/api/share", "203.0.113.3", SmallShare);
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, status);
+        Assert.Equal(GlobalLimitMessage, ErrorText(reply));
+    }
+
+    [Fact]
+    public async Task Share_RefusedByTheGlobalBudget_DoesNotSpendThePerKeyAllowance()
+    {
+        var size = Encoding.UTF8.GetByteCount(SmallShare);
+        using var app = new PlanShareApp(dailyUploadBytes: size, globalDailyUploadBytes: size);
+        var http = app.CreateClient();
+        await ShareOne(http, caller: "203.0.113.1");
+
+        // The second caller is refused by the global budget twice. Had the first refusal kept its
+        // per-key charge, the second would be a per-key 429 instead.
+        var (first, _) = await Send(http, Post, "/api/share", "203.0.113.2", SmallShare);
+        var (second, reply) = await Send(http, Post, "/api/share", "203.0.113.2", SmallShare);
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, first);
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, second);
+        Assert.Equal(GlobalLimitMessage, ErrorText(reply));
+    }
+
+    [Fact]
+    public async Task Share_BodyRefusedByTheGlobalBudgetAfterTheRead_DoesNotSpendThePerKeyAllowance()
+    {
+        var size = Encoding.UTF8.GetByteCount(SmallShare);
+        // No declared length, so only the charge after the read can refuse and refund
+        using var app = new PlanShareApp(dailyUploadBytes: size, globalDailyUploadBytes: size, dropContentLength: true);
+        var http = app.CreateClient();
+        var body = Encoding.UTF8.GetBytes(SmallShare);
+        var (accepted, _) = await SendBytes(http, "/api/share", "203.0.113.1", body);
+
+        var (first, _) = await SendBytes(http, "/api/share", "203.0.113.2", body);
+        var (second, reply) = await SendBytes(http, "/api/share", "203.0.113.2", body);
+
+        Assert.Equal(HttpStatusCode.OK, accepted);
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, first);
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, second);
+        Assert.Equal(GlobalLimitMessage, ErrorText(reply));
+    }
+
+    [Fact]
+    public async Task Share_WhenTheDeclaredLengthIsOverTheGlobalBudget_IsRefusedBeforeTheBodyIsParsed()
+    {
+        using var app = new PlanShareApp(globalDailyUploadBytes: 10);
+
+        // Not JSON: a 400 would mean the body was parsed before the budget check
+        var (status, reply) = await Send(app.CreateClient(), Post, "/api/share", Caller, "not json at all");
+
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, status);
+        Assert.Equal(GlobalLimitMessage, ErrorText(reply));
+    }
+
     [Fact]
     public async Task Share_BudgetIsCountedPerClientKey_SoAnIPv4AndItsMappedFormShareOne()
     {
@@ -259,17 +347,17 @@ public class PlanShareEndpointTests
     }
 
     [Fact]
-    public async Task Event_PathOf512Characters_IsAccepted_AndOf513IsRefused()
+    public async Task Event_PathOf128Characters_IsAccepted_AndOf129IsRefused()
     {
         using var app = new PlanShareApp();
         var http = app.CreateClient();
 
-        var (accepted, _) = await Send(http, Post, "/api/event", Caller, $$"""{"path":"/{{new string('a', 511)}}"}""");
-        var (refused, reply) = await Send(http, Post, "/api/event", Caller, $$"""{"path":"/{{new string('a', 512)}}"}""");
+        var (accepted, _) = await Send(http, Post, "/api/event", Caller, $$"""{"path":"/{{new string('a', 127)}}"}""");
+        var (refused, reply) = await Send(http, Post, "/api/event", Caller, $$"""{"path":"/{{new string('a', 128)}}"}""");
 
         Assert.Equal(HttpStatusCode.OK, accepted);
         Assert.Equal(HttpStatusCode.BadRequest, refused);
-        Assert.Equal("path must be 512 characters or fewer.", ErrorText(reply));
+        Assert.Equal("path must be 128 characters or fewer.", ErrorText(reply));
         Assert.Equal(1, app.Count("page_views"));
     }
 
@@ -392,8 +480,8 @@ public class PlanShareEndpointTests
     public async Task Event_LongestAllowedPathWithEveryCharacterEscaped_FitsTheBodyLimit()
     {
         using var app = new PlanShareApp();
-        // 512 characters at 6 bytes each, the worst case the limit has to allow
-        var escaped = string.Concat(Enumerable.Repeat("\\u0061", 512));
+        // 128 characters at 6 bytes each, the worst case the limit has to allow
+        var escaped = string.Concat(Enumerable.Repeat("\\u0061", 128));
 
         var (status, _) = await Send(app.CreateClient(), Post, "/api/event", Caller, $$"""{"path":"{{escaped}}"}""");
 
