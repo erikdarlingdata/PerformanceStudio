@@ -4,7 +4,7 @@ name: Nightly Build
 #
 # The token that can write to the repository never sits next to build-time code (the same rule
 # as dependency-submission.yml):
-#   check    contents: read. Skips the build when dev has no commit from the last 24 hours.
+#   check    contents: read. Skips the build when dev's tip is the commit the nightly tag points at.
 #   build    contents: read. Restores, tests and publishes the App (package and MSBuild code runs
 #            here), packages the zips and SHA256SUMS.txt, and uploads releases/ as an artifact.
 #   publish  contents: write. Checks out nothing and runs no repository code. It downloads the
