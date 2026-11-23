@@ -31,16 +31,22 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Check for new commits in last 24 hours
+      # Build when dev's tip differs from the commit the nightly tag points at.
+      # fetch-depth: 0 also fetches tags. A "commits in the last 24 hours"
+      # window skipped new commits whenever GitHub started the scheduled run
+      # later in the day than the run before (start times drift by hours).
+      # A missing tag (deleted by a publish that failed half way) means build.
+      - name: Check whether dev moved since the last nightly
         id: check
         run: |
-          RECENT=$(git log --since="24 hours ago" --oneline | head -1)
-          if [ -n "$RECENT" ]; then
-            echo "has_changes=true" >> $GITHUB_OUTPUT
-            echo "New commits found — building nightly"
+          HEAD_SHA=$(git rev-parse HEAD)
+          NIGHTLY_SHA=$(git rev-parse -q --verify 'refs/tags/nightly^{commit}' || true)
+          if [ "$HEAD_SHA" != "$NIGHTLY_SHA" ]; then
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+            echo "dev is at $HEAD_SHA, nightly is at ${NIGHTLY_SHA:-none}: building nightly"
           else
-            echo "has_changes=false" >> $GITHUB_OUTPUT
-            echo "No new commits — skipping nightly build"
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            echo "Nightly is already built from $HEAD_SHA: skipping"
           fi
 
   build:
