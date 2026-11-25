@@ -1,0 +1,5 @@
+# Served at https://stats.erikdarling.com/robots.txt
+# The dashboard page is public. /api/ is the PlanShare API (shared plans and
+# the stats feed), which has nothing a crawler should fetch.
+User-agent: *
+Disallow: /api/

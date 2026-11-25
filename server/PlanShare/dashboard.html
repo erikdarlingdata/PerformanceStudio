@@ -4,6 +4,19 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Darling Data - GitHub Stats</title>
+    <meta name="description" content="GitHub stars, traffic, clones and release downloads for Darling Data's free SQL Server tools: Performance Monitor, Performance Studio and the DarlingData scripts.">
+    <link rel="canonical" href="https://stats.erikdarling.com/">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="Darling Data">
+    <meta property="og:title" content="Darling Data - GitHub Stats">
+    <meta property="og:description" content="GitHub stars, traffic, clones and release downloads for Darling Data's free SQL Server tools: Performance Monitor, Performance Studio and the DarlingData scripts.">
+    <meta property="og:url" content="https://stats.erikdarling.com/">
+    <meta property="og:image" content="https://stats.erikdarling.com/darling-data-logo.jpg">
+    <meta property="og:image:width" content="1000">
+    <meta property="og:image:height" content="470">
+    <meta property="og:image:alt" content="Darling Data">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:site" content="@erikdarlingdata">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -29,9 +42,9 @@
         .header-divider { width: 1px; height: 20px; background: #555; }
         .header-title {
             font-family: 'Montserrat', sans-serif; font-size: 1rem;
-            font-weight: 600; color: #ffffff; letter-spacing: 0.3px;
+            font-weight: 600; color: #ffffff; letter-spacing: 0.3px; white-space: nowrap;
         }
-        .header-nav { display: flex; gap: 1.5rem; margin-left: auto; }
+        .header-nav { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.25rem 1rem; margin-left: auto; }
         .header-nav a {
             color: #e0e0e0; text-decoration: none; font-size: 1rem;
             font-weight: 500; padding: 0.3rem 0.6rem; border-radius: 4px; transition: all 0.15s;
@@ -68,11 +81,16 @@
         .prerelease { font-size: 0.7em; background: #341a00; color: #d29922; padding: 2px 6px; border-radius: 10px; margin-left: 6px; }
         footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid #21262d; color: #484f58; font-size: 0.8em; text-align: center; padding-bottom: 20px; }
         footer a { color: #58a6ff; text-decoration: none; }
+        @media (max-width: 1100px) {
+            .header-nav { gap: 0.25rem 0.5rem; }
+            .header-nav a { font-size: 0.9rem; padding: 0.25rem 0.4rem; }
+        }
         @media (max-width: 768px) {
             .site-header { padding: 0.6rem 1rem; }
             .header-title { display: none; }
             .header-divider { display: none; }
-            .header-nav { gap: 0.5rem; }
+            .header-content { flex-wrap: wrap; }
+            .header-nav { gap: 0.25rem 0.5rem; margin-left: 0; justify-content: flex-start; }
             .header-nav a { font-size: 0.85rem; padding: 0.2rem 0.4rem; }
             .charts-grid { grid-template-columns: 1fr; }
             .stats-row { grid-template-columns: repeat(2, 1fr); }
@@ -82,14 +100,16 @@
 <body>
     <header class="site-header">
         <div class="header-content">
-            <a href="https://www.erikdarling.com" target="_blank" rel="noopener"><img src="darling-data-logo.jpg" alt="Darling Data" class="header-logo" /></a>
+            <a href="https://erikdarling.com/" target="_blank" rel="noopener"><img src="darling-data-logo.jpg" alt="Darling Data" class="header-logo" /></a>
             <span class="header-divider"></span>
             <span class="header-title">GitHub Stats</span>
             <nav class="header-nav">
                 <a href="https://erikdarling.com/blog/" target="_blank" rel="noopener">Blog</a>
-                <a href="https://training.erikdarling.com/sqlconsulting" target="_blank" rel="noopener">Consulting</a>
-                <a href="https://training.erikdarling.com/catalog" target="_blank" rel="noopener">Training</a>
-                <a href="https://training.erikdarling.com/sql-monitoring" target="_blank" rel="noopener">Monitoring</a>
+                <a href="https://erikdarling.com/work-with-your-databases-the-way-i-do/" target="_blank" rel="noopener">AI Course</a>
+                <a href="https://erikdarling.com/ai-for-database-teams-workshop/" target="_blank" rel="noopener">Workshop</a>
+                <a href="https://erikdarling.com/sql-server-performance-consulting/" target="_blank" rel="noopener">Consulting</a>
+                <a href="https://erikdarling.com/sql-server-training/" target="_blank" rel="noopener">Training</a>
+                <a href="https://erikdarling.com/free-sql-server-performance-monitoring/" target="_blank" rel="noopener">Monitoring</a>
                 <a href="https://erikdarling.com/request-a-call/" target="_blank" rel="noopener">Request a Call</a>
             </nav>
         </div>
