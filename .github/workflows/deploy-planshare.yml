@@ -3,6 +3,8 @@ name: Deploy PlanShare
 # PlanShare is not built by ci.yml (server/** is paths-ignored) and is not in
 # PlanViewer.sln, so before this workflow existed a merged PR shipped nothing.
 # Production once drifted ~3.5 months behind main, missing two security fixes.
+# The stats page (dashboard.html, robots.txt) drifted the same way: it was
+# never shipped at all and sat on an April copy until 2026-11-25.
 on:
   push:
     branches: [main]
@@ -26,6 +28,7 @@ env:
   DEPLOY_HOST: stats.erikdarling.com
   DEPLOY_USER: deploy
   APP_DIR: /opt/planshare
+  WEB_ROOT: /var/www/stats
   PUBLIC_URL: https://stats.erikdarling.com
 
 jobs:
@@ -135,6 +138,62 @@ jobs:
             sudo /bin/systemctl is-active planshare.service
             echo "Rolled back to $STAMP"
           REMOTE
+
+      - name: Clean up key
+        if: always()
+        run: rm -f ~/.ssh/deploy_key
+
+  # The stats page is static: nginx serves WEB_ROOT and proxies only /api/ to
+  # the app. It ships in its own job, so a failure here can neither block the
+  # binary deploy nor trigger its rollback. Root owns WEB_ROOT; the deploy user
+  # owns only index.html and robots.txt in it, so scp overwrites those two
+  # files in place and cannot add or remove anything else.
+  deploy-page:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Configure SSH
+        env:
+          DEPLOY_KEY: ${{ secrets.PLANSHARE_DEPLOY_KEY }}
+        run: |
+          if [ -z "$DEPLOY_KEY" ]; then
+            echo "::error::PLANSHARE_DEPLOY_KEY secret is not set - cannot deploy."
+            exit 1
+          fi
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          # Pinned host key: fail closed rather than trusting on first use.
+          echo 'stats.erikdarling.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICIrnTBiPVE5ulZiFZTBw9/DR/dPVwbAr8ZIvu47/w2J' > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Upload page files
+        run: |
+          scp -i ~/.ssh/deploy_key -o BatchMode=yes \
+            server/PlanShare/dashboard.html \
+            "$DEPLOY_USER@$DEPLOY_HOST:$WEB_ROOT/index.html"
+          # robots.txt is optional, so a tree without it still ships the page.
+          if [ -f server/PlanShare/robots.txt ]; then
+            scp -i ~/.ssh/deploy_key -o BatchMode=yes \
+              server/PlanShare/robots.txt \
+              "$DEPLOY_USER@$DEPLOY_HOST:$WEB_ROOT/robots.txt"
+          fi
+
+      - name: Verify through nginx
+        run: |
+          # The bytes nginx serves must match the repo file exactly.
+          verify() {
+            want=$(sha256sum < "$1" | cut -d' ' -f1)
+            got=$(curl -sSf -m 20 "$PUBLIC_URL$2" | sha256sum | cut -d' ' -f1)
+            echo "$2: repo $want, served $got"
+            [ "$want" = "$got" ] || { echo "::error::$PUBLIC_URL$2 does not match $1"; return 1; }
+          }
+          verify server/PlanShare/dashboard.html /
+          if [ -f server/PlanShare/robots.txt ]; then
+            verify server/PlanShare/robots.txt /robots.txt
+          fi
 
       - name: Clean up key
         if: always()
